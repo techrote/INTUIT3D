@@ -41,6 +41,25 @@ and lockfile before merging, and run hosted browser/Windows checks.
 - Add an unresolved future datum and explicitly resolve it without losing the
   authored operation. This models the UX state, not INTENT's actual solver.
 
+## Sketch cursor and visual snap diagnostics (preview only)
+
+The SVG sketch viewport displays a millimetre cursor readout and highlights
+nearby plate corners, edge midpoints, hole centres, the origin and a 10 mm
+visual grid. Ranking is deterministic in screen-pixel distance (14 px maximum),
+with semantic preview targets winning exact ties against grid marks. The
+pointer coordinate transform respects SVG screen scaling and upward-positive
+sketch Y. The hover is **read-only**: it cannot create a constraint, move
+geometry, modify a revision or assert a solved sketch. When the current
+profile is inadmissible, plate/hole candidate snaps are suppressed; only
+the visual grid remains. This does not yet consume the versioned SKETCH
+snapping or solver-admission provider.
+
+`src/sketchCursor.test.ts` supplies deterministic/adversarial cursor probes;
+`npm run test:browser:handles` includes an actual Chromium mouse hover at
+the origin, a visual-snap readout assertion, a no-authored-edit assertion
+and a screenshot, in addition to its existing manipulation/recovery checks.
+The browser gate must execute on the exact integrated head before merge.
+
 ## Engineering honesty / known gaps
 
 - Three.js Shape/ExtrudeGeometry is **polygonal display geometry** with 72
