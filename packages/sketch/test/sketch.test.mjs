@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { plateSketchFixture, solveSketch, editConstraint, serializeSketch, parseSketch, createSketch, buildPlateProfile } from '../index.mjs';
+import { plateSketchFixture, solveSketch, editConstraint, serializeSketch, parseSketch, createSketch, buildPlateProfile, suggestDrag } from '../index.mjs';
 const edges = ['bottom','right','top','left'];
 const holes = ['holeA','holeB'];
 const solve = () => solveSketch(plateSketchFixture());
@@ -213,4 +213,53 @@ test('overflowed polygon area is refused instead of exported as Infinity', () =>
   const result = solveSketch(doc);
   assert.equal(result.status,'solved');
   assert.throws(() => buildPlateProfile(doc,result,lines.map(l=>l.id)), /nonfinite or zero-area/);
+});
+
+
+test('drag preview moves free point without modifying authored document', () => {
+  const sketch = createSketch({version:1,units:'mm',points:[{id:'a',x:0,y:0},{id:'b',x:4,y:5}],lines:[],circles:[],constraints:[]});
+  const before = serializeSketch(sketch);
+  const suggestion = suggestDrag(sketch, 'a', {x:37.5,y:-8});
+  assert.equal(suggestion.previewOnly,true);
+  assert.equal(suggestion.status,'underconstrained');
+  assert.equal(suggestion.degreesOfFreedom,2);
+  assert.equal(suggestion.sourceSignature,before);
+  assert.deepEqual(suggestion.geometry.points.find(p=>p.id==='a'),{id:'a',x:37.5,y:-8});
+  assert.deepEqual(suggestion.geometry.points.find(p=>p.id==='b'),{id:'b',x:4,y:5});
+  assert.equal(serializeSketch(sketch),before);
+  assert.deepEqual(sketch.constraints,[]);
+});
+
+test('drag conflicts with fixed/dimensioned intent and returns no geometry', () => {
+  const sketch = plateSketchFixture();
+  const suggestion = suggestDrag(sketch,'p1',{x:180,y:0});
+  assert.equal(suggestion.status,'conflicted');
+  assert.equal(suggestion.geometry,null);
+  assert.ok(suggestion.diagnostics.some(d=>d.code==='contradictory_constraints'));
+  assert.equal(sketch.constraints.some(c=>c.kind==='fixed' && c.point==='p1'),false);
+});
+
+test('drag input validation and collision-safe temporary IDs', () => {
+  const sketch=plateSketchFixture();
+  sketch.constraints.push({id:'drag:p0:0',kind:'fixed',point:'p0',x:0,y:0});
+  assert.equal(suggestDrag(sketch,'p0',{x:0,y:0}).status,'solved');
+  assert.throws(()=>suggestDrag(sketch,'missing',{x:0,y:0}),/unknown drag point/);
+  assert.throws(()=>suggestDrag(sketch,'p0',{x:Infinity,y:0}),/drag target/);
+});
+
+test('dimension parameter grid preserves semantic geometry and analytic area',()=>{
+  const baseline=plateSketchFixture();
+  for(const width of [110,120,130,140]) for(const height of [76,80,90]) for(const radius of [4,6,8]) {
+    let doc=editConstraint(editConstraint(baseline,'width',{value:width}),'height',{value:height});
+    doc=editConstraint(editConstraint(doc,'holeA:diameter',{value:radius}),'holeB:diameter',{value:radius});
+    const result=solveSketch(doc);
+    assert.equal(result.status,'solved',`width=${width} height=${height} r=${radius}`);
+    assert.equal(result.degreesOfFreedom,0);
+    const profile=buildPlateProfile(doc,result,edges,holes);
+    assert.ok(Math.abs(profile.areaMm2-(width*height-2*Math.PI*radius**2))<1e-7);
+    assert.deepEqual(profile.holes.map(h=>h.id),holes);
+    assert.equal(result.geometry.points.find(p=>p.id==='p1').x,width);
+    assert.equal(result.geometry.points.find(p=>p.id==='p2').y,height);
+    assert.equal(serializeSketch(parseSketch(serializeSketch(doc))),serializeSketch(doc));
+  }
 });

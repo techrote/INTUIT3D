@@ -225,6 +225,47 @@ export function solveSketch(source, options = {}) {
 }
 
 /**
+ * Preview-only drag suggestion. A temporary fixed-point constraint is solved
+ * against the existing authored constraints, but is never persisted.
+ * The returned geometry is not a verified exact profile; sourceSignature
+ * lets consumers discard the suggestion following any intervening edit.
+ *
+ * A constrained move that would violate dimensions returns 'conflicted'
+ * with no geometry instead of changing or deleting authored constraints.
+ * @param {import('./index.d.mts').SketchDocument} source
+ * @param {string} pointId
+ * @param {{x:number,y:number}} target
+ */
+export function suggestDrag(source, pointId, target) {
+  const sketch = validateSketch(source);
+  if (typeof pointId !== 'string' || !sketch.points.some((p) => p.id === pointId))
+    fail('unknown drag point ' + String(pointId));
+  if (!target || !finite(target.x) || !finite(target.y))
+    fail('drag target must have finite x/y coordinates');
+  const occupied = new Set([
+    ...sketch.points.map((entity) => entity.id),
+    ...sketch.lines.map((entity) => entity.id),
+    ...sketch.circles.map((entity) => entity.id),
+    ...sketch.constraints.map((entity) => entity.id)
+  ]);
+  let index = 0;
+  let temporaryId = 'drag:' + pointId + ':' + index;
+  while (occupied.has(temporaryId)) temporaryId = 'drag:' + pointId + ':' + ++index;
+  const proposal = structuredClone(sketch);
+  proposal.constraints.push({ id: temporaryId, kind: 'fixed', point: pointId, x: target.x, y: target.y });
+  const solution = solveSketch(proposal);
+  return {
+    sourceSignature: serializeSketch(sketch),
+    status: solution.status,
+    geometry: solution.geometry,
+    degreesOfFreedom: solution.degreesOfFreedom,
+    diagnostics: solution.diagnostics,
+    target: { pointId, x: target.x, y: target.y },
+    previewOnly: true
+  };
+}
+
+/**
  * Validated polygon + circular holes for profile-adapter consumption.
  * Refuses invalid/ambiguous loops. Not a B-rep or a boolean operation.
  */

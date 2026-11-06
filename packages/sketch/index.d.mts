@@ -43,3 +43,15 @@ export function editConstraint(sketch: SketchDocument, id: string, patch: Partia
 export function solveSketch(sketch: SketchDocument, options?: {pivotTolerance?:number; residualToleranceMm?:number}): SketchSolution;
 export function buildPlateProfile(sketch: SketchDocument, solution: SketchSolution, edgeIds: string[], holeIds?: string[]): PlateProfile;
 export function plateSketchFixture(): SketchDocument;
+
+/** Transient, non-authoritative drag preview; never export as exact geometry. */
+export interface DragSuggestion {
+  sourceSignature: string;
+  status: SolveStatus;
+  geometry: SketchGeometry | null;
+  degreesOfFreedom: number;
+  diagnostics: Diagnostic[];
+  target: { pointId: string; x: number; y: number };
+  previewOnly: true;
+}
+export function suggestDrag(sketch: SketchDocument, pointId: string, target: {x:number; y:number}): DragSuggestion;
