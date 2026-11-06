@@ -1,0 +1,3 @@
+# Experimental Python bindings ONLY; not the production OCCT 8.0.1 native C++ pin.
+# The tested Linux runtime used CPython 3.13.5 + cadquery-ocp 7.9.3.1.1 (OCCT 7.9.3.1).
+cadquery-ocp==7.9.3.1.1
