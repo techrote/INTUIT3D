@@ -56,11 +56,19 @@ export type Command =
 
 export type Diagnostic = { readonly code: 'invalid-dimension' | 'hole-boundary' | 'hole-overlap' | 'pending-reference'; readonly message: string; readonly featureId: string };
 
+/** Transient pointer interaction. This is not part of saved project intent. */
+export interface DimensionGesture {
+  readonly key: DimensionKey;
+  readonly initial: Document;
+  readonly initialLastValid: Document | null;
+}
+
 export interface Workspace {
   readonly document: Document;
   readonly lastValid: Document | null;
   readonly past: readonly Document[];
   readonly future: readonly Document[];
+  readonly gesture: DimensionGesture | null;
 }
 
 const DEFAULT_PARAMS: Parameters = {
@@ -159,10 +167,45 @@ export function geometryIsAdmissible(doc: Document): boolean {
 export function newWorkspace(doc: Document = newDocument()): Workspace {
   validateDocument(doc);
   // A separately loaded invalid project is not assigned a pretend last-good mesh.
-  return { document: doc, lastValid: geometryIsAdmissible(doc) ? doc : null, past: [], future: [] };
+  return { document: doc, lastValid: geometryIsAdmissible(doc) ? doc : null, past: [], future: [], gesture: null };
+}
+
+/** Start a dimension transaction; only the eventual pointer-up creates a journal entry. */
+export function beginDimensionGesture(workspace: Workspace, key: DimensionKey): Workspace {
+  if (!DIMENSIONS.includes(key)) throw new Error('Unknown gesture dimension');
+  const stable = workspace.gesture ? commitDimensionGesture(workspace) : workspace;
+  return { ...stable, gesture: { key, initial: stable.document, initialLastValid: stable.lastValid } };
+}
+
+/** Live preview is deliberately ephemeral: no revision, history or last-good promotion. */
+export function previewDimensionGesture(workspace: Workspace, value: number): Workspace {
+  const active = workspace.gesture;
+  if (!active) throw new Error('No active dimension gesture');
+  if (!Number.isFinite(value)) throw new Error('Gesture value must be finite');
+  if (Object.is(workspace.document.params[active.key], value)) return workspace;
+  const doc = { ...workspace.document, params: { ...workspace.document.params, [active.key]: value } };
+  return { ...workspace, document: doc };
+}
+
+/** Pointer cancellation must never leave an unjournalled edit or false saved state. */
+export function cancelDimensionGesture(workspace: Workspace): Workspace {
+  if (!workspace.gesture) return workspace;
+  return { ...workspace, document: workspace.gesture.initial, lastValid: workspace.gesture.initialLastValid, gesture: null };
+}
+
+/** Commit the complete drag as exactly one undoable command, including invalid intent. */
+export function commitDimensionGesture(workspace: Workspace): Workspace {
+  const active = workspace.gesture;
+  if (!active) return workspace;
+  const value = workspace.document.params[active.key];
+  const base = cancelDimensionGesture(workspace);
+  if (Object.is(active.initial.params[active.key], value)) return base;
+  return apply(base, { kind: 'dimension', key: active.key, value });
 }
 
 export function apply(workspace: Workspace, command: Command): Workspace {
+  // Other UI commands cannot silently discard an in-progress pointer edit.
+  if (workspace.gesture) workspace = commitDimensionGesture(workspace);
   const before = workspace.document;
   let next: Document;
   let summary: string;
@@ -185,26 +228,31 @@ export function apply(workspace: Workspace, command: Command): Workspace {
     next = { ...before, name: command.name };
     summary = `Rename: ${command.name}`;
   }
+  if (before.chronology.length >= 1024) throw new Error('Preview journal capacity reached (1024 entries); edit was not applied');
   next = { ...next, revision: before.revision + 1, chronology: [...before.chronology, summary] };
-  return { document: next, lastValid: geometryIsAdmissible(next) ? next : workspace.lastValid, past: [...workspace.past, before], future: [] };
+  return { document: next, lastValid: geometryIsAdmissible(next) ? next : workspace.lastValid, past: [...workspace.past, before], future: [], gesture: null };
 }
 
 export function undo(workspace: Workspace): Workspace {
+  if (workspace.gesture) return cancelDimensionGesture(workspace);
   const previous = workspace.past.at(-1);
   if (!previous) return workspace;
   return {
     document: previous,
-    lastValid: geometryIsAdmissible(previous) ? previous : workspace.lastValid,
-    past: workspace.past.slice(0, -1), future: [workspace.document, ...workspace.future],
+    // An undo must never display a future revision as an earlier 'last good' body.
+    lastValid: geometryIsAdmissible(previous) ? previous :
+      [...workspace.past.slice(0, -1)].reverse().find(geometryIsAdmissible) ?? null,
+    past: workspace.past.slice(0, -1), future: [workspace.document, ...workspace.future], gesture: null,
   };
 }
 export function redo(workspace: Workspace): Workspace {
+  if (workspace.gesture) return cancelDimensionGesture(workspace);
   const next = workspace.future[0];
   if (!next) return workspace;
   return {
     document: next,
     lastValid: geometryIsAdmissible(next) ? next : workspace.lastValid,
-    past: [...workspace.past, workspace.document], future: workspace.future.slice(1),
+    past: [...workspace.past, workspace.document], future: workspace.future.slice(1), gesture: null,
   };
 }
 

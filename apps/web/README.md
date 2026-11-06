@@ -63,3 +63,25 @@ and lockfile before merging, and run hosted browser/Windows checks.
 
 All changed paths are confined to `apps/web/**`. The WORKBENCH lane owns this
 source; INTEGRATION owns root lockfile, shared configuration and merge gates.
+
+## Gesture and stale-preview safety (WORKBENCH-001 continuation)
+
+- A sketch-hole pointer gesture previews edits without growing the edit journal,
+  then commits **one** undo entry at pointer-up. Pointer cancellation or Escape
+  restores the original parameter/revision. No-op drags have no journal effect.
+- Left/right drag direction is frozen from the selected hole; crossing the sketch
+  origin does not reverse movement. Shift-drag snaps to 0.1 mm; ordinary drag
+  snaps to 1 mm. Keyboard-focus either hole and use arrow keys for pitch updates
+  (Shift = 0.1 mm).
+- Invalid proposals are **not silently clamped**: overlap, negative pitch and
+  boundary violations remain diagnosable, with stale preview clearly marked.
+- Undoing into invalid history reconstructs the last valid preview only from
+  earlier authored history; geometry from the future revision is never shown
+  as historical truth. An imported invalid document still has no last-good mesh.
+- The preview journal's 1024-entry capacity fails closed **before** an edit
+  would render the project unsaveable.
+- Verification: `node --experimental-strip-types --test src/*.test.ts`
+  exercises gesture, replay, geometry-admissibility and import scenarios without
+  browser dependencies. Installed dependency typecheck, Vite build, real browser
+  pointer capture/rendering and human UX acceptance **remain required** and
+  must not be inferred from Node tests or TSX syntax parsing.

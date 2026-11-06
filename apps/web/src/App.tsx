@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  apply, diagnostics, featureStates, geometryIsAdmissible, newDocument,
-  newWorkspace, PARAMETER_LABELS, parseDocument, redo, serializeDocument, undo,
+  apply, beginDimensionGesture, cancelDimensionGesture, commitDimensionGesture,
+  diagnostics, featureStates, geometryIsAdmissible, newDocument,
+  newWorkspace, PARAMETER_LABELS, parseDocument, previewDimensionGesture, redo, serializeDocument, undo,
   type Command, type DimensionKey, type Workspace,
 } from './model';
 import { SketchViewport } from './components/SketchViewport';
@@ -80,20 +81,26 @@ export default function App() {
     catch (error) { setNotification(error instanceof Error ? error.message : 'Edit failed'); }
   }, []);
   const update = useCallback((key: DimensionKey, value: number) => dispatch({ kind: 'dimension', key, value }), [dispatch]);
+  const beginSketchGesture = useCallback(() => setWorkspace((current) => beginDimensionGesture(current, 'holeSpacing')), []);
+  const previewSketchGesture = useCallback((value: number) => setWorkspace((current) => previewDimensionGesture(current, value)), []);
+  const finishSketchGesture = useCallback(() => setWorkspace((current) => commitDimensionGesture(current)), []);
+  const cancelSketchGesture = useCallback(() => setWorkspace((current) => cancelDimensionGesture(current)), []);
   const stepUndo = useCallback(() => setWorkspace((current) => undo(current)), []);
   const stepRedo = useCallback(() => setWorkspace((current) => redo(current)), []);
   const save = useCallback(() => {
-    const data = serializeDocument(workspace.document);
+    const settled = commitDimensionGesture(workspace);
+    if (settled !== workspace) setWorkspace(settled);
+    const data = serializeDocument(settled.document);
     const href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
     const link = document.createElement('a');
     link.href = href;
-    link.download = `${workspace.document.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'intuit3d'}.i3d-preview.json`;
+    link.download = `${settled.document.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'intuit3d'}.i3d-preview.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(href), 1000);
     setNotification('Preview project exported locally. Not an engineering CAD or STEP file.');
-  }, [workspace.document]);
+  }, [workspace]);
   const load = useCallback(async (file: File) => {
     try {
       if (file.size > 1024 * 1024) throw new Error('Project exceeds 1 MiB limit');
@@ -170,11 +177,11 @@ export default function App() {
           <div className="browser-footnote"><Glyph name="alert" size={15} /> IDs are demonstration labels, not persistent B-rep topology.</div>
         </aside>
         <main className="editor-center" aria-label="CAD editor">
-          <div className="viewport-header"><div className="view-label"><strong>{view === 'solid' ? 'Perspective' : 'Sketch plane · XY'}</strong><span>{view === 'solid' ? 'Shaded · edges' : '2D · millimetres'}</span></div><div className="viewport-actions"><span className={stale ? 'preview-tag stale' : 'preview-tag'}>{stale ? 'STALE LAST-GOOD PREVIEW' : rendered ? 'POLYGONAL PREVIEW · NOT EXACT' : 'NO VALID PREVIEW'}</span></div></div>
+          <div className="viewport-header"><div className="view-label"><strong>{view === 'solid' ? 'Perspective' : 'Sketch plane · XY'}</strong><span>{view === 'solid' ? 'Shaded · edges' : '2D · millimetres'}</span></div><div className="viewport-actions"><span className={stale ? 'preview-tag stale' : 'preview-tag'}>{workspace.gesture ? (stale ? 'DRAGGING · STALE PREVIEW' : 'DRAGGING · UNCOMMITTED PREVIEW') : stale ? 'STALE LAST-GOOD PREVIEW' : rendered ? 'POLYGONAL PREVIEW · NOT EXACT' : 'NO VALID PREVIEW'}</span></div></div>
           <div className="viewport-stage">
-            {view === 'solid' ? <SolidViewport document={rendered} selected={selected} onSelect={setSelected} /> : <SketchViewport document={workspace.document} onChange={update} onSelect={setSelected} />}
+            {view === 'solid' ? <SolidViewport document={rendered} selected={selected} onSelect={setSelected} /> : <SketchViewport document={workspace.document} onChange={update} onSelect={setSelected} onGestureStart={beginSketchGesture} onGesturePreview={previewSketchGesture} onGestureFinish={finishSketchGesture} onGestureCancel={cancelSketchGesture} />}
             <div className="orientation-widget"><b>Y</b><span>+Z</span><small>X</small></div>
-            <div className="viewport-hint">{view === 'solid' ? 'Drag to orbit · Wheel to zoom · Right-drag to pan · Click to select' : 'Drag either hole centre to change pitch · Use inspector for exact input'}</div>
+            <div className="viewport-hint">{view === 'solid' ? 'Drag to orbit · Wheel to zoom · Right-drag to pan · Click to select' : 'Drag either hole to change pitch · Shift for 0.1 mm · Esc cancels · Arrows move selected hole'}</div>
             {stale && <div className="invalid-overlay"><Glyph name="alert" size={16} /><span>Current intent has invalid geometry. Shown mesh comes from revision {rendered?.revision}; dimensions in the inspector are the current, unresolved values.</span></div>}
             {!rendered && <div className="empty-overlay">No validated preview exists for this imported project. Repair the dimensions to generate a new preview.</div>}
           </div>
@@ -186,7 +193,7 @@ export default function App() {
         <aside className="sidepanel inspector-panel" aria-label="Feature inspector">
           <div className="panel-heading"><span>INSPECTOR</span><Glyph name="layers" size={17}/></div>
           <div className="inspector-feature"><small>SELECTED FEATURE</small><strong>{features.find((f) => f.id === selected)?.label || 'Plate extrusion'}</strong><span>{selected}</span></div>
-          <div className="inspector-section"><div className="section-head">PARAMETERS <span>mm</span></div>{(Object.keys(PARAMETER_LABELS) as DimensionKey[]).map((key) => <ParameterEditor key={key} name={key} value={param[key]} onCommit={update} />)}<p className="microcopy">Dimensions are local preview intent. No OCCT constraint solve or B-rep evaluation has run.</p></div>
+          <div className="inspector-section"><div className="section-head">PARAMETERS <span>mm</span></div>{(Object.keys(PARAMETER_LABELS) as DimensionKey[]).map((key) => <ParameterEditor key={key} name={key} value={param[key]} onCommit={update} />)}<p className="microcopy">Dimensions are local preview intent. A complete drag is one undoable edit; Esc cancels it. No OCCT constraint solve or B-rep evaluation has run.</p></div>
           <div className="inspector-section diagnostics"><div className="section-head">EVALUATION <span>{problems.length ? `${problems.length} issue(s)` : 'No local intent errors'}</span></div>
             {problems.length ? problems.map((problem) => <div className="diagnostic-entry" key={`${problem.code}:${problem.featureId}`}><Glyph name="alert" size={16}/><span>{problem.message}</span></div>) : <div className="diagnostic-clean"><Glyph name="check" size={16}/> Preview-input validation passed. Exact geometry remains unqualified.</div>}
             {workspace.document.futureReference && <button className="resolve-button" onClick={() => dispatch({ kind: 'resolve-reference', enabled: !workspace.document.referenceResolved })}>{workspace.document.referenceResolved ? 'Mark datum unresolved' : 'Resolve forward datum'}</button>}
