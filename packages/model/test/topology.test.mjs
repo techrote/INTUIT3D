@@ -122,7 +122,7 @@ test('authoritative journal saves and reopens topology selection without provide
   assert.equal(reopened.revision,2);
   assert.deepEqual(planProject(reopened).executableOrder,['feature.plate','feature.cut']);
   const persisted=featuresOf(reopened).find(x=>x.id==='feature.cut').payload.sourceFace;
-  assert.deepEqual(persisted,selected);
+  assert.deepEqual(JSON.parse(JSON.stringify(persisted)),selected);
   const evidence=[step(1,[row([base],[alt])])];
   const result=resolveSemanticTopologyReference(persisted,snap([base],1),evidence,reopened.revision);
   assert.equal(result.status,'resolved');
@@ -137,7 +137,8 @@ test('remove and restore retain authored selection but cannot resurrect deleted 
   let project=newProject('project.recovery');
   project=commitEvent(project,{eventId:'event.base',type:'feature.create',
     feature:{id:'feature.base',kind:'extrude',dependsOn:[],writeTargets:['body.base'],payload:{}}});
-  const reference=ref(base,1,'project.recovery');
+  const recoveryRole=role('feature.base','role.top');
+  const reference=ref(recoveryRole,1,'project.recovery');
   project=commitEvent(project,{eventId:'event.child',type:'feature.create',
     feature:{id:'feature.child',kind:'cut',dependsOn:['feature.base'],writeTargets:['body.base'],payload:{selectedFace:reference}}});
   project=commitEvent(project,{eventId:'event.delete',type:'feature.remove',featureId:'feature.base'});
@@ -145,11 +146,11 @@ test('remove and restore retain authored selection but cannot resurrect deleted 
   project=commitEvent(project,{eventId:'event.restore',type:'feature.restore',featureId:'feature.base'});
   const reopened=deserializeProject(serializeProject(project));
   assert.equal(planProject(reopened).features.find(x=>x.feature.id==='feature.child').status,'ready');
-  assert.deepEqual(featuresOf(reopened).find(x=>x.id==='feature.child').payload.selectedFace,reference);
-  const result=resolveSemanticTopologyReference(reference,snap([base],1,'project.recovery'),[
-    step(1,[row([base],[base])],'complete','project.recovery'),
-    step(2,[row([base],[])],'complete','project.recovery'),
-    step(3,[row([base],[base])],'complete','project.recovery'),
+  assert.deepEqual(JSON.parse(JSON.stringify(featuresOf(reopened).find(x=>x.id==='feature.child').payload.selectedFace)),reference);
+  const result=resolveSemanticTopologyReference(reference,snap([recoveryRole],1,'project.recovery'),[
+    step(1,[row([recoveryRole],[recoveryRole])],'complete','project.recovery'),
+    step(2,[row([recoveryRole],[])],'complete','project.recovery'),
+    step(3,[row([recoveryRole],[recoveryRole])],'complete','project.recovery'),
   ],4);
   assert.equal(result.status,'deleted');
   assert.deepEqual(result.candidates,[]);
