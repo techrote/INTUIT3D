@@ -157,3 +157,60 @@ semantics and derived planning only. No geometric solution, STEP identity
 validation or browser storage atomicity is implied. This interface is additive
 to v1 journal serialization and uses the existing TypeScript package; shared
 workspace/CI and consumer integration remain Integration-owned.
+
+
+## Self-contained archive, checked recovery and explicit undo checkpoint (v1 additive subpath)
+
+Import `createModelArchive`, `serializeModelArchive`,
+`deserializeModelArchive`, `inspectModelArchiveRecovery` and
+`checkpointUndoHistory` from `@intuit3d/model/archive`. The
+`intuit3d.model-archive` v1 format contains **one complete authoritative
+document plus its undo/redo session**. It does not store meshes, native B-rep,
+solved geometry or a STEP-validity assertion.
+
+Example consumer flow:
+
+```ts
+import {
+  createModelArchive, serializeModelArchive, deserializeModelArchive,
+  checkpointUndoHistory, inspectModelArchiveRecovery,
+} from '@intuit3d/model/archive';
+import {serializeUndoHistory} from '@intuit3d/model/transactions';
+
+const text = serializeModelArchive(createModelArchive(session));
+// The application must write 'text' via a crash-atomic local replacement.
+// Neither this package nor localStorage makes disk writes atomic.
+const reopened = deserializeModelArchive(text);
+const preview = inspectModelArchiveRecovery(primaryText, backupText);
+// Admit preview.primary only when preview.status === 'primary_current'.
+// backup_recovery, backup_ahead, history_ambiguity and diverged require
+// explicit review before replacing the authoritative document.
+const savedSession = serializeUndoHistory(reopened.history);
+const afterExplicitCheckpoint = checkpointUndoHistory(
+  reopened.history, savedSession, 'discard-undo-redo'
+);
+```
+
+A checkpoint **discards only undo/redo frames**, requiring an exact full-session
+snapshot fence and an explicit destructive-history acknowledgement. It retains
+the *entire* append-only journal, original feature identities and revisions.
+This allows new edit groups when the 256-frame limit is reached without silently
+dropping undo history or rewriting source events. The original saved archive may
+still be retained for an intentional historical restore.
+
+`inspectModelArchiveRecovery(primary, backup)` checks both candidate sources
+independently, refuses unknown formats, invalid journals and mismatched session
+fences, and compares same-project journals by exact append-only prefix.
+A newer backup is **not** silently made current; torn-primary restoration is
+labelled `backup_recovery`; same-journal but incompatible undo stacks are
+`history_ambiguity`; divergent branches remain `diverged`.
+
+**Limitations:** serialization is a one-unit logical snapshot, **not** an
+atomic filesystem API, secure signature, concurrent multi-tab CAS, history
+compaction or interchange proof. The v1 JSON archive is bounded to 32 MiB
+of UTF-8; larger projects require another explicitly versioned storage format.
+A caller must save with a platform-appropriate temporary-file + fsync/rename
+protocol (or a separately qualified browser persistence transaction), preserve
+the previous good archive, validate after reopening, and present recovery
+candidate status to the user before adoption. No current-state geometry claim
+is implied by a successfully restored journal.
