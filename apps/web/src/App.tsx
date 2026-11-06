@@ -10,6 +10,7 @@ import {
   RecoveryWriteConflict, captureRecoverySnapshot, guardedRecoveryMutation, sameRecoverySnapshot,
   type RecoverySnapshot,
 } from './recoveryFence';
+import { evaluateDimensionExpression } from './dimensionExpression';
 import { SketchViewport } from './components/SketchViewport';
 import { SolidViewport } from './components/SolidViewport';
 import './styles.css';
@@ -41,22 +42,45 @@ function Glyph({ name, size = 18 }: { name: string; size?: number }) {
 
 function ParameterEditor({ name, value, onCommit }: { name: DimensionKey; value: number; onCommit: (key: DimensionKey, value: number) => void }) {
   const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
+  const [error, setError] = useState<string | null>(null);
+  // blur fires synchronously from Escape. A ref prevents committing the old
+  // draft from the previous render before React flushes setDraft.
+  const cancelNextBlur = useRef(false);
+  useEffect(() => { setDraft(String(value)); setError(null); }, [value]);
   const commit = () => {
-    const next = Number(draft);
-    if (draft.trim() && Number.isFinite(next)) onCommit(name, next);
-    else setDraft(String(value));
+    if (cancelNextBlur.current) { cancelNextBlur.current = false; return; }
+    try {
+      const next = evaluateDimensionExpression(draft);
+      onCommit(name, next);
+      setDraft(String(next)); // calculations are NOT persisted parameter expressions
+      setError(null);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Unsupported preview expression');
+      // Leave rejected text visible so the user can repair it. No model write.
+    }
   };
   return (
-    <label className="parameter-row">
-      <span>{PARAMETER_LABELS[name]}</span>
-      <span className="parameter-input-wrap">
-        <input type="number" value={draft} step="any" aria-label={PARAMETER_LABELS[name]}
-          onChange={(event) => setDraft(event.target.value)} onBlur={commit}
-          onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') { setDraft(String(value)); event.currentTarget.blur(); } }} />
-        <span>mm</span>
-      </span>
-    </label>
+    <div className="parameter-editor">
+      <label className="parameter-row">
+        <span>{PARAMETER_LABELS[name]}</span>
+        <span className="parameter-input-wrap">
+          <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false}
+            value={draft} maxLength={256} aria-label={PARAMETER_LABELS[name]}
+            aria-invalid={error !== null} aria-describedby={error ? 'expression-error-' + name : undefined}
+            title="Preview calculator: arithmetic, mm, cm, in. Evaluated number only, not a parametric binding."
+            onChange={(event) => { setDraft(event.target.value); setError(null); }} onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur();
+              if (event.key === 'Escape') {
+                cancelNextBlur.current = true;
+                setDraft(String(value)); setError(null); event.currentTarget.blur();
+              }
+            }} />
+          <span>mm</span>
+        </span>
+      </label>
+      {error && <span className="parameter-error" role="alert" id={'expression-error-' + name}>{error}. No dimension was changed.</span>}
+    </div>
   );
 }
 
@@ -282,7 +306,7 @@ export default function App() {
         <aside className="sidepanel inspector-panel" aria-label="Feature inspector">
           <div className="panel-heading"><span>INSPECTOR</span><Glyph name="layers" size={17}/></div>
           <div className="inspector-feature"><small>SELECTED FEATURE</small><strong>{features.find((f) => f.id === selected)?.label || 'Plate extrusion'}</strong><span>{selected}</span></div>
-          <div className="inspector-section"><div className="section-head">PARAMETERS <span>mm</span></div>{(Object.keys(PARAMETER_LABELS) as DimensionKey[]).map((key) => <ParameterEditor key={key} name={key} value={param[key]} onCommit={update} />)}<p className="microcopy">Dimensions are local preview intent. A complete drag is one undoable edit; Esc cancels it. No OCCT constraint solve or B-rep evaluation has run.</p></div>
+          <div className="inspector-section"><div className="section-head">PARAMETERS <span>mm</span></div>{(Object.keys(PARAMETER_LABELS) as DimensionKey[]).map((key) => <ParameterEditor key={key} name={key} value={param[key]} onCommit={update} />)}<p className="microcopy">Preview calculator accepts arithmetic and mm/cm/in (e.g. 1in + 5mm). Only the computed number is saved, never an expression binding. Esc discards an editor draft. No OCCT constraint solve or B-rep evaluation has run.</p></div>
           <div className="inspector-section diagnostics"><div className="section-head">EVALUATION <span>{problems.length ? `${problems.length} issue(s)` : 'No local intent errors'}</span></div>
             {problems.length ? problems.map((problem) => <div className="diagnostic-entry" key={`${problem.code}:${problem.featureId}`}><Glyph name="alert" size={16}/><span>{problem.message}</span></div>) : <div className="diagnostic-clean"><Glyph name="check" size={16}/> Preview-input validation passed. Exact geometry remains unqualified.</div>}
             {workspace.document.futureReference && <button className="resolve-button" onClick={() => dispatch({ kind: 'resolve-reference', enabled: !workspace.document.referenceResolved })}>{workspace.document.referenceResolved ? 'Mark datum unresolved' : 'Resolve forward datum'}</button>}

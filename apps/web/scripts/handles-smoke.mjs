@@ -112,6 +112,32 @@ async function main() {
   await screenshot('02-sketch.png');
   check(await numberValue('Plate width') === '120', 'Unexpected initial width');
 
+  // Real browser keyboard entry: unit arithmetic is preview-only, invalid input
+  // must not change the model, Escape must not commit stale onBlur text.
+  check(await evaluate("(() => {const e=document.querySelector('input[aria-label=\"Plate width\"]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'Dimension editor cannot focus');
+  await send('Input.insertText', { text: '1in + 95mm' });
+  await key('Enter', 'Enter', 13);
+  await eventually(async () => (await numberValue('Plate width')) === '120.4', 'unit expression commit');
+  check((await revision()).includes('1'), 'Valid arithmetic should make one preview revision');
+  check(await evaluate("(() => {const e=document.querySelector('input[aria-label=\"Plate width\"]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'Dimension editor cannot refocus');
+  await send('Input.insertText', { text: '1cm/0' });
+  await key('Enter', 'Enter', 13);
+  await eventually(async () => evaluate("Boolean(document.querySelector('#expression-error-width[role=alert]'))"), 'invalid arithmetic shown inline');
+  check(await numberValue('Plate width') === '1cm/0', 'Invalid arithmetic text must remain repairable');
+  check((await revision()).includes('1'), 'Invalid arithmetic must not change journal revision');
+  await screenshot('02a-invalid-expression.png');
+  check(await evaluate("(() => {const e=document.querySelector('input[aria-label=\"Plate width\"]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'Invalid draft cannot be selected for cancellation');
+  await send('Input.insertText', { text: '2mm' });
+  await key('Escape', 'Escape', 27);
+  await eventually(async () => (await numberValue('Plate width')) === '120.4', 'Escape must discard draft without blur commit');
+  check((await revision()).includes('1'), 'Escape must preserve original revision');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(el=>el.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'Undo button unavailable after calculator edit');
+  await eventually(async () => (await numberValue('Plate width')) === '120', 'calculator undo restore');
+
   // Real cursor movement must show a visual snap at the sketch origin, without
   // creating a dimension edit or claiming an authored solver constraint.
   const originScreen = await evaluate(`(() => {
