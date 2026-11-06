@@ -137,6 +137,18 @@ async function main() {
   check(await numberValue('Plate width') === '1cm/0', 'Invalid arithmetic text must remain repairable');
   check((await revision()).includes('1'), 'Invalid arithmetic must not change journal revision');
   await screenshot('02a-invalid-expression.png');
+  // Binary64 must not silently discard a nonzero dimensional increment.
+  check(await evaluate("(() => {const e=document.querySelector('input[aria-label=\"Plate width\"]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'Invalid calculator draft cannot be repaired');
+  await send('Input.insertText', { text: '120.4mm + 1e-15mm' });
+  await key('Enter', 'Enter', 13);
+  await eventually(async () => evaluate(
+    "document.querySelector('#expression-error-width[role=alert]')?.textContent?.includes('lost a nonzero operand')"
+  ), 'precision loss must be diagnosed rather than silently committed');
+  check((await revision()).includes('1'), 'Rounded-away dimension edit must not author a revision');
+  check(await numberValue('Plate width') === '120.4mm + 1e-15mm',
+    'Precision-loss expression must remain editable after rejection');
+  await screenshot('02b-precision-loss.png');
   check(await evaluate("(() => {const e=document.querySelector('input[aria-label=\"Plate width\"]');e?.focus();e?.select();return document.activeElement===e})()"),
     'Invalid draft cannot be selected for cancellation');
   await send('Input.insertText', { text: '2mm' });
@@ -316,11 +328,12 @@ async function main() {
     missingAndSingularSvgProjectionFailClosed: true,
     previewUnitExpressionCommittedAndUndoable: true,
     invalidExpressionRejectedWithoutRevision: true,
+    roundedAwayDimensionEditRejectedWithoutRevision: true,
     expressionEscapeAbandonedUncommittedEdit: true,
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png'],
+    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png'],
     limits: 'Preview only; no SKETCH solver, exact B-rep/OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');

@@ -109,7 +109,23 @@ export function evaluateDimensionExpression(source: string): number {
       if (lhs.exponent !== rhs.exponent && !([lhs.exponent, rhs.exponent].every(x => x === 0 || x === 1))) {
         throw new Error('Incompatible units in dimension expression');
       }
-      lhs = checked(lhs.value + sign * rhs.value, Math.max(lhs.exponent, rhs.exponent));
+      const sum = lhs.value + sign * rhs.value;
+      // A rounded-away addend is not a successful precision edit. This can
+      // otherwise silently make an intentional micrometre/sub-ULP adjustment
+      // look like a valid no-op in the preview inspector.
+      if (lhs.value !== 0 && rhs.value !== 0 &&
+          (Object.is(sum, lhs.value) || Object.is(sum, sign * rhs.value))) {
+        throw new Error('Dimension arithmetic lost a nonzero operand at binary64 preview precision');
+      }
+      // Catastrophic cancellation can produce a tiny, nonzero *but unreliable*
+      // residual from two large rounded operands. Reject the near-ULP band;
+      // exact cancellation (zero) remains a valid explicitly requested value.
+      if (lhs.value !== 0 && rhs.value !== 0 && sum !== 0 &&
+          Math.sign(lhs.value) !== Math.sign(sign * rhs.value) &&
+          Math.abs(sum) <= 8 * Number.EPSILON * Math.max(Math.abs(lhs.value), Math.abs(rhs.value))) {
+        throw new Error('Dimension subtraction has unresolved binary64 preview cancellation');
+      }
+      lhs = checked(sum, Math.max(lhs.exponent, rhs.exponent));
     }
     return lhs;
   };

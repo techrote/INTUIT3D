@@ -27,6 +27,35 @@ for (const source of [
     assert.throws(() => mm(source), Error);
   });
 }
+for (const source of [
+  '120mm + 1e-15mm',
+  '1e-15mm + 120mm',
+  '120mm - 1e-15mm',
+  '-120mm + 1e-15mm',
+  '1e-300mm + 1e-320mm',
+  '1e-320mm + 1e-300mm',
+]) {
+  test('rejects a nonzero length silently lost by binary64 arithmetic: ' + source, () => {
+    assert.throws(() => mm(source), /lost a nonzero operand/);
+  });
+}
+for (const source of [
+  '1e9mm - 999999999.9999999mm',
+  '999999999.9999999mm - 1e9mm',
+]) {
+  test('rejects cancellation below the declared binary64 preview resolution: ' + source, () => {
+    assert.throws(() => mm(source), /unresolved binary64 preview cancellation/);
+  });
+}
+test('preserves genuine zero operands, exact cancellation, and resolvable fine edits', () => {
+  assert.equal(mm('120mm + 0'), 120);
+  assert.equal(mm('0 + 120mm'), 120);
+  assert.equal(mm('2mm - 2mm'), 0);
+  assert.equal(mm('1e-300mm - 1e-300mm'), 0);
+  assert.equal(mm('1e9mm - 999999mm'), 1000);
+  assert.ok(mm('120mm + 0.001mm') > 120);
+});
+
 test('negative, zero, and beyond-plate-budget values remain editable scalar intent', () => {
   assert.equal(mm('-2mm'), -2);
   assert.equal(mm('0'), 0);
