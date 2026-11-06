@@ -1,4 +1,5 @@
 import {validateSketch, serializeSketch, solveSketch, buildPlateProfile} from './index.mjs';
+import {assessCircularProfile} from './circle-guard.mjs';
 
 /**
  * Deterministic profile inference for v1 *linear* sketch geometry.
@@ -150,21 +151,15 @@ export function discoverPlateProfiles(source,options={}) {
       continue;
     }
     const polygon=ordered.map(e=>points.get(e.start));
-    const holeIds=[];
-    let hazard=null;
-    for (const circle of solved.geometry.circles.slice().sort((a,b)=>compare(a.id,b.id))) {
+    const circular = assessCircularProfile(polygon,solved.geometry.circles.map(circle => {
       const center=points.get(circle.center);
-      const boundaryDistance=distanceToBoundary(center,polygon);
-      if (boundaryDistance===null) {hazard='unverifiable_boundary_distance';break;}
-      if (boundaryDistance<=circle.radius) {
-        hazard='circle_touches_or_crosses_boundary:'+circle.id;break;
-      }
-      if (pointInside(center,polygon)) holeIds.push(circle.id);
-    }
-    if (hazard) {
-      rejected.push({id,lineIds,reason:'ambiguous_circle_contact',detail:hazard});
+      return {id:circle.id,x:center.x,y:center.y,radius:circle.radius};
+    }));
+    if (circular.status !== 'verified') {
+      rejected.push({id,lineIds,reason:'ambiguous_circle_contact',detail:circular.reason});
       continue;
     }
+    const holeIds=circular.insideIds;
     try {
       // Reuse the existing independently re-solved analytic-profile gate,
       // including self-intersection, circle overlap and finite-area checks.
