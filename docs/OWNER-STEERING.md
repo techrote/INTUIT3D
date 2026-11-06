@@ -1,12 +1,12 @@
 # INTUIT3D — Owner Steering & Programme Assessment
 
-**Status:** Live project authority and intake protocol. **Maintainer:** INTEGRATION & QA. **Readers:** all five permanent hourly lanes at the start of every run.
+**Status:** Live project authority and intake protocol. **Maintainer:** INTEGRATION & QA. **Readers:** all six permanent hourly lanes at the start of every run.
 
 ## Purpose
 
-Provide one durable, project-wide interface between the repository owner and a continuously operating five-lane engineering workforce. The owner may discuss progress, feature direction, UX, architecture and priorities with Integration & QA. The integration worker captures decisions in this document and/or linked GitHub issues/ADRs, ensures they are discoverable and assesses whether the real product meets the owner's intent.
+Provide one durable, project-wide interface between the repository owner and a continuously operating six-lane engineering workforce. The owner may discuss progress, feature direction, UX, architecture and priorities with Integration & QA. The integration worker captures decisions in this document and/or linked GitHub issues/ADRs, ensures they are discoverable and assesses whether the real product meets the owner's intent.
 
-This is **not** a central work planner. INTENT, SKETCH, KERNEL and WORKBENCH continue to choose, prototype, implement and qualify independent dependency-ready tasks inside their scopes. INTEGRATION keeps code/CI coherent, qualifies/merges admissible PRs and records owner guidance. It must not spawn, pause or redirect other scheduled tasks.
+This is **not** a central work planner. INTENT, SKETCH, KERNEL, WORKBENCH and RUNTIME continue to choose, prototype, implement and qualify independent dependency-ready tasks inside their scopes. INTEGRATION keeps code/CI coherent, qualifies/merges admissible PRs and records owner guidance. It must not spawn, pause or redirect other scheduled tasks.
 
 ## Authority and classification
 
@@ -35,9 +35,19 @@ Owner input can be committed here by a repository maintainer acting on explicit 
 | ST-001 | Accepted founding direction | Prioritise a local-first, comprehensive Fusion-inspired CAD UX with strong direct manipulation, precise parametric tools, flexible handling of unconventional modelling operation order, retrospective constraints and recoverable errors. | Product-wide; docs/PRODUCT.md, docs/ARCHITECTURE.md and acceptance flows |
 | ST-002 | Accepted founding direction | Pursue ambitious, rapid, predominantly agentic development through five **permanent fixed scheduled** lanes; no central task planner or spawn/stop/successor orchestration. | docs/ORCHESTRATION.md, AGENTS.md, SCHEDUSWARM.md |
 | ST-003 | Accepted founding direction | Continuously examine radiCADSAC and other research tangents; promote qualified prototypes into functioning product capabilities or retain reproducible negative evidence. | docs/RESEARCH-INTAKE.md and linked PRs |
-| ST-004 | Accepted owner steering interface | Use INTEGRATION & QA for holistic status assessment and guidance intake; write consequential direction into shared GitHub authority accessible to all five lanes. Integration is not a dispatcher. | This file, docs/ORCHESTRATION.md and startup audits |
+| ST-004 | Accepted owner steering interface | Use INTEGRATION & QA for holistic status assessment and guidance intake; write consequential direction into shared GitHub authority accessible to every lane. Integration is not a dispatcher. | This file, docs/ORCHESTRATION.md and startup audits |
+| ST-005 | **Accepted owner decision, 2026-11-06** | Expand from five to **six** independent fixed hourly lanes by adding Workflow Runtime. Historical ST-002's *count* is superseded; its no-dispatch principle remains. | [Owner-approved issue #49](https://github.com/techrote/INTUIT3D/issues/49), `packages/workflow-runtime/**` only; original five ownership boundaries and single Integration merge authority unchanged |
 
 These entries record the owner's already stated project objectives; they do **not** claim any feature is implemented, tested or released. Newly accepted decisions receive a new stable ID, date and issue/ADR reference when available.
+
+### ST-005 — Sixth permanent Workflow Runtime lane
+
+- **Recorded on:** 2026-11-06 (Europe/London).
+- **Source:** [Owner-approved sixth worker, issue #49](https://github.com/techrote/INTUIT3D/issues/49).
+- **Classification:** accepted owner decision; supersedes only the original five-lane count in ST-002, not the fixed independent/no-central-planner approach.
+- **Exact scope:** dedicated `packages/workflow-runtime/**` worker bridging authoritative model commands, real sketch solving and kernel-provider evidence through additive versioned APIs. Existing INTENT/SKETCH/KERNEL/WORKBENCH/INTEGRATION writers remain unchanged; shared root, CI and policy stay Integration-owned.
+- **Verifiable acceptance:** revision-fenced semantic and solver replay, explicit pending/ambiguous/stale/approximate/validated-exact states with provenance, negative tests preventing fabricated B-rep/STEP claims, and independent Integration admission. See #49 for complete conditions.
+- **Not authorized here:** any schedule changes by Integration, dispatcher activation or automatic task succession. Production OCCT 8.0.1 C++, cross-platform native, independent STEP and human UX remain unqualified.
 
 ## Intake entry template
 
@@ -71,7 +81,7 @@ Every important recommendation should be grounded in reproducible findings; do n
 
 ## Dissemination / execution semantics
 
-All five worker prompts and AGENTS.md require rereading this document at run start. Accepted directives guide each lane's autonomous priorities. An owner-approved cross-lane feature may generate independently owned linked issues; no shared file or developer branch becomes a free-for-all. INTEGRATION handles shared source/contracts and merges after appropriate qualification.
+All six worker prompts and AGENTS.md require rereading this document at run start. Accepted directives guide each lane's autonomous priorities. An owner-approved cross-lane feature may generate independently owned linked issues; no shared file or developer branch becomes a free-for-all. INTEGRATION handles shared source/contracts and merges after appropriate qualification.
 
 **Steering is not scheduling**: don't create new automations, invoke run-now, reschedule, enable Scheduswarm dispatch or block independent work while waiting for a planning session. If the user separately asks for those actions, treat them as an explicit new request.
 
