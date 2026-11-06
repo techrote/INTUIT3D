@@ -19,6 +19,10 @@
     "./incremental": {
       "types": "./src/incremental.ts",
       "default": "./src/incremental.ts"
+    },
+    "./transactions": {
+      "types": "./src/transactions.ts",
+      "default": "./src/transactions.ts"
     }
   },
   "scripts": {

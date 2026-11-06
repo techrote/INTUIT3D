@@ -43,7 +43,7 @@ From `packages/model`: `npm test` (Node >=22.6 with TypeScript strip support) an
 - No evaluator executes B-rep geometry; `ready` means **dependency-admissible**, not a physically valid solid or exported STEP.
 - The structural `writeTargets` contract conservatively refuses unordered writes; it does not determine geometric commutativity. Future intent schema must distinguish declared independent/commutative operations using separately justified evidence.
 - Journal revision fencing is optimistic within a single project document. Durable filesystem atomic save / multi-user merge / crash recovery need an independent storage transaction.
-- v1 has full replay and explicit remove/restore but no user-level undo stack, schema migration, parameter expression evaluation, topology ancestry or incremental diff cache yet. Add these in scoped tested revisions without silently changing existing v1 document meaning.
+- The v1 core journal does not itself persist a user-level undo stack; the additive `transactions` subpath provides a versioned, explicit undo-history sidecar. Schema migration and durable filesystem-level atomic persistence are not yet implemented. Parameter evaluation, topology lineage and structural incremental invalidation are separate derived v1 subpaths.
 
 ## Dimension-aware user parameters (v1 additive subpath)
 
@@ -119,3 +119,41 @@ version, kernel tolerances/options, feature input signatures, and any material
 data external to the semantic dependency graph. Missing explicit dependency
 edges are a contract defect; provider provenance cannot be silently invented
 here. Full replay remains the safe fallback on cache uncertainty or rejection.
+
+
+## Transactional speculative commands + durable undo/redo (v1 additive subpath)
+
+Import from \`@intuit3d/model/transactions\`. \`previewTransaction(doc, events,
+expectedRevision)\` validates a **whole 1–64 event group** against the same
+append-only semantic journal and returns its projected document, derived
+dependency plan and compensating commands. The caller's document never changes;
+a missing dependency remains pending and an unordered write remains conflicted.
+\`commitTransaction\` returns the accepted immutable document or throws without
+partial commits.
+
+For user-visible undo/redo, \`startUndoHistory(project)\` creates a versioned
+\`intuit3d.undo-history\` v1 session. \`commitUndoableTransaction\` groups user
+events atomically and records their inverse semantic commands. Use
+\`undoTransaction(session, freshEventIds, expectedRevision)\` and
+\`redoTransaction(...)\` to append new, validated remove/restore/edit events
+rather than rewinding the journal. Undo of a creation removes its feature;
+redo restores its existing semantic ID, **never** calls create a second time.
+An undo of an edit records the *previous authored fields*, including units,
+references, payload and declared targets, not cached geometry. New user edits
+clear the redo stack. Save/reopen the entire session with
+\`serializeUndoHistory\` and \`deserializeUndoHistory\`.
+
+The caller must allocate a unique semantic **event ID for each inverse event**
+(typically one ID per item in the most recent stack frame). The library refuses
+missing/reused IDs, revision mismatches, bad command metadata and unsupported
+versions. The persisted exact-document fence detects mismatched sidecar/history
+state on reopen; it is neither a cryptographic signature nor an atomic
+cross-tab filesystem lock. There is an explicit 256-group retention ceiling,
+not an undocumented truncation policy. Consumers must checkpoint/archive on
+reaching that limit; no event is silently dropped.
+
+**Qualified scope:** application-owned feature.create/edit/remove/restore
+semantics and derived planning only. No geometric solution, STEP identity
+validation or browser storage atomicity is implied. This interface is additive
+to v1 journal serialization and uses the existing TypeScript package; shared
+workspace/CI and consumer integration remain Integration-owned.
