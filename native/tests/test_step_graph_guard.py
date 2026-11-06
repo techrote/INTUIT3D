@@ -61,33 +61,36 @@ class RealOCCTGraphTests(unittest.TestCase):
         verify_step_graph(self.body, expected_holes=2)
 
     def test_unbound_cylinder_after_face_surface_repoint_is_rejected(self):
-        body = re.sub(r'(#\d+ = ADVANCED_FACE\([^;]*?,)#(\d+)(,\.[TF]\.\);)',
-                      lambda m: m.group(1) + '#32' + m.group(3) if '#282' in m.group(0) else m.group(0),
-                      self.body, count=0, flags=re.S)
-        self.assertNotEqual(body, self.body)
+        cylinders = set(re.findall(r'#(\d+)\s*=\s*CYLINDRICAL_SURFACE\(', self.body))
+        plane = re.search(r'#(\d+)\s*=\s*PLANE\(', self.body).group(1)
+        faces = re.finditer(r'(#\d+\s*=\s*ADVANCED_FACE\([^;]*?,)#(\d+)(,\.[TF]\.\);)', self.body, re.S)
+        matched = next(face for face in faces if face.group(2) in cylinders)
+        bad = self.body[:matched.start(2)] + plane + self.body[matched.end(2):]
         with self.assertRaisesRegex(ValueError, 'cylindrical'):
-            verify_step_graph(body, expected_holes=2)
+            verify_step_graph(bad, expected_holes=2)
 
-    def test_dangling_reference_is_rejected(self):
+        def test_dangling_reference_is_rejected(self):
         bad = re.sub(r'(#\d+ = MANIFOLD_SOLID_BREP\([^;]*?)#\d+', r'\g<1>#999999', self.body, count=1)
         self.assertNotEqual(bad, self.body)
         with self.assertRaisesRegex(ValueError, 'dangling'):
             verify_step_graph(bad, expected_holes=2)
 
     def test_extra_orphan_face_is_rejected(self):
-        bad = self.body + "\n#99999 = ADVANCED_FACE('',(#18),#32,.T.);\n"
+        face = re.search(r'#\d+\s*=\s*ADVANCED_FACE\([^;]+;', self.body, re.S).group(0)
+        bad = self.body + "\n" + re.sub(r'^#\d+', '#99999', face)
         with self.assertRaisesRegex(ValueError, 'orphan advanced face'):
             verify_step_graph(bad, expected_holes=2)
 
-    def test_mm_unit_declaration_not_sufficient_if_unbound(self):
-        match = re.search(r'(#\d+ = \( GEOMETRIC_REPRESENTATION_CONTEXT\(3\)[^;]*?GLOBAL_UNIT_ASSIGNED_CONTEXT\s*\(\()#(\d+)', self.body, re.S)
+        def test_mm_unit_declaration_not_sufficient_if_unbound(self):
+        match = re.search(r'GLOBAL_UNIT_ASSIGNED_CONTEXT\s*\(\(#(\d+),#(\d+)', self.body, re.S)
         self.assertIsNotNone(match)
-        bad = self.body[:match.start(2)] + '515' + self.body[match.end(2):]
+        bad = self.body[:match.start(1)] + match.group(2) + self.body[match.end(1):]
         with self.assertRaisesRegex(ValueError, 'length unit'):
             verify_step_graph(bad, expected_holes=2)
 
-    def test_orphan_cylinder_entity_rejected(self):
-        bad = self.body + "\n#99999 = CYLINDRICAL_SURFACE('',#283,6.);\n"
+        def test_orphan_cylinder_entity_rejected(self):
+        cylinder = re.search(r'#\d+\s*=\s*CYLINDRICAL_SURFACE\([^;]+;', self.body, re.S).group(0)
+        bad = self.body + "\n" + re.sub(r'^#\d+', '#99999', cylinder)
         with self.assertRaisesRegex(ValueError, 'cylindrical'):
             verify_step_graph(bad, expected_holes=2)
 
