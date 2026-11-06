@@ -163,3 +163,33 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
   transform: translateX(-50%); max-width: min(560px, 94vw); padding: 11px 14px;
   border: 1px solid #bc7a58; border-radius: 7px; background: #442e2c;
   color: #ffe3ce; font-size: 12px; box-shadow: 0 8px 25px #0009; }
+
+/* Camera-projected extrusion gizmo: an explicit PREVIEW control, not a B-rep face. */
+.solid-preview-canvas { position: relative; }
+.solid-thickness-handle {
+  position: absolute;
+  left: -100px;
+  top: -100px;
+  visibility: hidden;
+  transform: translate(-50%, -50%);
+  width: 34px;
+  height: 34px;
+  border: 2px solid #fff2bf;
+  border-radius: 50%;
+  background: #725c2d;
+  box-shadow: 0 0 0 5px #202b38aa, 0 4px 15px #050c19cc;
+  color: #fff2bf;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: ns-resize;
+  z-index: 3;
+  touch-action: none;
+  user-select: none;
+}
+.solid-thickness-handle:hover, .solid-thickness-handle:focus-visible {
+  background: #9d7b2e;
+  outline: 3px solid #6cdad7;
+  outline-offset: 3px;
+}
+.solid-thickness-handle[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
