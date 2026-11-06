@@ -43,6 +43,7 @@ function Glyph({ name, size = 18 }: { name: string; size?: number }) {
 function ParameterEditor({ name, value, onCommit }: { name: DimensionKey; value: number; onCommit: (key: DimensionKey, value: number) => void }) {
   const [draft, setDraft] = useState(String(value));
   const [error, setError] = useState<string | null>(null);
+  const [calculatorMode, setCalculatorMode] = useState(false);
   // blur fires synchronously from Escape. A ref prevents committing the old
   // draft from the previous render before React flushes setDraft.
   const cancelNextBlur = useRef(false);
@@ -54,6 +55,7 @@ function ParameterEditor({ name, value, onCommit }: { name: DimensionKey; value:
       onCommit(name, next);
       setDraft(String(next)); // calculations are NOT persisted parameter expressions
       setError(null);
+      setCalculatorMode(false);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Unsupported preview expression');
       // Leave rejected text visible so the user can repair it. No model write.
@@ -64,7 +66,7 @@ function ParameterEditor({ name, value, onCommit }: { name: DimensionKey; value:
       <label className="parameter-row">
         <span>{PARAMETER_LABELS[name]}</span>
         <span className="parameter-input-wrap">
-          <input type="text" inputMode="decimal" autoComplete="off" spellCheck={false}
+          <input type={calculatorMode ? "text" : "number"} inputMode="decimal" autoComplete="off" spellCheck={false}
             value={draft} maxLength={256} aria-label={PARAMETER_LABELS[name]}
             aria-invalid={error !== null} aria-describedby={error ? 'expression-error-' + name : undefined}
             title="Preview calculator: arithmetic, mm, cm, in. Evaluated number only, not a parametric binding."
@@ -73,9 +75,14 @@ function ParameterEditor({ name, value, onCommit }: { name: DimensionKey; value:
               if (event.key === 'Enter') event.currentTarget.blur();
               if (event.key === 'Escape') {
                 cancelNextBlur.current = true;
-                setDraft(String(value)); setError(null); event.currentTarget.blur();
+                setDraft(String(value)); setError(null); setCalculatorMode(false); event.currentTarget.blur();
               }
             }} />
+          <button type="button" className={calculatorMode ? 'parameter-fx active' : 'parameter-fx'}
+            aria-label={'Use expression for ' + PARAMETER_LABELS[name]} aria-pressed={calculatorMode}
+            title="Toggle preview arithmetic entry (not a parametric binding)"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => { setCalculatorMode((current) => !current); setDraft(String(value)); setError(null); }}>fx</button>
           <span>mm</span>
         </span>
       </label>
@@ -306,7 +313,7 @@ export default function App() {
         <aside className="sidepanel inspector-panel" aria-label="Feature inspector">
           <div className="panel-heading"><span>INSPECTOR</span><Glyph name="layers" size={17}/></div>
           <div className="inspector-feature"><small>SELECTED FEATURE</small><strong>{features.find((f) => f.id === selected)?.label || 'Plate extrusion'}</strong><span>{selected}</span></div>
-          <div className="inspector-section"><div className="section-head">PARAMETERS <span>mm</span></div>{(Object.keys(PARAMETER_LABELS) as DimensionKey[]).map((key) => <ParameterEditor key={key} name={key} value={param[key]} onCommit={update} />)}<p className="microcopy">Preview calculator accepts arithmetic and mm/cm/in (e.g. 1in + 5mm). Only the computed number is saved, never an expression binding. Esc discards an editor draft. No OCCT constraint solve or B-rep evaluation has run.</p></div>
+          <div className="inspector-section"><div className="section-head">PARAMETERS <span>mm</span></div>{(Object.keys(PARAMETER_LABELS) as DimensionKey[]).map((key) => <ParameterEditor key={key} name={key} value={param[key]} onCommit={update} />)}<p className="microcopy">Select fx beside a dimension for preview arithmetic in mm/cm/in (e.g. 1in + 5mm). Only the computed number is saved, never an expression binding. Esc discards an editor draft. No OCCT constraint solve or B-rep evaluation has run.</p></div>
           <div className="inspector-section diagnostics"><div className="section-head">EVALUATION <span>{problems.length ? `${problems.length} issue(s)` : 'No local intent errors'}</span></div>
             {problems.length ? problems.map((problem) => <div className="diagnostic-entry" key={`${problem.code}:${problem.featureId}`}><Glyph name="alert" size={16}/><span>{problem.message}</span></div>) : <div className="diagnostic-clean"><Glyph name="check" size={16}/> Preview-input validation passed. Exact geometry remains unqualified.</div>}
             {workspace.document.futureReference && <button className="resolve-button" onClick={() => dispatch({ kind: 'resolve-reference', enabled: !workspace.document.referenceResolved })}>{workspace.document.referenceResolved ? 'Mark datum unresolved' : 'Resolve forward datum'}</button>}
