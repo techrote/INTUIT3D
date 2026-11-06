@@ -46,7 +46,8 @@ test('grid suggestion is explicitly visual and never claims feature identity', (
 
 test('disabled profile snaps do not advertise invalid plate/hole geometry', () => {
   const cursor = inferPreviewSketchCursor(layout, 628, 325, { allowProfileSnaps: false });
-  assert.equal(cursor.snap, null);
+  assert.equal(cursor.snap?.kind, 'grid');
+  assert.equal(cursor.snap?.featureId, null);
   const grid = inferPreviewSketchCursor(layout, 500, 325, { allowProfileSnaps: false });
   assert.equal(grid.snap?.kind, 'grid');
   assert.equal(grid.snap?.featureId, null);
