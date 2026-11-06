@@ -208,3 +208,29 @@ INTEGRATION must reconcile this exact source to #21 and run strict
 TypeScript, full browser interactions, screenshots and Ubuntu/Windows
 workspace gates before admission. No genuine sketch constraint, exact
 geometry or independent human usability acceptance is implied.
+
+## Interactive 3D extrusion preview thickness (WORKBENCH v1)
+
+The **↕** gizmo beside the polygonal plate in Solid view proposes an extrusion
+thickness by projecting the camera's world-Y axis into screen-space. Dragging the
+gizmo with the primary pointer button performs one undoable preview transaction;
+**Shift** changes snapping to 0.1 mm. Focus the gizmo and use **Arrow Up/Down**
+for keyboard editing. **Escape**, pointer cancellation, hiding the document or
+losing window focus abandon an uncommitted gesture. Camera-axis projection is
+frozen at pointer-down; an edge-on/invalid projection disables new direct edits
+rather than silently inventing a drag scale.
+
+An invalid proposal (including zero/negative thickness) remains in the editable
+preview intent, with an explicit blocked extrude and labelled stale last-good
+polygonal mesh; no mesh is silently promoted to current exact geometry.
+The viewport cannot author OCCT faces, topology IDs, SKETCH constraints, STEP
+data or exact B-rep extrusion. App-owned demo feature IDs and browser-local JSON
+are not the durable INTENT document. The projected axis is exposed on the HTML
+gizmo only for deterministic browser interaction tests.
+
+Deterministic source checks:
+`npm test --workspace @intuit3d/web`. The existing real Chromium CDP harness
+(`npm run test:browser:handles --workspace @intuit3d/web` after `npm run build`)
+now includes an actual rendered Three.js thickness drag, blur rollback, keyboard
+nudge, undo/redo and screenshot evidence. Browser execution and STEP/native
+geometry acceptance must be reported separately.
