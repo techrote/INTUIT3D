@@ -3,10 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": { "types": "./index.d.mts", "default": "./index.mjs" } },
+  "exports": {
+    ".": {
+      "types": "./index.d.mts",
+      "default": "./index.mjs"
+    },
+    "./drag-projection/v1": {
+      "types": "./drag-projection.d.mts",
+      "default": "./drag-projection.mjs"
+    }
+  },
   "types": "./index.d.mts",
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }
