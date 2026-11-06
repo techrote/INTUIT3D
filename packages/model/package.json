@@ -35,6 +35,10 @@
     "./dimension-edit": {
       "types": "./src/dimension-edit.ts",
       "default": "./src/dimension-edit.ts"
+    },
+    "./dimension-batch-edit": {
+      "types": "./src/dimension-batch-edit.ts",
+      "default": "./src/dimension-batch-edit.ts"
     }
   },
   "scripts": {
