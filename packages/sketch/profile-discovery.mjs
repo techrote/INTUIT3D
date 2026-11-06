@@ -132,7 +132,17 @@ export function discoverPlateProfiles(source,options={}) {
       return {id:circle.id,x:center.x,y:center.y,radius:circle.radius};
     }));
     if (circular.status !== 'verified') {
-      rejected.push({id,lineIds,reason:'ambiguous_circle_contact',detail:circular.reason});
+      // Preserve existing public diagnostic categories while upgrading their
+      // underlying predicates. Ambiguous perimeter contact differs from an
+      // invalid polygon or an overlap between fully enclosed holes.
+      const boundaryFailure=circular.reason?.startsWith('invalid_boundary:');
+      const overlap=circular.reason?.startsWith('circular_holes_touch_or_overlap:');
+      const reason=boundaryFailure||overlap?'profile_validation_failed':'ambiguous_circle_contact';
+      const detail=boundaryFailure
+        ? 'sketch boundary guard: '+circular.reason+
+          (circular.reason.includes('nonadjacent_intersection')?' (self-intersecting polygon)':'')
+        : overlap?'circular holes touch or overlap':circular.reason;
+      rejected.push({id,lineIds,reason,detail});
       continue;
     }
     const holeIds=circular.insideIds;
