@@ -41,12 +41,11 @@ class SupervisorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             marker = Path(tmp, 'escaped.step')
             fake = Path(tmp, 'orphan.py')
+            payload = f"import pathlib,time; time.sleep(0.6); pathlib.Path({str(marker)!r}).write_text('escaped')"
             fake.write_text(
-                'import subprocess, sys, time\\n'
-                'subprocess.Popen([sys.executable, "-c", '
-                '"import pathlib,time; time.sleep(0.6); pathlib.Path(\\\\\\"escaped.step\\\\\\").write_text(\\\\\\"escaped\\\\\\\")"], '
-                'cwd=sys.argv[sys.argv.index("--request")+1].rsplit("/",1)[0])\\n'
-                'time.sleep(5)\\n', encoding='utf-8')
+                "import subprocess,sys,time\n"
+                "subprocess.Popen([sys.executable, '-c', " + repr(payload) + "])\n"
+                "time.sleep(5)\n", encoding='utf-8')
             req = plate(); req['exportStep'] = False
             result = execute(req, worker=fake, timeout=0.16)
             self.assertEqual(result['status'], 'timeout')
@@ -57,7 +56,7 @@ class SupervisorTests(unittest.TestCase):
     def test_plate_supervisor_limits_crash_diagnostic_size(self):
         with tempfile.TemporaryDirectory() as tmp:
             fake = Path(tmp, 'noise.py')
-            fake.write_text('import sys\\nsys.stderr.write("x"*200000+"TAIL")\\nsys.exit(23)\\n')
+            fake.write_text("import sys\nsys.stderr.write('x'*200000+'TAIL')\nsys.exit(23)\n")
             req = plate(); req['exportStep'] = False
             result = execute(req, worker=fake, timeout=5)
             self.assertEqual(result['status'], 'worker_crash')
