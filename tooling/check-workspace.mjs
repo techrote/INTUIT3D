@@ -62,6 +62,20 @@ export function inspectNative(projectRoot = root) {
   return { kind: 'ready', command: 'bash native/ci.sh' };
 }
 
+/**
+ * Web's @types/three auto-registers an ambient WebGPU type absent from strict
+ * SKETCH-only declaration consumers. Isolate the SKETCH compiler's automatic
+ * type-package discovery instead of suppressing declaration checks or changing
+ * the lane-owned package script. Explicit SKETCH imports remain fully checked.
+ */
+export function workspacePhaseArgs(workspace, phase) {
+  const args = ['run', '--workspace', workspace.name, phase];
+  if (workspace.path === 'packages/sketch' && phase === 'typecheck') {
+    return [...args, '--', '--typeRoots', '../../tooling/contract-type-roots'];
+  }
+  return args;
+}
+
 function invoke(command, args, cwd = root, shell = false) {
   const result = spawnSync(command, args, { cwd, stdio: 'inherit', shell });
   if (result.error) throw result.error;
@@ -95,7 +109,7 @@ export function main(args = process.argv.slice(2)) {
         continue;
       }
       const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-      invoke(npm, ['run', '--workspace', workspace.name, phase], root, process.platform === 'win32');
+      invoke(npm, workspacePhaseArgs(workspace, phase), root, process.platform === 'win32');
       console.log(`EXECUTED: ${workspace.path} ${phase}`);
     }
   }

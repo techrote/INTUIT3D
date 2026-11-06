@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { inspectNative, inspectWorkspaces } from '../check-workspace.mjs';
+import { inspectNative, inspectWorkspaces, workspacePhaseArgs } from '../check-workspace.mjs';
 
 function withRepo(action) {
   const dir = mkdtempSync(join(tmpdir(), 'intuit3d-check-'));
@@ -43,3 +43,15 @@ test('native code requires an executable smoke entrypoint; never silently skips 
   writeFileSync(join(dir, 'native', 'ci.sh'), '#!/usr/bin/env bash\nset -euo pipefail\n');
   assert.equal(inspectNative(dir).kind, 'ready');
 }));
+
+
+test('strict sketch declaration typecheck isolates optional web ambient type packages', () => {
+  const sketch = { path: 'packages/sketch', name: '@intuit3d/sketch' };
+  const app = { path: 'apps/web', name: '@intuit3d/web' };
+  assert.deepEqual(workspacePhaseArgs(sketch, 'typecheck'), [
+    'run','--workspace','@intuit3d/sketch','typecheck','--',
+    '--typeRoots','../../tooling/contract-type-roots',
+  ]);
+  assert.deepEqual(workspacePhaseArgs(sketch, 'test'), ['run','--workspace','@intuit3d/sketch','test']);
+  assert.deepEqual(workspacePhaseArgs(app, 'typecheck'), ['run','--workspace','@intuit3d/web','typecheck']);
+});
