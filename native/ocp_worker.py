@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from protocol import validate_request, analytic_invariants, close
 from plate_envelope import require_plate_vertex_envelope_mm, vertex_envelope_mm
+from through_hole_guard import require_through_cylindrical_faces
 
 
 def solid_properties(shape) -> dict:
@@ -45,6 +46,10 @@ def solid_properties(shape) -> dict:
             cylinders.append({"x": centre.X(), "y": centre.Y(), "radius": cylinder.Radius(), "axisZ": axis.Z()})
         faces.Next()
     cylinders.sort(key=lambda h: (h["x"], h["y"], h["radius"]))
+    # A real blind micro-hole can pass area/volume, cylinder count and box
+    # extrema. Inspect the actual curved face boundary vertices before any
+    # producer or separate STEP reader may claim validated_exact.
+    require_through_cylindrical_faces(shape)
     return {"valid": is_valid, "solidCount": solid_count, "volumeMm3": volume_props.Mass(), "surfaceAreaMm2": area_props.Mass(), "cylindricalHoles": cylinders}
 
 
