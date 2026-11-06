@@ -4,6 +4,7 @@
  * Constraint dimensions and all coordinates are millimetres.
  */
 import { requireSimplePolygonBoundary } from './boundary-guard.mjs';
+import { assessCircularProfile } from './circle-guard.mjs';
 export const SKETCH_VERSION = 1;
 const DEFAULT_PIVOT_TOLERANCE = 1e-12;
 const DEFAULT_RESIDUAL_TOLERANCE_MM = 1e-9;
@@ -325,25 +326,20 @@ export function buildPlateProfile(sketchSource, solution, edgeIds, holeIds = [])
     if (!circle) fail(`unknown circular hole ${id}`);
     return { id, center: pts.get(circle.center), radius: circle.radius };
   });
-  for (const hole of holes) {
-    // Strict ray casting: boundary-touching is rejected by distance check.
-    let inside = false;
-    const p = hole.center;
-    for (let i = 0, j = count - 1; i < count; j = i++) {
-      const a = vertices[i], b = vertices[j];
-      if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x) inside = !inside;
-    }
-    if (!inside) fail(`hole ${hole.id} is outside profile`);
-    for (let i = 0; i < count; i++) {
-      const a = vertices[i], b = vertices[(i+1)%count];
-      const dx = b.x-a.x, dy = b.y-a.y;
-      const t = Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/(dx*dx+dy*dy)));
-      if (Math.hypot(a.x+t*dx-p.x,a.y+t*dy-p.y) <= hole.radius) fail(`hole ${hole.id} touches or crosses outer boundary`);
-    }
+  // Both circle-to-segment clearance and pairwise hole separation must
+  // use exact dyadic comparisons of the *encoded* input doubles. Squared
+  // floating distances underflow on microscopic edges and can accept contact.
+  const contact = assessCircularProfile(vertices, holes.map(h => ({
+    id:h.id, x:h.center.x, y:h.center.y, radius:h.radius
+  })));
+  if (contact.status !== 'verified') {
+    if (contact.reason?.startsWith('circle_touches_or_crosses_boundary:'))
+      fail('hole ' + contact.reason.split(':')[1] + ' touches or crosses outer boundary');
+    if (contact.reason?.startsWith('circular_holes_touch_or_overlap:'))
+      fail('circular holes touch or overlap');
+    fail('circle guard: ' + contact.reason);
   }
-  for (let i = 0; i < holes.length; i++) for (let j = i+1; j < holes.length; j++) {
-    if (Math.hypot(holes[i].center.x-holes[j].center.x,holes[i].center.y-holes[j].center.y) <= holes[i].radius+holes[j].radius) fail('circular holes touch or overlap');
-  }
+  if (contact.outsideIds.length) fail('hole ' + contact.outsideIds[0] + ' is outside profile');
   const areaMm2 = Math.abs(signedDoubleArea) / 2 - Math.PI * holes.reduce((sum,h) => sum + h.radius*h.radius, 0);
   if (!Number.isFinite(areaMm2) || areaMm2 <= 0) fail('nonpositive or nonfinite analytic area');
   return { status: 'analytic_profile_only', units: 'mm', outer: vertices.map(({id,x,y}) => ({id,x,y})),
