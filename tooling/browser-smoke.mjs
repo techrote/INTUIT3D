@@ -50,7 +50,7 @@ const evaluate = async (expression) => {
 async function main() {
   mkdirSync(artifactDir, { recursive: true });
   const vite = spawn('npm', ['run', 'preview', '--workspace', '@intuit3d/web',
-    '--', '--host', '127.0.0.1', '--port', '4173', '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    '--', '--host', '127.0.0.1', '--port', '4173', '--strictPort'], { stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
   owned.push(vite);
   let serverLog = '';
   vite.stdout.on('data', data => serverLog += data.toString());
@@ -64,7 +64,7 @@ async function main() {
     '--disable-background-networking', '--no-first-run', '--no-default-browser-check',
     '--window-size=1360,900', '--remote-debugging-port=0', '--user-data-dir=' + home,
     'about:blank'
-  ], { stdio: ['ignore', 'pipe', 'pipe'] });
+  ], { stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
   owned.push(chrome);
   let chromeLog = '';
   chrome.stderr.on('data', data => { chromeLog = (chromeLog + data.toString()).slice(-12000); });
@@ -141,7 +141,16 @@ main().catch(error => {
   process.exitCode = 1;
 }).finally(async () => {
   try { ws?.close(); } catch {}
-  for (const child of owned.reverse()) { try { child.kill('SIGKILL'); } catch {} }
+  for (const child of owned.reverse()) {
+    try {
+      if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
+      else child.kill('SIGKILL');
+    } catch { try { child.kill('SIGKILL'); } catch {} }
+    // Vite/npm children may inherit these stdio pipes after the npm leader exits.
+    // Always close them, otherwise the Node test process can hang on open handles.
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+  }
   await pause(100);
   try { rmSync(home, { recursive: true, force: true }); } catch {}
 });
