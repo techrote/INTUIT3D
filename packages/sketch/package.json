@@ -15,7 +15,8 @@
   },
   "types": "./index.d.mts",
   "scripts": {
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts"
   },
   "engines": {
     "node": ">=22"
