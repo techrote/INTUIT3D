@@ -108,3 +108,21 @@ authoritative INTENT persistence or STEP. The source is confined to
 `node --experimental-strip-types --test src/*.test.ts` includes ten new
 storage failure/corruption/restart scenarios. The full React/Vite browser gate
 remains required before merging while INTEGRATION reconciles the root lockfile.
+
+## Multiple-tab recovery collision guard (WORKBENCH-001 continuation)
+
+Recovery now captures the raw **current and previous** localStorage slots on
+mount and after each successful autosave. Before saving or discarding, a
+synchronous compare checks that neither slot has changed. A different tab's
+edit (or corruption) causes an explicit warning and **no attempted overwrite**;
+the current in-memory edits remain available for manual preview JSON export.
+A stale recovery dialog refuses to accept/discard an overwritten draft, and
+cross-tab `storage` events surface the conflict before the next edit.
+
+Seven executable tests exercise two-tab writes, divergent backup slots, stale
+discard, corrupt data, denied storage, quota failures and same-tab progression.
+This is **optimistic, best-effort preview data-loss prevention**, not atomic
+multi-tab compare-and-swap: localStorage does not offer an inter-tab transaction,
+so two simultaneous writes may still race between comparison and mutation.
+No authoritative INTENT journal, cross-session undo or CAD file durability is
+claimed. External preview JSON export remains the recovery fallback.

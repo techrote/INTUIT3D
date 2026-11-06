@@ -5,13 +5,19 @@ import {
   newWorkspace, PARAMETER_LABELS, parseDocument, previewDimensionGesture, redo, serializeDocument, undo,
   type Command, type DimensionKey, type Workspace,
 } from './model';
-import { discardRecovery, inspectRecovery, persistRecovery } from './recovery';
+import { discardRecovery, inspectRecovery, persistRecovery, RECOVERY_CURRENT_KEY, RECOVERY_PREVIOUS_KEY } from './recovery';
+import {
+  RecoveryWriteConflict, captureRecoverySnapshot, guardedRecoveryMutation, sameRecoverySnapshot,
+  type RecoverySnapshot,
+} from './recoveryFence';
 import { SketchViewport } from './components/SketchViewport';
 import { SolidViewport } from './components/SolidViewport';
 import './styles.css';
 
 type ViewMode = 'solid' | 'sketch';
 type BottomTab = 'chronology' | 'dependencies';
+const RECOVERY_KEYS = { current: RECOVERY_CURRENT_KEY, previous: RECOVERY_PREVIOUS_KEY } as const;
+const CONCURRENT_DRAFT_WARNING = 'Another workbench tab changed local recovery data. This tab\'s edits are still in memory but cannot overwrite the other draft. Export preview JSON before closing or reload to inspect the latest draft.';
 
 function Glyph({ name, size = 18 }: { name: string; size?: number }) {
   const common = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -71,7 +77,15 @@ export default function App() {
   const [notification, setNotification] = useState<string | null>(null);
   // A previous browser draft must be explicitly accepted or discarded before
   // any new autosave. Otherwise mounting the demo could overwrite recovery.
-  const [recovery, setRecovery] = useState(() => inspectRecovery(() => window.localStorage, parseDocument));
+  const [initialRecovery] = useState(() => {
+    const inspection = inspectRecovery(() => window.localStorage, parseDocument);
+    let snapshot: RecoverySnapshot | null = null;
+    try { snapshot = captureRecoverySnapshot(window.localStorage, RECOVERY_KEYS); }
+    catch { /* Browser storage may be disabled; refuse autosave without a baseline. */ }
+    return { inspection, snapshot };
+  });
+  const [recovery, setRecovery] = useState(initialRecovery.inspection);
+  const recoverySnapshot = useRef<RecoverySnapshot | null>(initialRecovery.snapshot);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const hasCommittedEdits = useRef(false);
@@ -84,14 +98,24 @@ export default function App() {
     }
     if (!hasCommittedEdits.current) return;
     try {
-      persistRecovery(() => window.localStorage, serializeDocument(workspace.document), parseDocument);
+      const saved = guardedRecoveryMutation(window.localStorage, RECOVERY_KEYS, recoverySnapshot.current,
+        () => persistRecovery(() => window.localStorage, serializeDocument(workspace.document), parseDocument));
+      recoverySnapshot.current = saved.snapshot;
       setStorageWarning(null);
-    } catch {
-      setStorageWarning('Local recovery failed to save this edit. Export preview JSON before closing.');
+    } catch (error) {
+      setStorageWarning(error instanceof RecoveryWriteConflict ? CONCURRENT_DRAFT_WARNING :
+        'Local recovery failed to save this edit. Export preview JSON before closing.');
     }
   }, [recovery.kind, workspace.document, workspace.gesture]);
   const acceptRecovery = () => {
     if (recovery.kind !== 'available') return;
+    try {
+      // The offer may have become stale while the dialog was open in another tab.
+      guardedRecoveryMutation(window.localStorage, RECOVERY_KEYS, recoverySnapshot.current, () => undefined);
+    } catch {
+      setStorageWarning(CONCURRENT_DRAFT_WARNING);
+      return;
+    }
     setWorkspace(newWorkspace(recovery.document)); // never fabricate a last-good mesh or undo stack
     hasCommittedEdits.current = true; // even revision-zero backup recovery repairs a corrupt current slot
     setSelected('extrude-plate');
@@ -100,13 +124,29 @@ export default function App() {
   };
   const rejectRecovery = () => {
     try {
-      discardRecovery(() => window.localStorage);
+      const saved = guardedRecoveryMutation(window.localStorage, RECOVERY_KEYS, recoverySnapshot.current,
+        () => discardRecovery(() => window.localStorage));
+      recoverySnapshot.current = saved.snapshot;
       setRecovery({ kind: 'none' });
       setNotification('Stored draft discarded. Starting from the current demonstration project.');
-    } catch {
-      setStorageWarning('Unable to discard stored recovery data; it has not been overwritten.');
+    } catch (error) {
+      setStorageWarning(error instanceof RecoveryWriteConflict ? CONCURRENT_DRAFT_WARNING :
+        'Unable to discard stored recovery data. Check both recovery slots before continuing.');
     }
   };
+  useEffect(() => {
+    const onOtherTabStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== RECOVERY_CURRENT_KEY && event.key !== RECOVERY_PREVIOUS_KEY) return;
+      try {
+        if (event.storageArea === window.localStorage && recoverySnapshot.current &&
+          !sameRecoverySnapshot(captureRecoverySnapshot(window.localStorage, RECOVERY_KEYS), recoverySnapshot.current)) {
+          setStorageWarning(CONCURRENT_DRAFT_WARNING);
+        }
+      } catch { setStorageWarning('Browser recovery storage is unavailable; export preview JSON before closing.'); }
+    };
+    window.addEventListener('storage', onOtherTabStorage);
+    return () => window.removeEventListener('storage', onOtherTabStorage);
+  }, []);
   const param = workspace.document.params;
   const problems = useMemo(() => diagnostics(workspace.document), [workspace.document]);
   const valid = geometryIsAdmissible(workspace.document);
