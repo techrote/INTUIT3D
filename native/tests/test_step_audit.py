@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from test_protocol import plate
@@ -78,6 +80,17 @@ class StepAuditTests(unittest.TestCase):
             result = execute(plate(), step_output=destination, worker=wrapper, timeout=35)
             self.assertEqual(result['status'], 'requires_reconciliation', result)
             self.assertTrue('analytic oracle' in result['message'] or 'cylinder' in result['message'], result)
+            self.assertFalse(destination.exists())
+
+    def test_parent_audit_timeout_reports_timeout_without_export(self):
+        # The successful authoring worker cannot bless an export after the
+        # second stage exceeds the shared operation deadline.
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp, 'not-published.step')
+            with patch('run_plate._audit_step_bytes',
+                       side_effect=subprocess.TimeoutExpired(['audit'], 0.01)):
+                result = execute(plate(), step_output=destination, timeout=35)
+            self.assertEqual(result['status'], 'timeout', result)
             self.assertFalse(destination.exists())
 
     def test_bad_step_does_not_produce_auditable_geometry(self):
