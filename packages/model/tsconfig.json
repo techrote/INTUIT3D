@@ -11,7 +11,8 @@
     "noEmit": true,
     "skipLibCheck": true,
     "exactOptionalPropertyTypes": true,
-    "noUncheckedIndexedAccess": false
+    "noUncheckedIndexedAccess": false,
+    "allowImportingTsExtensions": true
   },
   "include": [
     "src/**/*.ts"
