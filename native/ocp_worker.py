@@ -12,6 +12,7 @@ from protocol import validate_request, analytic_invariants, close
 from plate_envelope import require_plate_vertex_envelope_mm, vertex_envelope_mm
 from through_hole_guard import require_through_cylindrical_faces
 from plate_topology import require_plate_face_shell_topology
+from plate_axes import require_plate_axis_aligned_planes
 
 
 def solid_properties(shape) -> dict:
@@ -55,6 +56,9 @@ def solid_properties(shape) -> dict:
     # Enforce the intentionally narrow plate-v1 face/shell inventory in both
     # the source worker and the separately supervised STEP reader.
     require_plate_face_shell_topology(shape)
+    # A tiny rotation preserves mass, shell inventory and can pass the vertex
+    # comparison budget. Verify support-plane axes in source and STEP audit.
+    require_plate_axis_aligned_planes(shape)
     return {"valid": is_valid, "solidCount": solid_count, "volumeMm3": volume_props.Mass(), "surfaceAreaMm2": area_props.Mass(), "cylindricalHoles": cylinders}
 
 
