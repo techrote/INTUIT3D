@@ -57,7 +57,7 @@ snapping or solver-admission provider.
 `src/sketchCursor.test.ts` supplies deterministic/adversarial cursor probes;
 `npm run test:browser:handles` includes an actual Chromium mouse hover at
 the origin, a visual-snap readout assertion, a no-authored-edit assertion
-and a screenshot, in addition to its existing manipulation/recovery checks.
+and a screenshot, plus loss-of-window-focus cancellation without a phantom\nauthored revision, in addition to its manipulation/recovery checks.
 The browser gate must execute on the exact integrated head before merge.
 
 ## Engineering honesty / known gaps
