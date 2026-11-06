@@ -1,6 +1,6 @@
 """Actual OCP micro-blind-cut regression; not an external STEP consumer.
 
-A 10-micron-radius blind hole can satisfy the old volume/area budget, carry
+A 10-nanometre-radius blind hole can satisfy the old volume/area budget, carry
 one correct cylinder and preserve the six plate extents while failing intent.
 """
 from __future__ import annotations
