@@ -58,6 +58,12 @@ test('inside, outside, boundary contact and exact tangency remain distinct',()=>
   assert.equal(assessCircularProfile(square,[circle('i',35,40,6)]).status,'verified');
   assert.deepEqual(assessCircularProfile(square,[circle('o',130,40,1)]).outsideIds,['o']);
   assert.equal(assessCircularProfile(square,[circle('t',35,6,6)]).reason,'circle_touches_or_crosses_boundary:t');
+  const onBoundary=assessCircularProfile(square,[circle('on',0,40,1)]);
+  assert.equal(onBoundary.reason,'circle_touches_or_crosses_boundary:on');
+  assert.deepEqual(onBoundary.outsideIds,[]);
+  const crossingFromOutside=assessCircularProfile(square,[circle('outer',125,40,6)]);
+  assert.equal(crossingFromOutside.reason,'circle_touches_or_crosses_boundary:outer');
+  assert.deepEqual(crossingFromOutside.outsideIds,['outer']);
   assert.equal(assessCircularProfile(square,[circle('x',-1,40,2)]).reason,'circle_touches_or_crosses_boundary:x');
 });
 test('touching holes are refused at vanishing and ordinary radii',()=>{
