@@ -68,3 +68,13 @@ jobs:
         run: npm run build --workspace @intuit3d/web
       - name: Verify workspace package versions
         run: npm ls --workspaces --depth=0
+      - name: Actual Chromium rendering + numeric edit/recovery
+        if: matrix.os == 'ubuntu-latest'
+        run: node tooling/browser-smoke.mjs
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest' && always()
+        with:
+          name: real-browser-capture
+          path: browser-evidence/
+          if-no-files-found: warn
+          retention-days: 14
