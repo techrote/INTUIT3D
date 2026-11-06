@@ -161,7 +161,7 @@ export default function App() {
     catch (error) { setNotification(error instanceof Error ? error.message : 'Edit failed'); }
   }, [workspace]);
   const update = useCallback((key: DimensionKey, value: number) => dispatch({ kind: 'dimension', key, value }), [dispatch]);
-  const beginSketchGesture = useCallback(() => setWorkspace((current) => beginDimensionGesture(current, 'holeSpacing')), []);
+  const beginSketchGesture = useCallback((key: DimensionKey) => setWorkspace((current) => beginDimensionGesture(current, key)), []);
   const previewSketchGesture = useCallback((value: number) => setWorkspace((current) => previewDimensionGesture(current, value)), []);
   const finishSketchGesture = useCallback(() => setWorkspace((current) => commitDimensionGesture(current)), []);
   const cancelSketchGesture = useCallback(() => setWorkspace((current) => cancelDimensionGesture(current)), []);
@@ -263,7 +263,7 @@ export default function App() {
           <div className="viewport-stage">
             {view === 'solid' ? <SolidViewport document={rendered} selected={selected} onSelect={setSelected} /> : <SketchViewport document={workspace.document} onChange={update} onSelect={setSelected} onGestureStart={beginSketchGesture} onGesturePreview={previewSketchGesture} onGestureFinish={finishSketchGesture} onGestureCancel={cancelSketchGesture} canEdit={workspace.document.chronology.length < 1024} />}
             <div className="orientation-widget"><b>Y</b><span>+Z</span><small>X</small></div>
-            <div className="viewport-hint">{view === 'solid' ? 'Drag to orbit · Wheel to zoom · Right-drag to pan · Click to select' : 'Drag either hole to change pitch · Shift for 0.1 mm · Esc cancels · Arrows move selected hole'}</div>
+            <div className="viewport-hint">{view === 'solid' ? 'Drag to orbit · Wheel to zoom · Right-drag to pan · Click to select' : 'Drag holes or outline handles to edit dimensions · Shift 0.1 mm · Esc cancels · Arrow keys nudge'}</div>
             {stale && <div className="invalid-overlay"><Glyph name="alert" size={16} /><span>Current intent has invalid geometry. Shown mesh comes from revision {rendered?.revision}; dimensions in the inspector are the current, unresolved values.</span></div>}
             {!rendered && <div className="empty-overlay">No validated preview exists for this imported project. Repair the dimensions to generate a new preview.</div>}
           </div>
