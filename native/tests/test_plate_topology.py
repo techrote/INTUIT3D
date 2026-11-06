@@ -124,6 +124,35 @@ class PlateTopologyTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'one outer shell'):
                         solid_properties(imported)
 
+    def test_part_circumference_cylinder_cannot_masquerade_as_through_bore(self):
+        """A real 180-degree cylindrical cut is one B-rep-valid solid/shell.
+
+        Even if an upstream change tried to excuse its added planar faces,
+        the actual curved sidewall does not span the authored full circle.
+        """
+        import math
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+        from OCP.BRepCheck import BRepCheck_Analyzer
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder
+        from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
+        from ocp_worker import save_and_reopen
+        base = BRepPrimAPI_MakeBox(gp_Pnt(-60, -40, 0), 120, 80, 8).Shape()
+        half_cylinder = BRepPrimAPI_MakeCylinder(
+            gp_Ax2(gp_Pnt(-30, 0, -8), gp_Dir(0, 0, 1)),
+            6, 24, math.pi,
+        ).Shape()
+        operation = BRepAlgoAPI_Cut(base, half_cylinder)
+        operation.Build()
+        self.assertTrue(operation.IsDone())
+        source = operation.Shape()
+        self.assertTrue(BRepCheck_Analyzer(source).IsValid())
+        with self.assertRaisesRegex(ValueError, 'incomplete cylindrical circumference'):
+            require_plate_face_shell_topology(source)
+        with tempfile.TemporaryDirectory() as folder:
+            imported = save_and_reopen(source, Path(folder, 'half-bore.step'))
+            with self.assertRaisesRegex(ValueError, 'incomplete cylindrical circumference'):
+                require_plate_face_shell_topology(imported)
+
     def test_source_only_execution_never_admits_microcavity(self):
         from ocp_worker import execute
         request = plate()
