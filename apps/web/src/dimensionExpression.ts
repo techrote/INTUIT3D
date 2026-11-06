@@ -21,7 +21,7 @@ function tokenize(source: string): Token[] {
   const tokens: Token[] = [];
   let position = 0;
   while (position < source.length) {
-    if (/\s/.test(source[position])) { position++; continue; }
+    if (/\s/.test(source.charAt(position))) { position++; continue; }
     if (tokens.length >= 64) throw new Error('Dimension expression exceeds 64 tokens');
     const tail = source.slice(position);
     const number = /^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/.exec(tail)?.[0];
@@ -31,9 +31,9 @@ function tokenize(source: string): Token[] {
         throw new Error('Unrepresentable numeric literal');
       }
       position += number.length;
-      while (position < source.length && /\s/.test(source[position])) position++;
+      while (position < source.length && /\s/.test(source.charAt(position))) position++;
       const remaining = source.slice(position);
-      const unit = /^(mm|cm|in)(?![a-z])/i.exec(remaining)?.[1].toLowerCase();
+      const unit = /^(mm|cm|in)(?![a-z])/i.exec(remaining)?.[1]?.toLowerCase();
       if (unit) {
         value *= unit === 'in' ? 25.4 : unit === 'cm' ? 10 : 1;
         position += unit.length;
@@ -41,7 +41,7 @@ function tokenize(source: string): Token[] {
       tokens.push({ kind: 'number', quantity: checked(value, unit ? 1 : 0) });
       continue;
     }
-    const char = source[position];
+    const char = source.charAt(position);
     if ('+-*/()'.includes(char)) {
       tokens.push({ kind: 'symbol', symbol: char });
       position++;
