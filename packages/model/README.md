@@ -265,3 +265,51 @@ document; never overwrite the authoritative journal. This is an additive
 interface; downstream admission must still validate sketch solutions, geometric
 intent, B-rep metrics and STEP exchange. No geometric or graphical execution
 is implied by these model tests.
+
+## Retrospective dimension edit v1 — `@intuit3d/model/dimension-edit`
+
+`previewDimensionEdit(document, request)` produces a single validated `feature.edit`
+event, speculative revision, derived binding gates and structural invalidation
+frontier. `commitUndoableDimensionEdit(undoHistory, request)` commits that event
+as **one undoable journal frame**; both require an optimistic
+`expectedRevision` and a fresh `eventId`.
+
+Requests use `intuit3d.dimension-edit` version 1 with `featureId`, `field`,
+`binding: { unit, expression }` (or `null` to remove), and `admission`:
+
+- `permit_unresolved`: author a forward/missing/cyclic dependency while retaining
+  explicit `unready` / null derived payload; **never** use the numeric authored
+  field as a supposedly resolved fallback.
+- `require_admissible`: reject the entire edit if the changed feature's
+  derived binding gate is not `bound` (or `admissible` when clearing a binding).
+
+Expressions are structurally validated before revision staging, even when the
+parameter does not exist yet. Stable parameter references are introduced as
+explicit `dependsOn` edges. The adapter deliberately **does not remove old
+dependency edges** when unbinding: they may also represent independent
+feature-graph intent and must be reconciled through an explicit user command.
+The manifest's existing bindings and numeric authored fields are preserved.
+The edit does not invoke SKETCH or OCCT and is **not evidence of exact geometry**.
+Consumers must check the returned project/revision fence and
+`resolvedPayload !== null`, then run solver/kernel qualification. The
+invalidation frontier is structural only; it cannot authenticate a geometry cache.
+
+Example (after creating a feature with numeric `widthMm`):
+```ts
+import { startUndoHistory } from '@intuit3d/model/transactions';
+import { commitUndoableDimensionEdit, DIMENSION_EDIT_FORMAT } from '@intuit3d/model/dimension-edit';
+
+const session = startUndoHistory(project);
+const next = commitUndoableDimensionEdit(session, {
+  format: DIMENSION_EDIT_FORMAT, version: 1,
+  eventId: 'event.bind.width', featureId: 'feature.plate',
+  field: 'widthMm', expectedRevision: project.revision,
+  admission: 'permit_unresolved',
+  binding: { unit: 'mm', expression: { op: 'ref', featureId: 'param.width' } },
+});
+// If param.width is authored later, the same persisted intent can become bound.
+```
+
+Adversarial suite: `node --experimental-strip-types --test
+test/dimension-edit.test.mjs`. Schema and validator remain additive to v1;
+existing project files and provider wire formats are unchanged.
