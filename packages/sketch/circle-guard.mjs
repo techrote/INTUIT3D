@@ -40,6 +40,11 @@ function touchesSegment(c,a,b) {
   const area2=cross(dx,dy,wx,wy);
   return area2*area2<=radius2*length2;
 }
+function centerOnSegment(c,a,b) {
+  const dx=b.x-a.x,dy=b.y-a.y,wx=c.x-a.x,wy=c.y-a.y;
+  const projection=wx*dx+wy*dy;
+  return cross(dx,dy,wx,wy)===0n && projection>=0n && projection<=sq(dx,dy);
+}
 function insidePolygon(c,polygon) {
   let inside=false;
   for(let i=0;i<polygon.length;i++){
@@ -73,7 +78,8 @@ export function assessCircularProfile(vertices,circles) {
     for(let i=0;i<polygon.length;i++){
       const contact=touchesSegment(c,polygon[i],polygon[(i+1)%polygon.length]);
       if(contact===null)return reject('invalid_boundary:zero_length_edge');
-      if(contact)return reject('circle_touches_or_crosses_boundary:'+c.id,centerInside?[]:[c.id]);
+      if(contact)return reject('circle_touches_or_crosses_boundary:'+c.id,
+        centerInside||centerOnSegment(c,polygon[i],polygon[(i+1)%polygon.length])?[]:[c.id]);
     }
     if(centerInside){insideIds.push(c.id);inside.push(c);}
     else outsideIds.push(c.id);
