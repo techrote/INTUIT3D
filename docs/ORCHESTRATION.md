@@ -14,9 +14,15 @@ Suggested stagger: INTENT at :00, SKETCH at :12, KERNEL at :24, WORKBENCH at :36
 | SKETCH | `packages/sketch/**` | Sketch geometry, solver benchmarking/adapters, constraint diagnostics, profiles, projection, snaps, numerical correctness | Typed sketch commands, example fixtures and UX consumption notes |
 | KERNEL | `native/**`, `packages/kernel-contract/**` | OCCT bootstrap, native/WASM experiments, isolated worker, exact geometry, STEP, validation, numerical/Boolean robustness | Versioned provider API, fixtures and export evidence |
 | WORKBENCH | `apps/web/**` | Local 3D workbench, viewport, precision interaction, Fusion-inspired layout, timeline/graph, inspector, keyboard, usability | End-to-end user workflow referencing versioned model/kernel contracts |
-| INTEGRATION | `package.json`, workspace/lockfiles, `.github/**`, docs shared statuses, cross-package wiring, CI/release | Exact-head qualification, reconcile and merge safe PRs, keep main runnable, ingest mature research prototypes, fix cross-package regressions | Publish accepted source SHA, conformance evidence, demo and unresolved risks |
+| INTEGRATION | `package.json`, workspace/lockfiles, `.github/**`, docs shared statuses and `docs/OWNER-STEERING.md`, cross-package wiring, CI/release | Exact-head qualification, reconcile and merge safe PRs, keep main runnable, ingest mature research prototypes, **receive owner guidance, maintain evidence-based programme assessment and publish durable steering decisions** | Publish accepted source SHA, conformance evidence, demo, unresolved risks and owner-steering decisions |
 
 Additional source trees may be created through PR discussion; write ownership must remain explicit. INTEGRATION does not own other lanes' feature development and must not become a central planner.
+
+## Owner steering and assessment
+
+**Owner-to-project interface:** the owner may discuss product direction, priorities, architectural trade-offs or current-state assessment with Integration & QA. That worker maintains [docs/OWNER-STEERING.md](OWNER-STEERING.md) as a shared, explicit steering record and opens/updates targeted GitHub issues or ADRs for independently actionable decisions. Every worker reads the shared record on each run and applies relevant accepted decisions while choosing its own lane-local work.
+
+Integration & QA should assess current implementation against the intended product, challenge architectural drift and weak evidence, identify gaps and provide an honest cross-lane summary. It must distinguish owner-approved directives from proposals and unverified conversational suggestions. **The steering interface is not a dispatcher**: it may establish accepted programme priorities and cross-cutting acceptance criteria but may not schedule, spawn, pause, individually task workers or override live ownership, quality or human gates. Instructions are not durable until captured in the repository.
 
 ## Concurrency and isolation
 

@@ -1,0 +1,80 @@
+# INTUIT3D — Owner Steering & Programme Assessment
+
+**Status:** Live project authority and intake protocol. **Maintainer:** INTEGRATION & QA. **Readers:** all five permanent hourly lanes at the start of every run.
+
+## Purpose
+
+Provide one durable, project-wide interface between the repository owner and a continuously operating five-lane engineering workforce. The owner may discuss progress, feature direction, UX, architecture and priorities with Integration & QA. The integration worker captures decisions in this document and/or linked GitHub issues/ADRs, ensures they are discoverable and assesses whether the real product meets the owner's intent.
+
+This is **not** a central work planner. INTENT, SKETCH, KERNEL and WORKBENCH continue to choose, prototype, implement and qualify independent dependency-ready tasks inside their scopes. INTEGRATION keeps code/CI coherent, qualifies/merges admissible PRs and records owner guidance. It must not spawn, pause or redirect other scheduled tasks.
+
+## Authority and classification
+
+- **Accepted owner decision:** an explicit instruction from the repository owner, recorded with date/source reference, exact requirement, scope and acceptance expectation. It is authoritative for product direction, subject to safety, licensing, verified geometric truth and stated release/qualification gates.
+- **Owner preference / priority:** an explicit preference to guide lane-local selection without automatically blocking other valuable independent work.
+- **Proposed / needs owner decision:** advice, possible trade-off, assumption, or agent inference; NOT automatically an accepted requirement or authority to delete work/change architecture.
+- **Superseded:** keep linked history with the replacing decision and date; do not silently rewrite previous requirements.
+- **Assessment / observation:** current repository or runtime evidence, not a product instruction. Record observed tests, exact PR/SHA/CI and uncertainties.
+
+Avoid manufacturing owner approval from a chat summary, speculative feature suggestion, worker opinion or unrelated previous task. If direction conflicts with a technical safety or correctness invariant, retain the owner's objective, explain the conflict and propose a qualified implementation path. Never silently weaken geometric or export accuracy.
+
+## How to submit direction
+
+1. Discuss strategy, evaluate the current project or provide guidance in the Integration & QA conversation, or open an issue/comment in INTUIT3D.
+2. The integration worker must transform substantive accepted decisions into a dated entry below and, when executable work is involved, a linked issue with measurable acceptance criteria and affected lane(s).
+3. Cross-cutting contracts/architectural changes require an ADR or versioned contract proposal; affected workers can independently select appropriate changes from live GitHub state.
+4. Workers must fresh-read this file and relevant issues on each scheduled run; they do not automatically share past ChatGPT conversation context.
+5. If a directive is too ambiguous to formalise faithfully, record it as **proposed / clarification needed** rather than inventing a binding owner decision.
+
+Owner input can be committed here by a repository maintainer acting on explicit owner instruction. Normally INTEGRATION owns subsequent edits and serves as a single writer for shared status/steering documents.
+
+## Steering decision register
+
+| ID | Classification | Directive or current standing direction | Scope / verification |
+|---|---|---|---|
+| ST-001 | Accepted founding direction | Prioritise a local-first, comprehensive Fusion-inspired CAD UX with strong direct manipulation, precise parametric tools, flexible handling of unconventional modelling operation order, retrospective constraints and recoverable errors. | Product-wide; docs/PRODUCT.md, docs/ARCHITECTURE.md and acceptance flows |
+| ST-002 | Accepted founding direction | Pursue ambitious, rapid, predominantly agentic development through five **permanent fixed scheduled** lanes; no central task planner or spawn/stop/successor orchestration. | docs/ORCHESTRATION.md, AGENTS.md, SCHEDUSWARM.md |
+| ST-003 | Accepted founding direction | Continuously examine radiCADSAC and other research tangents; promote qualified prototypes into functioning product capabilities or retain reproducible negative evidence. | docs/RESEARCH-INTAKE.md and linked PRs |
+| ST-004 | Accepted owner steering interface | Use INTEGRATION & QA for holistic status assessment and guidance intake; write consequential direction into shared GitHub authority accessible to all five lanes. Integration is not a dispatcher. | This file, docs/ORCHESTRATION.md and startup audits |
+
+These entries record the owner's already stated project objectives; they do **not** claim any feature is implemented, tested or released. Newly accepted decisions receive a new stable ID, date and issue/ADR reference when available.
+
+## Intake entry template
+
+### ST-NNN — Short decision name
+
+- **Recorded on:** YYYY-MM-DD (Europe/London)
+- **Source / owner request:** URL to issue/PR/comment or owner-authorised recorded instruction
+- **Classification:** accepted decision / owner preference / proposed / superseded
+- **Exact direction:** concise affirmative specification; distinguish what was requested from integrator interpretation
+- **Why / priority:** effect on product, user workflow, engineering or delivery
+- **Impacted lanes:** INTENT / SKETCH / KERNEL / WORKBENCH / INTEGRATION
+- **Acceptance:** observable product behaviour, numerical/geometry correctness and required tests
+- **Implementation links:** issues, PRs, ADRs, exact accepted merge SHA
+- **Open questions / qualification gates:** unresolved conflicts, human decisions, missing evidence
+- **Supersedes:** stable IDs, if any
+
+Do not create duplicate entries for discussions that have not changed direction.
+
+## Standing Integration & QA assessment responsibility
+
+On every substantive run, inspect the *live* default branch, current head and exact-head CI, all significant lane PRs and blockers, and reachable user-visible workflows. Maintain a concise evidence-based programme assessment in docs/STATUS.md or a linked, dated review issue when changes are material:
+
+- **Implemented and integrated:** which user workflows actually work from accepted main, by source and test evidence.
+- **In development:** lane features, PR status, unintegrated prototypes and measured progression.
+- **Not yet qualified:** missing native/graphical/independent/human acceptance; distinguish absent evidence from failed tests.
+- **Risk and drift:** architectural divergence, regression, incompatible interfaces, missing UX capabilities, numerical correctness risks and stalled integrations.
+- **Highest-value cross-lane opportunities:** recommendations and dependency blockages, not task dispatches.
+- **Owner decisions needed:** genuinely consequential product trade-offs and conflicts, without routine clarification requests.
+
+Every important recommendation should be grounded in reproducible findings; do not invent progress, delivery dates, performance or acceptance. Update the status only when evidence changes materially—do not churn a shared file merely to report that there was no change.
+
+## Dissemination / execution semantics
+
+All five worker prompts and AGENTS.md require rereading this document at run start. Accepted directives guide each lane's autonomous priorities. An owner-approved cross-lane feature may generate independently owned linked issues; no shared file or developer branch becomes a free-for-all. INTEGRATION handles shared source/contracts and merges after appropriate qualification.
+
+**Steering is not scheduling**: don't create new automations, invoke run-now, reschedule, enable Scheduswarm dispatch or block independent work while waiting for a planning session. If the user separately asks for those actions, treat them as an explicit new request.
+
+## Next owner review
+
+Once the first functioning vertical slice is on main, assess whether an unfamiliar Fusion-competent user can create and modify a dimensioned sketch, extrude/cut a body, change an earlier operation, recover from an unresolved dependency, save/reopen and export reliable STEP—without needing feature-tree discipline. Track gaps between real behaviour and these goals.

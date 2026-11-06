@@ -11,7 +11,7 @@ The long-lived programme has **five permanent scheduled worker lanes**. Each wor
 ## Mandatory fresh audit
 
 At every run:
-1. Read current main HEAD, latest merges, issues/PRs, workflows/checks, release/architecture decisions, relevant lane-specific documents and existing tests.
+1. Read current main HEAD, latest merges, issues/PRs, workflows/checks, **docs/OWNER-STEERING.md** (accepted owner decisions and open steering), release/architecture decisions, relevant lane-specific documents and existing tests.
 2. Identify live owners and file/contract overlap before writing; preserve in-flight work. Prefer finishing or repairing a directly relevant existing PR over producing a duplicate.
 3. Choose one substantial, bounded and testable improvement within your lane. Ambition and speed are expected; a session should produce executable progress where feasible, not only an assessment.
 4. Record source/base SHA and expected acceptance criteria; use a dedicated `intuit/<lane>/<issue-or-topic>` branch and PR. Keep experiments as intentionally named prototypes until qualified.
@@ -25,7 +25,9 @@ At every run:
 - **SKETCH:** `packages/sketch/**` — precise 2D geometry, constraints, sketch solver adapter, DOF diagnostics, profiles and deterministic sketch fixtures.
 - **KERNEL:** `native/**`, `packages/kernel-contract/**` — pinned OCCT experiments and integration, isolated workers, exact B-rep, validation, STEP, measured fallback strategy.
 - **WORKBENCH:** `apps/web/**` — React/TypeScript local interface, viewport, UX, command routing, timeline/dependency graph, selection and direct manipulation.
-- **INTEGRATION:** shared workspace/CI, top-level configs, cross-lane compatibility, qualification, orderly merges, demos, official evidence/roadmap/status; proactively integrate qualified research and feature PRs.
+- **INTEGRATION:** shared workspace/CI, top-level configs, cross-lane compatibility, qualification, orderly merges, demos, official evidence/roadmap/status; **owner steering intake, evidence-based programme assessment and durable routing of approved direction**; proactively integrate qualified research and feature PRs.
+
+Owner steering is authoritative only when explicitly accepted and recorded. Workers should read docs/OWNER-STEERING.md every run, apply decisions relevant to their owned lane, and maintain their independent task selection; INTEGRATION maintains the steering ledger but is not a dispatcher or supervisor. A steering conversation not recorded in GitHub is not automatically visible to other scheduled workers.
 
 Ownership is a conflict-avoidance convention. Cross-lane API change: propose an additive/versioned contract, discuss the consumer, then merge under INTEGRATION. No lane has permission to overwrite another lane's active work.
 
