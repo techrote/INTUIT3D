@@ -3,13 +3,21 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22" },
-  "workspaces": ["apps/*", "packages/*"],
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "test": "node --test tooling/tests/*.test.mjs",
+    "test": "node --experimental-strip-types --test tooling/tests/*.test.mjs",
     "check:workspace": "node tooling/check-workspace.mjs",
     "check:native": "node tooling/check-workspace.mjs --native",
     "ci": "npm run test && npm run check:workspace",
     "ci:native": "npm run check:native"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3"
   }
 }

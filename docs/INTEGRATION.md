@@ -24,3 +24,11 @@ When you add or change package dependencies, make a small PR with the package ma
 At bootstrap, passing root CI means: (a) the no-dependency contract checker executed, (b) existing npm workspace phases ran and reported omissions, and (c) analytic oracle tests ran. It does **not** claim CAD end-to-end acceptance, native OCCT execution, STEP interoperability, graphical UI qualification or user acceptance.
 
 Do not merge a cross-lane PR until the actual candidate head's relevant checks have completed and current-main compatibility, file ownership and failure records are reviewed. If CI cannot run, leave a PR open with precise blocker and executed local evidence rather than calling it qualified.
+
+## Model admission (INTENT PR #8)
+
+The root lockfile pins TypeScript 5.8.3 as a development dependency; do not rely on a globally preinstalled compiler or an unpinned CLI when qualifying TypeScript packages. `npm ci` must succeed on the **exact candidate tree**, including every newly admitted workspace package and its link entry in `package-lock.json`.
+
+`tooling/tests/model-integration.test.mjs` is an end-to-end **semantic intent API** smoke test: it imports the `@intuit3d/model` TypeScript source when the package is present, exercises a cut authored before its plate, replay of retrospective dimension changes and explicit unordered-write conflicts. It checks the analytic plate fixture as an independent *intent-only* value, not as geometry. If `packages/model` has not yet been merged, the test reports an explicit `MODEL_NOT_IMPLEMENTED` skip; this is NOT a passed model acceptance gate.
+
+When a model workspace is added to a PR or merged, the integrator must regenerate and commit the root npm lockfile from the *combined* source and verify `npm ci && npm run ci` on Ubuntu and Windows before accepting the package. All unexecuted native, graphical, STEP or usability gates remain separate.
