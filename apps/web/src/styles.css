@@ -143,3 +143,23 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
   .ribbon-group { min-width: 0; }
   .inspector-section { padding: 13px; }
 }
+
+/* Non-authoritative crash-recovery gate: explicitly blocks new autosave until
+   an existing draft is recovered or discarded by the user. */
+.recovery-backdrop { position: fixed; inset: 0; z-index: 100; background: #07121ee8;
+  display: grid; place-items: center; padding: 18px; }
+.recovery-dialog { background: #172c3e; color: #e0edf4; border: 1px solid #60859b;
+  box-shadow: 0 20px 80px #000b; border-radius: 12px; padding: 26px;
+  width: min(510px, 95vw); line-height: 1.6; }
+.recovery-dialog h2 { font-size: 19px; margin: 0 0 13px; }
+.recovery-dialog p { font-size: 13px; color: #bbd0df; }
+.recovery-caution { color: #ffc88f; display: block; margin-top: 10px; }
+.recovery-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.recovery-actions button { padding: 10px 15px; background: #275b6c; color: #e8f9ff;
+  border: 1px solid #5999a8; border-radius: 6px; }
+.recovery-actions button:last-child { background: #3e3036; border-color: #805763; }
+.recovery-actions button:focus-visible { outline: 2px solid #ffe29b; outline-offset: 2px; }
+.recovery-alert { position: fixed; z-index: 90; top: 118px; left: 50%;
+  transform: translateX(-50%); max-width: min(560px, 94vw); padding: 11px 14px;
+  border: 1px solid #bc7a58; border-radius: 7px; background: #442e2c;
+  color: #ffe3ce; font-size: 12px; box-shadow: 0 8px 25px #0009; }

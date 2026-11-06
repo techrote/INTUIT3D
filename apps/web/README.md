@@ -85,3 +85,26 @@ source; INTEGRATION owns root lockfile, shared configuration and merge gates.
   browser dependencies. Installed dependency typecheck, Vite build, real browser
   pointer capture/rendering and human UX acceptance **remain required** and
   must not be inferred from Node tests or TSX syntax parsing.
+
+## Browser-local preview crash recovery (WORKBENCH-001)
+
+The workbench now writes **committed** preview documents to a current/previous
+browser `localStorage` recovery pair. On reload, the previous draft is
+**offered for explicit recovery or discard before any demo autosave occurs**.
+A corrupt newest entry can be recovered from an independently validated earlier
+entry. Quota/storage failures show a persistent warning: use the explicit
+`Ctrl+S` preview JSON export. This is a best-effort convenience, not durable
+filesystem storage; clearing browser data deletes it. Pointer-move previews are
+never autosaved until the one-step drag transaction commits.
+
+Recovery uses the existing strict `intuit3d.web-preview` v1 parser. Invalid but
+well-formed geometry remains editable on recovery, with **no fabricated
+last-good mesh**. The recovery envelope has a noncryptographic accidental-damage
+checksum; it does not provide security against malicious storage tampering,
+guaranteed power-loss durability, multiple-project history, restored undo stacks,
+authoritative INTENT persistence or STEP. The source is confined to
+`apps/web/**`; it is not a replacement for engineering project files.
+
+`node --experimental-strip-types --test src/*.test.ts` includes ten new
+storage failure/corruption/restart scenarios. The full React/Vite browser gate
+remains required before merging while INTEGRATION reconciles the root lockfile.

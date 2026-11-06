@@ -5,6 +5,7 @@ import {
   newWorkspace, PARAMETER_LABELS, parseDocument, previewDimensionGesture, redo, serializeDocument, undo,
   type Command, type DimensionKey, type Workspace,
 } from './model';
+import { discardRecovery, inspectRecovery, persistRecovery } from './recovery';
 import { SketchViewport } from './components/SketchViewport';
 import { SolidViewport } from './components/SolidViewport';
 import './styles.css';
@@ -68,7 +69,43 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
+  // A previous browser draft must be explicitly accepted or discarded before
+  // any new autosave. Otherwise mounting the demo could overwrite recovery.
+  const [recovery, setRecovery] = useState(() => inspectRecovery(() => window.localStorage, parseDocument));
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const hasCommittedEdits = useRef(false);
+  useEffect(() => {
+    // A pristine demo must not create a nuisance recovery offer on every reload.
+    // Once edited, even undo-to-revision-zero is saved so stale drafts stay stale.
+    if (recovery.kind !== 'none' || workspace.gesture) return;
+    if (workspace.document.revision > 0 || workspace.past.length > 0 || workspace.future.length > 0) {
+      hasCommittedEdits.current = true;
+    }
+    if (!hasCommittedEdits.current) return;
+    try {
+      persistRecovery(() => window.localStorage, serializeDocument(workspace.document), parseDocument);
+      setStorageWarning(null);
+    } catch {
+      setStorageWarning('Local recovery failed to save this edit. Export preview JSON before closing.');
+    }
+  }, [recovery.kind, workspace.document, workspace.gesture]);
+  const acceptRecovery = () => {
+    if (recovery.kind !== 'available') return;
+    setWorkspace(newWorkspace(recovery.document)); // never fabricate a last-good mesh or undo stack
+    setSelected('extrude-plate');
+    setRecovery({ kind: 'none' });
+    setNotification('Local preview draft recovered. Historical undo and exact geometry were not restored.');
+  };
+  const rejectRecovery = () => {
+    try {
+      discardRecovery(() => window.localStorage);
+      setRecovery({ kind: 'none' });
+      setNotification('Stored draft discarded. Starting from the current demonstration project.');
+    } catch {
+      setStorageWarning('Unable to discard stored recovery data; it has not been overwritten.');
+    }
+  };
   const param = workspace.document.params;
   const problems = useMemo(() => diagnostics(workspace.document), [workspace.document]);
   const valid = geometryIsAdmissible(workspace.document);
@@ -204,6 +241,25 @@ export default function App() {
         </aside>
       </div>
       <footer className="statusbar"><span className="status-indicator" /> <span>{problems.length ? `${problems.length} unresolved diagnostics` : 'Preview sketch intent admissible'}</span><span className="status-spacer" /><span>LOCAL ONLY</span><span className="status-separator" /><span>NO KERNEL VALIDATION</span><span className="status-separator" /><span><Glyph name="keyboard" size={14}/> Ctrl+K commands</span></footer>
+      {storageWarning && <div className="recovery-alert" role="alert">{storageWarning}</div>}
+      {recovery.kind === 'unavailable' && <div className="recovery-alert" role="alert">{recovery.message}</div>}
+      {(recovery.kind === 'available' || recovery.kind === 'corrupt') && (
+        <div className="recovery-backdrop">
+          <section className="recovery-dialog" role="dialog" aria-modal="true" aria-labelledby="recovery-title" data-testid="recovery-dialog">
+            <h2 id="recovery-title">Local preview draft recovery</h2>
+            {recovery.kind === 'available' ? (
+              <p>A previously edited <strong>preview document</strong> is available at revision {recovery.document.revision}.
+                {recovery.warning && <strong className="recovery-caution"> {recovery.warning}</strong>}
+              </p>
+            ) : <p role="alert">{recovery.message} Discarding is irreversible.</p>}
+            <p>Choose explicitly before editing. Recovery is browser-local and cannot restore an undo stack, exact geometry, or STEP data.</p>
+            <div className="recovery-actions">
+              {recovery.kind === 'available' && <button autoFocus onClick={acceptRecovery}>Recover draft</button>}
+              <button onClick={rejectRecovery}>Discard local draft</button>
+            </div>
+          </section>
+        </div>
+      )}
       {notification && <div className="toast" role="status" onClick={() => setNotification(null)}>{notification}<button aria-label="Dismiss notification">×</button></div>}
       <input type="file" ref={fileRef} hidden accept="application/json,.json" onChange={(event) => { const f = event.target.files?.[0]; if (f) void load(f); event.target.value = ''; }} />
       {paletteOpen && <div className="palette-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPaletteOpen(false); }}><div className="palette" role="dialog" aria-label="Command palette" aria-modal="true"><div className="palette-input"><Glyph name="search" size={19}/><input autoFocus placeholder="Find a command…" value={paletteQuery} onChange={(event) => setPaletteQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setPaletteOpen(false); if (event.key === 'Enter' && matching[0]) command(matching[0].execute); }} /></div><div className="palette-results">{matching.length ? matching.map((action) => <button key={action.id} onClick={() => command(action.execute)}><span>{action.name}</span><kbd>{action.hint}</kbd></button>) : <div className="palette-empty">No matching commands</div>}</div></div></div>}
