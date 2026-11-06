@@ -20,6 +20,7 @@ import time
 
 from protocol import SCHEMA, InvalidRequest, validate_request, validate_result
 from process_supervision import run_isolated_worker
+from plate_envelope import require_plate_vertex_envelope_mm
 from step_preflight import verify_step_artifact
 
 MAX_REQUEST_BYTES = 65536
@@ -50,10 +51,13 @@ def _audit_step_bytes(request: dict, worker_response: dict, step_path: Path, fol
     if not report.is_file() or not (1 <= report.stat().st_size <= MAX_RESPONSE_BYTES):
         raise ValueError('separate-process STEP report absent or out of bounds')
     audit = json.loads(report.read_text(encoding='utf-8'))
-    if (type(audit) is not dict or set(audit) != {'sha256', 'metrics'}
+    if (type(audit) is not dict or set(audit) != {'sha256', 'metrics', 'vertexEnvelopeMm'}
             or type(audit['sha256']) is not str
             or re.fullmatch(r'[0-9a-f]{64}', audit['sha256']) is None):
         raise ValueError('separate-process STEP report malformed')
+    # The separate STEP reader must also match all six authored plate extrema.
+    # Equal volume, area and cylinders do not fix width/depth/thickness.
+    require_plate_vertex_envelope_mm(request['plate'], audit['vertexEnvelopeMm'], 'STEP')
     # The validated response now carries *parent-audited* STEP metrics.
     # Both the original source geometry and the published STEP are checked
     # against authoritative intent using the existing strict plate-v1 oracle.
