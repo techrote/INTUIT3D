@@ -24,7 +24,7 @@ const ref = (featureId) => ({op:'ref',featureId});
 const binding = (expression,unit='mm') => ({unit,expression});
 const create = (eventId,feature) => ({eventId,type:'feature.create',feature});
 const param = (id,value) => ({id,kind:'parameter',dependsOn:[],writeTargets:[],
-  payload:{parameter:{name:id,unit:'mm',expression:literal(value)}}});
+  payload:{parameter:{name:id.replace(/[^A-Za-z0-9_]/g,'_'),unit:'mm',expression:literal(value)}}});
 const plate = (id) => ({id,kind:'extrude',dependsOn:[],writeTargets:['body.'+id],
   payload:{widthMm:8,depthMm:10,thicknessMm:2}});
 const start = () => commitEvent(newProject('project.batch'),
