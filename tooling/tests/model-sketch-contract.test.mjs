@@ -55,7 +55,7 @@ test('cross-lane: out-of-order features retain chronology but evaluate sketch th
   assert.equal(profile.holes.length,2);
   const expected=analyticPlate(analyticFixture);
   assert.equal(expected.status,'analytic_intent_only');
-  assert.ok(Math.abs(profile.areaMm2*analyticFixture.thickness-expected.expectedVolumeMm3)<1e-8);
+  assert.ok(Math.abs(profile.areaMm2*analyticFixture.thickness-expected.volume)<1e-8);
 });
 
 test('cross-lane: retrospective width constraint change survives model journal and sketch save/reopen', () => {
