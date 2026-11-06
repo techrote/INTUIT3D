@@ -7,8 +7,10 @@ Prints one JSON response; no cloud service, no geometry fallback.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -21,6 +23,40 @@ from step_preflight import verify_step_artifact
 
 MAX_REQUEST_BYTES = 65536
 MAX_RESPONSE_BYTES = 65536
+
+
+def _audit_step_bytes(request: dict, worker_response: dict, step_path: Path, folder: Path,
+                      *, timeout: float) -> tuple[dict, str]:
+    """Corroborate *actual* STEP bytes after the authoring worker has exited.
+
+    This second, process-isolated OCP reader cannot trust the first worker's
+    response file. It is still the SAME OCCT engine, not independent STEP
+    interoperability or a production-kernel qualification.
+    """
+    report = folder / 'supervisor-step-audit.json'
+    auditor = Path(__file__).resolve().with_name('step_audit_worker.py')
+    try:
+        completed = run_isolated_worker(
+            [sys.executable, str(auditor), '--step', str(step_path), '--report', str(report)],
+            cwd=folder, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise ValueError('separate-process STEP readback exceeded deadline') from error
+    if completed.returncode != 0:
+        raise ValueError('separate-process STEP readback failed (no exact export accepted)')
+    if not report.is_file() or not (1 <= report.stat().st_size <= MAX_RESPONSE_BYTES):
+        raise ValueError('separate-process STEP report absent or out of bounds')
+    audit = json.loads(report.read_text(encoding='utf-8'))
+    if (type(audit) is not dict or set(audit) != {'sha256', 'metrics'}
+            or type(audit['sha256']) is not str
+            or re.fullmatch(r'[0-9a-f]{64}', audit['sha256']) is None):
+        raise ValueError('separate-process STEP report malformed')
+    # The validated response now carries *parent-audited* STEP metrics.
+    # Both the original source geometry and the published STEP are checked
+    # against authoritative intent using the existing strict plate-v1 oracle.
+    verified = dict(worker_response, stepReadback=audit['metrics'])
+    validate_result(request, verified)
+    return verified, audit['sha256']
 
 
 def execute(request: object, *, timeout: float = 25.0, step_output: Path | None = None, worker: Path | None = None) -> dict:
@@ -53,6 +89,13 @@ def execute(request: object, *, timeout: float = 25.0, step_output: Path | None 
                 # Inspect the actual STEP bytes before atomic publication.
                 # This is structural preflight, not independent geometry proof.
                 verify_step_artifact(step_path, expected_holes=len(valid["plate"]["holes"]))
+                # A valid worker response + plausible STEP graph do not prove
+                # the STEP still encodes the authored holes and dimensions.
+                # Reopen the actual file with a fresh independently supervised
+                # process, then bind its digest to the bytes we publish.
+                response, audited_sha256 = _audit_step_bytes(
+                    valid, response, step_path, folder, timeout=timeout,
+                )
                 if step_output is not None:
                     destination = step_output.expanduser().resolve()
                     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -67,6 +110,8 @@ def execute(request: object, *, timeout: float = 25.0, step_output: Path | None 
                                 shutil.copyfileobj(source, target)
                             target.flush()
                             os.fsync(target.fileno())
+                        if hashlib.sha256(staged.read_bytes()).hexdigest() != audited_sha256:
+                            raise ValueError('STEP bytes changed after parent readback audit')
                         os.link(staged, destination)
                     finally:
                         if staged is not None:
