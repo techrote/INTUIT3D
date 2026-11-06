@@ -15,12 +15,16 @@
     "./conflict-explanation/v1": {
       "types": "./conflict-explanation.d.mts",
       "default": "./conflict-explanation.mjs"
+    },
+    "./snapping/v1": {
+      "types": "./snap.d.mts",
+      "default": "./snap.mjs"
     }
   },
   "types": "./index.d.mts",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts test/conflict-explanation-contract.mts"
+    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts test/conflict-explanation-contract.mts test/snap-contract.mts"
   },
   "engines": {
     "node": ">=22"
