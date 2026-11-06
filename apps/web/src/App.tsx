@@ -166,6 +166,8 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // Recovery decision is modal: shortcuts must not mutate the hidden demo.
+      if (recovery.kind === 'available' || recovery.kind === 'corrupt') return;
       const target = event.target as HTMLElement | null;
       const typing = !!target?.closest('input, textarea, [contenteditable="true"]');
       const ctrl = event.ctrlKey || event.metaKey;
@@ -179,7 +181,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [save, stepRedo, stepUndo]);
+  }, [recovery.kind, save, stepRedo, stepUndo]);
 
   return (
     <div className="app-shell">
