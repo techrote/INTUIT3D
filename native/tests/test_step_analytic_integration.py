@@ -29,6 +29,16 @@ class BoundPreflightTests(unittest.TestCase):
     def test_intent_bound_preflight_accepts_actual_occt_plate(self):
         verify_step_artifact(self.step, expected_holes=2, plate=self.plate)
 
+    def test_exponent_encoded_microbore_preserved(self):
+        from ocp_worker import build_plate, save_and_reopen
+        micro = {**self.plate, 'holes': [{'x': 0, 'y': 0, 'radius': 1e-5}]}
+        destination = Path(self.temp.name, 'micro.step')
+        save_and_reopen(build_plate(micro), destination)
+        verify_step_artifact(destination, expected_holes=1, plate=micro)
+        changed = {**micro, 'holes': [{'x': 0, 'y': 0, 'radius': 1.01e-5}]}
+        with self.assertRaisesRegex(ValueError, 'STEP analytic: cylindrical bore centre/radius'):
+            verify_step_artifact(destination, expected_holes=1, plate=changed)
+
     def test_malformed_radius_is_rejected_before_same_engine_readback(self):
         pattern = r"(CYLINDRICAL_SURFACE\('',#\d+,)6\.(\);)"
         corrupted, count = re.subn(pattern, r'\g<1>6.001\2', self.original, count=1)
