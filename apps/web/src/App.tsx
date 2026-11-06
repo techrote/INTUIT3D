@@ -93,6 +93,7 @@ export default function App() {
   const acceptRecovery = () => {
     if (recovery.kind !== 'available') return;
     setWorkspace(newWorkspace(recovery.document)); // never fabricate a last-good mesh or undo stack
+    hasCommittedEdits.current = true; // even revision-zero backup recovery repairs a corrupt current slot
     setSelected('extrude-plate');
     setRecovery({ kind: 'none' });
     setNotification('Local preview draft recovered. Historical undo and exact geometry were not restored.');
