@@ -131,6 +131,24 @@ async function main() {
   ), 'Origin coordinate readout changed precision or units');
   await screenshot('02-cursor-snap.png');
 
+  // Failure injection: an absent SVG screen CTM must clear the visual cursor
+  // instead of silently treating the mouse as the viewBox origin.
+  check(await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=sketch-viewport]');
+    svg.getScreenCTM=()=>null;
+    return svg.getScreenCTM()===null;
+  })()`), 'Could not inject a missing SVG CTM');
+  await mouse('mouseMoved', originScreen.x + 5, originScreen.y + 5);
+  await eventually(async () => evaluate(
+    "!document.querySelector('[data-testid=sketch-cursor-readout]')"
+  ), 'missing CTM clears visual cursor');
+  check((await revision()).includes('revision 0'), 'Invalid projection authored an edit');
+  check(await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=sketch-viewport]');
+    delete svg.getScreenCTM;
+    return Boolean(svg.getScreenCTM());
+  })()`), 'Could not restore native SVG projection');
+
   // Use actual CDP mouse events at the screen-projected SVG handle. Moving the
   // right edge by 4 mm in sketch coordinates changes the *full* width by 8 mm.
   const positions = await evaluate(`(() => {
@@ -155,6 +173,28 @@ async function main() {
   await eventually(async () => (await numberValue('Plate width')) === '120', 'blur must cancel provisional dimension');
   await mouse('mouseReleased', positions.finishX, positions.finishY);
   check((await revision()).includes('revision 0'), 'Released abandoned gesture committed a revision');
+
+  // Another real pointer gesture loses its coordinate transform mid-drag.
+  // Cancellation must restore the authored width, without a phantom revision,
+  // even if the pointer subsequently releases normally.
+  await mouse('mouseMoved', positions.x, positions.y);
+  await mouse('mousePressed', positions.x, positions.y, 1);
+  await mouse('mouseMoved', positions.finishX, positions.finishY, 1);
+  await eventually(async () => (await numberValue('Plate width')) === '128', 'pre-projection-loss provisional width');
+  check(await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=sketch-viewport]');
+    svg.getScreenCTM=()=>({a:1,b:2,c:2,d:4,e:0,f:0});
+    return true;
+  })()`), 'Could not inject singular SVG CTM');
+  await mouse('mouseMoved', positions.finishX + 2, positions.finishY, 1);
+  await eventually(async () => (await numberValue('Plate width')) === '120', 'singular CTM must cancel provisional dimension');
+  await mouse('mouseReleased', positions.finishX + 2, positions.finishY);
+  check(await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=sketch-viewport]');
+    delete svg.getScreenCTM;
+    return Boolean(svg.getScreenCTM());
+  })()`), 'Could not restore SVG projection after cancellation');
+  check((await revision()).includes('revision 0'), 'Projection failure authored an invalid revision');
 
   await mouse('mouseMoved', positions.x, positions.y);
   await mouse('mousePressed', positions.x, positions.y, 1);
@@ -188,6 +228,7 @@ async function main() {
   const report = {
     cursorVisualOriginVerifiedWithoutEdit: true,
     blurredGestureCancelledWithoutRevision: true,
+    missingAndSingularSvgProjectionFailClosed: true,
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
