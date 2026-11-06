@@ -1,0 +1,15 @@
+# SKETCH — solver-checked snap constraint admission v1
+
+**Versioned ESM/typed subpath:** `@intuit3d/sketch/snap-admission/v1`.
+
+`proposeSnapConstraint(document, {pointId, constraintId, snap, options})` consumes an actual `suggestSketchSnaps` result and the *same* search options. It independently reruns ranking, source-signature validation and the augmented linear constraint solve. A result is `previewOnly: true`, stamped to its immutable source, and lists exactly which point coordinates changed. No proposal mutates the original sketch. The explicit caller-owned `constraintId` is checked against every existing entity/constraint ID.
+
+Only a point or circle-centre snap produces an app-owned `coincident` relation; grid snaps produce a two-axis `fixed` relation. This is deliberately narrower than the inference API. Segment projection, midpoint, quadrants and circle perimeter require additional *real* constraint vocabulary; they return `unsupported_kind`, not a silent point fix. Contradictions return `conflicted` with null geometry and an inspectable rejected constraint; malformed or stale inference returns `invalid_selection` or `stale`. Underconstrained base geometry is explicitly provisional.
+
+`commitSnapConstraint(document, proposal)` rechecks the entire proposal against freshly inferred, independently solved intent and refuses tampered, stale or conflicting proposals. It returns a **new validated sketch document** for an INTENT transaction; actual project journaling, undo, crash-safe storage and revision serialization remain INTENT/INTEGRATION responsibilities. For dragging, WORKBENCH should exclude the moving point from snapping, explicitly show the movement list, and never interpret the preview as exact B-rep geometry.
+
+**Limits:** underlying v1 solver supports only axis-separated linear constraints, and its `1e-9 mm` residual policy is provisional. This API provides no Euclidean point-on-curve, tangent, concentric arc, associative midpoint, robust exact predicates or browser coordinate mapping; every unsupported geometry kind is a non-admission. Source and snapshot are reparsed/re-solved on each proposal and commit, not an optimized per-frame mechanism.
+
+**Evidence to run:** `npm test` from `packages/sketch`; `npm run typecheck` after the root locked dependencies are installed. Regression coverage includes actual added constraints, source preservation, 64 dimension/grid cases, conflicting fixed widths, adversarial snapshot/equation tampering, revision fences, unsupported snap kinds, self-references, semantic circle-centre remapping and serialization/replay.
+
+**Research disposition:** **ADOPT** as an additive linear-product bridge after independent Integration admission. **DEFER** nonlinear snap-constrained admission, PlaneGCS/WASM and high-frequency browser use pending actual pinned solver comparisons, license evaluation and graphical gesture measurements.
