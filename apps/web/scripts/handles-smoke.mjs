@@ -224,15 +224,65 @@ async function main() {
   await eventually(async () => (await numberValue('Plate width')) === '128' &&
     (await numberValue('Hole diameter')) === '13', 'exact saved preview parameters');
   await screenshot('05-recovered.png');
+  // Actual software-WebGL 3D direct-manipulation test. The HTML knob tracks
+  // the projected Three.js world-Y axis; gestures never claim B-rep identity.
+  const thicknessHandlePosition = async (deltaMm = 3) => eventually(async () => evaluate(`(() => {
+    const b=document.querySelector('[data-testid=solid-thickness-handle]');
+    if (!b || getComputedStyle(b).visibility!=='visible') return null;
+    const r=b.getBoundingClientRect();
+    const x=Number(b.dataset.axisX),y=Number(b.dataset.axisY);
+    if (!Number.isFinite(x)||!Number.isFinite(y)||Math.hypot(x,y)<0.02) return null;
+    return {x:r.left+r.width/2,y:r.top+r.height/2,finishX:r.left+r.width/2+x*${deltaMm},finishY:r.top+r.height/2+y*${deltaMm}};
+  })()`), 'visible projected 3D thickness handle');
+  const solidStart = await thicknessHandlePosition();
+  check(await numberValue('Thickness') === '8', 'Unexpected baseline extrusion thickness');
+  const startRevision = await revision();
+  await mouse('mouseMoved', solidStart.x, solidStart.y);
+  await mouse('mousePressed', solidStart.x, solidStart.y, 1);
+  await mouse('mouseMoved', solidStart.finishX, solidStart.finishY, 1);
+  await eventually(async () => (await numberValue('Thickness')) === '11', 'provisional 3D thickness edit');
+  check((await revision()) === startRevision, '3D preview drag created an uncommitted journal revision');
+  await mouse('mouseReleased', solidStart.finishX, solidStart.finishY);
+  await eventually(async () => (await revision()) !== startRevision, '3D thickness commit');
+  check(await numberValue('Thickness') === '11', '3D direct-edit transaction changed unexpected value');
+  await screenshot('06-solid-thickness-drag.png');
+
+  // Losing focus must abandon an uncommitted thickness gesture.
+  const solidNext = await thicknessHandlePosition();
+  const afterCommitRevision = await revision();
+  await mouse('mouseMoved', solidNext.x, solidNext.y);
+  await mouse('mousePressed', solidNext.x, solidNext.y, 1);
+  await mouse('mouseMoved', solidNext.finishX, solidNext.finishY, 1);
+  await eventually(async () => (await numberValue('Thickness')) === '14', 'provisional thickness before blur');
+  check(await evaluate("(() => {window.dispatchEvent(new Event('blur'));return true})()"), 'Failed to inject 3D gesture focus loss');
+  await eventually(async () => (await numberValue('Thickness')) === '11', '3D blur cancellation');
+  await mouse('mouseReleased', solidNext.finishX, solidNext.finishY);
+  check((await revision()) === afterCommitRevision, 'Abandoned 3D gesture committed a phantom revision');
+
+  // Undo/redo use exactly the same preview transaction history as 2D handles.
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(el=>el.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    '3D thickness Undo unavailable');
+  await eventually(async () => (await numberValue('Thickness')) === '8', '3D thickness single-command undo');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(el=>el.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    '3D thickness Redo unavailable');
+  await eventually(async () => (await numberValue('Thickness')) === '11', '3D thickness single-command redo');
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=solid-thickness-handle]');b?.focus();return document.activeElement===b})()"),
+    '3D thickness handle is not keyboard-focusable');
+  await key('ArrowUp', 'ArrowUp', 38);
+  await eventually(async () => (await numberValue('Thickness')) === '12', '3D thickness keyboard nudge');
+  await screenshot('07-solid-thickness-keyboard.png');
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
+    actualThreeDimensionalThicknessManipulation: true,
+    blurredThicknessGestureCancelled: true,
+    thicknessDragMm: 11, thicknessKeyboardMm: 12,
     cursorVisualOriginVerifiedWithoutEdit: true,
     blurredGestureCancelledWithoutRevision: true,
     missingAndSingularSvgProjectionFailClosed: true,
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png'],
+    screenshots: ['01-solid.png', '02-sketch.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png'],
     limits: 'Preview only; no SKETCH solver, exact B-rep/OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');

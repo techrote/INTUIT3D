@@ -1,18 +1,49 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { Document } from '../model';
+import {
+  nudgeThickness, projectThicknessAxis, proposeThicknessDrag,
+  type ScreenPoint, type ThicknessDrag,
+} from '../thicknessDrag';
 
 export interface SolidViewportProps {
   document: Document | null;
   selected: string;
   onSelect: (id: string) => void;
+  onChange: (value: number) => void;
+  onGestureStart: () => void;
+  onGesturePreview: (value: number) => void;
+  onGestureFinish: () => void;
+  onGestureCancel: () => void;
+  canEdit: boolean;
 }
 
-/** Visual approximation only: Three.js extrusion is NOT an OCCT/B-rep result. */
-export function SolidViewport({ document, selected, onSelect }: SolidViewportProps) {
+type ActiveDrag = ThicknessDrag & { readonly pointerId: number };
+
+interface Gizmo {
+  readonly knob: THREE.Mesh;
+  readonly stem: THREE.Line;
+  readonly camera: THREE.PerspectiveCamera;
+  scale: number;
+  visible: boolean;
+}
+
+/**
+ * Polygonal Three.js preview, not an OCCT B-rep. The 3D direct-edit knob
+ * proposes a thickness scalar only; no face identities or exact geometry are
+ * inferred from rendered triangles.
+ */
+export function SolidViewport({
+  document, selected, onSelect, onChange, onGestureStart, onGesturePreview,
+  onGestureFinish, onGestureCancel, canEdit,
+}: SolidViewportProps) {
   const host = useRef<HTMLDivElement>(null);
+  const handle = useRef<HTMLButtonElement>(null);
   const meshGroup = useRef<THREE.Group | null>(null);
+  const gizmo = useRef<Gizmo | null>(null);
+  const axis = useRef<ScreenPoint | null>(null);
+  const drag = useRef<ActiveDrag | null>(null);
   const selectRef = useRef(onSelect);
   selectRef.current = onSelect;
 
@@ -27,7 +58,7 @@ export function SolidViewport({ document, selected, onSelect }: SolidViewportPro
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     el.appendChild(renderer.domElement);
-    renderer.domElement.setAttribute('aria-label', '3D preview viewport, orbit with pointer drag and zoom with mouse wheel');
+    renderer.domElement.setAttribute('aria-label', '3D polygonal preview: orbit, pan, zoom, select; thickness gizmo is preview only');
     renderer.domElement.setAttribute('role', 'img');
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -37,8 +68,7 @@ export function SolidViewport({ document, selected, onSelect }: SolidViewportPro
     controls.target.set(0, 4, 0);
     controls.update();
 
-    const ambient = new THREE.HemisphereLight('#d5e7ff', '#152538', 3.2);
-    scene.add(ambient);
+    scene.add(new THREE.HemisphereLight('#d5e7ff', '#152538', 3.2));
     const sun = new THREE.DirectionalLight('#eaf4ff', 2.1);
     sun.position.set(110, 220, 150);
     scene.add(sun);
@@ -51,6 +81,19 @@ export function SolidViewport({ document, selected, onSelect }: SolidViewportPro
     const group = new THREE.Group();
     scene.add(group);
     meshGroup.current = group;
+
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(4.2, 16, 12),
+      new THREE.MeshBasicMaterial({ color: '#ffe3a1', depthTest: false }));
+    knob.renderOrder = 20;
+    scene.add(knob);
+    const stem = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(), new THREE.Vector3(0, 1, 0),
+    ]), new THREE.LineBasicMaterial({ color: '#ffe3a1', depthTest: false }));
+    stem.renderOrder = 19;
+    scene.add(stem);
+    gizmo.current = { knob, stem, camera, scale: 1, visible: false };
+    knob.visible = false;
+    stem.visible = false;
 
     const resize = () => {
       const width = Math.max(1, el.clientWidth);
@@ -78,15 +121,47 @@ export function SolidViewport({ document, selected, onSelect }: SolidViewportPro
     };
     renderer.domElement.addEventListener('pointerdown', downHandler);
     renderer.domElement.addEventListener('pointerup', upHandler);
+
+    const projected = (point: THREE.Vector3): ScreenPoint => {
+      const p = point.clone().project(camera);
+      return { x: (p.x + 1) * el.clientWidth / 2, y: (1 - p.y) * el.clientHeight / 2 };
+    };
     let frame = 0;
     let alive = true;
     const draw = () => {
       if (!alive) return;
       controls.update();
+      camera.updateMatrixWorld();
+      const current = gizmo.current;
+      const button = handle.current;
+      if (current?.visible && button) {
+        const origin = current.knob.position.clone();
+        const position = projected(origin);
+        const span = 10;
+        const raised = projected(origin.clone().add(new THREE.Vector3(0, span * current.scale, 0)));
+        try {
+          const projectedAxis = projectThicknessAxis(position, raised, span);
+          // Freeze the sensitivity used by an active drag even if the viewport
+          // is resized or another render arrives while its preview changes.
+          if (!drag.current) axis.current = projectedAxis;
+          button.dataset.axisX = String(projectedAxis.x);
+          button.dataset.axisY = String(projectedAxis.y);
+          button.style.left = position.x + 'px';
+          button.style.top = position.y + 'px';
+          button.style.visibility = 'visible';
+        } catch {
+          axis.current = null;
+          button.style.visibility = 'hidden';
+        }
+      } else if (button) {
+        axis.current = null;
+        button.style.visibility = 'hidden';
+      }
       renderer.render(scene, camera);
       frame = requestAnimationFrame(draw);
     };
     draw();
+
     return () => {
       alive = false;
       cancelAnimationFrame(frame);
@@ -101,15 +176,41 @@ export function SolidViewport({ document, selected, onSelect }: SolidViewportPro
           else obj.material.dispose();
         }
       });
+      knob.geometry.dispose();
+      (knob.material as THREE.Material).dispose();
+      stem.geometry.dispose();
+      (stem.material as THREE.Material).dispose();
       renderer.dispose();
       renderer.domElement.remove();
       meshGroup.current = null;
+      gizmo.current = null;
+      axis.current = null;
     };
   }, []);
 
   useEffect(() => {
+    const abandon = () => {
+      if (!drag.current) return;
+      drag.current = null;
+      axis.current = null;
+      onGestureCancel();
+    };
+    const onEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') abandon(); };
+    const onVisibility = () => { if (globalThis.document.hidden) abandon(); };
+    window.addEventListener('blur', abandon);
+    window.addEventListener('keydown', onEscape);
+    globalThis.document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('blur', abandon);
+      window.removeEventListener('keydown', onEscape);
+      globalThis.document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [onGestureCancel]);
+
+  useEffect(() => {
     const group = meshGroup.current;
-    if (!group) return;
+    const current = gizmo.current;
+    if (!group || !current) return;
     while (group.children.length) {
       const obj = group.children[0]!;
       group.remove(obj);
@@ -121,6 +222,9 @@ export function SolidViewport({ document, selected, onSelect }: SolidViewportPro
         }
       });
     }
+    current.visible = false;
+    current.knob.visible = false;
+    current.stem.visible = false;
     if (!document) return;
     const { width, depth, thickness, holeDiameter, holeSpacing } = document.params;
     const outline = new THREE.Shape();
@@ -145,11 +249,77 @@ export function SolidViewport({ document, selected, onSelect }: SolidViewportPro
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = 'Unqualified polygonal preview — not an exact CAD body';
     group.add(mesh);
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 28), new THREE.LineBasicMaterial({ color: '#c4e2ee', transparent: true, opacity: 0.65 }));
-    group.add(edges);
+    group.add(new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 28),
+      new THREE.LineBasicMaterial({ color: '#c4e2ee', transparent: true, opacity: 0.65 })));
     const footprint = Math.max(width, depth);
-    group.scale.setScalar(footprint > 180 ? 180 / footprint : 1);
+    const modelScale = footprint > 180 ? 180 / footprint : 1;
+    group.scale.setScalar(modelScale);
+    const x = (width / 2 + 14) * modelScale;
+    const z = depth / 2 * modelScale;
+    const height = thickness * modelScale;
+    current.scale = modelScale;
+    current.knob.position.set(x, height, z);
+    current.stem.geometry.dispose();
+    current.stem.geometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x, 0, z), new THREE.Vector3(x, height, z),
+    ]);
+    current.visible = true;
+    current.knob.visible = true;
+    current.stem.visible = true;
   }, [document, selected]);
 
-  return <div className="viewport-canvas" ref={host} data-testid="solid-viewport" />;
+  const begin = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0 || !canEdit || !document || drag.current || !axis.current) return;
+    const projectedAxis = axis.current;
+    drag.current = {
+      pointerId: event.pointerId, startClient: { x: event.clientX, y: event.clientY },
+      initialMm: document.params.thickness, axisPixelsPerMm: projectedAxis,
+    };
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onGestureStart();
+    onSelect('extrude-plate');
+  };
+  const move = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const active = drag.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    try {
+      onGesturePreview(proposeThicknessDrag(active, { x: event.clientX, y: event.clientY }, event.shiftKey ? 0.1 : 1));
+    } catch {
+      drag.current = null;
+      onGestureCancel();
+    }
+  };
+  const finish = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!drag.current || drag.current.pointerId !== event.pointerId) return;
+    drag.current = null;
+    onGestureFinish();
+  };
+  const cancel = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!drag.current || drag.current.pointerId !== event.pointerId) return;
+    drag.current = null;
+    onGestureCancel();
+  };
+  const keyEdit = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!canEdit || !document || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+    event.preventDefault();
+    onSelect('extrude-plate');
+    onChange(nudgeThickness(document.params.thickness,
+      event.key === 'ArrowUp' ? 'up' : 'down', event.shiftKey ? 0.1 : 1));
+  };
+
+  return (
+    <div className="viewport-canvas solid-preview-canvas" ref={host} data-testid="solid-viewport">
+      <button type="button" ref={handle} className="solid-thickness-handle"
+        aria-label="3D preview thickness: drag along the vertical gizmo, Arrow Up or Down to edit, Shift for 0.1 mm; Escape cancels"
+        title="Drag to adjust preview thickness · Shift 0.1 mm · Esc cancels"
+        data-testid="solid-thickness-handle"
+        tabIndex={canEdit ? 0 : -1} aria-disabled={!canEdit}
+        onPointerDown={begin} onPointerMove={move} onPointerUp={finish}
+        onPointerCancel={cancel} onLostPointerCapture={cancel}
+        onKeyDown={keyEdit}
+      ><span aria-hidden="true">↕</span></button>
+    </div>
+  );
 }

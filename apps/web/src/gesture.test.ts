@@ -6,6 +6,7 @@ import {
   redo, serializeDocument, undo,
 } from './model.ts';
 import { nudgeHolePitch, proposeHolePitch } from './sketchInteraction.ts';
+import { proposeThicknessDrag } from './thicknessDrag.ts';
 
 test('100 move events are one undoable dimension and one journal entry', () => {
   const original = newWorkspace();
@@ -137,4 +138,41 @@ test('undo across invalid revisions cannot display future geometry as an earlier
   assert.equal(loaded.lastValid?.params.thickness, 8);
   loaded = undo(loaded);
   assert.equal(loaded.lastValid, null);
+});
+
+test('3D projected thickness drag is one undoable preview command and survives save/reopen', () => {
+  const before = newWorkspace();
+  const slope = { x: 2, y: -3 };
+  const drag = { startClient: { x: 200, y: 180 }, initialMm: 8, axisPixelsPerMm: slope };
+  let w = beginDimensionGesture(before, 'thickness');
+  for (let i = 1; i <= 100; i++) {
+    w = previewDimensionGesture(w, proposeThicknessDrag(drag,
+      { x: 200 + i * slope.x / 20, y: 180 + i * slope.y / 20 }, 0.1));
+    assert.equal(w.document.revision, 0);
+    assert.equal(w.past.length, 0);
+  }
+  w = commitDimensionGesture(w);
+  assert.equal(w.document.params.thickness, 13);
+  assert.equal(w.document.revision, 1);
+  assert.equal(w.past.length, 1);
+  assert.equal(undo(w).document.params.thickness, 8);
+  assert.equal(redo(undo(w)).document.params.thickness, 13);
+  assert.equal(parseDocument(serializeDocument(w.document)).params.thickness, 13);
+});
+
+test('3D thickness crossing zero preserves pending intent and a stale preview, not a false solid', () => {
+  let w = newWorkspace();
+  const original = w.document;
+  const drag = { startClient: { x: 30, y: 30 }, initialMm: 8, axisPixelsPerMm: { x: 0, y: -4 } };
+  w = beginDimensionGesture(w, 'thickness');
+  w = previewDimensionGesture(w, proposeThicknessDrag(drag, { x: 30, y: 70 }));
+  assert.equal(w.document.params.thickness, -2);
+  assert.equal(w.document.revision, 0);
+  assert.equal(w.lastValid, original);
+  assert.ok(diagnostics(w.document).some(d => d.featureId === 'extrude-plate'));
+  w = commitDimensionGesture(w);
+  assert.equal(w.document.params.thickness, -2);
+  assert.equal(w.lastValid, original);
+  assert.equal(undo(w).document.params.thickness, 8);
+  assert.equal(cancelDimensionGesture(beginDimensionGesture(w, 'thickness')).document, w.document);
 });
