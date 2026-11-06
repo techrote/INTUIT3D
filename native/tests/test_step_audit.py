@@ -115,6 +115,20 @@ class StepAuditTests(unittest.TestCase):
             self.assertEqual(len(independent_same_occt_reader['metrics']['cylindricalHoles']), 2)
             self.assertLess(abs(independent_same_occt_reader['metrics']['volumeMm3'] - v), 1e-6)
             self.assertLess(abs(independent_same_occt_reader['metrics']['surfaceAreaMm2'] - a), 1e-6)
+            # Prove the existing v1 scalar/cylinder validator ALONE would
+            # falsely bless these alternate bytes. The supervisor must apply
+            # the additional private coordinate oracle before publication.
+            from protocol import validate_result
+            request = plate()
+            obsolete_gate_claim = {
+                'protocol': request['protocol'], 'requestId': request['requestId'],
+                'featureId': request['featureId'], 'revision': request['revision'],
+                'backend': 'OCP-python-prototype', 'occtVersion': '7.9.3.1',
+                'status': 'validated_exact', 'units': 'mm',
+                'source': independent_same_occt_reader['metrics'],
+                'stepReadback': independent_same_occt_reader['metrics'], 'stepWritten': True,
+            }
+            self.assertIs(validate_result(request, obsolete_gate_claim), obsolete_gate_claim)
             with self.assertRaisesRegex(ValueError, 'vertex envelope'):
                 require_plate_vertex_envelope_mm(intent, independent_same_occt_reader['vertexEnvelopeMm'], 'STEP')
             wrapper = root / 'substitute_same_mass_and_area.py'
