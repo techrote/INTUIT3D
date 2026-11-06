@@ -180,8 +180,11 @@ export function resolveSemanticTopologyReference(
       return result('pending_evidence');
     }
     const next = new Map<string,TopologyAnchor>();
+    // One lookup per observed source role, not O(candidates * mapping rows).
+    const bySource = new Map<string,TopologyMapping>();
+    for (const mapping of s.mappings) for (const source of mapping.from) bySource.set(key(source),mapping);
     for (const role of candidates) {
-      const m = s.mappings.find(m=>m.from.some(a=>key(a)===key(role)));
+      const m = bySource.get(key(role));
       if (!m) {
         if (s.coverage==='partial') {
           add('PARTIAL_COVERAGE',cursor,'Missing role under partial coverage');
