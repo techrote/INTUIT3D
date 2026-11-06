@@ -186,3 +186,12 @@ test('overflow during linear elimination never claims a solved sketch', () => {
   assert.equal(result.geometry, null);
   assert.ok(result.diagnostics.some(d=>d.code === 'arithmetic_overflow' || d.code === 'contradictory_constraints'));
 });
+
+
+test('inherited object properties cannot impersonate persistent sketch IDs', () => {
+  const d = plateSketchFixture();
+  const phantom = Object.create({id:'not-own'});
+  phantom.x = 0; phantom.y = 0;
+  d.points[0] = phantom;
+  assert.throws(() => createSketch(d), /invalid point fields/);
+});
