@@ -9,6 +9,10 @@ import {suggestSketchSnaps} from './snap.mjs';
 
 export const SNAP_ADMISSION_VERSION = 1;
 const fail = reason => { throw new TypeError('sketch snap admission: ' + reason); };
+// Dense v1 Gauss–Jordan elimination is cubic; never allocate an unbounded
+// speculative solve before enforcing a conservative admission-only limit.
+const MAX_SCALAR_VARIABLES=256;
+const MAX_SCALAR_EQUATIONS=512;
 const empty = (base, status, reason, diagnostics = []) => ({
   ...base, status, reason, suggestedConstraint:null, resultStatus:null,
   degreesOfFreedomAfter:null, previewGeometry:null, movedPoints:[], diagnostics
@@ -37,13 +41,19 @@ export function proposeSnapConstraint(source, command) {
   // Clone at entry so later browser mutations cannot change proposal custody.
   const request = structuredClone(command);
   const signature = serializeSketch(doc);
-  const initial = solveSketch(doc);
-  const base = {
+  const budgetBase = {
     version:SNAP_ADMISSION_VERSION, previewOnly:true, inputSignature:signature,
-    command:request, sourceStatus:initial.status,
-    degreesOfFreedomBefore:initial.degreesOfFreedom,
-    provisionalSource:initial.status==='underconstrained'
+    command:request, sourceStatus:null, degreesOfFreedomBefore:null,
+    provisionalSource:false
   };
+  const variables=doc.points.length*2+doc.circles.length;
+  const equations=doc.constraints.reduce((n,c)=>n+(['fixed','coincident'].includes(c.kind)?2:1),0);
+  if(variables>MAX_SCALAR_VARIABLES || equations+2>MAX_SCALAR_EQUATIONS)
+    return empty(budgetBase,'budget_exceeded','dense_linear_system_limit');
+  const initial = solveSketch(doc);
+  const base = {...budgetBase,sourceStatus:initial.status,
+    degreesOfFreedomBefore:initial.degreesOfFreedom,
+    provisionalSource:initial.status==='underconstrained'};
   const snap = request.snap;
   if (!snap || typeof snap!=='object' || Array.isArray(snap) ||
       snap.version!==1 || snap.previewOnly!==true ||
