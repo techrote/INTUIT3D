@@ -112,6 +112,25 @@ async function main() {
   await screenshot('02-sketch.png');
   check(await numberValue('Plate width') === '120', 'Unexpected initial width');
 
+  // Real cursor movement must show a visual snap at the sketch origin, without
+  // creating a dimension edit or claiming an authored solver constraint.
+  const originScreen = await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=sketch-viewport]');
+    const p=svg.createSVGPoint();p.x=500;p.y=325;
+    const q=p.matrixTransform(svg.getScreenCTM());
+    return {x:q.x,y:q.y};
+  })()`);
+  check(originScreen && Number.isFinite(originScreen.x), 'Sketch origin projection invalid');
+  await mouse('mouseMoved', originScreen.x, originScreen.y);
+  await eventually(async () => evaluate(
+    "document.querySelector('[data-testid=sketch-cursor-readout]')?.textContent?.includes('VISUAL SNAP: origin')"
+  ), 'real cursor origin snap');
+  check((await revision()).includes('revision 0'), 'Hover must not author a preview edit');
+  check(await evaluate(
+    "document.querySelector('[data-testid=sketch-cursor-readout]')?.textContent?.includes('X 0.0 mm · Y 0.0 mm')"
+  ), 'Origin coordinate readout changed precision or units');
+  await screenshot('02-cursor-snap.png');
+
   // Use actual CDP mouse events at the screen-projected SVG handle. Moving the
   // right edge by 4 mm in sketch coordinates changes the *full* width by 8 mm.
   const positions = await evaluate(`(() => {
@@ -124,6 +143,19 @@ async function main() {
     return {x:a.x,y:a.y,finishX:b.x,finishY:b.y};
   })()`);
   check(positions && Number.isFinite(positions.x) && Number.isFinite(positions.finishX), 'Handle projection invalid');
+
+  // Losing window focus mid-gesture cancels the uncommitted preview; the
+  // subsequent pointer-up must not journal the abandoned dimension.
+  await mouse('mouseMoved', positions.x, positions.y);
+  await mouse('mousePressed', positions.x, positions.y, 1);
+  await mouse('mouseMoved', positions.finishX, positions.finishY, 1);
+  await eventually(async () => (await numberValue('Plate width')) === '128', 'provisional width before blur');
+  check((await revision()).includes('revision 0'), 'Provisional edit created a revision');
+  check(await evaluate("(() => {window.dispatchEvent(new Event('blur'));return true})()"), 'Synthetic blur dispatch failed');
+  await eventually(async () => (await numberValue('Plate width')) === '120', 'blur must cancel provisional dimension');
+  await mouse('mouseReleased', positions.finishX, positions.finishY);
+  check((await revision()).includes('revision 0'), 'Released abandoned gesture committed a revision');
+
   await mouse('mouseMoved', positions.x, positions.y);
   await mouse('mousePressed', positions.x, positions.y, 1);
   await mouse('mouseMoved', positions.finishX, positions.finishY, 1);
@@ -154,10 +186,12 @@ async function main() {
   await screenshot('05-recovered.png');
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
+    cursorVisualOriginVerifiedWithoutEdit: true,
+    blurredGestureCancelledWithoutRevision: true,
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png'],
+    screenshots: ['01-solid.png', '02-sketch.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png'],
     limits: 'Preview only; no SKETCH solver, exact B-rep/OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');

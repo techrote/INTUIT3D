@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { apply, beginDimensionGesture, cancelDimensionGesture, commitDimensionGesture, diagnostics,
+import { beginDimensionGesture, cancelDimensionGesture, commitDimensionGesture, diagnostics,
   geometryIsAdmissible, newWorkspace, previewDimensionGesture, serializeDocument, parseDocument, undo, redo } from './model.ts';
 import { nudgeOutlineDimension, outlineAxis, proposeOutlineDimension } from './outlineDimension.ts';
 

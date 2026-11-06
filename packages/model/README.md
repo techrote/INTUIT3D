@@ -43,7 +43,7 @@ From `packages/model`: `npm test` (Node >=22.6 with TypeScript strip support) an
 - No evaluator executes B-rep geometry; `ready` means **dependency-admissible**, not a physically valid solid or exported STEP.
 - The structural `writeTargets` contract conservatively refuses unordered writes; it does not determine geometric commutativity. Future intent schema must distinguish declared independent/commutative operations using separately justified evidence.
 - Journal revision fencing is optimistic within a single project document. Durable filesystem atomic save / multi-user merge / crash recovery need an independent storage transaction.
-- v1 has full replay and explicit remove/restore but no user-level undo stack, schema migration, parameter expression evaluation, topology ancestry or incremental diff cache yet. Add these in scoped tested revisions without silently changing existing v1 document meaning.
+- The v1 core journal does not itself persist a user-level undo stack; the additive `transactions` subpath provides a versioned, explicit undo-history sidecar. Schema migration and durable filesystem-level atomic persistence are not yet implemented. Parameter evaluation, topology lineage and structural incremental invalidation are separate derived v1 subpaths.
 
 ## Dimension-aware user parameters (v1 additive subpath)
 
@@ -119,3 +119,98 @@ version, kernel tolerances/options, feature input signatures, and any material
 data external to the semantic dependency graph. Missing explicit dependency
 edges are a contract defect; provider provenance cannot be silently invented
 here. Full replay remains the safe fallback on cache uncertainty or rejection.
+
+
+## Transactional speculative commands + durable undo/redo (v1 additive subpath)
+
+Import from \`@intuit3d/model/transactions\`. \`previewTransaction(doc, events,
+expectedRevision)\` validates a **whole 1–64 event group** against the same
+append-only semantic journal and returns its projected document, derived
+dependency plan and compensating commands. The caller's document never changes;
+a missing dependency remains pending and an unordered write remains conflicted.
+\`commitTransaction\` returns the accepted immutable document or throws without
+partial commits.
+
+For user-visible undo/redo, \`startUndoHistory(project)\` creates a versioned
+\`intuit3d.undo-history\` v1 session. \`commitUndoableTransaction\` groups user
+events atomically and records their inverse semantic commands. Use
+\`undoTransaction(session, freshEventIds, expectedRevision)\` and
+\`redoTransaction(...)\` to append new, validated remove/restore/edit events
+rather than rewinding the journal. Undo of a creation removes its feature;
+redo restores its existing semantic ID, **never** calls create a second time.
+An undo of an edit records the *previous authored fields*, including units,
+references, payload and declared targets, not cached geometry. New user edits
+clear the redo stack. Save/reopen the entire session with
+\`serializeUndoHistory\` and \`deserializeUndoHistory\`.
+
+The caller must allocate a unique semantic **event ID for each inverse event**
+(typically one ID per item in the most recent stack frame). The library refuses
+missing/reused IDs, revision mismatches, bad command metadata and unsupported
+versions. The persisted exact-document fence detects mismatched sidecar/history
+state on reopen; it is neither a cryptographic signature nor an atomic
+cross-tab filesystem lock. There is an explicit 256-group retention ceiling,
+not an undocumented truncation policy. Consumers must checkpoint/archive on
+reaching that limit; no event is silently dropped.
+
+**Qualified scope:** application-owned feature.create/edit/remove/restore
+semantics and derived planning only. No geometric solution, STEP identity
+validation or browser storage atomicity is implied. This interface is additive
+to v1 journal serialization and uses the existing TypeScript package; shared
+workspace/CI and consumer integration remain Integration-owned.
+
+
+## Self-contained archive, checked recovery and explicit undo checkpoint (v1 additive subpath)
+
+Import `createModelArchive`, `serializeModelArchive`,
+`deserializeModelArchive`, `inspectModelArchiveRecovery` and
+`checkpointUndoHistory` from `@intuit3d/model/archive`. The
+`intuit3d.model-archive` v1 format contains **one complete authoritative
+document plus its undo/redo session**. It does not store meshes, native B-rep,
+solved geometry or a STEP-validity assertion.
+
+Example consumer flow:
+
+```ts
+import {
+  createModelArchive, serializeModelArchive, deserializeModelArchive,
+  checkpointUndoHistory, inspectModelArchiveRecovery,
+} from '@intuit3d/model/archive';
+import {serializeUndoHistory} from '@intuit3d/model/transactions';
+
+const text = serializeModelArchive(createModelArchive(session));
+// The application must write 'text' via a crash-atomic local replacement.
+// Neither this package nor localStorage makes disk writes atomic.
+const reopened = deserializeModelArchive(text);
+const preview = inspectModelArchiveRecovery(primaryText, backupText);
+// Admit preview.primary only when preview.status === 'primary_current'.
+// backup_recovery, backup_ahead, history_ambiguity and diverged require
+// explicit review before replacing the authoritative document.
+const savedSession = serializeUndoHistory(reopened.history);
+const afterExplicitCheckpoint = checkpointUndoHistory(
+  reopened.history, savedSession, 'discard-undo-redo'
+);
+```
+
+A checkpoint **discards only undo/redo frames**, requiring an exact full-session
+snapshot fence and an explicit destructive-history acknowledgement. It retains
+the *entire* append-only journal, original feature identities and revisions.
+This allows new edit groups when the 256-frame limit is reached without silently
+dropping undo history or rewriting source events. The original saved archive may
+still be retained for an intentional historical restore.
+
+`inspectModelArchiveRecovery(primary, backup)` checks both candidate sources
+independently, refuses unknown formats, invalid journals and mismatched session
+fences, and compares same-project journals by exact append-only prefix.
+A newer backup is **not** silently made current; torn-primary restoration is
+labelled `backup_recovery`; same-journal but incompatible undo stacks are
+`history_ambiguity`; divergent branches remain `diverged`.
+
+**Limitations:** serialization is a one-unit logical snapshot, **not** an
+atomic filesystem API, secure signature, concurrent multi-tab CAS, history
+compaction or interchange proof. The v1 JSON archive is bounded to 32 MiB
+of UTF-8; larger projects require another explicitly versioned storage format.
+A caller must save with a platform-appropriate temporary-file + fsync/rename
+protocol (or a separately qualified browser persistence transaction), preserve
+the previous good archive, validate after reopening, and present recovery
+candidate status to the user before adoption. No current-state geometry claim
+is implied by a successfully restored journal.

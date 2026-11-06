@@ -9,6 +9,7 @@ import argparse
 import json
 from pathlib import Path
 from protocol import validate_request, analytic_invariants, close
+from plate_envelope import require_plate_vertex_envelope_mm, vertex_envelope_mm
 
 
 def solid_properties(shape) -> dict:
@@ -83,6 +84,9 @@ def execute(request, step_file: Path):
     import OCP
     shape = build_plate(request["plate"])
     source = solid_properties(shape)
+    # Structural validity and aggregate mass alone admit alternate box dimensions.
+    # Fail closed on the actual source B-rep envelope before treating it as exact.
+    require_plate_vertex_envelope_mm(request["plate"], vertex_envelope_mm(shape), "source")
     step = None
     if request["exportStep"]:
         step = solid_properties(save_and_reopen(shape, step_file))
