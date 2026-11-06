@@ -27,7 +27,7 @@ npm test
 tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts
 ```
 
-The first command executes 22 deterministic/adversarial Node tests: fully constrained plate, dimension update, ID-preserving serialization/replay, underconstraint, contradiction, duplicate/redundant constraints, missing references, unsupported nonlinear operations, invalid numeric values, free seed behaviour, cycle validation, hole intersection/boundary refusal, equal radius, coincidence, stale results, explicit numeric policy, self-intersection, schema closure, arithmetic overflow and inherited-property rejection. Typecheck uses TypeScript 5.8.3 in the development environment; no workspace lockfile or shared dependency has been changed here. Root CI/workspace integration is owned by INTEGRATION and must be rerun at the exact admitted PR head.
+The first command executes 24 deterministic/adversarial Node tests: fully constrained plate, dimension update, ID-preserving serialization/replay, underconstraint, contradiction, duplicate/redundant constraints, missing references, unsupported nonlinear operations, invalid numeric values, free seed behaviour, cycle validation, hole intersection/boundary refusal, equal radius, coincidence, stale results, explicit numeric policy, self-intersection, schema closure, arithmetic overflow, inherited-property rejection, fabricated-solution refusal and nonfinite profile-area refusal. Typecheck uses TypeScript 5.8.3 in the development environment; no workspace lockfile or shared dependency has been changed here. Root CI/workspace integration is owned by INTEGRATION and must be rerun at the exact admitted PR head.
 
 ## PlaneGCS evaluation (research intake)
 
