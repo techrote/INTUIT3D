@@ -126,7 +126,7 @@ export function previewDimensionEditBatch(
     const single: DimensionEditRequest = {
       format: DIMENSION_EDIT_FORMAT, version: DIMENSION_EDIT_VERSION,
       eventId: edit.eventId, featureId: edit.featureId, field: edit.field,
-      binding: edit.binding, expectedRevision: working.revision,
+      // Runtime entry shape is validated above; the single-editor validates\n      // the binding expression and unit before any event can be staged.\n      binding: edit.binding as DimensionEditRequest['binding'],\n      expectedRevision: working.revision,
       admission: 'permit_unresolved',
     };
     const step = previewDimensionEdit(working, single);
