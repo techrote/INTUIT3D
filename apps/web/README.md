@@ -126,3 +126,37 @@ multi-tab compare-and-swap: localStorage does not offer an inter-tab transaction
 so two simultaneous writes may still race between comparison and mutation.
 No authoritative INTENT journal, cross-session undo or CAD file durability is
 claimed. External preview JSON export remains the recovery fallback.
+
+
+## Direct sketch dimension handles (WORKBENCH-001 continuation)
+
+The sketch viewport now has three separate, keyboard-focusable dimension
+handles for **plate width**, **plate depth** and **hole diameter**, alongside the
+existing hole-pitch controls. Width/depth expand symmetrically about the sketch
+origin; the diameter handle expands around its hole centre. Pointer-down freezes
+the millimetre scale and authored starting value, so changing sketch extents
+during the drag does not accumulate drift or reverse sign. Horizontal arrows
+adjust width/diameter, vertical arrows adjust depth; Shift selects 0.1 mm rather
+than 1 mm. Pointer-up commits **one** preview-journal/undo event; Escape or
+pointer cancellation reverts the entire drag. Invalid proposed dimensions and
+overlapping profiles are deliberately retained for diagnostics, with any older
+polygonal mesh explicitly stale. This is preview-parameter interaction, **not**
+a sketch solver, exact B-rep, stable topology or direct manipulation of OCCT.
+
+Run `npm test --workspace @intuit3d/web` and the complete exact-head build and
+browser pointer/keyboard tests before admission. `outlineDimension.test.ts`
+is a deterministic adversarial test corpus for frozen coordinate transforms,
+fine snapping, ignored perpendicular keys, undo/reopen and contradictory intent.
+
+### Real-browser admission fixture
+
+After the Integration-owned combined lockfile is admitted, build the workbench
+(`npm run build --workspace @intuit3d/web`) and execute
+`npm run test:browser:handles --workspace @intuit3d/web` on Ubuntu with Chromium.
+The standalone CDP harness opens the real React/Three workbench, takes a WebGL
+screenshot, switches to sketch, performs a **physical mouse drag** on the width
+handle, verifies a single authored revision and undo/redo, applies a diameter
+arrow-key edit, reloads, and explicitly recovers the two edited dimensions.
+It produces five PNG frames plus JSON in `apps/web/browser-evidence-handles/`.
+No result is claimed until the harness actually executes; source-only checks
+and pure geometry unit tests are not substitute graphical evidence.

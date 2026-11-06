@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test src/*.test.ts",
+    "test:browser:handles": "node scripts/handles-smoke.mjs",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {

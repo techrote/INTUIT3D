@@ -71,6 +71,16 @@ jobs:
       - name: Actual Chromium rendering + numeric edit/recovery
         if: matrix.os == 'ubuntu-latest'
         run: node tooling/browser-smoke.mjs
+      - name: Actual Chromium sketch-handle drag, keyboard, undo/redo and reload
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run test:browser:handles --workspace @intuit3d/web
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest' && always()
+        with:
+          name: real-sketch-handle-capture
+          path: apps/web/browser-evidence-handles/
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'ubuntu-latest' && always()
         with:

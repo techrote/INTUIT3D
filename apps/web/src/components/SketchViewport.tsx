@@ -2,12 +2,13 @@ import type { PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardE
 import { useEffect, useRef } from 'react';
 import { type Document, type DimensionKey } from '../model';
 import { nudgeHolePitch, proposeHolePitch, type HolePitchDrag, type HoleSide } from '../sketchInteraction';
+import { nudgeOutlineDimension, outlineAxis, proposeOutlineDimension, type OutlineDimensionDrag, type OutlineKey } from '../outlineDimension';
 
 interface Props {
   document: Document;
   onChange: (key: DimensionKey, value: number) => void;
   onSelect: (id: string) => void;
-  onGestureStart: () => void;
+  onGestureStart: (key: DimensionKey) => void;
   onGesturePreview: (value: number) => void;
   onGestureFinish: () => void;
   onGestureCancel: () => void;
@@ -17,12 +18,14 @@ const W = 1000;
 const H = 650;
 
 type DragState = HolePitchDrag & { readonly pointerId: number };
+type OutlineDragState = OutlineDimensionDrag & { readonly pointerId: number };
 
 /** Scaled 2D sketch-intent visualization, not a constraint solver. */
 export function SketchViewport({ document, onChange, onSelect, onGestureStart, onGesturePreview, onGestureFinish, onGestureCancel, canEdit }: Props) {
   const { width, depth, holeDiameter, holeSpacing } = document.params;
   const svg = useRef<SVGSVGElement>(null);
   const drag = useRef<DragState | null>(null);
+  const outlineDrag = useRef<OutlineDragState | null>(null);
   const scale = Math.min(4.6, 660 / Math.max(1, width), 410 / Math.max(1, depth));
   const left = W / 2 - width * scale / 2;
   const top = H / 2 - depth * scale / 2;
@@ -31,8 +34,9 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && drag.current) {
+      if (event.key === 'Escape' && (drag.current || outlineDrag.current)) {
         drag.current = null;
+        outlineDrag.current = null;
         onGestureCancel();
       }
     };
@@ -40,20 +44,22 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
     return () => window.removeEventListener('keydown', onEscape);
   }, [onGestureCancel]);
 
-  const getSvgX = (event: ReactPointerEvent<SVGElement>) => {
+  const getSvgPoint = (event: ReactPointerEvent<SVGElement>) => {
     const element = svg.current;
-    if (!element) return W / 2;
+    if (!element) return { x: W / 2, y: H / 2 };
     const point = element.createSVGPoint();
     point.x = event.clientX;
     point.y = event.clientY;
     const matrix = element.getScreenCTM();
-    return matrix ? point.matrixTransform(matrix.inverse()).x : W / 2;
+    const converted = matrix ? point.matrixTransform(matrix.inverse()) : point;
+    return { x: converted.x, y: converted.y };
   };
+  const getSvgX = (event: ReactPointerEvent<SVGElement>) => getSvgPoint(event).x;
   const begin = (side: HoleSide) => (event: ReactPointerEvent<SVGCircleElement>) => {
-    if (!canEdit || event.button !== 0 || drag.current) return;
+    if (!canEdit || event.button !== 0 || drag.current || outlineDrag.current) return;
     drag.current = { pointerId: event.pointerId, side, startSvgX: getSvgX(event), startPitchMm: holeSpacing, pixelsPerMm: scale };
     event.currentTarget.setPointerCapture(event.pointerId);
-    onGestureStart();
+    onGestureStart('holeSpacing');
     onSelect('sketch-holes');
   };
   const move = (event: ReactPointerEvent<SVGCircleElement>) => {
@@ -78,6 +84,44 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
     onChange('holeSpacing', nudgeHolePitch(holeSpacing, side, event.key === 'ArrowLeft' ? 'left' : 'right', event.shiftKey ? 0.1 : 1));
   };
 
+  const beginOutline = (key: OutlineKey) => (event: ReactPointerEvent<SVGCircleElement>) => {
+    if (!canEdit || event.button !== 0 || drag.current || outlineDrag.current) return;
+    const point = getSvgPoint(event);
+    outlineDrag.current = {
+      key, pointerId: event.pointerId,
+      startCoordinate: outlineAxis(key) === 'x' ? point.x : point.y,
+      startValueMm: document.params[key], pixelsPerMm: scale,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onGestureStart(key);
+    onSelect(key === 'holeDiameter' ? 'sketch-holes' : 'sketch-plate');
+  };
+  const moveOutline = (event: ReactPointerEvent<SVGCircleElement>) => {
+    const active = outlineDrag.current;
+    if (!active || active.pointerId !== event.pointerId) return;
+    const point = getSvgPoint(event);
+    onGesturePreview(proposeOutlineDimension(active, outlineAxis(active.key) === 'x' ? point.x : point.y, event.shiftKey ? 0.1 : 1));
+  };
+  const finishOutline = (event: ReactPointerEvent<SVGCircleElement>) => {
+    if (!outlineDrag.current || outlineDrag.current.pointerId !== event.pointerId) return;
+    outlineDrag.current = null;
+    onGestureFinish();
+  };
+  const cancelOutline = (event: ReactPointerEvent<SVGCircleElement>) => {
+    if (!outlineDrag.current || outlineDrag.current.pointerId !== event.pointerId) return;
+    outlineDrag.current = null;
+    onGestureCancel();
+  };
+  const keyOutline = (key: OutlineKey) => (event: ReactKeyboardEvent<SVGCircleElement>) => {
+    if (!canEdit || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    const next = nudgeOutlineDimension(document.params[key], key,
+      event.key as 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown', event.shiftKey ? 0.1 : 1);
+    if (next === null) return;
+    event.preventDefault();
+    onSelect(key === 'holeDiameter' ? 'sketch-holes' : 'sketch-plate');
+    onChange(key, next);
+  };
+
   return (
     <svg className="sketch-svg" viewBox={`0 0 ${W} ${H}`} ref={svg} role="group" aria-label="2D plate profile and two hole centres, with draggable and keyboard-adjustable hole centres" data-testid="sketch-viewport">
       <defs>
@@ -99,6 +143,22 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
           onKeyDown={keyEdit(side)}
           style={{ cursor: canEdit ? 'ew-resize' : 'not-allowed', touchAction: 'none' }} />;
       })}
+      {([
+        { key: 'width' as const, x: left + width * scale, y: top, title: 'Plate width: horizontal' },
+        { key: 'depth' as const, x: W / 2, y: top + depth * scale, title: 'Plate depth: vertical' },
+        { key: 'holeDiameter' as const, x: W / 2 + span + radius, y: H / 2, title: 'Hole diameter: horizontal' },
+      ]).map((handle) => (
+        <circle key={handle.key} cx={handle.x} cy={handle.y} r={10}
+          stroke="#f6edb6" strokeWidth={3} fill="#1e4256" role="button"
+          tabIndex={canEdit ? 0 : -1} aria-disabled={!canEdit}
+          aria-label={`${handle.title}. Drag the handle, or use arrow keys; Shift for 0.1 mm increments`}
+          data-testid={`dimension-handle-${handle.key}`}
+          onPointerDown={beginOutline(handle.key)} onPointerMove={moveOutline}
+          onPointerUp={finishOutline} onPointerCancel={cancelOutline}
+          onLostPointerCapture={cancelOutline} onKeyDown={keyOutline(handle.key)}
+          style={{ cursor: canEdit ? (handle.key === 'depth' ? 'ns-resize' : 'ew-resize') : 'not-allowed', touchAction: 'none' }}
+        />
+      ))}
       <line x1={left} x2={left + width * scale} y1={top - 36} y2={top - 36} stroke="#a9d9ed" strokeWidth="1.8" />
       <line x1={left} x2={left} y1={top - 47} y2={top - 23} stroke="#a9d9ed" />
       <line x1={left + width * scale} x2={left + width * scale} y1={top - 47} y2={top - 23} stroke="#a9d9ed" />
@@ -108,7 +168,7 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
       <text x={left - 51} y={H / 2} textAnchor="middle" fill="#bce7fa" fontSize="20" transform={`rotate(-90 ${left - 51} ${H / 2})`}>{depth} mm</text>
       <line x1={W / 2 - span} x2={W / 2 + span} y1={H / 2 + radius + 40} y2={H / 2 + radius + 40} stroke="#ffd48b" />
       <text x={W / 2} y={H / 2 + radius + 66} textAnchor="middle" fill="#ffd48b" fontSize="18">PITCH {holeSpacing} mm</text>
-      <text x={W / 2} y={H - 18} textAnchor="middle" fill="#698598" fontSize="16">SKETCH PREVIEW · DRAG TO EDIT · SHIFT FOR 0.1 MM · ESC TO CANCEL</text>
+      <text x={W / 2} y={H - 18} textAnchor="middle" fill="#698598" fontSize="16">SKETCH PREVIEW · DRAG HOLES OR DIMENSION HANDLES · SHIFT 0.1 MM · ESC CANCEL</text>
     </svg>
   );
 }
