@@ -135,3 +135,25 @@ Execute `bash native/ci.sh` on a runner with the pinned OCP wheel. Scope is
 still **experimental OCP 7.9.3.1 same-engine STEP**; this is not external
 interoperability, the pinned OCCT 8.0.1 C++ worker, semantic topology lineage
 or a security-hardened filesystem/process sandbox.
+
+## Experimental plate-v1 face/shell inventory (microcavity refusal)
+
+On OCP 7.9.3.1, a 120 × 80 × 8 mm plate with its normal two through-holes
+can remain a BRepCheck-valid **single solid** when a 0.0001 mm radius
+internal spherical void is cut into its material. This adds ~1.2566e-7 mm²
+of area, below the established scalar comparison gate, while preserving
+the two cylindrical holes, full cylinder depths and all six box extrema.
+Earlier source-only geometry checks could therefore claim validated_exact.
+The independent STEP structural preflight already rejected extra shells.
+
+The new native/plate_topology.py guard requires exactly one B-rep solid, one
+outer shell, six planar faces and only full-circumference cylindrical hole
+sidewalls. It is invoked on both authored geometry and separately imported
+STEP geometry, even when exportStep is false. Real OCP tests cover normal
+zero/one/two-hole plates, a spherical microcavity, and a six-plane internal
+box void, with source and STEP readback. Execute: bash native/ci.sh.
+
+This is fail-closed restricted plate-v1 validation, not general B-rep
+equivalence. Angular comparison (1e-9 rad) does not alter Boolean fuzzy
+tolerance, and the public protocol remains unchanged. OCCT 8.0.1 C++,
+independent STEP exchange and Windows native geometry remain unqualified.
