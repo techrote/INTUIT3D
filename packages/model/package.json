@@ -27,6 +27,10 @@
     "./archive": {
       "types": "./src/archive.ts",
       "default": "./src/archive.ts"
+    },
+    "./dimension-bindings": {
+      "types": "./src/dimension-bindings.ts",
+      "default": "./src/dimension-bindings.ts"
     }
   },
   "scripts": {
