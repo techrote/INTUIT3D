@@ -107,3 +107,51 @@ test('replay is deterministic and does not mutate caller source, evidence or cho
   const second=resolveSemanticTopologyReference(original,snap(),steps,3);
   assert.deepEqual(first,second);assert.deepEqual(steps,old);assert.deepEqual(original,ref());
 });
+
+test('authoritative journal saves and reopens topology selection without provider cache', async()=>{
+  const {newProject,commitEvent,serializeProject,deserializeProject,featuresOf,planProject} =
+    await import('../src/index.ts');
+  let project=newProject('project.plate');
+  project=commitEvent(project,{eventId:'event.extrude',type:'feature.create',
+    feature:{id:'feature.plate',kind:'extrude',dependsOn:[],writeTargets:['body.plate'],payload:{}}});
+  const selected=ref(base,1);
+  project=commitEvent(project,{eventId:'event.cut',type:'feature.create',
+    feature:{id:'feature.cut',kind:'cut',dependsOn:['feature.plate'],writeTargets:['body.plate'],
+      payload:{sourceFace:selected}}});
+  const reopened=deserializeProject(serializeProject(project));
+  assert.equal(reopened.revision,2);
+  assert.deepEqual(planProject(reopened).executableOrder,['feature.plate','feature.cut']);
+  const persisted=featuresOf(reopened).find(x=>x.id==='feature.cut').payload.sourceFace;
+  assert.deepEqual(persisted,selected);
+  const evidence=[step(1,[row([base],[alt])])];
+  const result=resolveSemanticTopologyReference(persisted,snap([base],1),evidence,reopened.revision);
+  assert.equal(result.status,'resolved');
+  assert.deepEqual(result.candidates,[alt]);
+  // Geometry evidence is deliberately not serialized into the journal.
+  assert.equal(serializeProject(reopened).includes('observedRoles'),false);
+});
+
+test('remove and restore retain authored selection but cannot resurrect deleted topology evidence',async()=>{
+  const {newProject,commitEvent,featuresOf,planProject,serializeProject,deserializeProject} =
+    await import('../src/index.ts');
+  let project=newProject('project.recovery');
+  project=commitEvent(project,{eventId:'event.base',type:'feature.create',
+    feature:{id:'feature.base',kind:'extrude',dependsOn:[],writeTargets:['body.base'],payload:{}}});
+  const reference=ref(base,1,'project.recovery');
+  project=commitEvent(project,{eventId:'event.child',type:'feature.create',
+    feature:{id:'feature.child',kind:'cut',dependsOn:['feature.base'],writeTargets:['body.base'],payload:{selectedFace:reference}}});
+  project=commitEvent(project,{eventId:'event.delete',type:'feature.remove',featureId:'feature.base'});
+  assert.equal(planProject(project).features.find(x=>x.feature.id==='feature.child').status,'pending');
+  project=commitEvent(project,{eventId:'event.restore',type:'feature.restore',featureId:'feature.base'});
+  const reopened=deserializeProject(serializeProject(project));
+  assert.equal(planProject(reopened).features.find(x=>x.feature.id==='feature.child').status,'ready');
+  assert.deepEqual(featuresOf(reopened).find(x=>x.id==='feature.child').payload.selectedFace,reference);
+  const result=resolveSemanticTopologyReference(reference,snap([base],1,'project.recovery'),[
+    step(1,[row([base],[base])],'complete','project.recovery'),
+    step(2,[row([base],[])],'complete','project.recovery'),
+    step(3,[row([base],[base])],'complete','project.recovery'),
+  ],4);
+  assert.equal(result.status,'deleted');
+  assert.deepEqual(result.candidates,[]);
+  // Re-created geometry needs a newly observed source role, not ID-based revival.
+});
