@@ -232,6 +232,12 @@ export function buildPlateProfile(sketchSource, solution, edgeIds, holeIds = [])
   const sketch = validateSketch(sketchSource);
   if (solution?.inputSignature !== serializeSketch(sketch)) fail('stale or mismatched solution');
   if (solution?.status !== 'solved' || !solution.geometry) fail('only fully constrained, consistent sketches may produce a profile');
+  // External callers can mutate returned objects; a matching inputSignature alone
+  // must not authenticate a fabricated result as admissible profile geometry.
+  const independentRebuild = solveSketch(sketch);
+  if (independentRebuild.status !== 'solved' ||
+      JSON.stringify(independentRebuild.geometry) !== JSON.stringify(solution.geometry))
+    fail('modified or unverifiable solver geometry');
   if (!Array.isArray(edgeIds) || edgeIds.length < 3 || !Array.isArray(holeIds)) fail('invalid loop input');
   if (new Set(edgeIds).size !== edgeIds.length || new Set(holeIds).size !== holeIds.length) fail('duplicate profile entities');
   const edges = new Map(sketch.lines.map((line) => [line.id, line]));
@@ -267,7 +273,7 @@ export function buildPlateProfile(sketchSource, solution, edgeIds, holeIds = [])
     const a = vertices[i], b = vertices[(i + 1) % count];
     signedDoubleArea += a.x * b.y - b.x * a.y;
   }
-  if (Math.abs(signedDoubleArea) <= 0) fail('zero-area profile');
+  if (!Number.isFinite(signedDoubleArea) || signedDoubleArea === 0) fail('nonfinite or zero-area profile');
   const circleMap = new Map(solution.geometry.circles.map((c) => [c.id, c]));
   const holes = holeIds.map((id) => {
     const circle = circleMap.get(id);
@@ -293,9 +299,11 @@ export function buildPlateProfile(sketchSource, solution, edgeIds, holeIds = [])
   for (let i = 0; i < holes.length; i++) for (let j = i+1; j < holes.length; j++) {
     if (Math.hypot(holes[i].center.x-holes[j].center.x,holes[i].center.y-holes[j].center.y) <= holes[i].radius+holes[j].radius) fail('circular holes touch or overlap');
   }
+  const areaMm2 = Math.abs(signedDoubleArea) / 2 - Math.PI * holes.reduce((sum,h) => sum + h.radius*h.radius, 0);
+  if (!Number.isFinite(areaMm2) || areaMm2 <= 0) fail('nonpositive or nonfinite analytic area');
   return { status: 'analytic_profile_only', units: 'mm', outer: vertices.map(({id,x,y}) => ({id,x,y})),
     holes: holes.map((h) => ({ id: h.id, centerId: h.center.id, x: h.center.x, y: h.center.y, radius: h.radius })),
-    areaMm2: Math.abs(signedDoubleArea)/2 - Math.PI * holes.reduce((sum,h)=>sum+h.radius*h.radius,0) };
+    areaMm2 };
 }
 
 /** Two-hole plate fixture with persistent, readable semantic entity IDs. */
