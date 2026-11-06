@@ -14,15 +14,15 @@ export interface SnapAdmissionCommand {
 }
 export type SnapAdmissionStatus =
   'admissible'|'stale'|'invalid_selection'|'source_unsolved'|'snap_unavailable'|
-  'unsupported_kind'|'conflicted'|'numerical_failure';
+  'unsupported_kind'|'conflicted'|'numerical_failure'|'budget_exceeded';
 export interface SnapAdmissionProposal {
   version:1;
   previewOnly:true;
   inputSignature:string;
   command:SnapAdmissionCommand;
-  sourceStatus:SolveStatus;
+  sourceStatus:SolveStatus|null;
   provisionalSource:boolean;
-  degreesOfFreedomBefore:number;
+  degreesOfFreedomBefore:number|null;
   status:SnapAdmissionStatus;
   reason:string|null;
   suggestedConstraint:AdmissibleSnapConstraint|null;
