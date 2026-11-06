@@ -31,6 +31,10 @@
     "./dimension-bindings": {
       "types": "./src/dimension-bindings.ts",
       "default": "./src/dimension-bindings.ts"
+    },
+    "./dimension-edit": {
+      "types": "./src/dimension-edit.ts",
+      "default": "./src/dimension-edit.ts"
     }
   },
   "scripts": {
