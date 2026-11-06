@@ -16,6 +16,7 @@ import sys
 import tempfile
 
 from protocol import SCHEMA, InvalidRequest, validate_request, validate_result
+from process_supervision import run_isolated_worker
 from step_preflight import verify_step_artifact
 
 MAX_REQUEST_BYTES = 65536
@@ -35,9 +36,11 @@ def execute(request: object, *, timeout: float = 25.0, step_output: Path | None 
         request_path.write_text(json.dumps(valid, allow_nan=False), encoding='utf-8')
         args = [sys.executable, str(worker), '--request', str(request_path), '--response', str(response_path), '--step', str(step_path)]
         try:
-            completed = subprocess.run(args, cwd=folder, capture_output=True, timeout=timeout, check=False)
+            completed = run_isolated_worker(args, cwd=folder, timeout=timeout)
         except subprocess.TimeoutExpired:
             return {"protocol": SCHEMA, "requestId": valid["requestId"], "status": "timeout", "message": "geometry worker exceeded deadline; no exact result accepted"}
+        except OSError as error:
+            return {"protocol": SCHEMA, "requestId": valid["requestId"], "status": "worker_crash", "message": f"worker could not start: {error}; no exact result accepted"}
         if completed.returncode != 0:
             return {"protocol": SCHEMA, "requestId": valid["requestId"], "status": "worker_crash", "message": f"worker exit {completed.returncode}; no exact result accepted", "diagnostic": completed.stderr.decode('utf-8', errors='replace')[-600:]}
         try:
