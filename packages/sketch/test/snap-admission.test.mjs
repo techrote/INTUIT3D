@@ -57,7 +57,7 @@ test('incompatible coincidence is reported and cannot be silently committed',()=
 test('midpoint, perimeter, quadrant and segment snaps are not replaced by unconstrained fixes',()=>{
   const doc=plateSketchFixture();
   for(const [cursor,kind] of [
-    [{x:60,y:0},'midpoint'],[{x:42,y:40},'circle_perimeter'],
+    [{x:60,y:0},'midpoint'],[{x:39.95,y:44.95},'circle_perimeter'],
     [{x:41,y:40},'circle_quadrant'],[{x:30,y:0.5},'segment']
   ]){
     const opts={radiusMm:2,excludeIds:['p2']};
@@ -86,7 +86,7 @@ test('forged candidate position, identity, ranking or inference options are refu
     r=>{r.snap.selected.x=900;},
     r=>{r.snap.candidates[0].id='point:moving';},
     r=>{r.snap.cursor.x=100;},
-    r=>{r.options.radiusMm=0.5;}
+    r=>{r.options.maxEntities=1;}
   ]){
     const forged=structuredClone(cmd);
     mutate(forged);
