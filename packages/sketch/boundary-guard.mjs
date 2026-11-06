@@ -93,6 +93,6 @@ export function assessPolygonBoundary(vertices) {
 export function requireSimplePolygonBoundary(vertices) {
   const report = assessPolygonBoundary(vertices);
   if (report.status !== 'verified')
-    throw new TypeError('sketch boundary guard: ' + report.reason);
+    throw new TypeError('sketch boundary guard: ' + report.reason + (report.reason === 'nonadjacent_intersection' ? ' (self-intersecting polygon)' : ''));
   return report;
 }

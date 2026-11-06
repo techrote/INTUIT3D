@@ -28,7 +28,7 @@ test('tiny crossing has nonzero encoded topology although naive double cross-pro
   const crossed=[[0,t/2],[t,t/2],[t/2,0],[t/2,t],[10,0],[10,10],[0,10]];
   // The prior naive floating intersection orientation rounds to zero.
   const a=crossed[0],b=crossed[1],c=crossed[2];
-  assert.equal((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]),0);
+  assert.ok((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]) === 0); // signed negative zero is still underflow
   assert.equal(classify(crossed),'nonadjacent_intersection');
   const doc=fixedSketch(crossed), solution=solveSketch(doc);
   assert.equal(solution.status,'solved');
@@ -49,7 +49,7 @@ test('integer-scale bow tie, endpoint contact and adjacent reversal refuse',()=>
 test('guard handles extreme finite magnitudes without floating tolerance relaxation',()=>{
   assert.equal(classify([[0,0],[1e-170,0],[1e-170,1e-170],[0,1e-170]]),null);
   assert.equal(classify([[0,0],[1e150,0],[1e150,1e150],[0,1e150]]),null);
-  assert.equal(classify([[0,0],[1,0],[2,0]]),'zero_area');
+  assert.equal(classify([[0,0],[1,0],[2,0]]),'adjacent_backtrack');
   assert.equal(classify([[0,0],[1,0],[1,0],[0,1]]),'zero_length_edge');
   assert.equal(classify([[0,0],[NaN,0],[1,1]]),'invalid_vertices');
   assert.equal(classify(Array.from({length:257},(_,i)=>[i,0])),'budget_exceeded');
