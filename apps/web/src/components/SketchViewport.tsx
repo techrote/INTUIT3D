@@ -1,6 +1,7 @@
 import type { PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { useEffect, useRef } from 'react';
-import { type Document, type DimensionKey } from '../model';
+import { useEffect, useRef, useState } from 'react';
+import { geometryIsAdmissible, type Document, type DimensionKey } from '../model';
+import { inferPreviewSketchCursor, formatPreviewCursorMm, type PreviewSketchCursor } from '../sketchCursor';
 import { nudgeHolePitch, proposeHolePitch, type HolePitchDrag, type HoleSide } from '../sketchInteraction';
 import { nudgeOutlineDimension, outlineAxis, proposeOutlineDimension, type OutlineDimensionDrag, type OutlineKey } from '../outlineDimension';
 
@@ -26,6 +27,7 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
   const svg = useRef<SVGSVGElement>(null);
   const drag = useRef<DragState | null>(null);
   const outlineDrag = useRef<OutlineDragState | null>(null);
+  const [cursor, setCursor] = useState<PreviewSketchCursor | null>(null);
   const scale = Math.min(4.6, 660 / Math.max(1, width), 410 / Math.max(1, depth));
   const left = W / 2 - width * scale / 2;
   const top = H / 2 - depth * scale / 2;
@@ -37,11 +39,28 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
       if (event.key === 'Escape' && (drag.current || outlineDrag.current)) {
         drag.current = null;
         outlineDrag.current = null;
+        setCursor(null);
         onGestureCancel();
       }
     };
+    // A hidden/blurred page must not leave a provisional document gesture live.
+    const abandon = () => {
+      if (drag.current || outlineDrag.current) {
+        drag.current = null;
+        outlineDrag.current = null;
+        setCursor(null);
+        onGestureCancel();
+      }
+    };
+    const onVisibility = () => { if (document.hidden) abandon(); };
     window.addEventListener('keydown', onEscape);
-    return () => window.removeEventListener('keydown', onEscape);
+    window.addEventListener('blur', abandon);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('keydown', onEscape);
+      window.removeEventListener('blur', abandon);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [onGestureCancel]);
 
   const getSvgPoint = (event: ReactPointerEvent<SVGElement>) => {
@@ -55,9 +74,23 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
     return { x: converted.x, y: converted.y };
   };
   const getSvgX = (event: ReactPointerEvent<SVGElement>) => getSvgPoint(event).x;
+  const updateCursor = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (drag.current || outlineDrag.current) return;
+    try {
+      const point = getSvgPoint(event);
+      setCursor(inferPreviewSketchCursor({
+        centreX: W / 2, centreY: H / 2, pixelsPerMm: scale,
+        widthMm: width, depthMm: depth, holePitchMm: holeSpacing,
+      }, point.x, point.y, { allowProfileSnaps: geometryIsAdmissible(document) }));
+    } catch {
+      // Noninvertible SVG transforms and numerical failures are not snap points.
+      setCursor(null);
+    }
+  };
   const begin = (side: HoleSide) => (event: ReactPointerEvent<SVGCircleElement>) => {
     if (!canEdit || event.button !== 0 || drag.current || outlineDrag.current) return;
     drag.current = { pointerId: event.pointerId, side, startSvgX: getSvgX(event), startPitchMm: holeSpacing, pixelsPerMm: scale };
+    setCursor(null);
     event.currentTarget.setPointerCapture(event.pointerId);
     onGestureStart('holeSpacing');
     onSelect('sketch-holes');
@@ -93,6 +126,7 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
       startValueMm: document.params[key], pixelsPerMm: scale,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
+    setCursor(null);
     onGestureStart(key);
     onSelect(key === 'holeDiameter' ? 'sketch-holes' : 'sketch-plate');
   };
@@ -123,7 +157,7 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
   };
 
   return (
-    <svg className="sketch-svg" viewBox={`0 0 ${W} ${H}`} ref={svg} role="group" aria-label="2D plate profile and two hole centres, with draggable and keyboard-adjustable hole centres" data-testid="sketch-viewport">
+    <svg className="sketch-svg" viewBox={`0 0 ${W} ${H}`} ref={svg} role="group" aria-label="2D plate preview, draggable dimensions and visual-only cursor snapping; no constraints automatically authored" data-testid="sketch-viewport" onPointerMove={updateCursor} onPointerLeave={() => setCursor(null)}>
       <defs>
         <pattern id="sketch-grid" width="25" height="25" patternUnits="userSpaceOnUse">
           <path d="M 25 0 L 0 0 0 25" fill="none" stroke="#23384b" strokeWidth="1" />
@@ -168,7 +202,20 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
       <text x={left - 51} y={H / 2} textAnchor="middle" fill="#bce7fa" fontSize="20" transform={`rotate(-90 ${left - 51} ${H / 2})`}>{depth} mm</text>
       <line x1={W / 2 - span} x2={W / 2 + span} y1={H / 2 + radius + 40} y2={H / 2 + radius + 40} stroke="#ffd48b" />
       <text x={W / 2} y={H / 2 + radius + 66} textAnchor="middle" fill="#ffd48b" fontSize="18">PITCH {holeSpacing} mm</text>
-      <text x={W / 2} y={H - 18} textAnchor="middle" fill="#698598" fontSize="16">SKETCH PREVIEW · DRAG HOLES OR DIMENSION HANDLES · SHIFT 0.1 MM · ESC CANCEL</text>
+      {cursor && (
+        <g pointerEvents="none" data-testid="sketch-cursor-readout">
+          {cursor.snap && (
+            <g transform={`translate(${W / 2 + cursor.snap.xMm * scale} ${H / 2 - cursor.snap.yMm * scale})`}>
+              <circle r="11" fill="none" stroke="#f5ea91" strokeWidth="2" strokeDasharray="3 2" />
+              <path d="M -17 0 H 17 M 0 -17 V 17" stroke="#f5ea91" strokeWidth="1.5" />
+            </g>
+          )}
+          <rect x="14" y="12" width="455" height="59" rx="6" fill="#122635" fillOpacity=".94" stroke="#35586a" />
+          <text x="26" y="36" fill="#e4f4fa" fontSize="17" fontFamily="monospace">X {formatPreviewCursorMm(cursor.snap?.xMm ?? cursor.rawXmm)} mm · Y {formatPreviewCursorMm(cursor.snap?.yMm ?? cursor.rawYmm)} mm</text>
+          <text x="26" y="59" fill="#f5d98c" fontSize="14" fontFamily="monospace">{cursor.snap ? `VISUAL SNAP: ${cursor.snap.kind} · ${cursor.snap.id}` : 'FREE CURSOR · NO SNAP'} · PREVIEW ONLY</text>
+        </g>
+      )}
+      <text x={W / 2} y={H - 18} textAnchor="middle" fill="#698598" fontSize="16">SKETCH PREVIEW · VISUAL SNAPS DO NOT AUTHOR CONSTRAINTS · SHIFT 0.1 MM · ESC CANCEL</text>
     </svg>
   );
 }
