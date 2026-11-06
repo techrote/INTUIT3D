@@ -158,10 +158,12 @@ export function previewTransaction(
   let working = original;
   const inverse: IntentCommand[] = [];
   for (const event of events) {
-    // Syntax and preconditions of the proposed event are checked by commitEvent.
-    // Compute the inverse from the previous authoritative semantic state.
-    const undo = inverseOf(working, event);
-    working = commitEvent(working, event);
+    // Validate first; inverse derivation must never dereference malformed input.
+    // The accepted event is canonicalized and detached from caller objects.
+    const next = commitEvent(working, event);
+    const acceptedEvent = next.journal[next.journal.length - 1];
+    const undo = inverseOf(working, acceptedEvent);
+    working = next;
     inverse.unshift(canonicalCommand(undo));
   }
   return { document: working, plan: planProject(working),
