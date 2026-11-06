@@ -6,7 +6,7 @@ const buffer = new ArrayBuffer(8);
 const view = new DataView(buffer);
 const fractionMask = (1n << 52n) - 1n;
 const finite = n => typeof n === 'number' && Number.isFinite(n);
-const reject = reason => ({version:CIRCLE_GUARD_VERSION,status:'rejected',reason,insideIds:[],outsideIds:[]});
+const reject = (reason,outsideIds=[]) => ({version:CIRCLE_GUARD_VERSION,status:'rejected',reason,insideIds:[],outsideIds});
 
 function dyadic(value) {
   view.setFloat64(0,value,false);
@@ -69,12 +69,13 @@ export function assessCircularProfile(vertices,circles) {
   const {polygon,circles:scaled}=integers(vertices,circles);
   const insideIds=[],outsideIds=[],inside=[];
   for(const c of scaled){
+    const centerInside=insidePolygon(c,polygon);
     for(let i=0;i<polygon.length;i++){
       const contact=touchesSegment(c,polygon[i],polygon[(i+1)%polygon.length]);
       if(contact===null)return reject('invalid_boundary:zero_length_edge');
-      if(contact)return reject('circle_touches_or_crosses_boundary:'+c.id);
+      if(contact)return reject('circle_touches_or_crosses_boundary:'+c.id,centerInside?[]:[c.id]);
     }
-    if(insidePolygon(c,polygon)){insideIds.push(c.id);inside.push(c);}
+    if(centerInside){insideIds.push(c.id);inside.push(c);}
     else outsideIds.push(c.id);
   }
   for(let i=0;i<inside.length;i++)for(let j=i+1;j<inside.length;j++){
