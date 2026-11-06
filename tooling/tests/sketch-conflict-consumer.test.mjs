@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { plateSketchFixture, editConstraint, parseSketch, serializeSketch, solveSketch } from '../../packages/sketch/index.mjs';
-import { explainLinearConflict } from '../../packages/sketch/conflict-explanation/v1';
+import { explainLinearConflict } from '../../packages/sketch/conflict-explanation.mjs';
 
 function contradictoryPlate() {
   const source = plateSketchFixture();
