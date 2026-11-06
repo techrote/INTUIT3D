@@ -1,0 +1,37 @@
+name: Integration contracts and tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: intuit3d-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workspace:
+    name: Workspace / ${{ matrix.os }} / Node 22
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install workspace with locked dependencies
+        run: npm ci
+      - name: Run root integration oracle and existing workspace checks
+        run: npm run ci
+      - name: Native scoped smoke gate (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: npm run ci:native
