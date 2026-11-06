@@ -1,6 +1,6 @@
 /**
  * INTUIT3D Workflow Runtime v1 — authoritative model/solver orchestration.
- * This is not a geometry provider. The only ready solid state is \`preview_only\`.
+ * This is not a geometry provider. The only ready solid state is `preview_only`.
  * Services MUST be accepted public package modules; no parallel CAD policy here.
  */
 export const WORKFLOW_RUNTIME_FORMAT = 'intuit3d.workflow-runtime-evaluation';
@@ -40,7 +40,7 @@ export function createWorkflowRuntime(services) {
   for (const [key, exports] of Object.entries(required)) {
     for (const name of exports) {
       if (typeof services[key]?.[name] !== 'function') {
-        throw new TypeError(\`runtime: missing \${key}.\${name}\`);
+        throw new TypeError(`runtime: missing ${key}.${name}`);
       }
     }
   }
@@ -65,7 +65,7 @@ export function createWorkflowRuntime(services) {
     for (const entry of plan.features) {
       if (entry.status !== 'ready') {
         evaluated.set(entry.feature.id, failure(runtimeStatus[entry.status],
-          \`model: \${entry.status}\`, {modelDiagnostics: entry.diagnostics, scalarStatus: 'unready'}));
+          `model: ${entry.status}`, {modelDiagnostics: entry.diagnostics, scalarStatus: 'unready'}));
       }
     }
     for (const id of plan.executableOrder) {
@@ -77,13 +77,13 @@ export function createWorkflowRuntime(services) {
         return !state || !['intent_ready', 'analytic_profile_only', 'preview_only'].includes(state.status);
       });
       if (blocked.length) {
-        evaluated.set(id, failure('blocked_dependency', \`upstream runtime feature unavailable: \${blocked.join(', ')}\`,
+        evaluated.set(id, failure('blocked_dependency', `upstream runtime feature unavailable: ${blocked.join(', ')}`,
           {relatedIds: blocked, scalarStatus: 'unready'}));
         continue;
       }
       const gate = gates.get(id);
       if (!goodGate(gate)) {
-        evaluated.set(id, failure('blocked_scalar', \`dimension gate: \${gate?.status ?? 'missing'}\`,
+        evaluated.set(id, failure('blocked_scalar', `dimension gate: ${gate?.status ?? 'missing'}`,
           {scalarStatus: gate?.status ?? 'missing', dimensionDiagnostics: gate?.diagnostics ?? []}));
         continue;
       }
@@ -98,13 +98,13 @@ export function createWorkflowRuntime(services) {
           const source = sketch.validateSketch(payload.sketch);
           const solved = sketch.solveSketch(source);
           if (solved.status !== 'solved') {
-            evaluated.set(id, failure('unsolved_sketch', \`sketch solver: \${solved.status}\`,
+            evaluated.set(id, failure('unsolved_sketch', `sketch solver: ${solved.status}`,
               {scalarStatus, solveStatus: solved.status, sketchDiagnostics: solved.diagnostics}));
             continue;
           }
           const proposal = discovery.discoverPlateProfiles(source);
           if (proposal.status !== 'ready' || proposal.candidates?.length !== 1) {
-            evaluated.set(id, failure('invalid_profile', \`profile discovery: \${proposal.status}\`,
+            evaluated.set(id, failure('invalid_profile', `profile discovery: ${proposal.status}`,
               {scalarStatus, solveStatus: solved.status, discoveryReason: proposal.reason,
                 rejected: proposal.rejected ?? []}));
             continue;
@@ -117,7 +117,7 @@ export function createWorkflowRuntime(services) {
             profile, sketchSignature: proposal.inputSignature, diagnostics:[],
             evidence:'sketch_analytic_only'});
         } catch (error) {
-          evaluated.set(id, failure('invalid_profile', \`sketch admission refused: \${errorMessage(error)}\`,
+          evaluated.set(id, failure('invalid_profile', `sketch admission refused: ${errorMessage(error)}`,
             {scalarStatus}));
         }
         continue;
