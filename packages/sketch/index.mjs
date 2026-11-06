@@ -20,7 +20,7 @@ export function validateSketch(source) {
   const exactKeys = (value, allowed, label) => {
     if (!value || typeof value !== 'object' || Array.isArray(value) ||
         Object.keys(value).some((key) => !allowed.includes(key)) ||
-        allowed.some((key) => !(key in value))) fail(`invalid ${label} fields`);
+        allowed.some((key) => !Object.hasOwn(value, key))) fail(`invalid ${label} fields`);
   };
   exactKeys(doc, ['version', 'units', 'points', 'lines', 'circles', 'constraints'], 'document');
   const all = new Set();
