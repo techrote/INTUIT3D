@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import time
 import sys
 import tempfile
 import unittest
@@ -33,6 +35,34 @@ class SupervisorTests(unittest.TestCase):
             result = execute(req, worker=fake, timeout=0.12)
             self.assertEqual(result['status'], 'timeout')
             self.assertNotIn('source', result)
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX worker tree isolation test')
+    def test_plate_supervisor_timeout_cannot_leave_descendant_export_writer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = Path(tmp, 'escaped.step')
+            fake = Path(tmp, 'orphan.py')
+            fake.write_text(
+                'import subprocess, sys, time\\n'
+                'subprocess.Popen([sys.executable, "-c", '
+                '"import pathlib,time; time.sleep(0.6); pathlib.Path(\\\\\\"escaped.step\\\\\\").write_text(\\\\\\"escaped\\\\\\\")"], '
+                'cwd=sys.argv[sys.argv.index("--request")+1].rsplit("/",1)[0])\\n'
+                'time.sleep(5)\\n', encoding='utf-8')
+            req = plate(); req['exportStep'] = False
+            result = execute(req, worker=fake, timeout=0.16)
+            self.assertEqual(result['status'], 'timeout')
+            self.assertNotIn('source', result)
+            time.sleep(0.75)
+            self.assertFalse(marker.exists(), 'post-timeout worker descendant survived')
+
+    def test_plate_supervisor_limits_crash_diagnostic_size(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp, 'noise.py')
+            fake.write_text('import sys\\nsys.stderr.write("x"*200000+"TAIL")\\nsys.exit(23)\\n')
+            req = plate(); req['exportStep'] = False
+            result = execute(req, worker=fake, timeout=5)
+            self.assertEqual(result['status'], 'worker_crash')
+            self.assertTrue(result['diagnostic'].endswith('TAIL'))
+            self.assertLessEqual(len(result['diagnostic']), 600)
 
     def test_worker_zero_exit_without_response_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
