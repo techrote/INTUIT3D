@@ -44,7 +44,7 @@ test('ordered and unordered/reversed plate loops yield one preview with two genu
 });
 
 test('parameter edits and serialization replay keep semantic line identity and update area',()=>{
-  for(const width of [90,110,120,140,160]) for(const height of [70,80,100]) {
+  for(const width of [100,110,120,140,160]) for(const height of [70,80,100]) {
     let doc=editConstraint(editConstraint(rectangle(),'width',{value:width}),'height',{value:height});
     doc=parseSketch(serializeSketch(doc));
     const r=discoverPlateProfiles(doc);
@@ -125,6 +125,13 @@ test('nested enclosed loops are not auto-classified as outer/inner Boolean topol
   const r=discoverPlateProfiles(doc);
   assert.equal(r.status,'ambiguous');
   assert.equal(r.candidates.length,2);
+});
+
+test('retrospective width shrink must not silently preserve a crossing hole',()=>{
+  const doc=editConstraint(rectangle(),'width',{value:90});
+  const r=discoverPlateProfiles(doc);
+  assert.equal(r.status,'no_profile');
+  assert.equal(r.rejected[0].reason,'ambiguous_circle_contact');
 });
 
 test('circle crossing or just touching an outer boundary rejects the profile',()=>{
