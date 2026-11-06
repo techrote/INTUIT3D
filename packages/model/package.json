@@ -11,6 +11,10 @@
     "./parameters": {
       "types": "./src/parameters.ts",
       "default": "./src/parameters.ts"
+    },
+    "./topology": {
+      "types": "./src/topology.ts",
+      "default": "./src/topology.ts"
     }
   },
   "scripts": {

@@ -70,3 +70,27 @@ Include every referenced semantic parameter ID in `feature.dependsOn`. These dep
 `evaluateParameterPlan(plan)` returns `parameterValues` (in authored feature order), `featureGates` (including pending/unready features) and `admissibleExecutableOrder` (the model order filtered to exclude invalid parameter chains). A bad unit, missing explicit reference edge, divide by zero, nonfinite/underflow result or malformed/overly deep AST produces a typed diagnostic and blocks descendant features without erasing their intent.
 
 **Evidence boundary:** scalar expressions use JavaScript IEEE-754 binary64, not an exact engineering numeric kernel; `admissible` does **not** attest B-rep correctness, STEP interchange or provider acceptance. The v1 parameter layer is an additive subpath contract, not a replacement for `planProject` or a silent alteration of the authoritative document schema.
+
+## Semantic topology roles and explicit lineage (v1 additive subpath)
+
+Import parseSemanticTopologyReference and resolveSemanticTopologyReference from @intuit3d/model/topology.
+A selection is versioned JSON with projectId, atRevision and an application-owned
+featureId/roleId/kind anchor. It may be saved in an existing feature payload;
+no authoritative journal schema or existing model API is changed.
+
+The resolver consumes a source-revision snapshot of observed roles and explicit
+per-revision mapping reports. Each mapping declares the *complete predecessor set*
+and successor set for one provenance event (including split/merge/deletion).
+Complete coverage without a mapping means deletion; partial coverage or uncertain
+mapping means pending evidence, never inferred identity. A missing revision step
+is also pending. All candidate roles are returned without choosing kernel face order.
+
+A split, merge or partial loss requires reconciliation even if later paths converge.
+An explicit manual binding must identify an observed successor at the exact target
+revision and is labelled resolved_manual, not provider-verified. Revalidate after
+each revision; UI should preserve the unresolved selection and diagnostic codes.
+
+This is a deterministic semantic-evidence interpreter, not an OCCT topology
+oracle, exact B-rep validator or geometric equivalence proof. Native lineage
+reports remain derived evidence; a provider may be wrong. Integration should
+wire the versioned subpath to WORKBENCH/KERNEL without modifying those lanes here.
