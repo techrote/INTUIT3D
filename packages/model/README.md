@@ -214,3 +214,54 @@ protocol (or a separately qualified browser persistence transaction), preserve
 the previous good archive, validate after reopening, and present recovery
 candidate status to the user before adoption. No current-state geometry claim
 is implied by a successfully restored journal.
+
+
+## Retrospective dimension bindings (v1 derived adapter)
+
+Import \`evaluateDimensionBindingPlan(planProject(doc))\` from
+\`@intuit3d/model/dimension-bindings\`. A geometry feature can carry an
+**authoritative, versioned** \`payload.dimensionBindings\` manifest that
+binds existing scalar top-level payload fields to the same parameter expression
+AST and unit rules already implemented by \`@intuit3d/model/parameters\`:
+
+\`\`\`json
+{
+  "widthMm": 1,
+  "thicknessMm": 8,
+  "dimensionBindings": {
+    "format": "intuit3d.dimension-bindings",
+    "version": 1,
+    "entries": [
+      {"field": "widthMm", "unit": "mm",
+       "expression": {"op": "multiply",
+         "left": {"op": "ref", "featureId": "parameter.width"},
+         "right": {"op": "literal", "value": 2, "unit": "unitless"}}}
+    ]
+  }
+}
+\`\`\`
+
+The consuming feature **must** declare \`parameter.width\` in its
+\`dependsOn\`. This enables a future-authored parameter and retrospective
+dimension edits without rewriting the earlier geometry feature or using a
+human-readable name as a durable reference. Evaluation returns a
+\`projectId\`/\`revision\`-fenced \`featureGates\` array in authored order and
+an \`admissibleExecutableOrder\` in dependency order. Only a gate whose
+\`status\` is \`bound\` or \`admissible\` supplies \`resolvedPayload\`;
+other statuses **must not** fall back to a stale authored number.
+
+All dimension bindings of a feature commit to its *derived payload together*;
+bad units, undeclared edges, invalid expressions, absent/non-numeric fields,
+repeated fields, unsupported manifest versions, failed upstream parameters,
+cycles and unknown target features stay explicit. A failed binding blocks
+dependent features but does not block unrelated subgraphs. Maximum 64
+bindings/feature and 1,024/plan; top-level numeric fields only. Arithmetic is
+the existing finite binary64 parameter evaluator, not exact geometry. This
+adapter uses disposable internal evaluation IDs, never persisted feature IDs.
+
+**For WORKBENCH/KERNEL:** consume the versioned, derived
+\`resolvedPayload\` only after comparing the plan revision to the current
+document; never overwrite the authoritative journal. This is an additive
+interface; downstream admission must still validate sketch solutions, geometric
+intent, B-rep metrics and STEP exchange. No geometric or graphical execution
+is implied by these model tests.
