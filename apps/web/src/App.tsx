@@ -261,9 +261,16 @@ export default function App() {
         <main className="editor-center" aria-label="CAD editor">
           <div className="viewport-header"><div className="view-label"><strong>{view === 'solid' ? 'Perspective' : 'Sketch plane · XY'}</strong><span>{view === 'solid' ? 'Shaded · edges' : '2D · millimetres'}</span></div><div className="viewport-actions"><span className={stale ? 'preview-tag stale' : 'preview-tag'}>{workspace.gesture ? (stale ? 'DRAGGING · STALE PREVIEW' : 'DRAGGING · UNCOMMITTED PREVIEW') : stale ? 'STALE LAST-GOOD PREVIEW' : rendered ? 'POLYGONAL PREVIEW · NOT EXACT' : 'NO VALID PREVIEW'}</span></div></div>
           <div className="viewport-stage">
-            {view === 'solid' ? <SolidViewport document={rendered} selected={selected} onSelect={setSelected} /> : <SketchViewport document={workspace.document} onChange={update} onSelect={setSelected} onGestureStart={beginSketchGesture} onGesturePreview={previewSketchGesture} onGestureFinish={finishSketchGesture} onGestureCancel={cancelSketchGesture} canEdit={workspace.document.chronology.length < 1024} />}
+            {view === 'solid' ? <SolidViewport document={rendered} selected={selected} onSelect={setSelected}
+              onChange={(value) => update('thickness', value)}
+              onGestureStart={() => beginSketchGesture('thickness')}
+              onGesturePreview={previewSketchGesture}
+              onGestureFinish={finishSketchGesture}
+              onGestureCancel={cancelSketchGesture}
+              canEdit={recovery.kind === 'none' && workspace.document.chronology.length < 1024 &&
+                (valid || workspace.gesture?.key === 'thickness')} /> : <SketchViewport document={workspace.document} onChange={update} onSelect={setSelected} onGestureStart={beginSketchGesture} onGesturePreview={previewSketchGesture} onGestureFinish={finishSketchGesture} onGestureCancel={cancelSketchGesture} canEdit={workspace.document.chronology.length < 1024} />}
             <div className="orientation-widget"><b>Y</b><span>+Z</span><small>X</small></div>
-            <div className="viewport-hint">{view === 'solid' ? 'Drag to orbit · Wheel to zoom · Right-drag to pan · Click to select' : 'Drag holes or outline handles to edit dimensions · Shift 0.1 mm · Esc cancels · Arrow keys nudge'}</div>
+            <div className="viewport-hint">{view === 'solid' ? 'Drag to orbit · Wheel to zoom · Right-drag to pan · Drag ↕ gizmo to change thickness · Shift 0.1 mm · Esc cancels' : 'Drag holes or outline handles to edit dimensions · Shift 0.1 mm · Esc cancels · Arrow keys nudge'}</div>
             {stale && <div className="invalid-overlay"><Glyph name="alert" size={16} /><span>Current intent has invalid geometry. Shown mesh comes from revision {rendered?.revision}; dimensions in the inspector are the current, unresolved values.</span></div>}
             {!rendered && <div className="empty-overlay">No validated preview exists for this imported project. Repair the dimensions to generate a new preview.</div>}
           </div>
