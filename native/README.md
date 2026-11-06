@@ -42,3 +42,32 @@ Before atomic publication, `native/step_preflight.py` inspects the actual experi
 The additional pure-stdlib step_graph_guard.py follows actual STEP entity references from the unique B-rep shape representation into its MANIFOLD_SOLID_BREP, CLOSED_SHELL, shell faces and face-surface definitions. A file fails pre-publication if it has dangling references, extra/orphan faces or cylinders, duplicated cylindrical face references, unbound shell topology, or a length unit not referenced by the actual shape representation context. STEP comments and quoted strings cannot spoof declarations or references. Its lexical scope is intentionally the pinned OCP plate writer's AP214 output, not arbitrary STEP, imported CAD, topological correctness, orientation, geometric continuity or security sandboxing.
 
 Reproduce with: python -m unittest discover -s native/tests -p 'test_*.py' -v (OCP 7.9.3.1). The graph test uses a **real** OCCT two-hole STEP export, plus negative tampering of face-to-cylinder links, orphan faces, dangling entity references and detached millimetre units. This prevents false acceptance that global CYLINDRICAL_SURFACE/LENGTH_UNIT string counts cannot detect. It does **not** upgrade the original Python OCP prototype to the intended OCCT 8.0.1 C++ provider and does not certify independent STEP round-trip interoperability.
+
+
+## One-shot worker process-tree containment (POSIX-qualified)
+
+The supervisor now runs each prototype OCCT subprocess in a private POSIX
+session and kills **the whole inherited process group** on deadline or after
+the worker leader exits. This prevents a subprocess spawned by a faulty worker
+from continuing to modify files after the original operation times out or
+claims completion. The parent drains stderr into a fixed **4096-byte tail**
+and discards stdout, so high-volume diagnostic output cannot exhaust its
+memory. The returned public crash diagnostic remains limited to 600 characters.
+Worker startup failure also yields an explicit \`worker_crash\` response, never
+a successful geometry result.
+
+Execute \`python3 -m unittest discover -s native/tests -p 'test_*.py' -v\`.
+Adversarial tests spawn a descendant that attempts a delayed write **outside**
+the worker's temporary directory; on POSIX the marker must never appear after
+timeout or successful leader exit. Separate fixtures write more than 150 KiB
+of stderr and verify bounded diagnostics. These tests exercise supervision,
+not B-rep semantics or an OCCT 8.0.1 C++ provider.
+
+On Windows, the supervisor creates a process group and attempts
+\`taskkill /T /F\` on timeout, then force-kills the parent if needed;
+**Windows descendant containment is not qualified**, especially when
+the leader exits before child cleanup. Detached POSIX descendants that create
+their own session, hostile kernel code and filesystem privileges are also not
+contained. This is **failure isolation for trusted input**, not a security
+sandbox. A production kernel must use an OS job/cgroup or equivalent
+lifetime-bound sandbox and independent platform tests.
