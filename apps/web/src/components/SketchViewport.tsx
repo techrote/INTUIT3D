@@ -11,6 +11,7 @@ interface Props {
   onGesturePreview: (value: number) => void;
   onGestureFinish: () => void;
   onGestureCancel: () => void;
+  canEdit: boolean;
 }
 const W = 1000;
 const H = 650;
@@ -18,7 +19,7 @@ const H = 650;
 type DragState = HolePitchDrag & { readonly pointerId: number };
 
 /** Scaled 2D sketch-intent visualization, not a constraint solver. */
-export function SketchViewport({ document, onChange, onSelect, onGestureStart, onGesturePreview, onGestureFinish, onGestureCancel }: Props) {
+export function SketchViewport({ document, onChange, onSelect, onGestureStart, onGesturePreview, onGestureFinish, onGestureCancel, canEdit }: Props) {
   const { width, depth, holeDiameter, holeSpacing } = document.params;
   const svg = useRef<SVGSVGElement>(null);
   const drag = useRef<DragState | null>(null);
@@ -49,7 +50,7 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
     return matrix ? point.matrixTransform(matrix.inverse()).x : W / 2;
   };
   const begin = (side: HoleSide) => (event: ReactPointerEvent<SVGCircleElement>) => {
-    if (event.button !== 0 || drag.current) return;
+    if (!canEdit || event.button !== 0 || drag.current) return;
     drag.current = { pointerId: event.pointerId, side, startSvgX: getSvgX(event), startPitchMm: holeSpacing, pixelsPerMm: scale };
     event.currentTarget.setPointerCapture(event.pointerId);
     onGestureStart();
@@ -71,7 +72,7 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
     onGestureCancel();
   };
   const keyEdit = (side: HoleSide) => (event: ReactKeyboardEvent<SVGCircleElement>) => {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    if (!canEdit || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
     event.preventDefault();
     onSelect('sketch-holes');
     onChange('holeSpacing', nudgeHolePitch(holeSpacing, side, event.key === 'ArrowLeft' ? 'left' : 'right', event.shiftKey ? 0.1 : 1));
@@ -92,11 +93,11 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
         const side: HoleSide = i === 0 ? 'left' : 'right';
         return <circle key={side} cx={W / 2 + offset} cy={H / 2} r={radius}
           stroke="#ffd48b" fill="#102332" fillOpacity=".85" strokeWidth="3"
-          role="button" tabIndex={0} aria-label={`${side === 'left' ? 'Left' : 'Right'} hole: drag to change pitch, or use arrow keys; Shift for 0.1 mm increments`}
+          role="button" tabIndex={canEdit ? 0 : -1} aria-disabled={!canEdit} aria-label={`${side === 'left' ? 'Left' : 'Right'} hole: drag to change pitch, or use arrow keys; Shift for 0.1 mm increments`}
           data-testid={`hole-${side}`} onPointerDown={begin(side)} onPointerMove={move}
           onPointerUp={finish} onPointerCancel={cancel} onLostPointerCapture={cancel}
           onKeyDown={keyEdit(side)}
-          style={{ cursor: 'ew-resize', touchAction: 'none' }} />;
+          style={{ cursor: canEdit ? 'ew-resize' : 'not-allowed', touchAction: 'none' }} />;
       })}
       <line x1={left} x2={left + width * scale} y1={top - 36} y2={top - 36} stroke="#a9d9ed" strokeWidth="1.8" />
       <line x1={left} x2={left} y1={top - 47} y2={top - 23} stroke="#a9d9ed" />

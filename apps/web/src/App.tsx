@@ -76,10 +76,12 @@ export default function App() {
   const stale = !valid && rendered !== null;
   const features = useMemo(() => featureStates(workspace.document), [workspace.document]);
 
+  // Validate edits synchronously in the event handler. A functional updater may
+  // run later during render, where a thrown journal-capacity error escapes try/catch.
   const dispatch = useCallback((command: Command) => {
-    try { setWorkspace((current) => apply(current, command)); setNotification(null); }
+    try { setWorkspace(apply(workspace, command)); setNotification(null); }
     catch (error) { setNotification(error instanceof Error ? error.message : 'Edit failed'); }
-  }, []);
+  }, [workspace]);
   const update = useCallback((key: DimensionKey, value: number) => dispatch({ kind: 'dimension', key, value }), [dispatch]);
   const beginSketchGesture = useCallback(() => setWorkspace((current) => beginDimensionGesture(current, 'holeSpacing')), []);
   const previewSketchGesture = useCallback((value: number) => setWorkspace((current) => previewDimensionGesture(current, value)), []);
@@ -179,7 +181,7 @@ export default function App() {
         <main className="editor-center" aria-label="CAD editor">
           <div className="viewport-header"><div className="view-label"><strong>{view === 'solid' ? 'Perspective' : 'Sketch plane · XY'}</strong><span>{view === 'solid' ? 'Shaded · edges' : '2D · millimetres'}</span></div><div className="viewport-actions"><span className={stale ? 'preview-tag stale' : 'preview-tag'}>{workspace.gesture ? (stale ? 'DRAGGING · STALE PREVIEW' : 'DRAGGING · UNCOMMITTED PREVIEW') : stale ? 'STALE LAST-GOOD PREVIEW' : rendered ? 'POLYGONAL PREVIEW · NOT EXACT' : 'NO VALID PREVIEW'}</span></div></div>
           <div className="viewport-stage">
-            {view === 'solid' ? <SolidViewport document={rendered} selected={selected} onSelect={setSelected} /> : <SketchViewport document={workspace.document} onChange={update} onSelect={setSelected} onGestureStart={beginSketchGesture} onGesturePreview={previewSketchGesture} onGestureFinish={finishSketchGesture} onGestureCancel={cancelSketchGesture} />}
+            {view === 'solid' ? <SolidViewport document={rendered} selected={selected} onSelect={setSelected} /> : <SketchViewport document={workspace.document} onChange={update} onSelect={setSelected} onGestureStart={beginSketchGesture} onGesturePreview={previewSketchGesture} onGestureFinish={finishSketchGesture} onGestureCancel={cancelSketchGesture} canEdit={workspace.document.chronology.length < 1024} />}
             <div className="orientation-widget"><b>Y</b><span>+Z</span><small>X</small></div>
             <div className="viewport-hint">{view === 'solid' ? 'Drag to orbit · Wheel to zoom · Right-drag to pan · Click to select' : 'Drag either hole to change pitch · Shift for 0.1 mm · Esc cancels · Arrows move selected hole'}</div>
             {stale && <div className="invalid-overlay"><Glyph name="alert" size={16} /><span>Current intent has invalid geometry. Shown mesh comes from revision {rendered?.revision}; dimensions in the inspector are the current, unresolved values.</span></div>}
