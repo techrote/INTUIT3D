@@ -3,6 +3,7 @@
  * provider, not a general nonlinear solver or an exact geometry kernel.
  * Constraint dimensions and all coordinates are millimetres.
  */
+import { requireSimplePolygonBoundary } from './boundary-guard.mjs';
 export const SKETCH_VERSION = 1;
 const DEFAULT_PIVOT_TOLERANCE = 1e-12;
 const DEFAULT_RESIDUAL_TOLERANCE_MM = 1e-9;
@@ -293,6 +294,9 @@ export function buildPlateProfile(sketchSource, solution, edgeIds, holeIds = [])
     previous = line.end;
   }
   if (previous !== vertices[0].id || new Set(vertices.map((p) => p.id)).size !== vertices.length) fail('open, repeated or ambiguous polygon loop');
+  // Exact dyadic crossing oracle: finite binary64 orientations cannot silently
+  // underflow to zero and admit a genuinely self-intersecting profile.
+  requireSimplePolygonBoundary(vertices);
   const cross = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
   const onSegment = (a, b, c) => Math.min(a.x, b.x) <= c.x && c.x <= Math.max(a.x, b.x) && Math.min(a.y, b.y) <= c.y && c.y <= Math.max(a.y, b.y);
   const intersects = (a,b,c,d) => {
