@@ -1,0 +1,24 @@
+{
+  "name": "@intuit3d/workflow-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.mts",
+      "default": "./index.mjs"
+    }
+  },
+  "types": "./index.d.mts",
+  "peerDependencies": {
+    "@intuit3d/model": "0.1.0",
+    "@intuit3d/sketch": "0.1.0"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.mjs",
+    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/contract.mts"
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  }
+}
