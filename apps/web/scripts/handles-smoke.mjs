@@ -314,10 +314,13 @@ async function main() {
     cursorVisualOriginVerifiedWithoutEdit: true,
     blurredGestureCancelledWithoutRevision: true,
     missingAndSingularSvgProjectionFailClosed: true,
+    previewUnitExpressionCommittedAndUndoable: true,
+    invalidExpressionRejectedWithoutRevision: true,
+    expressionEscapeAbandonedUncommittedEdit: true,
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png'],
+    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png'],
     limits: 'Preview only; no SKETCH solver, exact B-rep/OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
