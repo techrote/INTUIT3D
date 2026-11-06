@@ -43,7 +43,7 @@ From `packages/model`: `npm test` (Node >=22.6 with TypeScript strip support) an
 - No evaluator executes B-rep geometry; `ready` means **dependency-admissible**, not a physically valid solid or exported STEP.
 - The structural `writeTargets` contract conservatively refuses unordered writes; it does not determine geometric commutativity. Future intent schema must distinguish declared independent/commutative operations using separately justified evidence.
 - Journal revision fencing is optimistic within a single project document. Durable filesystem atomic save / multi-user merge / crash recovery need an independent storage transaction.
-- v1 has full replay and explicit remove/restore but no user-level undo stack, schema migration, parameter expression evaluation, topology ancestry or incremental diff cache yet. Add these in scoped tested revisions without silently changing existing v1 document meaning.
+- The v1 core journal does not itself persist a user-level undo stack; the additive `transactions` subpath provides a versioned, explicit undo-history sidecar. Schema migration and durable filesystem-level atomic persistence are not yet implemented. Parameter evaluation, topology lineage and structural incremental invalidation are separate derived v1 subpaths.
 
 ## Dimension-aware user parameters (v1 additive subpath)
 
