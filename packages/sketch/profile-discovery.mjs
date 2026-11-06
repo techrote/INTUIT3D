@@ -10,7 +10,6 @@ export const PROFILE_DISCOVERY_VERSION = 1;
 const DEFAULT_LIMITS = Object.freeze({maxLines:256,maxCircles:64,maxCandidates:16});
 const HARD_LIMITS = Object.freeze({maxLines:512,maxCircles:128,maxCandidates:64});
 const compare = (a,b) => a < b ? -1 : a > b ? 1 : 0;
-const validNumber = x => typeof x==='number' && Number.isFinite(x);
 
 function validateOptions(options) {
   if (!options || typeof options!=='object' || Array.isArray(options) ||
@@ -76,29 +75,6 @@ function orderedCycle(component) {
   if (current!==start || seen.size!==component.length ||
       new Set(ordered.map(e=>e.start)).size!==ordered.length) return {error:'non_simple_cycle'};
   return {ordered};
-}
-
-function pointInside(p,vertices) {
-  let inside=false;
-  for (let i=0,j=vertices.length-1;i<vertices.length;j=i++) {
-    const a=vertices[i],b=vertices[j];
-    if ((a.y>p.y)!==(b.y>p.y) && p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x) inside=!inside;
-  }
-  return inside;
-}
-
-function distanceToBoundary(p,vertices) {
-  let min=Infinity;
-  for (let i=0;i<vertices.length;i++) {
-    const a=vertices[i],b=vertices[(i+1)%vertices.length];
-    const dx=b.x-a.x,dy=b.y-a.y,denominator=dx*dx+dy*dy;
-    if (!validNumber(denominator) || denominator<=0) return null;
-    const t=Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/denominator));
-    const d=Math.hypot(a.x+t*dx-p.x,a.y+t*dy-p.y);
-    if (!validNumber(d)) return null;
-    min=Math.min(min,d);
-  }
-  return min;
 }
 
 /**
