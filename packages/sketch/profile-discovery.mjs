@@ -1,4 +1,5 @@
 import {validateSketch, serializeSketch, solveSketch, buildPlateProfile} from './index.mjs';
+import {assessCircularProfile} from './circle-guard.mjs';
 
 /**
  * Deterministic profile inference for v1 *linear* sketch geometry.
@@ -9,7 +10,6 @@ export const PROFILE_DISCOVERY_VERSION = 1;
 const DEFAULT_LIMITS = Object.freeze({maxLines:256,maxCircles:64,maxCandidates:16});
 const HARD_LIMITS = Object.freeze({maxLines:512,maxCircles:128,maxCandidates:64});
 const compare = (a,b) => a < b ? -1 : a > b ? 1 : 0;
-const validNumber = x => typeof x==='number' && Number.isFinite(x);
 
 function validateOptions(options) {
   if (!options || typeof options!=='object' || Array.isArray(options) ||
@@ -77,29 +77,6 @@ function orderedCycle(component) {
   return {ordered};
 }
 
-function pointInside(p,vertices) {
-  let inside=false;
-  for (let i=0,j=vertices.length-1;i<vertices.length;j=i++) {
-    const a=vertices[i],b=vertices[j];
-    if ((a.y>p.y)!==(b.y>p.y) && p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x) inside=!inside;
-  }
-  return inside;
-}
-
-function distanceToBoundary(p,vertices) {
-  let min=Infinity;
-  for (let i=0;i<vertices.length;i++) {
-    const a=vertices[i],b=vertices[(i+1)%vertices.length];
-    const dx=b.x-a.x,dy=b.y-a.y,denominator=dx*dx+dy*dy;
-    if (!validNumber(denominator) || denominator<=0) return null;
-    const t=Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/denominator));
-    const d=Math.hypot(a.x+t*dx-p.x,a.y+t*dy-p.y);
-    if (!validNumber(d)) return null;
-    min=Math.min(min,d);
-  }
-  return min;
-}
-
 /**
  * Finds unordered line loops and circular through-hole candidates, but does
  * not infer nesting, constraints or body selection. Ambiguity is preserved.
@@ -150,21 +127,25 @@ export function discoverPlateProfiles(source,options={}) {
       continue;
     }
     const polygon=ordered.map(e=>points.get(e.start));
-    const holeIds=[];
-    let hazard=null;
-    for (const circle of solved.geometry.circles.slice().sort((a,b)=>compare(a.id,b.id))) {
+    const circular = assessCircularProfile(polygon,solved.geometry.circles.map(circle => {
       const center=points.get(circle.center);
-      const boundaryDistance=distanceToBoundary(center,polygon);
-      if (boundaryDistance===null) {hazard='unverifiable_boundary_distance';break;}
-      if (boundaryDistance<=circle.radius) {
-        hazard='circle_touches_or_crosses_boundary:'+circle.id;break;
-      }
-      if (pointInside(center,polygon)) holeIds.push(circle.id);
-    }
-    if (hazard) {
-      rejected.push({id,lineIds,reason:'ambiguous_circle_contact',detail:hazard});
+      return {id:circle.id,x:center.x,y:center.y,radius:circle.radius};
+    }));
+    if (circular.status !== 'verified') {
+      // Preserve existing public diagnostic categories while upgrading their
+      // underlying predicates. Ambiguous perimeter contact differs from an
+      // invalid polygon or an overlap between fully enclosed holes.
+      const boundaryFailure=circular.reason?.startsWith('invalid_boundary:');
+      const overlap=circular.reason?.startsWith('circular_holes_touch_or_overlap:');
+      const reason=boundaryFailure||overlap?'profile_validation_failed':'ambiguous_circle_contact';
+      const detail=boundaryFailure
+        ? 'sketch boundary guard: '+circular.reason+
+          (circular.reason.includes('nonadjacent_intersection')?' (self-intersecting polygon)':'')
+        : overlap?'circular holes touch or overlap':circular.reason;
+      rejected.push({id,lineIds,reason,detail});
       continue;
     }
+    const holeIds=circular.insideIds;
     try {
       // Reuse the existing independently re-solved analytic-profile gate,
       // including self-intersection, circle overlap and finite-area checks.
