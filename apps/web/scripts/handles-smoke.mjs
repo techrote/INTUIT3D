@@ -112,6 +112,25 @@ async function main() {
   await screenshot('02-sketch.png');
   check(await numberValue('Plate width') === '120', 'Unexpected initial width');
 
+  // Real cursor movement must show a visual snap at the sketch origin, without
+  // creating a dimension edit or claiming an authored solver constraint.
+  const originScreen = await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=sketch-viewport]');
+    const p=svg.createSVGPoint();p.x=500;p.y=325;
+    const q=p.matrixTransform(svg.getScreenCTM());
+    return {x:q.x,y:q.y};
+  })()`);
+  check(originScreen && Number.isFinite(originScreen.x), 'Sketch origin projection invalid');
+  await mouse('mouseMoved', originScreen.x, originScreen.y);
+  await eventually(async () => evaluate(
+    "document.querySelector('[data-testid=sketch-cursor-readout]')?.textContent?.includes('VISUAL SNAP: origin')"
+  ), 'real cursor origin snap');
+  check((await revision()).includes('revision 0'), 'Hover must not author a preview edit');
+  check(await evaluate(
+    "document.querySelector('[data-testid=sketch-cursor-readout]')?.textContent?.includes('X 0.0 mm · Y 0.0 mm')"
+  ), 'Origin coordinate readout changed precision or units');
+  await screenshot('02-cursor-snap.png');
+
   // Use actual CDP mouse events at the screen-projected SVG handle. Moving the
   // right edge by 4 mm in sketch coordinates changes the *full* width by 8 mm.
   const positions = await evaluate(`(() => {
@@ -154,10 +173,11 @@ async function main() {
   await screenshot('05-recovered.png');
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
+    cursorVisualOriginVerifiedWithoutEdit: true,
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png'],
+    screenshots: ['01-solid.png', '02-sketch.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png'],
     limits: 'Preview only; no SKETCH solver, exact B-rep/OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
