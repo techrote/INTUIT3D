@@ -23,6 +23,10 @@
     "./transactions": {
       "types": "./src/transactions.ts",
       "default": "./src/transactions.ts"
+    },
+    "./archive": {
+      "types": "./src/archive.ts",
+      "default": "./src/archive.ts"
     }
   },
   "scripts": {
