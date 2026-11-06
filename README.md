@@ -27,6 +27,7 @@ Read in this order:
 - [docs/PRODUCT.md](docs/PRODUCT.md) — product vision and UX
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — source-of-truth, system and interfaces
 - [docs/ROADMAP.md](docs/ROADMAP.md) — executable milestone plan
+- [docs/OWNER-STEERING.md](docs/OWNER-STEERING.md) — accepted owner guidance, steering intake and programme assessment protocol
 - [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md) — five worker lanes and handoffs
 - [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) — evidence and correctness gates
 - [docs/RESEARCH-INTAKE.md](docs/RESEARCH-INTAKE.md) — radiCADSAC reuse and tangent handling
