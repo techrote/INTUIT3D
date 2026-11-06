@@ -144,6 +144,8 @@ export function SolidViewport({
           // Freeze the sensitivity used by an active drag even if the viewport
           // is resized or another render arrives while its preview changes.
           if (!drag.current) axis.current = projectedAxis;
+          button.dataset.axisX = String(projectedAxis.x);
+          button.dataset.axisY = String(projectedAxis.y);
           button.style.left = position.x + 'px';
           button.style.top = position.y + 'px';
           button.style.visibility = 'visible';
