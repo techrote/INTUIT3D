@@ -1,0 +1,67 @@
+name: Workbench integration lockfile qualification
+
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'tooling/tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/workbench-lockfile.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: intuit3d-web-lock-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lockfile:
+    name: Generate exact-source lockfile candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Generate lock without executing install scripts
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Validate combined workspace inventory
+        run: |
+          node -e "const fs=require('fs'); const l=JSON.parse(fs.readFileSync('package-lock.json')); for(const p of ['apps/web','packages/model','packages/sketch']) if(!l.packages[p]) throw Error('missing '+p); for(const p of ['node_modules/react','node_modules/three','node_modules/vite']) if(!l.packages[p]) throw Error('missing '+p)"
+          sha256sum package-lock.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exact-source-package-lock
+          path: package-lock.json
+          if-no-files-found: error
+          retention-days: 7
+  check:
+    needs: lockfile
+    name: Generated-lock qualification / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: exact-source-package-lock
+          path: .
+      - name: Install from generated lock only
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Execute root and all workspace tests/type checks/builds
+        run: npm run ci
+      - name: Check explicit web production build
+        run: npm run build --workspace @intuit3d/web
+      - name: Verify workspace package versions
+        run: npm ls --workspaces --depth=0
