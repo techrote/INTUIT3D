@@ -98,7 +98,7 @@ def execute(request: object, *, timeout: float = 25.0, step_output: Path | None 
                     raise ValueError("STEP artifact missing")
                 # Inspect the actual STEP bytes before atomic publication.
                 # This is structural preflight, not independent geometry proof.
-                verify_step_artifact(step_path, expected_holes=len(valid["plate"]["holes"]))
+                verify_step_artifact(step_path, expected_holes=len(valid["plate"]["holes"]), plate=valid["plate"])
                 # A valid worker response + plausible STEP graph do not prove
                 # the STEP still encodes the authored holes and dimensions.
                 # Reopen the actual file with a fresh independently supervised

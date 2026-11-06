@@ -136,7 +136,7 @@ class ThroughHoleTests(unittest.TestCase):
             result = execute(plate([{'x': -30, 'y': 0, 'radius': 1e-5}]),
                              step_output=destination, worker=wrapper, timeout=35)
             self.assertEqual(result['status'], 'requires_reconciliation', result)
-            self.assertIn('STEP readback', result['message'])
+            self.assertIn('STEP analytic: unexpected shell face count', result['message'])
             self.assertFalse(destination.exists())
 
 
