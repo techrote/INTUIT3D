@@ -114,12 +114,21 @@ async function main() {
 
   // Real browser keyboard entry: unit arithmetic is preview-only, invalid input
   // must not change the model, Escape must not commit stale onBlur text.
+  // Preserve the ordinary numeric entry for the existing integration CDP gate.
+  check(await evaluate("(() => {const b=document.querySelector('button[aria-label=\"Use expression for Plate width\"]');b?.click();return !!b})()"),
+    'Preview fx toggle missing');
+  await eventually(() => evaluate("document.querySelector('input[aria-label=\"Plate width\"]')?.type==='text'"), 'fx text entry');
   check(await evaluate("(() => {const e=document.querySelector('input[aria-label=\"Plate width\"]');e?.focus();e?.select();return document.activeElement===e})()"),
     'Dimension editor cannot focus');
   await send('Input.insertText', { text: '1in + 95mm' });
   await key('Enter', 'Enter', 13);
   await eventually(async () => (await numberValue('Plate width')) === '120.4', 'unit expression commit');
   check((await revision()).includes('1'), 'Valid arithmetic should make one preview revision');
+  check(await evaluate("document.querySelector('input[aria-label=\"Plate width\"]')?.type==='number'"),
+    'Valid expression did not return to normal numeric entry');
+  check(await evaluate("(() => {const b=document.querySelector('button[aria-label=\"Use expression for Plate width\"]');b?.click();return !!b})()"),
+    'Cannot enter fx mode to test invalid arithmetic');
+  await eventually(() => evaluate("document.querySelector('input[aria-label=\"Plate width\"]')?.type==='text'"), 're-enter fx mode');
   check(await evaluate("(() => {const e=document.querySelector('input[aria-label=\"Plate width\"]');e?.focus();e?.select();return document.activeElement===e})()"),
     'Dimension editor cannot refocus');
   await send('Input.insertText', { text: '1cm/0' });
