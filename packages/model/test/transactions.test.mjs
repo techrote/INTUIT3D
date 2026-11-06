@@ -55,6 +55,20 @@ test('transaction rejects invalid second event and leaves original revision/iden
   assert.deepEqual(base.journal, []);
 });
 
+test('malformed staged edit and unknown event type return typed format errors', () => {
+  const base = commitEvent(newProject('project.malformed'),
+    create('event.base', 'feature.base'));
+  const before = serializeProject(base);
+  assert.throws(() => previewTransaction(base, [{
+    eventId: 'event.malformed', type: 'feature.edit',
+    featureId: 'feature.base', patch: null,
+  }]), ProjectFormatError);
+  assert.throws(() => previewTransaction(base, [{
+    eventId: 'event.unknown', type: 'feature.unknown', featureId: 'feature.base',
+  }]), ProjectFormatError);
+  assert.equal(serializeProject(base), before);
+});
+
 test('stale expected revision and repeated event IDs fail closed atomically', () => {
   let base = newProject('project.concurrent');
   base = commitEvent(base, create('event.one', 'feature.one'));
