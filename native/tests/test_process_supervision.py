@@ -32,24 +32,31 @@ class ProcessSupervisionTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'posix', 'POSIX process group test')
     def test_timeout_kills_spawned_descendant_that_outlives_leader(self):
         with tempfile.TemporaryDirectory() as tmp:
-            marker, ready = Path(tmp, 'escaped.txt'), Path(tmp, 'spawned.txt')
-            payload = f"import pathlib,time; time.sleep(1.5); pathlib.Path({str(marker)!r}).write_text('escaped')"
+            marker, ready, trigger = (Path(tmp, n) for n in ('escaped.txt', 'spawned.txt', 'trigger'))
+            payload = ("import pathlib,time\n"
+                       f"trigger=pathlib.Path({str(trigger)!r})\n"
+                       "while not trigger.exists(): time.sleep(.02)\n"
+                       f"pathlib.Path({str(marker)!r}).write_text('escaped')\n")
             program = ("import subprocess,sys,time,pathlib\n"
                        "p=subprocess.Popen([sys.executable, '-c', " + repr(payload) + "], "
                        "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
                        "pathlib.Path(" + repr(str(ready)) + ").write_text(str(p.pid))\n"
                        "time.sleep(8)\n")
             with self.assertRaises(subprocess.TimeoutExpired):
-                run_isolated_worker([sys.executable, '-c', program], cwd=Path(tmp), timeout=2.2)
+                run_isolated_worker([sys.executable, '-c', program], cwd=Path(tmp), timeout=3)
             self.assertTrue(ready.exists(), 'worker never actually spawned the descendant')
-            time.sleep(2.8)
+            trigger.write_text('go')
+            time.sleep(1.6)
             self.assertFalse(marker.exists(), 'orphan geometry descendant escaped cancellation')
 
     @unittest.skipUnless(os.name == 'posix', 'POSIX process group test')
     def test_successful_leader_cannot_leave_spawned_background_writer(self):
         with tempfile.TemporaryDirectory() as tmp:
-            marker, ready = Path(tmp, 'background.txt'), Path(tmp, 'spawned.txt')
-            payload = f"import pathlib,time; time.sleep(1.5); pathlib.Path({str(marker)!r}).write_text('escaped')"
+            marker, ready, trigger = (Path(tmp, n) for n in ('background.txt', 'spawned.txt', 'trigger'))
+            payload = ("import pathlib,time\n"
+                       f"trigger=pathlib.Path({str(trigger)!r})\n"
+                       "while not trigger.exists(): time.sleep(.02)\n"
+                       f"pathlib.Path({str(marker)!r}).write_text('escaped')\n")
             program = ("import subprocess,sys,pathlib\n"
                        "p=subprocess.Popen([sys.executable, '-c', " + repr(payload) + "], "
                        "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
@@ -57,7 +64,8 @@ class ProcessSupervisionTests(unittest.TestCase):
             result = run_isolated_worker([sys.executable, '-c', program], cwd=Path(tmp), timeout=5)
             self.assertEqual(result.returncode, 0)
             self.assertTrue(ready.exists(), 'worker never actually spawned the descendant')
-            time.sleep(2.8)
+            trigger.write_text('go')
+            time.sleep(1.6)
             self.assertFalse(marker.exists(), 'leader completion left a live descendant')
 
 
