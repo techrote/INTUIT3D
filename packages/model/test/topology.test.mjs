@@ -156,3 +156,16 @@ test('remove and restore retain authored selection but cannot resurrect deleted 
   assert.deepEqual(result.candidates,[]);
   // Re-created geometry needs a newly observed source role, not ID-based revival.
 });
+
+test('large split-lineage inventory traverses deterministically without choosing a candidate',()=>{
+  const children=Array.from({length:512},(_,i)=>role('feature.pattern','role.segment.'+i));
+  const steps=[
+    step(2,[row([base],children)]),
+    step(3,children.map(c=>row([c],[c]))),
+  ];
+  const r=run(steps,4);
+  assert.equal(r.status,'requires_reconciliation');
+  assert.equal(r.candidates.length,512);
+  assert.equal(r.lastObservedRevision,4);
+  assert.equal(new Set(r.candidates.map(c=>c.roleId)).size,512);
+});
