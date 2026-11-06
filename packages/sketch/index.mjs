@@ -332,6 +332,7 @@ export function buildPlateProfile(sketchSource, solution, edgeIds, holeIds = [])
   const contact = assessCircularProfile(vertices, holes.map(h => ({
     id:h.id, x:h.center.x, y:h.center.y, radius:h.radius
   })));
+  if (contact.outsideIds.length) fail('hole ' + contact.outsideIds[0] + ' is outside profile');
   if (contact.status !== 'verified') {
     if (contact.reason?.startsWith('circle_touches_or_crosses_boundary:'))
       fail('hole ' + contact.reason.split(':')[1] + ' touches or crosses outer boundary');
@@ -339,7 +340,6 @@ export function buildPlateProfile(sketchSource, solution, edgeIds, holeIds = [])
       fail('circular holes touch or overlap');
     fail('circle guard: ' + contact.reason);
   }
-  if (contact.outsideIds.length) fail('hole ' + contact.outsideIds[0] + ' is outside profile');
   const areaMm2 = Math.abs(signedDoubleArea) / 2 - Math.PI * holes.reduce((sum,h) => sum + h.radius*h.radius, 0);
   if (!Number.isFinite(areaMm2) || areaMm2 <= 0) fail('nonpositive or nonfinite analytic area');
   return { status: 'analytic_profile_only', units: 'mm', outer: vertices.map(({id,x,y}) => ({id,x,y})),
