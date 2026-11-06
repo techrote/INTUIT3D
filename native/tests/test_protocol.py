@@ -61,6 +61,8 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(validate_result(request, valid), valid)
         cases = [
             lambda x: x.update(status='approximate_preview'),
+            lambda x: x.update(occtVersion='8.0.1'),
+            lambda x: x.update(occtVersion=''),
             lambda x: x.update(revision=6),
             lambda x: x['source'].update(solidCount=2),
             lambda x: x['source'].update(volumeMm3=0),
@@ -73,6 +75,14 @@ class ContractTests(unittest.TestCase):
             candidate = json.loads(json.dumps(valid)); mutation(candidate)
             with self.assertRaises(ValueError):
                 validate_result(request, candidate)
+        no_export_request = plate(); no_export_request['exportStep'] = False
+        no_export_response = json.loads(json.dumps(valid))
+        no_export_response['stepWritten'] = False
+        no_export_response['stepReadback'] = None
+        self.assertIs(validate_result(no_export_request, no_export_response), no_export_response)
+        no_export_response['stepReadback'] = source
+        with self.assertRaisesRegex(ValueError, 'unexpected STEP readback'):
+            validate_result(no_export_request, no_export_response)
 
 
 if __name__ == '__main__':

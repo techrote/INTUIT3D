@@ -107,8 +107,8 @@ def validate_result(request: PlateRequest, response: object) -> dict:
     result = _object(response, {"protocol", "requestId", "featureId", "revision", "backend", "occtVersion", "status", "units", "source", "stepReadback", "stepWritten"}, "response")
     if (result["protocol"], result["requestId"], result["featureId"], result["revision"], result["units"]) != (SCHEMA, request["requestId"], request["featureId"], request["revision"], "mm"):
         raise ValueError("mismatched response identity, revision or protocol")
-    if result["backend"] != "OCP-python-prototype" or not isinstance(result["occtVersion"], str):
-        raise ValueError("unsupported or unversioned geometry backend")
+    if result["backend"] != "OCP-python-prototype" or result["occtVersion"] != "7.9.3.1":
+        raise ValueError("unsupported or unpinned experimental geometry backend version")
     if result["status"] != "validated_exact":
         raise ValueError("worker did not report validated_exact")
     if type(result["stepWritten"]) is not bool or result["stepWritten"] != request["exportStep"]:
@@ -116,7 +116,9 @@ def validate_result(request: PlateRequest, response: object) -> dict:
     expected_volume, expected_area = analytic_invariants(request["plate"])
     for field in ("source", "stepReadback"):
         obj = result[field]
-        if field == "stepReadback" and not request["exportStep"] and obj is None:
+        if field == "stepReadback" and not request["exportStep"]:
+            if obj is not None:
+                raise ValueError("unexpected STEP readback when exportStep is false")
             continue
         _object(obj, {"valid", "solidCount", "volumeMm3", "surfaceAreaMm2", "cylindricalHoles"}, field)
         if obj["valid"] is not True or type(obj["solidCount"]) is not int or obj["solidCount"] != 1:

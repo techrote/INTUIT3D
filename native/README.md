@@ -30,3 +30,8 @@ The host chooses a required `--step-output` file path when `exportStep: true`, n
 INTEGRATION owns root CI/lockfile; this PR intentionally changes only `native/**`. Use `npm run ci:native` to invoke the native gate (requires OCP installed) after merging with current main. The `native/ci.sh` gate refuses to pass if OCP is unavailable. Future TypeScript consumers should adopt a separately versioned `packages/kernel-contract/**` request/result adapter under KERNEL ownership, with module revisions validated by INTENT, and should treat `validated_exact` only as **scope-local** OCCT test evidence pending independent STEP qualification.
 
 Next bounded changes: implement native C++ OCCT 8.0.1 version pin/toolchain with equivalent contract, run the same oracle and negative test corpus on exact candidate head, then test independent STEP import/read-back and add semantic topology lineage evidence before promoting to production.
+
+
+## Export artifact structural gate
+
+Before atomic publication, `native/step_preflight.py` inspects the actual experimental OCCT STEP bytes. A bounded 32 MiB ASCII AP214/mm gate rejects truncated, wrong-unit, duplicated-entity, extra/missing-solid, missing-cylinder and substituted artifacts without publishing a file. A real OCP worker's valid response is deliberately followed by STEP substitution in the adversarial tests to prove supervisor rejection. These are structural checks **only**, not a full STEP parser, geometry equivalence proof or independent interoperability test; same-engine B-rep/STEP readback and analytic invariants remain separate gates. Only explicitly qualified OCP 7.9.3.1 and its observed AP214/mm structure are admitted; changing the provider or STEP schema requires requalification.

@@ -16,6 +16,7 @@ import sys
 import tempfile
 
 from protocol import SCHEMA, InvalidRequest, validate_request, validate_result
+from step_preflight import verify_step_artifact
 
 MAX_REQUEST_BYTES = 65536
 MAX_RESPONSE_BYTES = 65536
@@ -44,8 +45,11 @@ def execute(request: object, *, timeout: float = 25.0, step_output: Path | None 
                 raise ValueError("response file absent or too large")
             response = validate_result(valid, json.loads(response_path.read_text(encoding='utf-8')))
             if valid['exportStep']:
-                if not step_path.is_file() or step_path.stat().st_size < 100:
-                    raise ValueError("STEP artifact missing or implausibly small")
+                if not step_path.is_file():
+                    raise ValueError("STEP artifact missing")
+                # Inspect the actual STEP bytes before atomic publication.
+                # This is structural preflight, not independent geometry proof.
+                verify_step_artifact(step_path, expected_holes=len(valid["plate"]["holes"]))
                 if step_output is not None:
                     destination = step_output.expanduser().resolve()
                     destination.parent.mkdir(parents=True, exist_ok=True)
