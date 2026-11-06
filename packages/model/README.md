@@ -94,3 +94,28 @@ This is a deterministic semantic-evidence interpreter, not an OCCT topology
 oracle, exact B-rep validator or geometric equivalence proof. Native lineage
 reports remain derived evidence; a provider may be wrong. Integration should
 wire the versioned subpath to WORKBENCH/KERNEL without modifying those lanes here.
+
+
+## Incremental dependency replay (v1 additive subpath)
+
+\`planIncrementalEvaluation(previousDocument, currentDocument)\` is available from
+\`@intuit3d/model/incremental\`. The transition must be an **append-only prefix**
+of the same authoritative project journal. Branch divergence, rollback, and a
+different project ID throw \`ProjectRevisionError\`; consumers must discard old
+derived caches and perform a full rebuild rather than guessing equivalence.
+
+The result lists direct semantic changes, retired features, all living features
+invalidated through **both** old and new dependency graphs, current executable
+features to re-evaluate in topological order, structurally unchanged ready
+features, and unresolved/pending/conflicted features with diagnostics.
+Appending an independent operation does not invalidate unrelated features.
+Retrospective dimension changes, dependency rewiring, future-target recovery,
+feature deletion/restoration and previously unordered same-body writes do.
+
+This is **structural invalidation**, not geometric cache certification:
+\`unchangedReady\` alone never means a cached B-rep/STEP is current. Cache
+consumers must additionally fence project/revision provenance, backend/build
+version, kernel tolerances/options, feature input signatures, and any material
+data external to the semantic dependency graph. Missing explicit dependency
+edges are a contract defect; provider provenance cannot be silently invented
+here. Full replay remains the safe fallback on cache uncertainty or rejection.

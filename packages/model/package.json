@@ -15,6 +15,10 @@
     "./topology": {
       "types": "./src/topology.ts",
       "default": "./src/topology.ts"
+    },
+    "./incremental": {
+      "types": "./src/incremental.ts",
+      "default": "./src/incremental.ts"
     }
   },
   "scripts": {
