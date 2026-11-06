@@ -11,6 +11,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from plate_envelope import vertex_envelope_mm
+
 
 def inspect_step(path: Path) -> dict:
     from OCP.IFSelect import IFSelect_RetDone
@@ -20,8 +22,10 @@ def inspect_step(path: Path) -> dict:
     reader = STEPControl_Reader()
     if reader.ReadFile(str(path)) != IFSelect_RetDone or reader.TransferRoots() != 1:
         raise ValueError('STEP audit: separate-process import failed')
-    result = solid_properties(reader.OneShape())
-    return {'sha256': hashlib.sha256(path.read_bytes()).hexdigest(), 'metrics': result}
+    shape = reader.OneShape()
+    result = solid_properties(shape)
+    return {'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+            'metrics': result, 'vertexEnvelopeMm': vertex_envelope_mm(shape)}
 
 
 def main() -> None:

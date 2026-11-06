@@ -99,3 +99,39 @@ same geometry algorithms; this is **not independent STEP interoperability**
 or a replacement for the OCCT 8.0.1 C++ production worker, native Windows
 qualification or a hostile-worker sandbox. The SHA-256 gate checks byte
 consistency, not authenticity of an external CAD parser or semantic lineage.
+
+## Independent plate-envelope check (experimental OCP STEP reader)
+
+The existing same-engine read-back verified one solid, analytic volume and area,
+two cylindrical hole radii and positions, and STEP shell/entity connectivity.
+Those invariants do **not** uniquely determine plate width, depth and thickness.
+An alternate, physically distinct rectangular plate can have identical analytic
+volume, surface area and through-hole cylinders. That is an explicit false
+acceptance when those inputs are authoritative semantic dimensions.
+
+The isolated producer now checks the source B-rep's **six extreme vertex
+coordinates** before claiming a valid plate. More importantly, the separate
+STEP reader reports its actual imported B-rep vertex envelope to the parent;
+the parent compares all extrema with the authored centered-plate frame before
+publishing STEP. This is an internal additive audit-report field; the public
+`plate-v1` request and response JSON are unchanged. A non-matching extent
+returns no `validated_exact` STEP and creates no output file.
+
+The coordinate equivalence gate is max(1e-7 mm, 1e-10 relative to the
+respective intended coordinate). This is a strict validation comparison,
+**not** an increase in OCCT Boolean fuzzy tolerance or general tolerance
+policy. It assumes the constrained rectangular plate with strictly interior
+holes retaining all box corners. It is not a general B-rep bounding box or
+complete shape equivalence oracle.
+
+`native/tests/test_plate_envelope.py` independently constructs a second
+width/depth/thickness triple with the same analytic volume/area and verifies
+that the new envelope check refuses it. `test_step_audit.py` creates a real
+OCCT alternate STEP, proves it passes existing graph and aggregate mass
+checks, substitutes it after the truthful authoring worker has exited, and
+requires that the supervisor refuse publication.
+
+Execute `bash native/ci.sh` on a runner with the pinned OCP wheel. Scope is
+still **experimental OCP 7.9.3.1 same-engine STEP**; this is not external
+interoperability, the pinned OCCT 8.0.1 C++ worker, semantic topology lineage
+or a security-hardened filesystem/process sandbox.

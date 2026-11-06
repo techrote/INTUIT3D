@@ -82,6 +82,57 @@ class StepAuditTests(unittest.TestCase):
             self.assertTrue('analytic oracle' in result['message'] or 'cylinder' in result['message'], result)
             self.assertFalse(destination.exists())
 
+    def test_isomass_isosurface_alternate_plate_step_is_not_published(self):
+        """Real STEP with same cylinder positions, hole radii, mass and area.
+
+        A different width/depth/thickness triple can have the same volume and
+        surface area. STEP graph, cylinder counts/centres and mass-only gates
+        accept the substitute; the new vertex envelope must refuse it.
+        """
+        import math
+        from protocol import analytic_invariants
+        from plate_envelope import require_plate_vertex_envelope_mm
+        from ocp_worker import build_plate, save_and_reopen
+        from step_preflight import verify_step_artifact
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / 'must-not-publish.step'
+            intent = plate()['plate']
+            v, a = analytic_invariants(intent)
+            cut = sum(math.pi * h['radius'] ** 2 for h in intent['holes'])
+            perimeter = sum(2 * math.pi * h['radius'] for h in intent['holes'])
+            new_t = 8.1
+            product = v / new_t + cut
+            total = (a - 2 * (product - cut)) / (2 * new_t) - perimeter / 2
+            new_w = (total + math.sqrt(total ** 2 - 4 * product)) / 2
+            altered = dict(intent, width=new_w, depth=product / new_w, thickness=new_t)
+            self.assertAlmostEqual(analytic_invariants(altered)[0], v, places=8)
+            self.assertAlmostEqual(analytic_invariants(altered)[1], a, places=8)
+            replacement = root / 'replacement.step'
+            save_and_reopen(build_plate(altered), replacement)
+            verify_step_artifact(replacement, expected_holes=2)
+            independent_same_occt_reader = inspect_step(replacement)
+            self.assertEqual(len(independent_same_occt_reader['metrics']['cylindricalHoles']), 2)
+            self.assertLess(abs(independent_same_occt_reader['metrics']['volumeMm3'] - v), 1e-6)
+            self.assertLess(abs(independent_same_occt_reader['metrics']['surfaceAreaMm2'] - a), 1e-6)
+            with self.assertRaisesRegex(ValueError, 'vertex envelope'):
+                require_plate_vertex_envelope_mm(intent, independent_same_occt_reader['vertexEnvelopeMm'], 'STEP')
+            wrapper = root / 'substitute_same_mass_and_area.py'
+            native = str(Path(__file__).resolve().parents[1])
+            wrapper.write_text(
+                'import sys\nfrom pathlib import Path\n'
+                f'sys.path.insert(0, {native!r})\n'
+                'from ocp_worker import main\n'
+                'main()\n'
+                "Path(sys.argv[sys.argv.index('--step') + 1]).write_bytes("
+                f"Path({str(replacement)!r}).read_bytes())\n",
+                encoding='utf-8',
+            )
+            result = execute(plate(), step_output=target, worker=wrapper, timeout=35)
+            self.assertEqual(result['status'], 'requires_reconciliation', result)
+            self.assertIn('STEP vertex envelope', result['message'])
+            self.assertFalse(target.exists())
+
     def test_parent_audit_timeout_reports_timeout_without_export(self):
         # The successful authoring worker cannot bless an export after the
         # second stage exceeds the shared operation deadline.
