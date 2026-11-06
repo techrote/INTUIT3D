@@ -72,7 +72,7 @@ function fields(o: Record<string, unknown>, keys: string[], where: string): void
 }
 function sid(v: unknown, where: string): string {
   if (typeof v !== 'string' || !ID.test(v)) fail(where, 'invalid semantic identifier');
-  return v;
+  return v as string;
 }
 function rev(v: unknown, where: string): number {
   if (!Number.isSafeInteger(v) || (v as number) < 0) fail(where, 'expected nonnegative safe revision');
@@ -80,7 +80,7 @@ function rev(v: unknown, where: string): number {
 }
 function arr(v: unknown, where: string, limit = 4096): unknown[] {
   if (!Array.isArray(v) || v.length > limit) fail(where, 'expected bounded array');
-  return v;
+  return v as unknown[];
 }
 function pick<T extends string>(v: unknown, options: readonly T[], where: string): T {
   if (typeof v !== 'string' || !options.includes(v as T)) fail(where, 'unsupported value');
