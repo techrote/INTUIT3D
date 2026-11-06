@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from step_graph_guard import verify_step_graph
+
 MAX_STEP_BYTES = 32 * 1024 * 1024
 MIN_STEP_BYTES = 512
 
@@ -62,3 +64,7 @@ def verify_step_artifact(path: Path, *, expected_holes: int) -> None:
         raise ValueError("STEP preflight: wrong single-solid/shell structure")
     if types.count("CYLINDRICAL_SURFACE") != expected_holes:
         raise ValueError("STEP preflight: missing/spurious cylindrical surface entities")
+    # Verify that the declarations describe the actual shell-bound plate,
+    # and that the millimetre unit is bound to that shape representation.
+    # This remains an independent *structural* gate, not geometry proof.
+    verify_step_graph(body, expected_holes=expected_holes)
