@@ -2,6 +2,7 @@ import type { PointerEvent as ReactPointerEvent, KeyboardEvent as ReactKeyboardE
 import { useEffect, useRef, useState } from 'react';
 import { geometryIsAdmissible, type Document, type DimensionKey } from '../model';
 import { inferPreviewSketchCursor, formatPreviewCursorMm, type PreviewSketchCursor } from '../sketchCursor';
+import { projectClientToSketchSvg } from '../sketchProjection';
 import { nudgeHolePitch, proposeHolePitch, type HolePitchDrag, type HoleSide } from '../sketchInteraction';
 import { nudgeOutlineDimension, outlineAxis, proposeOutlineDimension, type OutlineDimensionDrag, type OutlineKey } from '../outlineDimension';
 
@@ -52,32 +53,33 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
         onGestureCancel();
       }
     };
-    const onVisibility = () => { if (document.hidden) abandon(); };
+    const onVisibility = () => { if (globalThis.document.hidden) abandon(); };
     window.addEventListener('keydown', onEscape);
     window.addEventListener('blur', abandon);
-    document.addEventListener('visibilitychange', onVisibility);
+    globalThis.document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('keydown', onEscape);
       window.removeEventListener('blur', abandon);
-      document.removeEventListener('visibilitychange', onVisibility);
+      globalThis.document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [onGestureCancel]);
 
+  // Missing, singular or non-finite DOM transforms must never be treated as
+  // the sketch origin; fail closed before beginning or continuing an edit.
   const getSvgPoint = (event: ReactPointerEvent<SVGElement>) => {
     const element = svg.current;
-    if (!element) return { x: W / 2, y: H / 2 };
-    const point = element.createSVGPoint();
-    point.x = event.clientX;
-    point.y = event.clientY;
-    const matrix = element.getScreenCTM();
-    const converted = matrix ? point.matrixTransform(matrix.inverse()) : point;
-    return { x: converted.x, y: converted.y };
+    if (!element) return null;
+    try {
+      return projectClientToSketchSvg(event.clientX, event.clientY, element.getScreenCTM());
+    } catch {
+      return null;
+    }
   };
-  const getSvgX = (event: ReactPointerEvent<SVGElement>) => getSvgPoint(event).x;
   const updateCursor = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (drag.current || outlineDrag.current) return;
     try {
       const point = getSvgPoint(event);
+      if (!point) { setCursor(null); return; }
       setCursor(inferPreviewSketchCursor({
         centreX: W / 2, centreY: H / 2, pixelsPerMm: scale,
         widthMm: width, depthMm: depth, holePitchMm: holeSpacing,
@@ -89,7 +91,9 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
   };
   const begin = (side: HoleSide) => (event: ReactPointerEvent<SVGCircleElement>) => {
     if (!canEdit || event.button !== 0 || drag.current || outlineDrag.current) return;
-    drag.current = { pointerId: event.pointerId, side, startSvgX: getSvgX(event), startPitchMm: holeSpacing, pixelsPerMm: scale };
+    const point = getSvgPoint(event);
+    if (!point) return;
+    drag.current = { pointerId: event.pointerId, side, startSvgX: point.x, startPitchMm: holeSpacing, pixelsPerMm: scale };
     setCursor(null);
     event.currentTarget.setPointerCapture(event.pointerId);
     onGestureStart('holeSpacing');
@@ -98,7 +102,14 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
   const move = (event: ReactPointerEvent<SVGCircleElement>) => {
     const active = drag.current;
     if (!active || active.pointerId !== event.pointerId) return;
-    onGesturePreview(proposeHolePitch(active, getSvgX(event), event.shiftKey ? 0.1 : 1));
+    const point = getSvgPoint(event);
+    if (!point) {
+      drag.current = null;
+      setCursor(null);
+      onGestureCancel();
+      return;
+    }
+    onGesturePreview(proposeHolePitch(active, point.x, event.shiftKey ? 0.1 : 1));
   };
   const finish = (event: ReactPointerEvent<SVGCircleElement>) => {
     if (!drag.current || drag.current.pointerId !== event.pointerId) return;
@@ -120,6 +131,7 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
   const beginOutline = (key: OutlineKey) => (event: ReactPointerEvent<SVGCircleElement>) => {
     if (!canEdit || event.button !== 0 || drag.current || outlineDrag.current) return;
     const point = getSvgPoint(event);
+    if (!point) return;
     outlineDrag.current = {
       key, pointerId: event.pointerId,
       startCoordinate: outlineAxis(key) === 'x' ? point.x : point.y,
@@ -134,6 +146,12 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
     const active = outlineDrag.current;
     if (!active || active.pointerId !== event.pointerId) return;
     const point = getSvgPoint(event);
+    if (!point) {
+      outlineDrag.current = null;
+      setCursor(null);
+      onGestureCancel();
+      return;
+    }
     onGesturePreview(proposeOutlineDimension(active, outlineAxis(active.key) === 'x' ? point.x : point.y, event.shiftKey ? 0.1 : 1));
   };
   const finishOutline = (event: ReactPointerEvent<SVGCircleElement>) => {
