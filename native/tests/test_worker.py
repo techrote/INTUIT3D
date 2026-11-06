@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import time
 import sys
 import tempfile
 import unittest
@@ -33,6 +35,40 @@ class SupervisorTests(unittest.TestCase):
             result = execute(req, worker=fake, timeout=0.12)
             self.assertEqual(result['status'], 'timeout')
             self.assertNotIn('source', result)
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX worker tree isolation test')
+    def test_plate_supervisor_timeout_cannot_leave_descendant_export_writer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marker, ready, trigger = (Path(tmp, n) for n in ('escaped.step', 'spawned.txt', 'trigger'))
+            fake = Path(tmp, 'orphan.py')
+            payload = ("import pathlib,time\n"
+                       f"trigger=pathlib.Path({str(trigger)!r})\n"
+                       "while not trigger.exists(): time.sleep(.02)\n"
+                       f"pathlib.Path({str(marker)!r}).write_text('escaped')\n")
+            fake.write_text(
+                "import subprocess,sys,time,pathlib\n"
+                "p=subprocess.Popen([sys.executable, '-c', " + repr(payload) + "], "
+                "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+                "pathlib.Path(" + repr(str(ready)) + ").write_text(str(p.pid))\n"
+                "time.sleep(8)\n", encoding='utf-8')
+            req = plate(); req['exportStep'] = False
+            result = execute(req, worker=fake, timeout=3)
+            self.assertEqual(result['status'], 'timeout')
+            self.assertNotIn('source', result)
+            self.assertTrue(ready.exists(), 'worker never spawned the external writer')
+            trigger.write_text('go')
+            time.sleep(1.6)
+            self.assertFalse(marker.exists(), 'post-timeout worker descendant survived')
+
+    def test_plate_supervisor_limits_crash_diagnostic_size(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp, 'noise.py')
+            fake.write_text("import sys\nsys.stderr.write('x'*200000+'TAIL')\nsys.exit(23)\n")
+            req = plate(); req['exportStep'] = False
+            result = execute(req, worker=fake, timeout=5)
+            self.assertEqual(result['status'], 'worker_crash')
+            self.assertTrue(result['diagnostic'].endswith('TAIL'))
+            self.assertLessEqual(len(result['diagnostic']), 600)
 
     def test_worker_zero_exit_without_response_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
