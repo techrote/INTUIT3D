@@ -157,3 +157,20 @@ test('64 changed-dimension/grid roundtrips never alter original sketch or candid
     }
   }
 });
+
+test('large dense solves refuse before admission re-solving, with no source mutation',()=>{
+  const doc=createSketch({version:1,units:'mm',
+    points:Array.from({length:129},(_,i)=>({id:'p'+i,x:i,y:0})),
+    lines:[],circles:[],constraints:[]});
+  const signature=serializeSketch(doc);
+  const request={pointId:'p0',constraintId:'newFix',
+    snap:{version:1,previewOnly:true,inputSignature:signature,cursor:{x:0,y:0}}};
+  const proposal=proposeSnapConstraint(doc,request);
+  assert.equal(proposal.status,'budget_exceeded');
+  assert.equal(proposal.reason,'dense_linear_system_limit');
+  assert.equal(proposal.sourceStatus,null);
+  assert.equal(proposal.degreesOfFreedomBefore,null);
+  assert.equal(proposal.previewGeometry,null);
+  assert.throws(()=>commitSnapConstraint(doc,proposal),/stale, rejected/);
+  assert.equal(serializeSketch(doc),signature);
+});
