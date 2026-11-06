@@ -42,3 +42,7 @@ References: https://www.npmjs.com/package/@salusoft89/planegcs and https://githu
 Nonlinear Euclidean dimensions, angles, tangencies, arcs/splines, robust orientation, automatic profile extraction, drag nullspace projection (only temporary fixed-point drag is supported), large/skew conditioning, exact topology references, cross-provider equivalence, independent graphical acceptance and production export. Consumers should treat all proposed extrudes/cuts as pending actual OCCT/STEP qualification; do not substitute the analytic profile area for a validated B-rep.
 
 **Ownership:** all files live under `packages/sketch/**`; coordination of root workspaces/CI and cross-package admission is assigned to INTEGRATION.
+
+## Bounded minimal conflict witness
+
+The additive `@intuit3d/sketch/conflict-explanation/v1` interface reports one independently rechecked irreducible authored-constraint conflict for the current linear solver, or explicit numerical/budget/unverified refusal. It does not change sketch intent or claim exact nonlinear constraint proof. See [CONFLICT-EXPLANATION.md](CONFLICT-EXPLANATION.md) and the executable adversarial tests.
