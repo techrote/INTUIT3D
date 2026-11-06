@@ -1,0 +1,17 @@
+{
+  "protocol": "intuit3d/kernel/plate-v1",
+  "requestId": "fixture.plate-two-holes.v1",
+  "featureId": "plate.fixture",
+  "revision": 1,
+  "units": "mm",
+  "plate": {
+    "width": 120,
+    "depth": 80,
+    "thickness": 8,
+    "holes": [
+      {"x": -30, "y": 0, "radius": 6},
+      {"x": 30, "y": 0, "radius": 6}
+    ]
+  },
+  "exportStep": true
+}
