@@ -52,7 +52,7 @@ test('preserves genuine zero operands, exact cancellation, and resolvable fine e
   assert.equal(mm('0 + 120mm'), 120);
   assert.equal(mm('2mm - 2mm'), 0);
   assert.equal(mm('1e-300mm - 1e-300mm'), 0);
-  assert.equal(mm('1e9mm - 999999mm'), 1000);
+  assert.equal(mm('1e9mm - 999999000mm'), 1000);
   assert.ok(mm('120mm + 0.001mm') > 120);
 });
 
