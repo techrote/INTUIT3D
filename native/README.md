@@ -71,3 +71,31 @@ their own session, hostile kernel code and filesystem privileges are also not
 contained. This is **failure isolation for trusted input**, not a security
 sandbox. A production kernel must use an OS job/cgroup or equivalent
 lifetime-bound sandbox and independent platform tests.
+
+## Supervisor-owned exact STEP byte readback (OCP experimental provider)
+
+After the authoring OCP worker exits, the host now verifies the actual STEP
+artifact's graph **and** launches a fresh, process-isolated OCP STEP reader via
+`native/step_audit_worker.py`. The second reader computes its own B-rep validity,
+body count, analytic volume/area and exact cylindrical hole locations/radii.
+The supervisor validates these measurements against the original authoritative
+`plate-v1` request; only the second reader's measurements appear as
+`stepReadback` in the admitted response. A SHA-256 digest from the auditor is
+checked against the staged bytes before exclusive, atomic export publication.
+
+The adversarial executable fixture substitutes a **different real OCCT STEP**
+with exactly the same hole count/radii, volume, area and admissible AP214/mm
+graph, but displaced hole centres, after the first worker has already
+reported valid original geometry. Structural STEP inspection alone cannot
+detect this; supervisor-owned STEP readback rejects it, and never publishes
+the substituted artifact. An altered-radius substitution and malformed STEP
+also have negative tests. Execute `bash native/ci.sh` for exact local
+experimental OCP qualification.
+
+**Scope limits:** This confirms integrity of the *bytes actually published*
+relative to intended plate geometry, rather than trusting the producer's
+readback claim. Both readers use **OCP 7.9.3.1 / OCCT 7.9.3.1** and share the
+same geometry algorithms; this is **not independent STEP interoperability**
+or a replacement for the OCCT 8.0.1 C++ production worker, native Windows
+qualification or a hostile-worker sandbox. The SHA-256 gate checks byte
+consistency, not authenticity of an external CAD parser or semantic lineage.
