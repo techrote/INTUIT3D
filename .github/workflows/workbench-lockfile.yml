@@ -73,18 +73,22 @@ jobs:
         run: node tooling/browser-smoke.mjs
       - name: Actual Chromium sketch-handle drag, keyboard, undo/redo and reload
         if: matrix.os == 'ubuntu-latest'
+        # npm --workspace runs in apps/web/. Without this, the app harness
+        # writes into apps/web/apps/web/ and screenshot upload silently misses it.
+        env:
+          INTUIT3D_HANDLE_ARTIFACTS: browser-evidence-handles
         run: npm run test:browser:handles --workspace @intuit3d/web
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'ubuntu-latest' && always()
         with:
           name: real-sketch-handle-capture
           path: apps/web/browser-evidence-handles/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4
         if: matrix.os == 'ubuntu-latest' && always()
         with:
           name: real-browser-capture
           path: browser-evidence/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
