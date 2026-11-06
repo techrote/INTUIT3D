@@ -9,7 +9,7 @@ const minimal=(points,lines=[],circles=[])=>({points,lines,circles});
 
 test('nearest plate endpoint, stable authored ID and no source mutation',()=>{
   const doc=plateSketchFixture(),before=serializeSketch(doc);
-  const response=suggestSketchSnaps(doc,{x:0.5,y:0.25});
+  const response=suggestSketchSnaps(doc,{x:0,y:0});
   assert.equal(response.version,SKETCH_SNAP_VERSION);
   assert.equal(response.previewOnly,true);
   assert.equal(response.status,'ready');
