@@ -69,7 +69,7 @@ class RealOCCTGraphTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'cylindrical'):
             verify_step_graph(bad, expected_holes=2)
 
-        def test_dangling_reference_is_rejected(self):
+    def test_dangling_reference_is_rejected(self):
         bad = re.sub(r'(#\d+ = MANIFOLD_SOLID_BREP\([^;]*?)#\d+', r'\g<1>#999999', self.body, count=1)
         self.assertNotEqual(bad, self.body)
         with self.assertRaisesRegex(ValueError, 'dangling'):
@@ -81,14 +81,14 @@ class RealOCCTGraphTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'orphan advanced face'):
             verify_step_graph(bad, expected_holes=2)
 
-        def test_mm_unit_declaration_not_sufficient_if_unbound(self):
+    def test_mm_unit_declaration_not_sufficient_if_unbound(self):
         match = re.search(r'GLOBAL_UNIT_ASSIGNED_CONTEXT\s*\(\(#(\d+),#(\d+)', self.body, re.S)
         self.assertIsNotNone(match)
         bad = self.body[:match.start(1)] + match.group(2) + self.body[match.end(1):]
         with self.assertRaisesRegex(ValueError, 'length unit'):
             verify_step_graph(bad, expected_holes=2)
 
-        def test_orphan_cylinder_entity_rejected(self):
+    def test_orphan_cylinder_entity_rejected(self):
         cylinder = re.search(r'#\d+\s*=\s*CYLINDRICAL_SURFACE\([^;]+;', self.body, re.S).group(0)
         bad = self.body + "\n" + re.sub(r'^#\d+', '#99999', cylinder)
         with self.assertRaisesRegex(ValueError, 'cylindrical'):
