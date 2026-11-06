@@ -46,3 +46,34 @@ Nonlinear Euclidean dimensions, angles, tangencies, arcs/splines, robust orienta
 ## Bounded minimal conflict witness
 
 The additive `@intuit3d/sketch/conflict-explanation/v1` interface reports one independently rechecked irreducible authored-constraint conflict for the current linear solver, or explicit numerical/budget/unverified refusal. It does not change sketch intent or claim exact nonlinear constraint proof. See [CONFLICT-EXPLANATION.md](CONFLICT-EXPLANATION.md) and the executable adversarial tests.
+
+
+## Deterministic line-loop profile discovery v1 (additive)
+
+The versioned \`@intuit3d/sketch/profile-discovery/v1\` subpath supplies
+\`discoverPlateProfiles(document, options?)\` and
+\`admitDiscoveredPlateProfile(document, proposal, candidateId)\`. Discovery
+recognizes unordered / reversed authored line segments by **semantic endpoint
+IDs**, constructs a canonical directed traversal without mutating the source,
+and identifies strictly enclosed circular holes. It reruns the existing
+fully-constrained linear solver and \`buildPlateProfile\` analytic validator
+on derived oriented segments. Changing dimensions preserves candidate identity
+while changing analytic area. The result is \`previewOnly: true\`, stamped
+with the serialized authoritative sketch; admission independently replays
+the full proposal and refuses stale, forged or ambiguous proposals.
+
+**Safety boundary:** Open chains, T-junctions, self-crossings, contacting
+circles, overlapping holes, unsolved constraints and resource limits are
+explicit rejections. Two disconnected or nested cycles are **ambiguous**, not
+automatically combined or classified as Boolean topology; admission requires
+a single unambiguous supported candidate. Visually coincident but differently
+identified points are never welded by guesswork. The v1 analytic profile
+is *not* an exact-predicate geometric model, a manufacturable B-rep, a STEP
+artifact, or permission to infer body selection. Segment/circle contact tests
+use floating point and are not an independent near-tangency oracle.
+Separate rigorous predicates and nested-loop topology contracts remain
+future work.
+
+Tests: \`node --test test/profile-discovery.test.mjs\`; and
+\`npm run typecheck\` from this package, which now includes the typed
+consumer. No new dependency or shared lockfile modification is required.
