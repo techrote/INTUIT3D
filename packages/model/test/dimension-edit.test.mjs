@@ -78,7 +78,7 @@ test('undo and redo preserve semantic ID, value fallback and binding restoration
   assert.equal(get(undone.document).id,'plate');
   assert.equal(get(undone.document).payload.widthMm,8);
   assert.equal(get(undone.document).payload.dimensionBindings,undefined);
-  assert.deepEqual(get(undone.document).dependsOn,['p.width']); // additive edges are not guessed away
+  assert.deepEqual(get(undone.document).dependsOn,[]); // undo restores the exact pre-edit graph
   const redone=redoTransaction(undone,['redo.binding'],undone.document.revision);
   assert.equal(gate(redone.document).resolvedPayload.widthMm,50);
   assert.equal(get(redone.document).id,'plate');
