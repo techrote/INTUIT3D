@@ -205,7 +205,7 @@ export function previewDimensionEdit(
     payload.dimensionBindings = {
       format: DIMENSION_BINDINGS_FORMAT, version: DIMENSION_BINDINGS_VERSION,
       entries,
-    };
+    } as unknown as JsonRecord; // AST validated above; journal parser revalidates JSON.
   } else {
     delete payload.dimensionBindings;
   }
@@ -225,7 +225,8 @@ export function previewDimensionEdit(
   }
   return {
     format: 'intuit3d.dimension-edit-preview', version: 1,
-    event, document: preview.document, evaluation, gate,
+    event: preview.document.journal[preview.document.journal.length - 1],
+    document: preview.document, evaluation, gate,
     invalidation: planIncrementalEvaluation(document, preview.document),
   };
 }
