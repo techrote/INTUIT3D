@@ -1,0 +1,17 @@
+{
+  "schema": "intuit3d/rectangular-plate-v1",
+  "description": "Independent analytic design-intent target, not a computed or validated B-rep",
+  "units": "mm",
+  "width": 120,
+  "depth": 80,
+  "thickness": 8,
+  "holes": [
+    { "x": -30, "y": 0, "radius": 6 },
+    { "x": 30, "y": 0, "radius": 6 }
+  ],
+  "expectedAnalytic": {
+    "solidCount": 1,
+    "volumeMm3": 74990.44263153228,
+    "surfaceAreaMm2": 22550.79644737231
+  }
+}
