@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 from protocol import SCHEMA, InvalidRequest, validate_request, validate_result
 from process_supervision import run_isolated_worker
@@ -35,13 +36,15 @@ def _audit_step_bytes(request: dict, worker_response: dict, step_path: Path, fol
     """
     report = folder / 'supervisor-step-audit.json'
     auditor = Path(__file__).resolve().with_name('step_audit_worker.py')
+    if timeout <= 0:
+        raise subprocess.TimeoutExpired([str(auditor)], timeout)
     try:
         completed = run_isolated_worker(
             [sys.executable, str(auditor), '--step', str(step_path), '--report', str(report)],
             cwd=folder, timeout=timeout,
         )
-    except subprocess.TimeoutExpired as error:
-        raise ValueError('separate-process STEP readback exceeded deadline') from error
+    except subprocess.TimeoutExpired:
+        raise
     if completed.returncode != 0:
         raise ValueError('separate-process STEP readback failed (no exact export accepted)')
     if not report.is_file() or not (1 <= report.stat().st_size <= MAX_RESPONSE_BYTES):
@@ -66,6 +69,9 @@ def execute(request: object, *, timeout: float = 25.0, step_output: Path | None 
     if valid["exportStep"] and step_output is None:
         raise InvalidRequest("exportStep: true requires a durable --step-output destination")
     worker = worker or Path(__file__).resolve().with_name('ocp_worker.py')
+    # The deadline covers *both* authoring and parent-owned STEP audit,
+    # not an independent full timeout allowance for each child.
+    deadline = time.monotonic() + timeout
     with tempfile.TemporaryDirectory(prefix='intuit3d-kernel-') as temporary:
         folder = Path(temporary)
         request_path, response_path, step_path = (folder / n for n in ('request.json', 'response.json', 'result.step'))
@@ -94,7 +100,8 @@ def execute(request: object, *, timeout: float = 25.0, step_output: Path | None 
                 # Reopen the actual file with a fresh independently supervised
                 # process, then bind its digest to the bytes we publish.
                 response, audited_sha256 = _audit_step_bytes(
-                    valid, response, step_path, folder, timeout=timeout,
+                    valid, response, step_path, folder,
+                    timeout=max(0.0, deadline - time.monotonic()),
                 )
                 if step_output is not None:
                     destination = step_output.expanduser().resolve()
@@ -118,6 +125,9 @@ def execute(request: object, *, timeout: float = 25.0, step_output: Path | None 
                             staged.unlink(missing_ok=True)
                     response['stepPath'] = str(destination)
             return response
+        except subprocess.TimeoutExpired:
+            return {"protocol": SCHEMA, "requestId": valid["requestId"], "status": "timeout",
+                    "message": "geometry operation exceeded total deadline during STEP readback; no exact result accepted"}
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
             return {"protocol": SCHEMA, "requestId": valid["requestId"], "status": "requires_reconciliation", "message": f"untrusted or invalid worker result: {error}"}
 
