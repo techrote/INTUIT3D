@@ -58,18 +58,53 @@ async function main() {
   await eventually(async () => (await fetch(origin)).ok, 'local Vite preview');
   assert(!vite.exitCode, 'Vite exited before browser startup');
 
-  const chrome = spawn(browserExecutable(), [
-    '--headless=new', '--no-sandbox', '--disable-dev-shm-usage',
-    '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
-    '--disable-background-networking', '--no-first-run', '--no-default-browser-check',
-    '--window-size=1360,900', '--remote-debugging-port=0', '--user-data-dir=' + home,
-    'about:blank'
-  ], { stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
-  owned.push(chrome);
-  let chromeLog = '';
-  chrome.stderr.on('data', data => { chromeLog = (chromeLog + data.toString()).slice(-12000); });
-  const portText = await eventually(() => existsSync(join(home, 'DevToolsActivePort')) &&
-    readFileSync(join(home, 'DevToolsActivePort'), 'utf8'), 'Chromium CDP port');
+  // The runner can reject or crash the first Chromium GPU/headless launch.
+  // A second launch has an independent profile and alternate *software*
+  // renderer flag set. Both attempts retain stderr, exit/signal and version
+  // diagnostics; neither turns a missing graphical gate into a soft success.
+  const executable = browserExecutable();
+  const chromeVersion = spawnSync(executable, ['--version'], { encoding: 'utf8' });
+  let portText = null;
+  const launchFailures = [];
+  const profiles = [join(home, 'primary'), join(home, 'fallback')];
+  const rendererModes = [
+    ['--headless=new', '--use-gl=angle', '--use-angle=swiftshader'],
+    ['--headless', '--use-gl=swiftshader', '--no-zygote'],
+  ];
+  for (let attempt = 0; attempt < profiles.length && !portText; attempt++) {
+    const profile = profiles[attempt];
+    const flags = [
+      ...rendererModes[attempt], '--no-sandbox', '--disable-dev-shm-usage',
+      '--enable-unsafe-swiftshader', '--disable-background-networking',
+      '--no-first-run', '--no-default-browser-check', '--window-size=1360,900',
+      '--remote-debugging-port=0', '--user-data-dir=' + profile, 'about:blank'
+    ];
+    const chrome = spawn(executable, flags, {
+      stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32'
+    });
+    owned.push(chrome);
+    let stderr = '';
+    chrome.stderr.on('data', data => { stderr = (stderr + data.toString()).slice(-12000); });
+    chrome.on('error', error => { stderr = (stderr + '\\nspawn: ' + error.message).slice(-12000); });
+    try {
+      portText = await eventually(() => existsSync(join(profile, 'DevToolsActivePort')) &&
+        readFileSync(join(profile, 'DevToolsActivePort'), 'utf8'), 'Chromium CDP port / attempt ' + (attempt + 1));
+    } catch (error) {
+      launchFailures.push({
+        attempt: attempt + 1, reason: String(error?.message ?? error),
+        exitCode: chrome.exitCode, signalCode: chrome.signalCode,
+        browserVersion: (chromeVersion.stdout || chromeVersion.stderr || '').trim(),
+        flags: rendererModes[attempt], stderr
+      });
+      try {
+        if (process.platform !== 'win32' && chrome.pid) process.kill(-chrome.pid, 'SIGKILL');
+        else chrome.kill('SIGKILL');
+      } catch { try { chrome.kill('SIGKILL'); } catch {} }
+      console.error('CHROMIUM_LAUNCH_ATTEMPT_FAILED ' + JSON.stringify(launchFailures.at(-1)));
+    }
+  }
+  if (!portText) throw Error('Chromium CDP startup failed after two bounded attempts: ' +
+    JSON.stringify({launchFailures, viteExitCode: vite.exitCode, serverLog: serverLog.slice(-4000)}));
   const port = Number(portText.split('\n')[0]);
   assert(Number.isSafeInteger(port) && port > 0, 'invalid CDP port');
   const targets = await eventually(async () => {
