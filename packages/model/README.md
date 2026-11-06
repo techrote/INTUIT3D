@@ -313,3 +313,52 @@ const next = commitUndoableDimensionEdit(session, {
 Adversarial suite: `node --experimental-strip-types --test
 test/dimension-edit.test.mjs`. Schema and validator remain additive to v1;
 existing project files and provider wire formats are unchanged.
+
+## Atomic multi-feature retrospective dimension edits v1
+
+Import `previewDimensionEditBatch` and `commitUndoableDimensionEditBatch`
+from `@intuit3d/model/dimension-batch-edit`. This additive contract
+(`intuit3d.dimension-batch-edit`, version 1) accepts **1–64 distinct
+feature/field edits** under one optimistic project revision fence. Each entry
+uses a fresh semantic journal `eventId`, `featureId`, top-level numeric
+`field` and `binding` expression (or `null` to clear it).
+
+```ts
+import { startUndoHistory } from '@intuit3d/model/transactions';
+import { commitUndoableDimensionEditBatch } from '@intuit3d/model/dimension-batch-edit';
+
+const session = commitUndoableDimensionEditBatch(startUndoHistory(project), {
+  format: 'intuit3d.dimension-batch-edit',
+  version: 1,
+  expectedRevision: project.revision,
+  admission: 'require_admissible',
+  edits: [
+    { eventId: 'bind.plate.width', featureId: 'feature.plate',
+      field: 'widthMm', binding: { unit: 'mm',
+        expression: { op: 'ref', featureId: 'param.width' } } },
+    { eventId: 'bind.plate.thickness', featureId: 'feature.plate',
+      field: 'thicknessMm', binding: { unit: 'mm',
+        expression: { op: 'literal', value: 8, unit: 'mm' } } },
+  ],
+});
+```
+
+The batch stages one canonical `feature.edit` event per entry and groups
+all of them into **one undoable history frame**. Undo/redo still requires
+one *fresh* event ID per compensating event. The preview returns the canonical
+staged events, final document, revision-fenced feature gates and structural
+invalidation frontier. **No partial edit is published** if any entry fails.
+Duplicate targets or event IDs, malformed expressions, non-parameter
+references, unsupported request shapes and batches over the event budget
+are rejected. Strict admission evaluates all edited feature gates after
+the final staged edit, and rejects any newly blocked formerly-admissible
+invalidated features; permissive admission retains pending/conflicted intent
+without producing an admissible numeric payload.
+
+Clearing a binding intentionally does **not** prune its dependency edge;
+that edge might encode independent user intent, so a missing dependency
+can remain pending until explicitly repaired. Only source-level scalar and
+journal correctness are qualified here. SKETCH/KERNEL must independently
+validate dimensions, solids, tolerances and STEP; preview meshes are not exact.
+Test entry: `node --experimental-strip-types --test
+packages/model/test/dimension-batch-edit.test.mjs`.
