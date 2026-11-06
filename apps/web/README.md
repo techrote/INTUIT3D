@@ -180,3 +180,31 @@ arrow-key edit, reloads, and explicitly recovers the two edited dimensions.
 It produces five PNG frames plus JSON in `apps/web/browser-evidence-handles/`.
 No result is claimed until the harness actually executes; source-only checks
 and pure geometry unit tests are not substitute graphical evidence.
+
+
+## Fail-closed sketch coordinate projection (WORKBENCH continuation)
+
+The sketch viewport now uses `src/sketchProjection.ts` to invert its current
+SVG-to-screen affine transform in a bounded, DOM-independent calculation.
+Absence of `getScreenCTM()`, rank-deficient/singular transforms, nonfinite
+coefficients, or out-of-range results are **not** substituted with the origin
+or raw screen coordinates. Cursor readouts disappear, new pointer gestures
+are refused, and active hole-pitch/outline-dimension gestures are cancelled
+with no authored revision when projection becomes invalid. A normal gesture
+still uses the frozen scale and existing atomic preview edit contract.
+The semantic `document` React prop no longer shadows browser DOM
+`globalThis.document` in the visibility-loss listener (the strict TS2339
+error reproduced by INTEGRATION #21).
+
+`sketchProjection.test.ts` supplies 10 executed Node regression scenarios
+for identity/translated/skewed/rotated/mirrored transforms, missing CTM,
+singular/near-singular matrices, nonfinite inputs, extreme scales and
+immutability. The existing Chromium CDP fixture `test:browser:handles` is
+extended to inject missing and singular CTMs during real cursor and pointer
+events, checking rollback and no phantom edit revision. The CDP scenario
+is **committed but not yet evidence of execution**; current WORKBENCH-only
+branch CI cannot install the Integration-owned unified root lockfile.
+INTEGRATION must reconcile this exact source to #21 and run strict
+TypeScript, full browser interactions, screenshots and Ubuntu/Windows
+workspace gates before admission. No genuine sketch constraint, exact
+geometry or independent human usability acceptance is implied.
