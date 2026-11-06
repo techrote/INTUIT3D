@@ -15,6 +15,9 @@ test('SKETCH type-contract fixture compiles on real TypeScript 5.8.3', () => {
   const args = [
     tsc, '--noEmit', '--strict', '--target', 'ES2022',
     '--module', 'NodeNext', '--moduleResolution', 'NodeNext',
+    // Prevent unrelated optional web @types from polluting this SKETCH-only
+    // published declaration contract; keep strict lib checking enabled.
+    '--typeRoots', 'tooling/contract-type-roots',
     'packages/sketch/test/type-contract.mts',
   ];
   const result = spawnSync(process.execPath,args,{cwd:root,encoding:'utf8'});
