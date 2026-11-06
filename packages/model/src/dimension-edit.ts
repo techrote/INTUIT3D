@@ -239,3 +239,6 @@ export function commitUndoableDimensionEdit(
   const preview = previewDimensionEdit(session.document, request);
   return commitUndoableTransaction(session, [preview.event], request.expectedRevision);
 }
+
+/** Audited expression walker shared by conservative dependency repair. */
+export { references as collectDimensionParameterReferences };
