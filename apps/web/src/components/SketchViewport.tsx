@@ -79,7 +79,7 @@ export function SketchViewport({ document, onChange, onSelect, onGestureStart, o
   };
 
   return (
-    <svg className="sketch-svg" viewBox={`0 0 ${W} ${H}`} ref={svg} role="img" aria-label="2D plate profile and two hole centres, with draggable and keyboard-adjustable hole centres" data-testid="sketch-viewport">
+    <svg className="sketch-svg" viewBox={`0 0 ${W} ${H}`} ref={svg} role="group" aria-label="2D plate profile and two hole centres, with draggable and keyboard-adjustable hole centres" data-testid="sketch-viewport">
       <defs>
         <pattern id="sketch-grid" width="25" height="25" patternUnits="userSpaceOnUse">
           <path d="M 25 0 L 0 0 0 25" fill="none" stroke="#23384b" strokeWidth="1" />
