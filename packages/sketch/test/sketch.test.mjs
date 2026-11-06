@@ -195,3 +195,22 @@ test('inherited object properties cannot impersonate persistent sketch IDs', () 
   d.points[0] = phantom;
   assert.throws(() => createSketch(d), /invalid point fields/);
 });
+
+
+test('mutated or forged solver results cannot be admitted as profile geometry', () => {
+  const doc = plateSketchFixture();
+  const result = solveSketch(doc);
+  result.geometry.points[1].x = 9000;
+  assert.throws(() => buildPlateProfile(doc, result, edges, holes), /modified or unverifiable/);
+});
+
+test('overflowed polygon area is refused instead of exported as Infinity', () => {
+  const coords = [[0,0], [1e200,0], [1e200,1e200], [0,1e200]];
+  const points = coords.map(([x,y],i) => ({id:`p${i}`,x,y}));
+  const lines = points.map((p,i) => ({id:`e${i}`,start:p.id,end:points[(i+1)%points.length].id}));
+  const constraints = points.map(p => ({id:`fix:${p.id}`,kind:'fixed',point:p.id,x:p.x,y:p.y}));
+  const doc = createSketch({version:1,units:'mm',points,lines,circles:[],constraints});
+  const result = solveSketch(doc);
+  assert.equal(result.status,'solved');
+  assert.throws(() => buildPlateProfile(doc,result,lines.map(l=>l.id)), /nonfinite or zero-area/);
+});
