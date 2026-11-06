@@ -147,3 +147,16 @@ Run `npm test --workspace @intuit3d/web` and the complete exact-head build and
 browser pointer/keyboard tests before admission. `outlineDimension.test.ts`
 is a deterministic adversarial test corpus for frozen coordinate transforms,
 fine snapping, ignored perpendicular keys, undo/reopen and contradictory intent.
+
+### Real-browser admission fixture
+
+After the Integration-owned combined lockfile is admitted, build the workbench
+(`npm run build --workspace @intuit3d/web`) and execute
+`npm run test:browser:handles --workspace @intuit3d/web` on Ubuntu with Chromium.
+The standalone CDP harness opens the real React/Three workbench, takes a WebGL
+screenshot, switches to sketch, performs a **physical mouse drag** on the width
+handle, verifies a single authored revision and undo/redo, applies a diameter
+arrow-key edit, reloads, and explicitly recovers the two edited dimensions.
+It produces five PNG frames plus JSON in `apps/web/browser-evidence-handles/`.
+No result is claimed until the harness actually executes; source-only checks
+and pure geometry unit tests are not substitute graphical evidence.
