@@ -27,12 +27,16 @@
     "./profile-discovery/v1": {
       "types": "./profile-discovery.d.mts",
       "default": "./profile-discovery.mjs"
+    },
+    "./boundary-guard/v1": {
+      "types": "./boundary-guard.d.mts",
+      "default": "./boundary-guard.mjs"
     }
   },
   "types": "./index.d.mts",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts test/conflict-explanation-contract.mts test/snap-contract.mts test/snap-admission-contract.mts test/profile-discovery-contract.mts"
+    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts test/conflict-explanation-contract.mts test/snap-contract.mts test/snap-admission-contract.mts test/profile-discovery-contract.mts test/boundary-guard-contract.mts"
   },
   "engines": {
     "node": ">=22"
