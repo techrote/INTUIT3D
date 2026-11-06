@@ -39,18 +39,21 @@ class SupervisorTests(unittest.TestCase):
     @unittest.skipUnless(os.name == 'posix', 'POSIX worker tree isolation test')
     def test_plate_supervisor_timeout_cannot_leave_descendant_export_writer(self):
         with tempfile.TemporaryDirectory() as tmp:
-            marker = Path(tmp, 'escaped.step')
+            marker, ready = Path(tmp, 'escaped.step'), Path(tmp, 'spawned.txt')
             fake = Path(tmp, 'orphan.py')
-            payload = f"import pathlib,time; time.sleep(0.6); pathlib.Path({str(marker)!r}).write_text('escaped')"
+            payload = f"import pathlib,time; time.sleep(1.5); pathlib.Path({str(marker)!r}).write_text('escaped')"
             fake.write_text(
-                "import subprocess,sys,time\n"
-                "subprocess.Popen([sys.executable, '-c', " + repr(payload) + "])\n"
-                "time.sleep(5)\n", encoding='utf-8')
+                "import subprocess,sys,time,pathlib\n"
+                "p=subprocess.Popen([sys.executable, '-c', " + repr(payload) + "], "
+                "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+                "pathlib.Path(" + repr(str(ready)) + ").write_text(str(p.pid))\n"
+                "time.sleep(8)\n", encoding='utf-8')
             req = plate(); req['exportStep'] = False
-            result = execute(req, worker=fake, timeout=0.16)
+            result = execute(req, worker=fake, timeout=2.2)
             self.assertEqual(result['status'], 'timeout')
             self.assertNotIn('source', result)
-            time.sleep(0.75)
+            self.assertTrue(ready.exists(), 'worker never spawned the external writer')
+            time.sleep(2.8)
             self.assertFalse(marker.exists(), 'post-timeout worker descendant survived')
 
     def test_plate_supervisor_limits_crash_diagnostic_size(self):
