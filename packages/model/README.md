@@ -453,3 +453,38 @@ The example explicitly reports `cutStatus: "pending_exact_provider"` and
 `exactGeometryAvailable: false`. It does not generate a native B-rep, export
 STEP or establish browser/human acceptance. These require independent
 qualification and must never be inferred from successful model replay.
+
+
+## Authored semantic target selection + explicit split/merge recovery (v1)
+
+`@intuit3d/model/semantic-selection` is an additive public API for cut/fillet
+consumers to **write actual selection intent into the journal**, not a saved
+kernel face number. `previewSemanticSelectionEdit` and
+`commitUndoableSemanticSelectionEdit` create a revision-fenced
+`feature.edit` with a `SemanticTopologyReference` in a named payload field,
+preserve unrelated payload and all existing dependency edges, and add the
+selected source-feature dependency. `require_ready` rejects unresolved model
+dependencies; `permit_pending` deliberately retains forward-reference intent.
+The preview exposes the dependency-aware invalidation frontier.
+
+`assessSemanticSelection` combines the persisted source with **fresh, explicit**
+provider snapshots and per-revision mappings. Missing evidence returns
+`pending_evidence`; incomplete model dependencies return `pending_model`.
+A one-to-one observation is only a `candidate`, **not exact geometry**.
+Splits/merges return `requires_reconciliation` and candidate roles without
+choosing one. An explicit user choice can be committed with
+`commitUndoableSemanticSelectionRecovery` only if that role is present in
+the ambiguous trace; this re-anchors authored intent in a new revision.
+Undo/redo and archive/reopen replay the original or newly authored anchor.
+Subsequent edits require new provider evidence even if the role names match.
+Old dependency edges are not silently dropped when selecting another source
+feature; release requires separate audited intent reconciliation.
+
+Run `node --experimental-strip-types packages/model/examples/face-recovery.mjs`
+from the repo root for an actual semantic plate + cut + split/recovery +
+undo/redo + thickness edit + archive demo. No provider is invoked; the
+explicit analytic split fixture represents **synthetic provider hints**.
+This package never attests OCCT topology equivalence, solid validity or STEP
+interoperability. RUNTIME and WORKBENCH should consume the selection gate
+rather than treating model `ready` as an exact shape signal.
+
