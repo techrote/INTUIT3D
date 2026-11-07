@@ -19,3 +19,24 @@ if(state.kind==='selected_profile_handles'){
     void [inspection,edited,area];
   }
 }
+
+// A WORKBENCH consumer can use the resolved position and send a single XY
+// command; RUNTIME owns the resulting journal transaction and native rebuild.
+import {moveSelectedProfileHoleCenter,
+  type SelectedProfileHoleCenter,type SelectedProfileHoleMoveCommand,
+  type SelectedProfileHoleMove} from '../selected-profile-handles.mjs';
+const holes=state.kind==='selected_profile_handles'?state.holeCenters:[];
+if(state.kind==='selected_profile_handles'&&holes.length){
+  const hole:SelectedProfileHoleCenter=holes[0]!;
+  const gesture:SelectedProfileHoleMoveCommand={
+    kind:'move-hole-center',sourceSignature:state.sourceSignature,
+    handleId:hole.id,xMm:hole.position.x+1,yMm:hole.position.y+1
+  };
+  const result=moveSelectedProfileHoleCenter(sketch,selection,gesture);
+  if(result.kind==='accepted'){
+    const accepted:SelectedProfileHoleMove=result;
+    const holeId:string=accepted.holeId;
+    const mm:number=accepted.gesture.deviationMm;
+    void [holeId,mm];
+  }
+}
