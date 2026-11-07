@@ -66,3 +66,16 @@ const curvedExecution: Promise<ArcExtrudeResult> = runExperimentalArcExtrude(cur
 void curvedExecution;
 // @ts-expect-error revision fence mandatory for experimental curved native provider
 runExperimentalArcExtrude(curved, {});
+
+
+import {requestFromRuntimeProfile,runExperimentalRuntimeProfile,
+  type MappedRuntimeProfileRequest} from '../src/runtime-profile-provider.mjs';
+import type {RuntimeReport} from '@intuit3d/workflow-runtime';
+declare const currentReport:RuntimeReport;
+const runtimeMapped:MappedRuntimeProfileRequest=requestFromRuntimeProfile(
+  currentReport,'extrude.bracket',{requestId:'runtime.native'});
+const runtimeExecution=runExperimentalRuntimeProfile(currentReport,'extrude.bracket',{
+  requestId:'runtime.native',readCurrentRevision:()=>currentReport.revision});
+void runtimeMapped;void runtimeExecution;
+// @ts-expect-error runtime profile provider must be revision-fenced
+runExperimentalRuntimeProfile(currentReport,'extrude.bracket',{requestId:'runtime.native'});
