@@ -167,6 +167,8 @@ test('revision fencing rejects stale/skewed pattern records and identity collisi
   assert.throws(()=>createArcHolePattern({...initial.pattern,version:2}),/versioned/);
   const colliding=structuredClone(doc);
   colliding.points.push({id:'hole.boltGrid:r0c1.center',x:4,y:4});
+  colliding.constraints.push({id:'collision:fixed',kind:'fixed',
+    point:'hole.boltGrid:r0c1.center',x:4,y:4});
   assert.match(apply(colliding,sel,null,request).reason,/collision/);
 });
 
