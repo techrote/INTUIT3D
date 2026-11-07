@@ -11,7 +11,11 @@ type WorkerReply =
  * This worker is single-use. The parent terminates it after the first reply
  * or on timeout/cancellation. No STEP, mesh or document mutation occurs here.
  */
-self.onmessage = (event: MessageEvent<WorkerRequest>) => {
+const workerScope = self as unknown as {
+  onmessage: ((event: MessageEvent<WorkerRequest>) => void) | null;
+  postMessage(reply: WorkerReply): void;
+};
+workerScope.onmessage = (event: MessageEvent<WorkerRequest>) => {
   let reply: WorkerReply;
   try {
     const source = event.data?.source;
@@ -25,5 +29,5 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
       reason: error instanceof Error ? error.message : 'Archive validation failed.',
     };
   }
-  self.postMessage(reply);
+  workerScope.postMessage(reply);
 };
