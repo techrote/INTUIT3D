@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import * as model from '@intuit3d/model';
 import * as transactions from '@intuit3d/model/transactions';
 import * as bindings from '@intuit3d/model/dimension-bindings';
@@ -130,4 +132,21 @@ test('fail-closed transaction prevents stale/foreign profile, missing target and
   },services),/occupied/);
   assert.equal(h.document.revision,3);
   assert.equal(model.featuresOf(h.document).filter(f=>f.kind==='extrude').length,0);
+});
+
+test('separate Node demonstration authors two bodies and rebuilds only selected bracket',()=>{
+  const script=fileURLToPath(new URL('../examples/multi-body-assembly.mjs',import.meta.url));
+  const result=spawnSync(process.execPath,['--experimental-strip-types',script],{
+    encoding:'utf8',timeout:20000,maxBuffer:1024*1024
+  });
+  assert.equal(result.status,0,result.stderr || String(result.error));
+  const output=JSON.parse(result.stdout);
+  assert.equal(output.kind,'committed');
+  assert.equal(output.bodies.length,2);
+  assert.equal(output.editedDepthMm,14);
+  assert.equal(output.unchangedSpacerDepthMm,5);
+  assert.ok(output.affected.includes('cut.bracket'));
+  assert.ok(!output.affected.includes('extrude.spacer'));
+  assert.equal(output.reopenedCutStatus,'pending_exact_provider');
+  assert.equal(output.exactAuthority,false);
 });
