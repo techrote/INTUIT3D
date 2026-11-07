@@ -34,3 +34,17 @@ void invalid;
 assessPlateResponse(raw, {});
 // @ts-expect-error revision callback is mandatory for local process
 runExperimentalPlate(raw, {});
+
+import {runPinnedOcct8Plate, type LocalOcct8Result} from '../src/local-occt8-provider.mjs';
+import {assessOcct8PlateResponse} from '../src/occt8-v1.mjs';
+const occt8Outcome: Promise<LocalOcct8Result> = runPinnedOcct8Plate(raw, {
+  workerExecutable: '/verified/pinned/occt8/worker',
+  readCurrentRevision: () => 1,
+});
+void occt8Outcome;
+const occt8Assessed = assessOcct8PlateResponse(raw, {}, {currentRevision: 1});
+if (occt8Assessed.kind === 'experimental_report') {
+  const notProductionExact: false = occt8Assessed.exactAuthority;
+  const notIndependentCad: false = occt8Assessed.independentInteroperability;
+  void notProductionExact; void notIndependentCad;
+}

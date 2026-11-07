@@ -100,7 +100,7 @@ function verifyMetrics(raw, expected, holes, label) {
 }
 
 // Assess JSON only for the current semantic revision. Never claims exact CAD authority.
-export function assessPlateResponse(requestInput, response, { currentRevision } = {}) {
+function assessPinnedBackend(requestInput, response, { currentRevision } = {}, expectedBackend, expectedVersion) {
   const request = parsePlateRequest(requestInput);
   safeRevision(currentRevision, 'currentRevision');
   if (currentRevision !== request.revision) return {
@@ -128,7 +128,7 @@ export function assessPlateResponse(requestInput, response, { currentRevision } 
   object(response, keys, 'success response');
   if (response.featureId !== request.featureId || response.revision !== request.revision || response.units !== 'mm')
     reject('response feature/revision/units mismatch');
-  if (response.backend !== EXPERIMENTAL_BACKEND || response.occtVersion !== EXPERIMENTAL_OCCT_VERSION)
+  if (response.backend !== expectedBackend || response.occtVersion !== expectedVersion)
     reject('unsupported experimental backend/version');
   if (response.stepWritten !== request.exportStep) reject('STEP report contradicts export request');
   if ('stepPath' in response && (!request.exportStep || typeof response.stepPath !== 'string' || !response.stepPath))
@@ -138,9 +138,21 @@ export function assessPlateResponse(requestInput, response, { currentRevision } 
   if (request.exportStep) verifyMetrics(response.stepReadback, target, request.plate.holes, 'stepReadback');
   else if (response.stepReadback !== null) reject('unexpected STEP readback');
   return {kind: 'experimental_report', requestId: request.requestId, featureId: request.featureId,
-    revision: request.revision, backend: EXPERIMENTAL_BACKEND,
-    occtVersion: EXPERIMENTAL_OCCT_VERSION,
+    revision: request.revision, backend: expectedBackend,
+    occtVersion: expectedVersion,
     expectedMetrics: target,
     step: request.exportStep ? 'same_engine_readback_reported' : 'not_requested',
     exactAuthority: false, independentInteroperability: false};
+}
+
+
+// Both public assessment paths are fixed backend/version allowlists. Never take
+// a backend name from untrusted project JSON or an options override.
+export function assessPlateResponse(requestInput, response, options = {}) {
+  return assessPinnedBackend(requestInput, response, options,
+    EXPERIMENTAL_BACKEND, EXPERIMENTAL_OCCT_VERSION);
+}
+export function assessOcct8PlateResponse(requestInput, response, options = {}) {
+  return assessPinnedBackend(requestInput, response, options,
+    'OCCT-cxx-8.0.1', '8.0.1');
 }

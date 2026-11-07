@@ -103,11 +103,11 @@ def close(actual: float, expected: float) -> bool:
     return math.isfinite(actual) and abs(actual - expected) <= max(1e-7, abs(expected) * 1e-10)
 
 
-def validate_result(request: PlateRequest, response: object) -> dict:
+def validate_result(request: PlateRequest, response: object, *, expected_backend: str = "OCP-python-prototype", expected_version: str = "7.9.3.1") -> dict:
     result = _object(response, {"protocol", "requestId", "featureId", "revision", "backend", "occtVersion", "status", "units", "source", "stepReadback", "stepWritten"}, "response")
     if (result["protocol"], result["requestId"], result["featureId"], result["revision"], result["units"]) != (SCHEMA, request["requestId"], request["featureId"], request["revision"], "mm"):
         raise ValueError("mismatched response identity, revision or protocol")
-    if result["backend"] != "OCP-python-prototype" or result["occtVersion"] != "7.9.3.1":
+    if result["backend"] != expected_backend or result["occtVersion"] != expected_version:
         raise ValueError("unsupported or unpinned experimental geometry backend version")
     if result["status"] != "validated_exact":
         raise ValueError("worker did not report validated_exact")
