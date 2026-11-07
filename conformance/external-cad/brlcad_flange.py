@@ -121,7 +121,7 @@ def parse_ray(output: str, *, expected: str, thickness: float, tolerance: float 
         raise ValueError(expected)
     return {'expected': expected, 'hitCount':len(hits), 'lineOfSightMm':[h[1] for h in hits]}
 
-ROOT_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_.:+-]*(?:/(?:R)?)?\\Z")
+ROOT_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_.:+-]*(?:/(?:R)?)?")
 
 def top_objects(output: str) -> tuple[str, ...]:
     """Parse mged -c database.g tops; refuse ambiguous or unrecognized listings.
@@ -129,7 +129,7 @@ def top_objects(output: str) -> tuple[str, ...]:
     BRL-CAD can mark combinations with '/' and regions with '/R', and may
     print several top-level names on one line. Only stdout is authoritative.
     """
-    stdout = output.split('\\n[stderr]\\n', 1)[0]
+    stdout = output.partition('[stderr]')[0]
     roots = []
     for raw_line in stdout.splitlines():
         line = raw_line.strip()
