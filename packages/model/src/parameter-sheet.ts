@@ -134,8 +134,8 @@ export function inspectParameterSheet(
   const rows: ParameterSheetRow[] = plan.features
     .filter(({ feature }) => feature.kind === 'parameter')
     .map(({ feature, status, diagnostics }) => {
-      const metadata = plain(feature.payload.parameter)
-        ? feature.payload.parameter : null;
+      const rawMetadata = feature.payload.parameter;
+      const metadata = plain(rawMetadata) ? rawMetadata : null;
       const name = typeof metadata?.name === 'string' ? metadata.name : null;
       const unit = metadata?.unit === 'mm' || metadata?.unit === 'deg' ||
         metadata?.unit === 'unitless' ? metadata.unit : null;

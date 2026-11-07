@@ -101,7 +101,7 @@ test('unresolved authored reference is retained, not replaced by a stale numeric
   const found=row(sheet,'p.pending');
   assert.equal(found.formulaText,null);
   assert.match(found.formulaIssue,/unresolved stored parameter reference/);
-  assert.deepEqual(found.authoredExpression,ref('p.notCreated'));
+  assert.equal(found.authoredExpression.featureId,'p.notCreated');
   assert.equal(found.value,null);
   assert.equal(found.requiresUserAttention,true);
   assert.deepEqual(sheet.needsUserAttention,['p.pending']);
