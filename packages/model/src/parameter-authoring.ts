@@ -7,7 +7,7 @@
  * scalar values are not saved and do not certify B-rep or STEP geometry.
  */
 import {
-  featuresOf, parseProject, ProjectFormatError, ProjectRevisionError,
+  featuresOf, parseProject, planProject, ProjectFormatError, ProjectRevisionError,
 } from './index.ts';
 import type { JournalEvent, ProjectDocument } from './index.ts';
 import {
@@ -146,7 +146,7 @@ export function previewParameterAuthoring(
       writeTargets: [],
       payload: { parameter: {
         name: spec.name, unit: spec.unit, expression: spec.expression,
-      } },
+      } } as unknown as import('./index.ts').JsonRecord,
     },
   };
   // The parameter is introduced first, so every later binding can be
@@ -195,8 +195,7 @@ export function previewParameterAuthoring(
         [parameterGate, ...bindingGates].map((gate) =>
           gate.featureId + ':' + gate.status).join(', '));
     }
-    const prior = evaluateDimensionBindingPlan(
-      previewTransaction(document, []).plan);
+    const prior = evaluateDimensionBindingPlan(planProject(document));
     const priorGates = new Map(prior.featureGates.map((gate) => [gate.featureId, gate]));
     for (const id of invalidation.invalidatedFeatureIds) {
       if (admitted(priorGates.get(id)) && !admitted(gates.get(id))) {
