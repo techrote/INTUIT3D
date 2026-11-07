@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
-  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, moveModelFeature, moveModelHoleCenter, patternModelHoles, removeModelFeature, removeModelHole, restoreModelFeature,
+  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, moveModelFeature, moveModelHoleCenter, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
   MODEL_DIMENSIONS, makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, previewModelProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
@@ -78,6 +78,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [holeDraft,setHoleDraft]=useState({x:'60',y:'20',diameter:'10'});
   const [arrayDraft,setArrayDraft]=useState({sourceHoleId:'holeA',rows:'2',columns:'2',pitchXmm:'20',pitchYmm:'20'});
   const [selected,setSelected]=useState('plate');
+  const [layoutSelected,setLayoutSelected]=useState<string[]>(['holeA','holeB']);
+  const [layoutDraft,setLayoutDraft]=useState({scaleX:'120',scaleY:'100',radiusScale:'100'});
   const [cascadeConfirmation,setCascadeConfirmation]=useState<string|null>(null);
   const [timeline,setTimeline]=useState<'authored'|'evaluated'>('authored');
   const [message,setMessage]=useState<string|null>(null);
@@ -140,6 +142,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const values=useMemo(()=>plateActive?modelDimensionValues(history):null,[history,plateActive]);
   const thicknessBinding=useMemo(()=>plateActive?modelThicknessBinding(history):'independent',[history,plateActive]);
   const holes=useMemo(()=>modelHoleValues(history),[history]);
+  const layoutIds=layoutSelected.filter(id=>Object.hasOwn(holes,id));
+  const layoutPoints=layoutIds.map(id=>holes[id]);
+  const layoutSpan=layoutPoints.length?{
+    x:Math.max(...layoutPoints.map(p=>p.x))-Math.min(...layoutPoints.map(p=>p.x)),
+    y:Math.max(...layoutPoints.map(p=>p.y))-Math.min(...layoutPoints.map(p=>p.y)),
+  }:null;
   const geom=useMemo(()=>previewModelProfile(report),[report]);
   const faults=useMemo(()=>modelDiagnostics(report),[report]);
   const plate=report.features.find(f=>f.featureId==='plate');
@@ -203,6 +211,27 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       acceptHistory(result.history);setSketchMode(true);
       setMessage(`Array committed at revision ${result.history.document.revision}: ${Number(rows)*Number(columns)-1} independently editable circular cuts copied from solved ${sourceHoleId}; ${result.invalidation.invalidatedFeatureIds.join(' → ')} invalidated. Rebuild STEP.`);
     }catch(e){setMessage('Array refused: '+String(e));}
+  };
+  const applyLayoutResize=()=>{
+    try {
+      if(Object.values(layoutDraft).some(v=>!v.trim()))
+        throw Error('Enter X, Y and bore scaling percentages.');
+      const [scaleX,scaleY,radiusScale]=(
+        [layoutDraft.scaleX,layoutDraft.scaleY,layoutDraft.radiusScale].map(Number)
+      ).map(value=>value/100);
+      const result=resizeModelHoleLayout(liveHistory.current,{
+        holeIds:layoutIds,scaleX,scaleY,radiusScale,
+      });
+      if(result.kind==='refused'){
+        setMessage('Layout resize refused by SKETCH/profile admission: '+
+          (result.candidateFeature.diagnostics.join('; ')||result.reason));
+        return;
+      }
+      acceptHistory(result.history);
+      setLayoutDraft({scaleX:'100',scaleY:'100',radiusScale:'100'});
+      setSketchMode(true);
+      setMessage(`Revision ${result.history.document.revision}: resized ${layoutIds.join(', ')} about their selected centre in ONE undoable SKETCH transaction; invalidated ${result.invalidation.invalidatedFeatureIds.join(' → ')}. Old STEP revoked; rebuild experimental solid.`);
+    }catch(e){setMessage('Layout resize refused: '+(e instanceof Error?e.message:String(e)));}
   };
   const removeHole=(id:ModelHole)=>{
     try{
@@ -552,6 +581,37 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               data-testid="runtime-pattern-holes" disabled={!!pendingImport}
               onClick={patternHoles}>Create one-shot hole array</button>
             <p className="microcopy">Copies the currently solved source hole, including its radius. Each new circle is an independent SKETCH constraint, not an associative pattern; undo removes the entire array in one step. Invalid overlaps and outside cuts are refused.</p>
+          </div>
+          <div className="runtime-hole-add" data-testid="runtime-hole-layout">
+            <strong>Retrospective hole layout · one transaction</strong>
+            <p className="microcopy">Select authored holes, then scale their centre spacing and bore diameters about the selected bounding-box centre. This is a one-shot dimensional edit, not an associative pattern. Selected IDs survive undo and model reopening.</p>
+            <fieldset className="runtime-layout-selection" aria-label="Hole layout selection">
+              <legend>Selected hole IDs · {layoutIds.length}</legend>
+              {Object.keys(holes).map(id=><label key={id}>
+                <input type="checkbox" data-testid={`runtime-layout-select-${id}`}
+                  checked={layoutIds.includes(id)} onChange={e=>setLayoutSelected(previous=>
+                    e.target.checked?[...previous.filter(x=>x!==id),id]:previous.filter(x=>x!==id))}/>
+                <span>{id}</span>
+              </label>)}
+            </fieldset>
+            <small data-testid="runtime-layout-current-span">
+              Current selected span: {layoutSpan?layoutSpan.x.toFixed(3):'—'} × {layoutSpan?layoutSpan.y.toFixed(3):'—'} mm (X × Y)
+            </small>
+            {(['scaleX','scaleY','radiusScale'] as const).map(field=><label className="runtime-scalar" key={field}>
+              <span>{field==='scaleX'?'X spacing':field==='scaleY'?'Y spacing':'Bore diameter'}</span>
+              <span className="runtime-scalar-control">
+                <input type="number" step="any" min="0.1" max="1000"
+                  data-testid={`runtime-layout-${field}`}
+                  aria-label={field==='scaleX'?'X spacing percent':field==='scaleY'?'Y spacing percent':'Bore diameter percent'}
+                  value={layoutDraft[field]}
+                  onChange={e=>setLayoutDraft(previous=>({...previous,[field]:e.target.value}))}/>
+                <small>%</small>
+              </span>
+            </label>)}
+            <button type="button" className="ribbon-button runtime-native-export"
+              data-testid="runtime-layout-apply" disabled={!!pendingImport||!layoutIds.length}
+              onClick={applyLayoutResize}>Apply selected-hole dimensions</button>
+            <p className="microcopy">100% preserves that dimension. A successful edit resets factors to 100%, invalidates current STEP and is independently undoable. Inadmissible collisions are refused without altering the document; only the separate experimental provider can make a physical solid.</p>
           </div>
           {Object.keys(holes).map(hole=><div key={hole} className="runtime-hole-editor" data-testid={`runtime-hole-editor-${hole}`}>
             <strong>{hole==='holeA'?'Hole A':hole==='holeB'?'Hole B':'Added hole'} · {hole}</strong>

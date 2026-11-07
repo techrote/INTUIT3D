@@ -486,13 +486,41 @@ async function main(){
   check(await evaluate("(async()=>await window.__nativeStepBlobs.at(-1).text())()")!==beforeAutoStep,
     'live reconstruction reused the previous-revision STEP payload');
   await screenshot('native-07-auto-native-rebuild-after-dimension-edit.png');
+  // Actual Chromium inputs -> admitted combined RUNTIME/SKETCH layout edit.
+  // HTTP STEP bytes remain explicitly synthetic UI test evidence.
+  const beforeLayout=await evaluate(`(() => {
+    const val=id=>Number(document.querySelector('[data-testid="runtime-hole-'+id+'"]')?.value);
+    return {a:val('holeA-x'),b:val('holeB-x'),
+      da:val('holeA-diameter'),db:val('holeB-diameter')};
+  })()`);
+  check(await evaluate("document.querySelector('[data-testid=runtime-layout-select-holeA]')?.checked && document.querySelector('[data-testid=runtime-layout-select-holeB]')?.checked"),
+    'seed holes were not selected for retrospective layout edit');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-layout-scaleX]');e.focus();e.select();return document.activeElement===e})()"),
+    'cannot focus combined layout pitch dimension');
+  await send('Input.insertText',{text:'120'});
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-layout-radiusScale]');e.focus();e.select();return document.activeElement===e})()"),
+    'cannot focus bore resize dimension');
+  await send('Input.insertText',{text:'125'});
+  await pointerClick('runtime-layout-apply');
+  await eventually(()=>evaluate(`(() => {
+    const n=id=>Number(document.querySelector('[data-testid="runtime-hole-'+id+'"]')?.value);
+    return Math.abs((n('holeB-x')-n('holeA-x'))-1.2*${beforeLayout.b-beforeLayout.a})<0.001 &&
+      Math.abs(n('holeA-diameter')-1.25*${beforeLayout.da})<0.001 &&
+      Math.abs(n('holeB-diameter')-1.25*${beforeLayout.db})<0.001 &&
+      document.querySelector('[data-testid=runtime-layout-scaleX]')?.value==='100';
+  })()`),'browser did not commit selected pitch and both bore diameters');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'retrospective layout was misrepresented as exact');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-evidence]')) && !document.querySelector('[data-testid=runtime-native-download-cached]').disabled"),
+    'layout edit failed to auto rebuild current native session revision');
+  await screenshot('native-08-retrospective-hole-layout-rebuild.png');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder, NOT OCP/native/STEP interoperability',
     downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,realPhysicalGeometry:false,
-    independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png'
+    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
+      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }

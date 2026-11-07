@@ -143,6 +143,43 @@ export function patternModelHoles(h:ModelSession, request:ModelHoleArray):Sketch
   });
 }
 
+/** One undoable, revision-fenced operation on selected authored hole IDs.
+ * The stationary pivot is the selected hole-centre bounding-box midpoint.
+ * RUNTIME owns all physical profile and SKETCH solver admission. */
+export interface ModelHoleLayoutScale {
+  readonly holeIds: readonly ModelHole[];
+  readonly scaleX: number;
+  readonly scaleY: number;
+  readonly radiusScale: number;
+}
+export function resizeModelHoleLayout(
+  h:ModelSession, request:ModelHoleLayoutScale,
+):SketchConstraintBatchResult {
+  const ids=request.holeIds;
+  if(!ids.length || ids.length>32 || new Set(ids).size!==ids.length)
+    throw Error('Select 1–32 distinct holes for one layout edit.');
+  const values=modelHoleValues(h);
+  for(const id of ids) if(!Object.hasOwn(values,id))
+    throw Error('Unknown authored hole in layout selection: '+id);
+  if(![request.scaleX,request.scaleY,request.radiusScale].every(
+    value=>Number.isFinite(value)&&value>0&&value<=10))
+    throw Error('Layout scaling must be finite and between 0% and 1000%.');
+  if([request.scaleX,request.scaleY,request.radiusScale].every(value=>value===1))
+    throw Error('No hole layout dimension changed.');
+  const selected=ids.map(id=>values[id]);
+  const xs=selected.map(v=>v.x),ys=selected.map(v=>v.y);
+  return runtime.resizePlateHoleLayout(h,{
+    sketchFeatureId:'sketch.plate',
+    eventId:`workbench.hole.layout.${h.document.revision}`,
+    expectedRevision:h.document.revision,
+    admission:'require_admissible',
+    holeIds:ids,
+    pivotXmm:(Math.min(...xs)+Math.max(...xs))/2,
+    pivotYmm:(Math.min(...ys)+Math.max(...ys))/2,
+    scaleX:request.scaleX,scaleY:request.scaleY,radiusScale:request.radiusScale,
+  });
+}
+
 /** Atomic, revision-fenced individual hole edit via admitted RUNTIME/SKETCH. */
 export function editModelHole(
   h:ModelSession, hole:ModelHole, field:ModelHoleField, value:number,
