@@ -167,7 +167,7 @@ export function previewParameterTableEdit(
     const event: JournalEvent = {
       type: 'feature.edit', eventId: row.eventId, featureId: row.featureId,
       patch: {
-        dependsOn: checked.event.patch.dependsOn,
+        dependsOn: checked.event.patch.dependsOn ?? existing.dependsOn,
         payload: { ...existing.payload,
           parameter: { ...authored, name: row.name, expression } as unknown as JsonRecord },
       },
