@@ -83,6 +83,10 @@
     "./body-cut-chain": {
       "types": "./src/body-cut-chain.ts",
       "default": "./src/body-cut-chain.ts"
+    },
+    "./body-cut-order": {
+      "types": "./src/body-cut-order.ts",
+      "default": "./src/body-cut-order.ts"
     }
   },
   "scripts": {
