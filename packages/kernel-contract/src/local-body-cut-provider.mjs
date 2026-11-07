@@ -10,6 +10,7 @@ import {fileURLToPath} from 'node:url';
 import {validateArcExtrudeRequest} from './local-arc-profile-provider.mjs';
 const WORKER=resolve(dirname(fileURLToPath(import.meta.url)),'../../../native/analytic_profile_cut.py');
 const FORMAT='intuit3d/kernel/profile-body-cut-v1';
+const POCKET_FORMAT='intuit3d/kernel/profile-body-cut-v2';
 const ID=/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
 const MAX_STEP=32*1024*1024,MAX_IPC=128*1024;
 const ensure=(ok,reason)=>{if(!ok)throw new TypeError('body-cut provider: '+reason)};
@@ -20,11 +21,15 @@ const failure=(request,code,reason)=>Object.freeze({kind:'unresolved',code,reaso
   targetBodyId:request.targetBodyId,revision:request.revision,artifact:null});
 
 export function validateBodyCutRequest(request){
-  ensure(request!==null&&typeof request==='object'&&!Array.isArray(request)&&
-    Object.keys(request).sort().join(',')===
-      ['protocol','requestId','cutFeatureId','targetBodyId','revision','units',
-       'baseExtrude','cutTool','exportStep'].sort().join(','), 'unknown request schema');
-  ensure(request.protocol===FORMAT&&request.units==='mm'&&
+  ensure(request!==null&&typeof request==='object'&&!Array.isArray(request),
+    'body cut request must be an object');
+  const pocket=request.protocol===POCKET_FORMAT;
+  ensure(pocket||request.protocol===FORMAT,'unknown cut protocol');
+  const fields=['protocol','requestId','cutFeatureId','targetBodyId','revision','units',
+    'baseExtrude','cutTool','exportStep',...(pocket?['cutDepthMm']:[])];
+  ensure(Object.keys(request).sort().join(',')===fields.sort().join(','),
+    'unknown request schema');
+  ensure(request.units==='mm'&&
     ID.test(request.requestId)&&ID.test(request.cutFeatureId)&&ID.test(request.targetBodyId)&&
     Number.isSafeInteger(request.revision)&&request.revision>=0&&
     typeof request.exportStep==='boolean','invalid identity, units or revision');
@@ -36,7 +41,11 @@ export function validateBodyCutRequest(request){
   ensure(new Set([request.baseExtrude.featureId,request.cutTool.featureId,
     request.cutFeatureId]).size===3, 'source extrusion, tool and cut must have distinct feature IDs');
   ensure(near(request.baseExtrude.thicknessMm,request.cutTool.thicknessMm),
-    'tool must traverse entire selected body');
+    'tool must use the base extrusion reference depth');
+  if(pocket)ensure(typeof request.cutDepthMm==='number'&&
+    Number.isFinite(request.cutDepthMm)&&request.cutDepthMm>=1e-6&&
+    request.cutDepthMm<=request.baseExtrude.thicknessMm,
+    'pocket depth must be positive and no greater than the base thickness');
   ensure(request.cutTool.profile.holes.length===0, 'profile cut with islands is not supported');
   const base=request.baseExtrude.profile.materialAreaMm2;
   const cut=request.cutTool.profile.materialAreaMm2;
@@ -91,9 +100,10 @@ export async function runExperimentalBodyCut(request,{
     if(overflow||result.code!==0)return failure(q,'requires_reconciliation','physical_worker_failed');
     let report;try{report=JSON.parse(result.output)}
     catch{return failure(q,'requires_reconciliation','malformed_native_report')}
-    const expected=(q.baseExtrude.profile.materialAreaMm2-
-      q.cutTool.profile.materialAreaMm2)*q.baseExtrude.thicknessMm;
-    if(report.protocol!==FORMAT||report.status!=='experimental_body_cut_brep'||
+    const cutDepth=q.protocol===POCKET_FORMAT?q.cutDepthMm:q.baseExtrude.thicknessMm;
+    const expected=q.baseExtrude.profile.materialAreaMm2*q.baseExtrude.thicknessMm-
+      q.cutTool.profile.materialAreaMm2*cutDepth;
+    if(report.protocol!==q.protocol||report.status!=='experimental_body_cut_brep'||
       report.requestId!==q.requestId||report.cutFeatureId!==q.cutFeatureId||
       report.targetBodyId!==q.targetBodyId||report.baseFeatureId!==q.baseExtrude.featureId||
       report.cutToolFeatureId!==q.cutTool.featureId||report.revision!==q.revision||
@@ -102,7 +112,11 @@ export async function runExperimentalBodyCut(request,{
       report.independentInteroperability!==false||report.source?.valid!==true||
       report.source?.solidCount!==1||report.source?.shellCount!==1||
       !near(report.source.volumeMm3,expected)||
-      !near(report.analyticResultVolumeMm3,expected))
+      !near(report.analyticResultVolumeMm3,expected)||
+      (q.protocol===POCKET_FORMAT&&
+        (!near(report.cutDepthMm,cutDepth)||
+         report.cutKind!==(cutDepth<q.baseExtrude.thicknessMm?
+           'blind_pocket':'through'))))
       return failure(q,'requires_reconciliation','native_geometry_or_identity_mismatch');
     if(revision()!==q.revision)return failure(q,'stale_revision');
     if(!q.exportStep){

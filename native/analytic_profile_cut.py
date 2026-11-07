@@ -16,6 +16,7 @@ import tempfile
 from analytic_profile_extrude import parse_request, require, nearby, ID
 
 SCHEMA = 'intuit3d/kernel/profile-body-cut-v1'
+POCKET_SCHEMA = 'intuit3d/kernel/profile-body-cut-v2'
 
 
 def _face(parsed):
@@ -72,10 +73,15 @@ def _measure(shape):
 def execute(request, step_path=None):
     import OCP
     require(OCP.__version__ == '7.9.3.1', 'requires pinned experimental OCP 7.9.3.1')
-    require(isinstance(request, dict) and set(request) == {
-        'protocol', 'requestId', 'cutFeatureId', 'targetBodyId', 'revision',
-        'units', 'baseExtrude', 'cutTool', 'exportStep'}, 'invalid profile-body-cut/v1 request')
-    require(request['protocol'] == SCHEMA and request['units'] == 'mm', 'unsupported protocol/units')
+    require(isinstance(request, dict), 'body cut request must be an object')
+    schema = request.get('protocol')
+    require(schema in (SCHEMA, POCKET_SCHEMA), 'unsupported body cut protocol')
+    keys = {'protocol', 'requestId', 'cutFeatureId', 'targetBodyId',
+            'revision', 'units', 'baseExtrude', 'cutTool', 'exportStep'}
+    if schema == POCKET_SCHEMA:
+        keys.add('cutDepthMm')
+    require(set(request) == keys and request['units'] == 'mm',
+            'invalid body cut request fields or units')
     require(all(isinstance(request[key], str) and ID.fullmatch(request[key])
                 for key in ('requestId', 'cutFeatureId', 'targetBodyId')),
             'invalid cut, body or request identity')
@@ -93,6 +99,12 @@ def execute(request, step_path=None):
             'separate extrusion and cut identities required')
     base_parsed, cut_parsed = parse_request(base), parse_request(cutter)
     thickness = base_parsed[1]
+    cut_depth = thickness
+    if schema == POCKET_SCHEMA:
+        depth = request['cutDepthMm']
+        require(type(depth) in (int, float) and math.isfinite(depth) and
+                1e-6 <= depth <= thickness, 'pocket depth must be positive and within base thickness')
+        cut_depth = float(depth)
     require(nearby(cut_parsed[1], thickness, thickness),
             'cut depth must match the through-body extrusion depth')
     require(not cut_parsed[3], 'cut profile holes are not supported in v1')
@@ -103,7 +115,10 @@ def execute(request, step_path=None):
     from OCP.STEPControl import STEPControl_Writer, STEPControl_Reader, STEPControl_ManifoldSolidBrep
     from OCP.IFSelect import IFSelect_RetDone
     target = _shape(base_parsed, thickness)
-    tool = _shape(cut_parsed, 3 * thickness, -thickness)
+    # Overshoot the open top; for a blind pocket stop at the authored
+    # floor. A full-depth cut overshoots the bottom to avoid coplanarity.
+    start_z = thickness - cut_depth if cut_depth < thickness else -thickness
+    tool = _shape(cut_parsed, 3 * thickness, start_z)
     before = _measure(target)
     require(nearby(before['volumeMm3'], base_area * thickness, base_area * thickness),
             'base solid has wrong physical volume')
@@ -115,7 +130,7 @@ def execute(request, step_path=None):
             'explicit body cut failed')
     shape = boolean.Shape()
     source = _measure(shape)
-    expected = (base_area - cut_area) * thickness
+    expected = base_area * thickness - cut_area * cut_depth
     require(nearby(source['volumeMm3'], expected, expected),
             'cut did not remove the full intended area of the target body')
     step_readback = None
@@ -144,16 +159,19 @@ def execute(request, step_path=None):
             os.link(staged, dest)
             artifact = {'path': str(dest), 'bytes': len(data), 'sha256': digest,
                         'verification': 'OCP-7.9.3.1-same-engine-only'}
-    return {'protocol': SCHEMA, 'requestId': request['requestId'],
+    return {'protocol': schema, 'requestId': request['requestId'],
             'cutFeatureId': request['cutFeatureId'], 'targetBodyId': request['targetBodyId'],
             'baseFeatureId': base['featureId'], 'cutToolFeatureId': cutter['featureId'],
             'revision': request['revision'], 'units': 'mm',
             'backend': 'OCP-python-prototype', 'occtVersion': '7.9.3.1',
             'status': 'experimental_body_cut_brep', 'exactAuthority': False,
             'independentInteroperability': False, 'baseVolumeMm3': before['volumeMm3'],
-            'removedVolumeMm3': cut_area * thickness,
+            'removedVolumeMm3': cut_area * cut_depth,
             'analyticResultVolumeMm3': expected,
-            'source': source, 'stepReadback': step_readback, 'artifact': artifact}
+            'source': source, 'stepReadback': step_readback, 'artifact': artifact,
+            **({'cutDepthMm': cut_depth,
+                'cutKind': 'blind_pocket' if cut_depth < thickness else 'through'}
+               if schema == POCKET_SCHEMA else {})}
 
 
 def main():
