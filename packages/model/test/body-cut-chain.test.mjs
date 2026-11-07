@@ -74,6 +74,17 @@ test('two explicitly ordered same-body cuts are planner-ready without silently o
     ['feature.cut.second']);
   assert.equal(inspectBodyCutChain(preview.document,'body.plate')
     .eligibleAfterWriterId,'feature.cut.second');
+  // A third independent cut on the same body has a unique semantic writer tail.
+  const third=previewBodyCutAppend(preview.document,req(preview.document,{
+    eventId:'event.append.third.cut',cutFeatureId:'feature.cut.third',
+    afterBodyWriterId:'feature.cut.second',extent:{kind:'through_all'},
+  }));
+  assert.equal(third.semanticStatus,'ready');
+  assert.deepEqual(third.invalidation.readyToEvaluate,['feature.cut.third']);
+  assert.equal(inspectBodyCutChain(third.document,'body.plate')
+    .eligibleAfterWriterId,'feature.cut.third');
+  assert.deepEqual(featuresOf(third.document).find(f=>f.id==='feature.cut.third')
+    .dependsOn,['feature.cut.second','feature.slot.sketch']);
   assert.equal(serializeProject(before),frozen);
 });
 
