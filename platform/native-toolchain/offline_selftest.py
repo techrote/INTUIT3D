@@ -51,6 +51,10 @@ def validate_response(request: dict, response: dict, step: Path, known_volume: o
             "request/response must be objects")
     for key in ("requestId", "featureId", "revision"):
         require(response.get(key) == request.get(key), f"wrong response {key}")
+    require(response.get("status") == "validated_exact"
+            and response.get("backend") == "OCCT-cxx-8.0.1"
+            and response.get("occtVersion") == "8.0.1",
+            "offline replay is not exact OCCT 8.0.1 C++ geometry")
     plate = request.get("plate")
     require(isinstance(plate, dict), "missing plate")
     holes = plate.get("holes")
