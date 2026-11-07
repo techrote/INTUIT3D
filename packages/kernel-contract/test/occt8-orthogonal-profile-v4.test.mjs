@@ -9,6 +9,9 @@ import {requestFromRuntimeOcct8Orthogonal}
   from '../src/runtime-occt8-orthogonal-profile-provider.mjs';
 import {buildAuthoredLBracket,editAuthoredLBracketThickness,MODEL_L_BODY_ID,
   MODEL_L_CUT_IDS} from '../examples/runtime-occt8-l-profile-document.mjs';
+import {buildAuthoredUBracket,editAuthoredUBracketThickness,
+  MODEL_U_BODY_ID,MODEL_U_CUT_IDS}
+  from '../examples/runtime-occt8-u-profile-document.mjs';
 
 const FIXTURE=JSON.parse(await readFile(
   new URL('../../../native/examples/occt8-u-bracket-orthogonal.request.json',import.meta.url)));
@@ -99,4 +102,37 @@ test('uninstalled native binary never yields fabricated exact geometry or STEP',
   });
   assert.equal(r.kind,'unresolved');
   assert.equal(r.artifact,null);
+});
+
+test('real authored U SKETCH -> ordered cuts -> retrospective 8 to 12 mm -> undo/reopen',()=>{
+  const before=buildAuthoredUBracket();
+  const opts=fixture=>({runtime:fixture.runtime,model:fixture.model,
+    requestId:'native.real.u',exportStep:true});
+  const base=requestFromRuntimeOcct8Orthogonal(
+    before.history,MODEL_U_BODY_ID,opts(before));
+  assert.equal(base.profile.profileId,'sketch.u');
+  assert.equal(base.profile.vertices.length,8);
+  assert.deepEqual(base.cuts.map(c=>c.featureId),MODEL_U_CUT_IDS);
+  assert.deepEqual(base.cuts.map(c=>c.kind),['rectangle','rectangle']);
+  assert.deepEqual(base.cuts.map(c=>c.cutDepthMm),[8,3]);
+  assert.equal(expectedOcct8OrthogonalMetrics(base).volumeMm3,47600);
+  const changed=editAuthoredUBracketThickness(before,12);
+  assert.ok(changed.invalidation.invalidatedFeatureIds.includes('extrude.u'));
+  for(const id of MODEL_U_CUT_IDS)
+    assert.ok(changed.invalidation.invalidatedFeatureIds.includes(id));
+  assert.ok(!changed.invalidation.invalidatedFeatureIds.includes('extrude.spacer'));
+  const undone=changed.runtime.undo(changed.history,['undo.u.extrude']);
+  const redone=changed.runtime.redo(undone,['redo.u.extrude']);
+  assert.equal(requestFromRuntimeOcct8Orthogonal(
+    undone,MODEL_U_BODY_ID,opts(changed)).profile.thickness,8);
+  assert.equal(requestFromRuntimeOcct8Orthogonal(
+    redone,MODEL_U_BODY_ID,opts(changed)).profile.thickness,12);
+  const reopened=changed.runtime.reopen(changed.runtime.save(changed.history));
+  const after=requestFromRuntimeOcct8Orthogonal(
+    reopened,MODEL_U_BODY_ID,opts(changed));
+  assert.equal(after.profile.thickness,12);
+  assert.deepEqual(after.profile.vertices,base.profile.vertices);
+  assert.deepEqual(after.cuts.map(c=>c.featureId),MODEL_U_CUT_IDS);
+  assert.deepEqual(after.cuts.map(c=>c.cutDepthMm),[12,3]);
+  assert.equal(expectedOcct8OrthogonalMetrics(after).volumeMm3,71520);
 });
