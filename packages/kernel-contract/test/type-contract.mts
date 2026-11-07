@@ -171,3 +171,38 @@ runPinnedRuntimeOcct8LProfile(journal,'body.bracket',{
   ...chainServices,requestId:'runtime.l.invalid',
   workerExecutable:'/trusted/occt8/bin/intuit3d_occt8_plate',
 });
+
+// Additive typed arbitrary selected orthogonal-profile C++ consumer.
+import {parseOcct8OrthogonalProfileRequest,type Occt8OrthogonalProfileRequest}
+  from '../src/occt8-orthogonal-profile-v4.mjs';
+import {runPinnedOcct8OrthogonalProfileChain,type LocalOcct8OrthogonalResult}
+  from '../src/local-occt8-orthogonal-profile-provider.mjs';
+import {requestFromRuntimeOcct8Orthogonal,runPinnedRuntimeOcct8Orthogonal}
+  from '../src/runtime-occt8-orthogonal-profile-provider.mjs';
+declare const steppedSketch:Occt8OrthogonalProfileRequest;
+const steppedNative:Occt8OrthogonalProfileRequest=
+  parseOcct8OrthogonalProfileRequest(steppedSketch);
+const steppedRun:Promise<LocalOcct8OrthogonalResult>=
+  runPinnedOcct8OrthogonalProfileChain(steppedNative,{
+    workerExecutable:'/trusted/occt8/bin/intuit3d_occt8_plate',
+    readCurrentRevision:()=>steppedNative.revision,
+  });
+void steppedRun;
+const selectedFromJournal:Occt8OrthogonalProfileRequest=
+  requestFromRuntimeOcct8Orthogonal(journal,'body.bracket',{
+    ...chainServices,requestId:'runtime.orthogonal.native',
+  });
+const liveOrthogonal=runPinnedRuntimeOcct8Orthogonal(journal,'body.bracket',{
+  ...chainServices,requestId:'runtime.orthogonal.native',
+  workerExecutable:'/trusted/occt8/bin/intuit3d_occt8_plate',
+  readCurrentRevision:()=>journal.document.revision,
+});
+void selectedFromJournal;void liveOrthogonal;
+// @ts-expect-error native geometry must be fenced against current source revision
+runPinnedOcct8OrthogonalProfileChain(steppedNative,{
+  workerExecutable:'/trusted/occt8/bin/intuit3d_occt8_plate'});
+// @ts-expect-error the runtime's native result also requires current-revision callback
+runPinnedRuntimeOcct8Orthogonal(journal,'body.bracket',{
+  ...chainServices,requestId:'runtime.invalid',
+  workerExecutable:'/trusted/occt8/bin/intuit3d_occt8_plate',
+});
