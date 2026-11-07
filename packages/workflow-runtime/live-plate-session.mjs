@@ -126,8 +126,8 @@ export function createLivePlateSession({
         kind:'preview',projectId:candidate.before.report.projectId,
         sourceRevision:candidate.before.report.revision,
         candidateRevision:candidate.after.report.revision,
-        report:JSON.parse(JSON.stringify(candidate.after.report)),
-        invalidation:JSON.parse(JSON.stringify(candidate.invalidation)),
+        report:structuredClone(candidate.after.report),
+        invalidation:structuredClone(candidate.invalidation),
         exactAuthority:false,nativeEvaluation:null,
       });
       editPreviews.set(proposal,{
