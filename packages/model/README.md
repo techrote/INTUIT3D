@@ -567,3 +567,42 @@ The fixture is model-only and its lineage receipts are explicitly synthetic.
 The consumers should use the inventory for **repair UI and selection readiness**,
 and independently use RUNTIME/KERNEL's actual provider-validation gates for
 geometric truth, STEP bytes and any exact/independent claims.
+
+
+## Atomic named parameter creation + retrospective binding (v1)
+
+Import `previewParameterAuthoring` and `commitUndoableParameterAuthoring` from
+`@intuit3d/model/parameter-authoring`. This is the supported user-command
+adapter for creating a named scalar parameter and connecting one or more
+existing numeric feature fields **in one undoable journal transaction**.
+It composes the existing audited expression and dimension-edit contracts;
+RUNTIME consumes the resultant document without a second authority.
+
+```js
+const request = {
+  format:'intuit3d.parameter-authoring',version:1,
+  expectedRevision:history.document.revision,
+  admission:'require_admissible',
+  parameter:{
+    eventId:'create.thickness',featureId:'parameter.thickness',
+    name:'thickness',unit:'mm',
+    expression:{op:'literal',value:8,unit:'mm'},
+  },
+  bindings:[{eventId:'bind.plate',featureId:'extrude.plate',field:'thicknessMm'}],
+};
+const preview = previewParameterAuthoring(history.document,request);
+const next = commitUndoableParameterAuthoring(history,request);
+```
+
+The command validates source IDs, expression references, target fields,
+uniqueness and the final graph/scalar gates before any commit. Strict
+`require_admissible` refuses unresolved or regressing changes. Explicit
+`permit_unresolved` retains future-parameter dependencies and null derived
+values for later repair. Existing independent dependencies are never erased.
+This is a **model/scalar admission API**, not a geometry or STEP certification.
+
+Consumer demonstration:
+`node --experimental-strip-types packages/model/examples/create-bind-replay.mjs`
+after workspace dependencies are linked. It exercises the accepted SKETCH and
+RUNTIME modules, 8→12 mm retrospective parameter editing, partial invalidation,
+undo/redo and archive roundtrip, with the cut kept `pending_exact_provider`.
