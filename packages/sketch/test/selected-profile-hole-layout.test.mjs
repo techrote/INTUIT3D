@@ -75,7 +75,7 @@ test('atomic swap + independent diameters cannot pass through sequential collisi
   const restored=parseSketch(serializeSketch(swap.sketch));
   assert.equal(solveSketch(restored).status,'solved');
   assert.deepEqual(inspect(restored,swap.selection).holes,updated.holes);
-  assert.deepEqual(parseSketch(source),sketch); // one journal undo restores both
+  assert.deepEqual(parseSketch(source),sketch); // immutable source snapshot supports undo
   near(swap.profile.profile.areaMm2,5600-(16+36)*Math.PI);
   assert.equal(swap.profile.nativeExact,false);
   assert.equal(swap.independentStepQualified,false);
@@ -224,7 +224,7 @@ test('real selected-hole layout example exercises archive and undo',async()=>{
   const rows=execFileSync(process.execPath,[example],
     {encoding:'utf8',timeout:30000}).trim().split('\n').map(JSON.parse);
   assert.deepEqual(rows.map(row=>row.step),[
-    'original','swap_holes','resize_outline','reopen','undo'
+    'original','swap_holes','resize_outline','reopen','source_restore'
   ]);
   assert.equal(rows[1].lower.x,20);
   assert.equal(rows[1].upper.radiusMm,6);
