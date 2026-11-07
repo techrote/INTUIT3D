@@ -6,6 +6,7 @@ Run from an extracted verified bundle using: python3 selftest.py
 """
 from __future__ import annotations
 
+import argparse
 import copy
 import hashlib
 import json
@@ -14,6 +15,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+
+from replay_evidence import EvidenceError, publish_replay_steps
 
 
 class ReplayError(RuntimeError):
@@ -154,7 +157,7 @@ def execute_case(root: Path, temp: str, label: str, request: dict,
     return validate_response(request, response, step, expected_volume)
 
 
-def replay(root: Path) -> dict:
+def replay(root: Path, evidence_dir: Path | None = None) -> dict:
     require(sys.platform == "linux", "this archived worker is Linux ELF only")
     verified = subprocess.run([sys.executable, str(root / "verify.py")],
                               capture_output=True, text=True, timeout=30, check=False)
@@ -170,12 +173,14 @@ def replay(root: Path) -> dict:
     require(isinstance(evidence, dict) and set(evidence) == {"8", "12"},
             "missing prior physical 8/12 mm smoke evidence")
     observations = {}
+    requests: dict[str, dict] = {}
     with tempfile.TemporaryDirectory(prefix="intuit3d-extracted-occt8-") as temp:
         for thickness in (8, 12):
             source = root / "requests" / f"plate-{thickness}mm.json"
             request = json.loads(source.read_text(encoding="utf-8"))
             require(request.get("plate", {}).get("thickness") == thickness,
                     "request thickness does not match attested case")
+            requests[str(thickness)] = request
             observations[str(thickness)] = execute_case(
                 root, temp, str(thickness), request, evidence[str(thickness)]["volumeMm3"])
 
@@ -186,8 +191,10 @@ def replay(root: Path) -> dict:
         restored = copy.deepcopy(original)
         restored["requestId"] = original["requestId"] + ".restore-dimensions"
         restored["revision"] = original["revision"] + 2
+        requests["edited8"] = edited
         observations["edited8"] = execute_case(
             root, temp, "edited8", edited, analytic_volume(edited))
+        requests["restored8"] = restored
         observations["restored8"] = execute_case(
             root, temp, "restored8", restored, evidence["8"]["volumeMm3"])
         require(not math.isclose(observations["8"]["volumeMm3"],
@@ -200,18 +207,35 @@ def replay(root: Path) -> dict:
               observations["8"]["volumeMm3"], "restored 8mm plate volume")
         require(observations["restored8"]["holes"] == observations["8"]["holes"] == 2,
                 "restoration lost plate hole inventory")
+        fresh_steps = None
+        if evidence_dir is not None:
+            # Persist the *newly generated* exact C++ STEP bytes before the
+            # temporary replay directory disappears. Do not publish on any
+            # failed geometry, digest, source or edit/restoration predicate.
+            fresh_steps = publish_replay_steps(
+                Path(temp), evidence_dir, requests, observations,
+                {"occtSourceCommit": manifest["occtSourceCommit"],
+                 "kernelSourceCommit": manifest["kernelSourceCommit"],
+                 "workerSha256": manifest["workerSha256"]})
 
-    return {"status": "OFFLINE_CXX_REPLAY_PASS", "occtVersion": "8.0.1",
+    result = {"status": "OFFLINE_CXX_REPLAY_PASS", "occtVersion": "8.0.1",
             "kernelSourceCommit": manifest["kernelSourceCommit"],
             "workerSha256": manifest["workerSha256"], "cases": observations,
             "dimensionEditExecuted": True, "dimensionsRestored": True,
             "independentCadInteroperability": False}
+    if fresh_steps is not None:
+        result["freshStepEvidence"] = fresh_steps
+    return result
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--evidence-dir", type=Path,
+                        help="new directory for four genuine fresh STEP outputs, requests and hash evidence")
+    arguments = parser.parse_args()
     try:
-        result = replay(Path(__file__).resolve().parent)
-    except (ReplayError, OSError, ValueError, KeyError, TypeError,
+        result = replay(Path(__file__).resolve().parent, arguments.evidence_dir)
+    except (ReplayError, EvidenceError, OSError, ValueError, KeyError, TypeError,
             subprocess.SubprocessError) as exc:
         print("OFFLINE_CXX_REPLAY_FAIL:", exc, file=sys.stderr)
         return 2
