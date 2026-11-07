@@ -12,6 +12,8 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
+from plate_envelope import require_plate_vertex_envelope_mm
 from protocol import validate_request, validate_result
 from process_supervision import run_isolated_worker
 
@@ -30,8 +32,41 @@ def canonical_request(request: dict) -> str:
     lines.extend(f'{h["x"]:.17g} {h["y"]:.17g} {h["radius"]:.17g}' for h in p["holes"])
     return "\n".join(lines) + "\n"
 
+def _cross_version_step_audit(request: dict, response: dict, stage: Path,
+                              directory: Path, deadline: float) -> str:
+    """Reopen real STEP bytes in a separately supervised pinned OCP 7.9.3.1 process.
+
+    This is cross-version OCCT corroboration, NOT independent CAD engine
+    interoperability. No worker report can replace the actual artifact's audit.
+    """
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise subprocess.TimeoutExpired(["external-step-audit"], 0)
+    report = directory / "external-step-audit.json"
+    auditor = Path(__file__).resolve().parent / "occt8" / "audit_step.py"
+    completed = run_isolated_worker(
+        [sys.executable, str(auditor), "--step", str(stage), "--report", str(report)],
+        cwd=directory, timeout=remaining,
+    )
+    if completed.returncode != 0:
+        raise ValueError("external OCCT 7.9.3.1 STEP read-back failed")
+    if not report.is_file() or not 1 <= report.stat().st_size <= MAX_RESPONSE_BYTES:
+        raise ValueError("absent or oversized external STEP audit")
+    audit = json.loads(report.read_text(encoding="utf-8"))
+    if not isinstance(audit, dict) or set(audit) != {"sha256", "metrics", "vertexEnvelopeMm"}:
+        raise ValueError("external STEP audit has wrong schema")
+    digest = hashlib.sha256(stage.read_bytes()).hexdigest()
+    if audit["sha256"] != digest:
+        raise ValueError("external STEP audit does not match artifact bytes")
+    require_plate_vertex_envelope_mm(request["plate"], audit["vertexEnvelopeMm"], "external STEP")
+    # Use the *separate reader's* measured B-rep, not producer-claimed metrics.
+    validate_result(request, {**response, "stepReadback": audit["metrics"]},
+                    expected_backend=BACKEND, expected_version=VERSION)
+    return digest
+
+
 def execute(request_input: object, *, worker: Path, step_output: Path | None = None,
-            timeout: float = 30.0) -> dict:
+            timeout: float = 30.0, cross_version_audit: bool = False) -> dict:
     request = validate_request(request_input)
     # Normalize relative output paths before changing the subprocess cwd.
     if step_output is not None:
@@ -40,6 +75,9 @@ def execute(request_input: object, *, worker: Path, step_output: Path | None = N
         raise ValueError("step_output required if and only if exportStep is true")
     if not 0 < timeout <= 3600:
         raise ValueError("timeout must be between 0 and 3600 seconds")
+    if cross_version_audit and not request["exportStep"]:
+        raise ValueError("cross-version STEP readback requires exportStep")
+    deadline = time.monotonic() + timeout
     with tempfile.TemporaryDirectory(prefix=".intuit3d-occt8-",
                                          dir=step_output.parent if step_output else None) as temp:
         directory = Path(temp)
@@ -73,18 +111,26 @@ def execute(request_input: object, *, worker: Path, step_output: Path | None = N
                 with stage.open("rb") as stream:
                     if b"ISO-10303-21" not in stream.read(256):
                         raise ValueError("not STEP Part 21")
-                    stream.seek(max(0, size - 256))
+                    stream.seek(max(0, stage.stat().st_size - 256))
                     if b"END-ISO-10303-21;" not in stream.read():
                         raise ValueError("truncated STEP Part 21")
                 # The caller owns the destination. Atomic exclusive publication:
                 # no overwrite of files created during the C++ worker's lifetime.
-                digest = hashlib.sha256(stage.read_bytes()).hexdigest()
+                digest = ( _cross_version_step_audit(request, response, stage, directory, deadline)
+                           if cross_version_audit else hashlib.sha256(stage.read_bytes()).hexdigest() )
                 os.link(stage, step_output)
                 response["stepPath"] = str(step_output)
                 response["stepSha256"] = digest
+                response["stepVerification"] = (
+                    "occt-7.9.3.1-separate-process" if cross_version_audit
+                    else "occt-8.0.1-same-engine"
+                )
             elif stage.exists():
                 raise ValueError("worker emitted STEP for no-export intent")
             return response
+        except subprocess.TimeoutExpired:
+            return {"protocol": request["protocol"], "requestId": request["requestId"],
+                    "status": "timeout", "message": "external STEP reader exceeded shared deadline"}
         except (OSError, ValueError, KeyError, TypeError, AssertionError) as exc:
             return {"protocol":request["protocol"], "requestId":request["requestId"],
                     "status":"requires_reconciliation", "message":str(exc)[:600]}
@@ -94,10 +140,13 @@ def main() -> int:
     p.add_argument("--worker", type=Path, required=True)
     p.add_argument("--step-output", type=Path)
     p.add_argument("--timeout", type=float, default=30)
+    p.add_argument("--cross-version-step-audit", action="store_true",
+                   help="require separate OCP 7.9.3.1 reader; not independent CAD interoperability")
     args = p.parse_args()
     try:
         response = execute(json.load(sys.stdin), worker=args.worker,
-                           step_output=args.step_output, timeout=args.timeout)
+                           step_output=args.step_output, timeout=args.timeout,
+                           cross_version_audit=args.cross_version_step_audit)
     except (ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status":"invalid_request","message":str(exc)[:600]}))
         return 2
