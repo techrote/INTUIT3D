@@ -221,3 +221,48 @@ if (result.kind==='committed') {
 ```
 
 `npm test --workspace @intuit3d/workflow-runtime` exercises actual INTENT/SKETCH hole, plate and profile editing, one-step undo/redo, archived replay, atomic refusal and repair of unresolved intent. `npm run typecheck --workspace @intuit3d/workflow-runtime` verifies the consumer declarations. With the pinned Linux OCP backend, `npm run demo:bridge --workspace @intuit3d/workflow-runtime` additionally exercises **real HTTP native STEP** for thickness edit, then both hole radii edit, then archived undo and new native reconstruction. Same-engine experimental STEP remains **neither production exact authority nor independent interchange qualification**.
+
+## Atomic hole authoring — new consumer product API
+
+`runtime.editPlateHoles(history,{sketchFeatureId,eventId,expectedRevision,admission,operations})`
+adds or removes circular holes in a **single undoable authoritative INTENT feature.edit**.
+Operations are `{kind:'add',id,x,y,radius}` or `{kind:'remove',id}`; all
+coordinates and **radii** are in millimetres. Distinct stable IDs are required.
+New circles receive a named centre point, a fixed-centre constraint and
+a radius constraint in the actual SKETCH document; existing holes can be
+deleted only if their centre and radius are owned by exactly those two
+constraints with no external references. Attempts to destroy shared
+constraint intent are rejected rather than auto-healed. Multiple independent
+holes may be authored in one batch.
+
+```js
+const added=runtime.editPlateHoles(currentHistory,{
+  sketchFeatureId:'sketch.plate',
+  eventId:'user.add.third.hole',
+  expectedRevision:currentHistory.document.revision,
+  admission:'require_admissible',
+  operations:[{kind:'add',id:'holeC',x:60,y:20,radius:4}],
+});
+if(added.kind==='committed'){
+  currentHistory=added.history;
+  // WORKBENCH can display added.report, and request a fresh STEP using
+  // evaluateLocalPlate({ ..., readCurrentHistory:()=>currentHistory }).
+  // Native geometry is still OCP experimental, not certified production CAD.
+}
+```
+
+This is actual model/solver/profile admission (not browser-owned sketch state).
+`require_admissible` refuses an overlapping/outside hole without changing
+history. `preserve_unresolved` deliberately retains an invalid but editable
+hole for repair, while disabling dependent preview/cut. Undo, redo and
+`runtime.save/reopen` preserve all stable identities and source constraints.
+The runtime reports transitive invalidation of the sketch, plate and cut;
+it **never reuses an old STEP receipt** across revisions.
+
+`test/hole-edit.integration.test.mjs` covers actual model/solver admission,
+new-hole kernel request mapping, remove, overlap refusal/recovery, undo/replay
+and foreign-constraint preservation. Existing `demo:bridge` now adds a third
+hole, exports a fresh actual OCP STEP, undoes the hole and rebuilds a
+second native STEP (when the pinned Linux OCP environment is available).
+The package does **not** claim interactive UI controls; WORKBENCH owns their
+consumer wiring, and INTEGRATION owns exact-head admission and CI.
