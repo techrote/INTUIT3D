@@ -15,6 +15,7 @@ import {mkdir,writeFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {
   buildAuthoredUBracket,editAuthoredUBracketThickness,
+  editAuthoredUBracketRightFlange,editAuthoredUBracketPocketDepth,
   MODEL_U_BODY_ID,MODEL_U_CUT_IDS,
 } from './runtime-occt8-u-profile-document.mjs';
 import {
@@ -85,14 +86,40 @@ fixture={...changed,history:changed.runtime.reopen(changed.runtime.save(changed.
 await rebuild('edited-12',71520);
 assert.notEqual(records[0].stepSha256,records[1].stepSha256);
 assert.equal(records[0].profileId,records[1].profileId);
+
+const widened=editAuthoredUBracketRightFlange(fixture,130);
+for(const id of ['sketch.u','extrude.u',...MODEL_U_CUT_IDS])
+  assert.ok(widened.invalidation.invalidatedFeatureIds.includes(id));
+assert.ok(!widened.invalidation.invalidatedFeatureIds.includes('extrude.spacer'));
+fixture=widened;
+await rebuild('right-flange-130',81120);
+
+const depthEdited=editAuthoredUBracketPocketDepth(fixture,5);
+assert.ok(depthEdited.invalidation.invalidatedFeatureIds.includes('cut.left.pocket'));
+assert.ok(!depthEdited.invalidation.invalidatedFeatureIds.includes('extrude.spacer'));
+fixture=depthEdited;
+const pocketUndo=fixture.runtime.undo(fixture.history,['undo.u.pocket']);
+const pocketRedo=fixture.runtime.redo(pocketUndo,['redo.u.pocket']);
+for(const [state,depth] of [[pocketUndo,3],[pocketRedo,5]]) {
+  const candidate=requestFromRuntimeOcct8Orthogonal(state,MODEL_U_BODY_ID,{
+    runtime:fixture.runtime,model:fixture.model,
+    requestId:'native.u.inspect.pocket',exportStep:false,
+  });
+  assert.equal(candidate.cuts[1].cutDepthMm,depth);
+}
+fixture={...fixture,history:fixture.runtime.reopen(fixture.runtime.save(fixture.history))};
+await rebuild('pocket-depth-5',80960);
+assert.equal(new Set(records.map(r=>r.stepSha256)).size,4);
 await writeFile(join(out,'authoritative-document.json'),
   fixture.runtime.save(fixture.history),{flag:'wx'});
 await writeFile(join(out,'manifest.json'),JSON.stringify({
-  result:'PINNED_OCCT8_CPP_RUNTIME_U_PROFILE_TWO_STEP_EXECUTED',
+  result:'PINNED_OCCT8_CPP_RUNTIME_U_PROFILE_FOUR_STEP_EXECUTED',
   provider:'pinned-OCCT-8.0.1-C++',
   originalRevision:original.history.document.revision,
   editedRevision:fixture.history.document.revision,
   invalidated:changed.invalidation.invalidatedFeatureIds,
+  flangeInvalidated:widened.invalidation.invalidatedFeatureIds,
+  pocketInvalidated:depthEdited.invalidation.invalidatedFeatureIds,
   records,independentInteroperability:false,exactAuthority:false,
 },null,2)+'\n',{flag:'wx'});
-console.log(JSON.stringify({result:'PINNED_CXX_U_PROFILE_TWO_STEP_PASS',records},null,2));
+console.log(JSON.stringify({result:'PINNED_CXX_U_PROFILE_FOUR_STEP_PASS',records},null,2));

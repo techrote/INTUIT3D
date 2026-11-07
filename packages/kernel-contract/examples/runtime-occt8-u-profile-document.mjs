@@ -10,6 +10,8 @@ import * as bindings from '@intuit3d/model/dimension-bindings';
 import * as dimensions from '@intuit3d/model/dimension-batch-edit';
 import * as archive from '@intuit3d/model/archive';
 import * as cutChain from '@intuit3d/model/body-cut-chain';
+import {requestFromRuntimeOcct8Orthogonal}
+  from '../src/runtime-occt8-orthogonal-profile-provider.mjs';
 import * as sketch from '@intuit3d/sketch';
 import * as discovery from '@intuit3d/sketch/profile-discovery/v1';
 import {createWorkflowRuntime} from '@intuit3d/workflow-runtime';
@@ -106,4 +108,99 @@ export function editAuthoredUBracketThickness(fixture,thicknessMm) {
     featureId:'extrude.u',thicknessMm,
   },fixture.services);
   return {...fixture,history:result.history,invalidation:result.invalidation};
+}
+
+
+/**
+ * Extend only the exterior right U-flange edge. This is an authored SKETCH
+ * constraint edit, not an adjustment to a native polygon cache. The inner
+ * edge and both cut-tool sketches remain fixed in the original local frame;
+ * increasing the width therefore thickens the right leg without moving the
+ * existing rectangular window. A fresh selected-contour/cut admission is
+ * required before this operation can be committed to the caller.
+ */
+export function editAuthoredUBracketRightFlange(fixture,widthMm) {
+  const document=fixture?.history?.document;
+  if(!document||!Number.isSafeInteger(document.revision))
+    throw new TypeError('authoritative U-bracket history required');
+  if(typeof widthMm!=='number'||!Number.isFinite(widthMm)||
+     widthMm<=0||widthMm>1e6)
+    throw new RangeError('U-bracket width must be a positive finite mm value');
+  const source=fixture.model.featuresOf(document).find(f=>f.id==='sketch.u');
+  if(source?.kind!=='sketch'||!source.payload?.sketch)
+    throw new TypeError('missing selected U-bracket source sketch');
+  const fixed=new Map(source.payload.sketch.constraints.map(c=>[c.id,c]));
+  const left=fixed.get('fixed.bracket.p0');
+  const upper=fixed.get('fixed.bracket.p2');
+  const lower=fixed.get('fixed.bracket.p1');
+  if(left?.kind!=='fixed'||upper?.kind!=='fixed'||
+     lower?.kind!=='fixed'||upper.x!==lower.x)
+    throw new TypeError('U-bracket right edge is no longer authored as one vertical flange');
+  const proposedX=left.x+widthMm;
+  if(proposedX===upper.x)throw new RangeError('U-bracket width edit must change the right flange');
+  const outcome=fixture.runtime.editSketchConstraints(fixture.history,{
+    sketchFeatureId:'sketch.u',
+    eventId:'edit.u.right.flange.r'+document.revision,
+    expectedRevision:document.revision,
+    admission:'require_admissible',
+    edits:[
+      {constraintId:'fixed.bracket.p1',patch:{x:proposedX}},
+      {constraintId:'fixed.bracket.p2',patch:{x:proposedX}},
+    ],
+  });
+  if(outcome.kind!=='committed')
+    throw new RangeError('U-bracket flange edit is not solver-admitted: '+outcome.code);
+  // Native admission must also accept *both* authored tools against the new
+  // contour. Refuse the edit rather than silently clipping or moving a cut.
+  requestFromRuntimeOcct8Orthogonal(outcome.history,MODEL_U_BODY_ID,{
+    runtime:fixture.runtime,model:fixture.model,
+    requestId:'native.u.flange.preflight',exportStep:false,
+  });
+  return {...fixture,history:outcome.history,invalidation:outcome.invalidation};
+}
+
+/**
+ * Edit the real nonterminal blind pocket in one INTENT-owned journal frame.
+ * The existing downstream writer retains its identity and predecessor; its
+ * last native receipt must be invalidated by a consuming RUNTIME session.
+ */
+export function editAuthoredUBracketPocketDepth(fixture,depthMm) {
+  const document=fixture?.history?.document;
+  if(!document||!Number.isSafeInteger(document.revision))
+    throw new TypeError('authoritative U-bracket history required');
+  const chain=fixture.services?.cutChain;
+  if(typeof chain?.inspectBodyCutExtent!=='function'||
+     typeof chain?.commitUndoableBodyCutExtentEdit!=='function')
+    throw new TypeError('accepted INTENT cut extent editor required');
+  const extrusion=fixture.model.featuresOf(document).find(f=>f.id==='extrude.u');
+  const thicknessMm=extrusion?.payload?.thicknessMm;
+  if(extrusion?.kind!=='extrude'||extrusion.writeTargets?.length!==1||
+     extrusion.writeTargets[0]!==MODEL_U_BODY_ID||
+     !Number.isFinite(thicknessMm))
+    throw new TypeError('missing U-bracket source extrusion');
+  if(typeof depthMm!=='number'||!Number.isFinite(depthMm)||
+     depthMm<1e-6||depthMm>=thicknessMm)
+    throw new RangeError('blind pocket depth must be below current extrusion thickness');
+  const cutFeatureId=MODEL_U_CUT_IDS[1];
+  const selected=chain.inspectBodyCutExtent(document,cutFeatureId,MODEL_U_BODY_ID);
+  if(selected.semanticStatus!=='ready'||selected.extent.kind!=='blind')
+    throw new TypeError('U-bracket pocket is not an editable blind cut');
+  const history=chain.commitUndoableBodyCutExtentEdit(fixture.history,{
+    format:chain.BODY_CUT_EXTENT_EDIT_FORMAT,
+    version:chain.BODY_CUT_EXTENT_EDIT_VERSION,
+    expectedProjectId:document.projectId,
+    expectedRevision:document.revision,
+    eventId:'edit.u.pocket.depth.r'+document.revision,
+    cutFeatureId,targetBodyId:MODEL_U_BODY_ID,
+    fromExtent:selected.extent,toExtent:{kind:'blind',depthMm},
+    admission:'require_ready',
+  });
+  // Re-admit the current real SKETCH and ordered body-writer chain before
+  // returning a commit. Never create a native request from an unresolved cut.
+  requestFromRuntimeOcct8Orthogonal(history,MODEL_U_BODY_ID,{
+    runtime:fixture.runtime,model:fixture.model,
+    requestId:'native.u.pocket.preflight',exportStep:false,
+  });
+  return {...fixture,history,
+    invalidation:fixture.runtime.diff(fixture.history,history)};
 }

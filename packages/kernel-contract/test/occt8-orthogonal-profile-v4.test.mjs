@@ -10,6 +10,7 @@ import {requestFromRuntimeOcct8Orthogonal}
 import {buildAuthoredLBracket,editAuthoredLBracketThickness,MODEL_L_BODY_ID,
   MODEL_L_CUT_IDS} from '../examples/runtime-occt8-l-profile-document.mjs';
 import {buildAuthoredUBracket,editAuthoredUBracketThickness,
+  editAuthoredUBracketRightFlange,editAuthoredUBracketPocketDepth,
   MODEL_U_BODY_ID,MODEL_U_CUT_IDS}
   from '../examples/runtime-occt8-u-profile-document.mjs';
 
@@ -135,4 +136,47 @@ test('real authored U SKETCH -> ordered cuts -> retrospective 8 to 12 mm -> undo
   assert.deepEqual(after.cuts.map(c=>c.featureId),MODEL_U_CUT_IDS);
   assert.deepEqual(after.cuts.map(c=>c.cutDepthMm),[12,3]);
   assert.equal(expectedOcct8OrthogonalMetrics(after).volumeMm3,71520);
+});
+
+
+test('authored U right flange and blind pocket edits preserve body identity and replay',()=>{
+  const original=buildAuthoredUBracket();
+  const opts=f=>({runtime:f.runtime,model:f.model,
+    requestId:'u.runtime.edits',exportStep:true});
+  const initial=requestFromRuntimeOcct8Orthogonal(
+    original.history,MODEL_U_BODY_ID,opts(original));
+  assert.equal(expectedOcct8OrthogonalMetrics(initial).volumeMm3,47600);
+  const thick=editAuthoredUBracketThickness(original,12);
+  assert.equal(expectedOcct8OrthogonalMetrics(requestFromRuntimeOcct8Orthogonal(
+    thick.history,MODEL_U_BODY_ID,opts(thick))).volumeMm3,71520);
+  const flange=editAuthoredUBracketRightFlange(thick,130);
+  const wider=requestFromRuntimeOcct8Orthogonal(
+    flange.history,MODEL_U_BODY_ID,opts(flange));
+  assert.equal(wider.profile.vertices[1].x,70);
+  assert.equal(wider.profile.vertices[2].x,70);
+  assert.equal(expectedOcct8OrthogonalMetrics(wider).volumeMm3,81120);
+  assert.deepEqual(wider.cuts.map(c=>c.featureId),MODEL_U_CUT_IDS);
+  for(const id of ['sketch.u','extrude.u',...MODEL_U_CUT_IDS])
+    assert.ok(flange.invalidation.invalidatedFeatureIds.includes(id));
+  assert.ok(!flange.invalidation.invalidatedFeatureIds.includes('extrude.spacer'));
+  const pocket=editAuthoredUBracketPocketDepth(flange,5);
+  const final=requestFromRuntimeOcct8Orthogonal(
+    pocket.history,MODEL_U_BODY_ID,opts(pocket));
+  assert.equal(final.cuts[1].cutDepthMm,5);
+  assert.equal(expectedOcct8OrthogonalMetrics(final).volumeMm3,80960);
+  assert.equal(final.profile.profileId,initial.profile.profileId);
+  const undo=pocket.runtime.undo(pocket.history,['undo.u.depth']);
+  const redo=pocket.runtime.redo(undo,['redo.u.depth']);
+  assert.equal(requestFromRuntimeOcct8Orthogonal(
+    undo,MODEL_U_BODY_ID,opts(pocket)).cuts[1].cutDepthMm,3);
+  assert.equal(requestFromRuntimeOcct8Orthogonal(
+    redo,MODEL_U_BODY_ID,opts(pocket)).cuts[1].cutDepthMm,5);
+  const reopened=pocket.runtime.reopen(pocket.runtime.save(pocket.history));
+  assert.deepEqual(requestFromRuntimeOcct8Orthogonal(
+    reopened,MODEL_U_BODY_ID,opts(pocket)),final);
+  assert.throws(()=>editAuthoredUBracketPocketDepth(pocket,0),/depth/);
+  assert.throws(()=>editAuthoredUBracketPocketDepth(pocket,13),/depth/);
+  assert.throws(()=>editAuthoredUBracketRightFlange(original,110));
+  assert.equal(requestFromRuntimeOcct8Orthogonal(
+    original.history,MODEL_U_BODY_ID,opts(original)).profile.vertices[1].x,60);
 });
