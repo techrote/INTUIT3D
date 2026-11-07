@@ -652,3 +652,39 @@ edits 8→12 mm, freezes the current 12 mm value, releases the reviewed
 parameter-only dependency, retires the parameter and verifies undo/redo plus
 save/reopen. RUNTIME deliberately retains `preview_only` extrusion and
 `pending_exact_provider` cut; there is no STEP or production-exact claim.
+
+## User-operated feature removal and restoration (v1)
+
+The additive `@intuit3d/model/feature-lifecycle` contract lets a
+WORKBENCH/RUNTIME timeline delete a selected feature without silently deleting
+its dependents or treating stale solid geometry as current. Call
+`inspectFeatureRemoval(document, featureId)` first to show direct and
+transitive consequences. Then call `previewFeatureRemoval` and
+`commitUndoableFeatureRemoval` with fresh event IDs:
+
+- `reject_if_referenced` prevents deleting a feature with living dependents.
+- `keep_dependents_pending` retires only the selected feature; cut/fillet
+  descendants remain authored and visibly unresolved until restored or repaired.
+- `cascade_descendants` retires the entire dependent branch only after
+  explicit confirmation, as one undoable transaction (maximum 64 events).
+
+`previewFeatureRestoration` / `commitUndoableFeatureRestoration`
+restore explicitly selected tombstones, retaining their original stable feature
+IDs, dependencies and authored timeline positions. `require_ready` refuses
+a restoration that would introduce unresolved features or regress previously
+ready ones; `permit_unresolved` preserves forward/deferred intent explicitly.
+Both operations are revision/project-fenced, transactionally validated and return
+a dependency-aware invalidation plan. All values are **semantic model evidence,
+not exact B-rep or STEP authority**.
+
+Run the executable workflow with:
+
+```sh
+node packages/model/examples/recoverable-plate-cut.mjs
+node --experimental-strip-types --test packages/model/test/feature-lifecycle.test.mjs
+```
+
+A consuming timeline must generate a fresh event ID for each operation and
+must invalidate any formerly current geometry for deleted/upstream-dependent
+features; it must not reuse preview meshes or STEP receipts based on this model
+API alone.
