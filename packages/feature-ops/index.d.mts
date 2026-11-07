@@ -57,3 +57,47 @@ export declare function reconfigureMountingFlange(
     sourceRevision:number;exactAuthority:false;independentInteroperability:false};
   exactAuthority:false;independentInteroperability:false;
 }>;
+
+
+/** Versioned real SKETCH-profile operations, distinct from flange-specific v1. */
+export declare const PROFILE_OPS_FORMAT: 'intuit3d.feature-ops.profile-solid';
+export declare const PROFILE_OPS_VERSION: 1;
+export type ProfileExtrusionRequest = Readonly<{
+  format:typeof PROFILE_OPS_FORMAT; version:typeof PROFILE_OPS_VERSION;
+  eventId:string; expectedRevision:number; sourceSketchId:string;
+  units:'mm';frame:'local_xy';
+  /** The canonical SKETCH discovery candidate ID (line-loop semantic IDs). */
+  profileCandidateId:string;
+  extrudeFeatureId:string; outputBodyId:string; depthMm:number;
+}>;
+export type ProfileBodyCutRequest = Readonly<{
+  format:typeof PROFILE_OPS_FORMAT; version:typeof PROFILE_OPS_VERSION;
+  eventId:string; expectedRevision:number; sourceSketchId:string;
+  units:'mm';frame:'local_xy';
+  profileCandidateId:string; extrudeFeatureId:string; cutFeatureId:string;
+  targetBodyId:string;
+}>;
+/** Consumes a previously authored, uniquely admitted SKETCH profile. */
+export declare function authorProfileExtrusion(
+  history:UndoHistory,request:ProfileExtrusionRequest,services:FeatureOpsServices
+):Readonly<{
+  kind:'committed';history:UndoHistory;report:RuntimeReport;
+  invalidation:WorkflowInvalidation;
+  semanticIds:{sketchId:string;extrudeId:string;bodyId:string};
+  selectedProfileId:string;status:'preview_only';nativeHandoff:null;
+  exactAuthority:false;independentInteroperability:false;
+}>;
+/** Cut may use the extrusion's sketch or a distinct admitted SKETCH profile. */
+export declare function authorProfileBodyCut(
+  history:UndoHistory,request:ProfileBodyCutRequest,services:FeatureOpsServices
+):Readonly<{
+  kind:'committed';history:UndoHistory;report:RuntimeReport;
+  invalidation:WorkflowInvalidation;
+  semanticIds:{sketchId:string;extrudeId:string;cutId:string;bodyId:string};
+  selectedProfileId:string;status:'pending_exact_provider';
+  nativeHandoff:{kind:'runtime_evaluation_required';cutFeatureId:string;
+    bodyId:string;sourceRevision:number;
+    compatibility:'not_claimed_ask_RUNTIME_provider';
+    exactAuthority:false;independentInteroperability:false};
+  exactAuthority:false;independentInteroperability:false;
+}>;
