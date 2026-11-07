@@ -153,3 +153,21 @@ const selectedLProfile:Occt8LProfileRequest={
 const parsedLProfile:Occt8LProfileRequest=parseOcct8LProfileRequest(selectedLProfile);
 void parsedLProfile;
 void runPinnedOcct8LProfileChain;
+
+
+// RUNTIME -> selected L sketch -> pinned C++ consumes the journal, not a mock.
+import {requestFromRuntimeOcct8LProfile,runPinnedRuntimeOcct8LProfile}
+  from '../src/runtime-occt8-l-profile-provider.mjs';
+const liveLRequest:Occt8LProfileRequest=requestFromRuntimeOcct8LProfile(
+  journal,'body.bracket',{...chainServices,requestId:'runtime.l.native'});
+const liveLExecution=runPinnedRuntimeOcct8LProfile(journal,'body.bracket',{
+  ...chainServices,requestId:'runtime.l.native',
+  workerExecutable:'/trusted/occt8/bin/intuit3d_occt8_plate',
+  readCurrentRevision:()=>journal.document.revision,
+});
+void liveLRequest;void liveLExecution;
+// @ts-expect-error a real pinned C++ runtime response needs a revision fence
+runPinnedRuntimeOcct8LProfile(journal,'body.bracket',{
+  ...chainServices,requestId:'runtime.l.invalid',
+  workerExecutable:'/trusted/occt8/bin/intuit3d_occt8_plate',
+});
