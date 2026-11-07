@@ -160,10 +160,12 @@ export function previewParameterAuthoring(
     edits: request.bindings.map((binding) => {
       if (!plain(binding) || !exact(binding, [
         'eventId', 'featureId', 'field',
-      ])) fail('malformed binding entry');
+      ]) || typeof binding.eventId !== 'string' ||
+          typeof binding.featureId !== 'string' ||
+          typeof binding.field !== 'string') fail('malformed binding entry');
       return {
-        eventId: binding.eventId, featureId: binding.featureId,
-        field: binding.field,
+        eventId: binding.eventId as string, featureId: binding.featureId as string,
+        field: binding.field as string,
         binding: {
           unit: spec.unit,
           expression: { op: 'ref' as const, featureId: spec.featureId },
