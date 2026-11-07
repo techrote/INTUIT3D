@@ -41,3 +41,39 @@ export declare function authorCircularBoltPattern(
   history:UndoHistory,request:CircularBoltPatternRequest,
   services:CircularBoltPatternServices
 ):CircularBoltPatternResult;
+
+
+/** One-shot retrospective radial and bore resizing of a complete solved bolt
+ * circle. All named holes, including the original, are edited atomically by
+ * RUNTIME. Fail closed if an independent edit has broken the given pattern. */
+export type CircularBoltResizeRequest=Readonly<Omit<CircularBoltPatternRequest,'pattern'>&{
+  pattern:Readonly<CircularBoltPatternRequest['pattern']&{
+    pitchCircleScale:number;
+    boreRadiusScale:number;
+  }>;
+}>;
+export type CircularBoltResizeServices=Readonly<CircularBoltPatternServices&{
+  runtime:Pick<WorkflowRuntime,'inspect'|'patternCircularHoles'|'resizePlateHoleLayout'>;
+  sketch:Readonly<{
+    validateSketch(source:unknown):import('@intuit3d/sketch').SketchDocument;
+    solveSketch(source:import('@intuit3d/sketch').SketchDocument):import('@intuit3d/sketch').SketchSolution;
+  }>;
+}>;
+export type CircularBoltResizeResult=
+  |Readonly<{kind:'refused';code:string;notCommitted:true;sourceRevision:number;
+    holeIds:readonly string[];exactAuthority:false;independentInteroperability:false}>
+  |Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
+    invalidation:WorkflowInvalidation;holeIds:readonly string[];
+    semanticIds:{sketchId:string;extrudeId:string;cutId:string;bodyId:string};
+    dimensions:{previousPitchCircleRadiusMm:number;newPitchCircleRadiusMm:number;
+      previousBoreRadiusMm:number;newBoreRadiusMm:number};
+    status:'pending_exact_provider';
+    nativeHandoff:{kind:'runtime_evaluation_required';cutFeatureId:string;
+      bodyId:string;sourceRevision:number;
+      compatibility:'not_claimed_ask_RUNTIME_provider';
+      exactAuthority:false;independentInteroperability:false};
+    exactAuthority:false;independentInteroperability:false}>;
+export declare function resizeCircularBoltPattern(
+  history:UndoHistory,request:CircularBoltResizeRequest,
+  services:CircularBoltResizeServices
+):CircularBoltResizeResult;
