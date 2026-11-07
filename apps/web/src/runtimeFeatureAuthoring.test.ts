@@ -1,4 +1,5 @@
 import test from 'node:test';
+import * as model from '@intuit3d/model';
 import assert from 'node:assert/strict';
 import {
   createModelExtrusion,createModelThroughCut,editModelDimension,inspectModelSession,
@@ -32,7 +33,7 @@ test('genuine staged sketch -> extrude -> explicit body cut -> dimension edit ->
   assert.deepEqual(modelFeatureTimeline(cut).map(f=>f.featureId),
     ['sketch.plate','plate','cut']);
   assert.equal(status(cut,'cut'),'pending_exact_provider');
-  const cutFeature=cut.document.features.find(f=>f.id==='cut');
+  const cutFeature=model.featuresOf(cut.document).find(f=>f.id==='cut');
   assert.equal(cutFeature?.payload.targetBodyId,'body.plate');
   assert.equal(cutFeature?.payload.sourceSketchId,'sketch.plate');
   assert.throws(()=>createModelThroughCut(cut),/already exists/);
