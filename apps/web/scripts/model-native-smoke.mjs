@@ -265,6 +265,10 @@ async function main(){
     'downloaded STEP byte stream differs from verified synthetic HTTP fixture');
   check(await evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent.includes('not independent STEP')"),
     'STEP result lacks experimental and independent status');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]').disabled"),
+    'RUNTIME did not retain current, verified STEP for explicit download');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-evidence]')?.textContent.includes('Through-holes:')"),
+    'browser cannot inspect same-revision experimental provider result');
   await screenshot('native-02-download.png');
 
   // Second request is aborted by an actual browser param edit before HTTP reply.
@@ -280,6 +284,10 @@ async function main(){
   await pause(950);
   check(await evaluate('window.__nativeStepBlobs.length===1'),
     'stale STEP was downloaded following model change');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'retrospective edit left a stale RUNTIME STEP receipt downloadable');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-native-evidence]')"),
+    'old native physical receipt survived a journal revision edit');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'sketch edit fabricated exact cut');
   await screenshot('native-03-edit-cancels-stale.png');
@@ -363,13 +371,33 @@ async function main(){
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'reopened model fabricated native exactness');
   await screenshot('native-05-frozen-archive-reopened.png');
+  // A separate build must leave verified bytes in the persistent RUNTIME
+  // coordinator without silently downloading or reusing stale old geometry.
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'reopened archive incorrectly retained an old STEP receipt');
+  const beforeBuildCount=await evaluate('window.__nativeStepBlobs.length');
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-native-build]').click();return true})()"),
+    'cannot initiate build-only native revision');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-evidence]'))"),
+    'new RUNTIME receipt after archive reopen');
+  check(await evaluate('window.__nativeStepBlobs.length')===beforeBuildCount,
+    'build-only unexpectedly downloaded a STEP blob');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]').disabled"),
+    'build-only did not enable live, revision-fenced download');
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-native-download-cached]').click();return true})()"),
+    'cannot download current-session STEP');
+  await eventually(()=>evaluate('window.__nativeStepBlobs.length==='+String(beforeBuildCount+1)),
+    'explicit cached STEP download');
+  check(await evaluate("(async()=>{const a=await window.__nativeStepBlobs.at(-1).text();return a.includes('SYNTHETIC UI TEST, NOT OCCT')})()"),
+    'cached STEP contents do not match the verified local HTTP fixture');
+  await screenshot('native-06-live-session-build-and-download.png');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder, NOT OCP/native/STEP interoperability',
-    downloadedFiles:2,staleDownloadRefused:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,realPhysicalGeometry:false,
+    downloadedFiles:3,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,realPhysicalGeometry:false,
     independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png'
+      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
