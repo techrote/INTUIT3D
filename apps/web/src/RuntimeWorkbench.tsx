@@ -144,6 +144,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const featureRows=useMemo(()=>modelFeatureTimeline(history),[history]);
   const plateActive=featureRows.some(row=>row.featureId==='plate'&&row.active);
   const cutActive=featureRows.some(row=>row.featureId==='cut'&&row.active);
+  const plateAuthored=featureRows.some(row=>row.featureId==='plate');
+  const cutAuthored=featureRows.some(row=>row.featureId==='cut');
   const renderSketch=sketchMode||!plateActive;
   const selectedActive=featureRows.some(row=>row.featureId===selected&&row.active);
   const editableLifecycle=selected==='plate'||selected==='cut';
@@ -515,10 +517,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <small>mm</small>
         </label>
         <button type="button" className="ribbon-button" data-testid="runtime-create-extrusion"
-          disabled={plateActive||!sketchProfile||!!pendingImport}
+          disabled={plateAuthored||!sketchProfile||!!pendingImport}
           onClick={createExtrusion}>Extrude sketch</button>
         <button type="button" className="ribbon-button" data-testid="runtime-create-cut"
-          disabled={!plateActive||cutActive||!sketchProfile?.holes.length||!!pendingImport}
+          disabled={!plateActive||cutAuthored||!sketchProfile?.holes.length||!!pendingImport}
           onClick={createCut}>Cut holes through body.plate</button>
       </div>
       <div className="ribbon-group"><span className="ribbon-label">AUTHORITATIVE HISTORY</span>
