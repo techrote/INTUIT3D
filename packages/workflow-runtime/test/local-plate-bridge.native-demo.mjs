@@ -217,9 +217,44 @@ try {
   assert.deepEqual(undoneResize.plate.holes.map(h=>h.x),[-25,25]);
   assert.ok(Math.abs(undoneResize.volumeMm3-undoneRigidTransform.volumeMm3)<1e-5);
 
+  // Real archive re-open and native STEP reconstruction in one browser-safe
+  // operation. An intermediate authored edit must revoke the old receipt;
+  // reopening the saved archive requires explicit replacement consent.
+  const savedNativeArchive=session.save();
+  const transient=session.applyEdit(h=>runtime.editPlateHoles(h,{
+    sketchFeatureId:'sketch.plate',eventId:'author.bridge.transient.hole',
+    expectedRevision:h.document.revision,admission:'require_admissible',
+    operations:[{kind:'add',id:'holeReopen',x:60,y:20,radius:3}],
+  }));
+  assert.equal(transient.kind,'committed',JSON.stringify(transient));
+  assert.equal(session.currentStep(),null,'transient edit must revoke prior STEP');
+  const refusedNativeRestore=await session.reopenAndEvaluate(savedNativeArchive,{
+    url:host.url,token:host.token,requestId:'bridge.native.reopen.denied',
+    exportStep:true,
+  });
+  assert.equal(refusedNativeRestore.kind,'refused');
+  assert.equal(refusedNativeRestore.evaluation,null);
+  const reopenedNative=await session.reopenAndEvaluate(savedNativeArchive,{
+    confirmReplacement:true,url:host.url,token:host.token,
+    requestId:'bridge.native.reopen.rebuild',exportStep:true,
+  });
+  assert.equal(reopenedNative.kind,'submitted');
+  assert.equal(reopenedNative.evaluation.kind,'experimental_plate_evaluated',
+    JSON.stringify(reopenedNative.evaluation));
+  assert.equal(session.save(),savedNativeArchive);
+  assert.equal(reopenedNative.evaluation.result.intendedPlate.holes.length,2);
+  assert.ok(Math.abs(reopenedNative.evaluation.result.observed.source.volumeMm3-
+    undoneResize.volumeMm3)<1e-5);
+  assert.equal(session.currentStep()?.sha256,reopenedNative.evaluation.step.sha256);
+  assert.equal(reopenedNative.evaluation.exactAuthority,false);
+  assert.equal(reopenedNative.evaluation.independentInteroperability,false);
+
   console.log(JSON.stringify({status:'real_experimental_native_bridge_pass',
     first,second,changedHoles,undoneHoles,withThirdHole,afterUndoThirdHole,
     withArray,undoneArray,withPolarArray,undonePolarArray,
     withRigidTransform,undoneRigidTransform,withResizedLayout,undoneResize,
+    reopenedNative:{volumeMm3:reopenedNative.evaluation.result.observed.source.volumeMm3,
+      bytes:reopenedNative.evaluation.step.bytes.length,
+      sha256:reopenedNative.evaluation.step.sha256},
     redoAdmitted:true,independentStep:false,productionExact:false},null,2));
 } finally {session.cancel();await host.close();}
