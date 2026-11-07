@@ -185,3 +185,27 @@ test('standalone product resequencing fixture runs and reports honest native sta
     ['extrude.plate','cut.pocket','cut.slot']);
   assert.equal(result.independentBodyReusable,true);
 });
+
+test('reorder never drops an authored face/edge reference to the old body writer',()=>{
+  const source=plate();
+  const cases=[
+    {featureId:'cut.pocket',producerId:'cut.holes',roleId:'face.after.first'},
+    {featureId:'cut.holes',producerId:'extrude.plate',roleId:'face.top'},
+    {featureId:'cut.notch',producerId:'cut.pocket',roleId:'edge.pocket'},
+  ];
+  for(const {featureId,producerId,roleId} of cases){
+    const existing=featuresOf(source).find(x=>x.id===featureId);
+    const doc=commitEvent(source,{
+      eventId:'author.reference.'+featureId,type:'feature.edit',featureId,
+      patch:{payload:{...existing.payload,sourceFace:{
+        format:'intuit3d.semantic-topology-reference',version:1,
+        projectId:source.projectId,atRevision:source.revision,
+        anchor:{kind:'face',featureId:producerId,roleId},
+      }}},
+    });
+    assert.equal(planProject(doc).features.every(x=>x.status==='ready'),true);
+    assert.throws(()=>previewBodyCutSwap(doc,req(doc)),/authored topology still targets/);
+    assert.equal(featuresOf(doc).find(x=>x.id===featureId).payload.sourceFace.anchor.featureId,
+      producerId);
+  }
+});
