@@ -7,6 +7,8 @@ import {
   type ModelDimension, type ModelSession,
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
+import { evaluateLocalPlate } from '@intuit3d/workflow-runtime/local-plate-client';
+import { verifyCurrentStepRevision, experimentalStepFilename } from './localNativeStep';
 
 const LABEL: Record<ModelDimension,string> = {
   width:'Plate width', depth:'Plate depth', holeDiameter:'Hole diameter',
@@ -46,6 +48,27 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [pendingImport,setPendingImport]=useState<{file:string;history:ModelSession}|null>(null);
   const fileInput=useRef<HTMLInputElement>(null);
   const loadTicket=useRef(0);
+  // Native work must NEVER outlive the authoritative journal revision.
+  const liveHistory=useRef(history);
+  const nativeOperation=useRef<AbortController|null>(null);
+  const nativeTicket=useRef(0);
+  const [nativeUrl,setNativeUrl]=useState('');
+  const [nativeToken,setNativeToken]=useState('');
+  const [nativeBusy,setNativeBusy]=useState(false);
+  const [nativeReport,setNativeReport]=useState<string|null>(null);
+  const invalidateNative=()=>{
+    ++nativeTicket.current;
+    nativeOperation.current?.abort();
+    nativeOperation.current=null;
+    setNativeBusy(false);
+    setNativeReport(null);
+  };
+  const acceptHistory=(next:ModelSession)=>{
+    invalidateNative();
+    liveHistory.current=next;
+    setHistory(next);
+  };
+  useEffect(()=>()=>{nativeOperation.current?.abort();},[]);
   const report=useMemo(()=>inspectModelSession(history),[history]);
   const values=useMemo(()=>modelDimensionValues(history),[history]);
   const geom=useMemo(()=>previewModelProfile(report),[report]);
@@ -56,16 +79,16 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     try {
       const next=editModelDimension(history,field,value);
       const invalidation=runtime.diff(history,next);
-      setHistory(next);
+      acceptHistory(next);
       setMessage(`Revision ${next.document.revision}: changed ${field}; invalidated ${invalidation.invalidatedFeatureIds.join(' → ') || 'none'} (no exact geometry reused).`);
     } catch(error) {setMessage(error instanceof Error?error.message:'Dimension edit failed');}
   };
   const undo=()=>{
-    try{setHistory(undoModelSession(history));setMessage(null);}
+    try{acceptHistory(undoModelSession(liveHistory.current));setMessage(null);}
     catch(e){setMessage(String(e));}
   };
   const redo=()=>{
-    try{setHistory(redoModelSession(history));setMessage(null);}
+    try{acceptHistory(redoModelSession(liveHistory.current));setMessage(null);}
     catch(e){setMessage(String(e));}
   };
   const save=()=>{
@@ -96,8 +119,62 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const useIncoming=()=>{
     if(!pendingImport)return;
     ++loadTicket.current;
-    setHistory(pendingImport.history);setSelected('plate');setPendingImport(null);
+    acceptHistory(pendingImport.history);setSelected('plate');setPendingImport(null);
     setMessage('Model archive reopened with durable feature IDs, undo/redo and no cached meshes.');
+  };
+  const downloadNativeStep=async()=>{
+    if(nativeOperation.current) return;
+    const current=liveHistory.current;
+    const archive=serializeModelSession(current);
+    const token=nativeToken.trim();
+    const url=nativeUrl.trim();
+    const id=++nativeTicket.current;
+    const controller=new AbortController();
+    nativeOperation.current=controller;
+    setNativeBusy(true);setNativeReport(null);
+    try{
+      const outcome=await evaluateLocalPlate({
+        url,token,runtime,readCurrentHistory:()=>liveHistory.current,
+        cutFeatureId:'cut',
+        requestId:`workbench.step.${current.document.revision}.${crypto.randomUUID().replaceAll('-','')}`,
+        exportStep:true,signal:controller.signal,
+      });
+      if(id!==nativeTicket.current || controller.signal.aborted)return;
+      if(outcome.kind==='unresolved'){
+        setNativeReport(`No STEP published: ${outcome.code} — ${outcome.reason}`);
+        return;
+      }
+      // Re-fence AFTER the browser client has checked the HTTP result and hash,
+      // immediately before publishing bytes to the download API.
+      if(!outcome.step || !verifyCurrentStepRevision({
+        originalArchive:archive, readCurrentHistory:()=>liveHistory.current,
+        serialize:serializeModelSession,source:outcome.source,
+      })){
+        setNativeReport('No STEP published: document changed while native work completed.');
+        return;
+      }
+      if(outcome.exactAuthority!==false || outcome.independentInteroperability!==false){
+        setNativeReport('No STEP published: unacceptable exactness claim.');
+        return;
+      }
+      const bytes=new Uint8Array(outcome.step.bytes);
+      const filename=experimentalStepFilename(current.document.projectId,current.document.revision);
+      const objectUrl=URL.createObjectURL(new Blob([bytes],{type:'model/step'}));
+      try{
+        const link=document.createElement('a');
+        link.href=objectUrl;link.download=filename;
+        document.body.appendChild(link);link.click();link.remove();
+      }finally{setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);}
+      setNativeReport(`Experimental STEP downloaded · revision ${outcome.source.revision} · ${bytes.byteLength} bytes · SHA-256 ${outcome.step.sha256}. Same-engine readback only; not independent STEP or production exactness.`);
+    }catch(error){
+      if(id===nativeTicket.current && !controller.signal.aborted)
+        setNativeReport('No STEP published: '+(error instanceof Error?error.message:String(error)));
+    }finally{
+      if(id===nativeTicket.current){
+        nativeOperation.current=null;
+        setNativeBusy(false);
+      }
+    }
   };
   useEffect(()=>{
     const onKey=(e:KeyboardEvent)=>{
@@ -196,6 +273,31 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           {MODEL_DIMENSIONS.map(field=><ScalarInput key={field+':'+history.document.revision} field={field}
             value={values[field]} onCommit={update}/>)}
           <p className="microcopy">Values edit the actual SKETCH constraints or the retrospective INTENT thickness parameter. Every edit is a revision-fenced undoable journal transaction.</p>
+        </div>
+        <div className="inspector-section runtime-native" data-testid="runtime-native-panel">
+          <div className="section-head">LOCAL NATIVE STEP · EXPERIMENTAL</div>
+          <p className="microcopy">Start the separate trusted local provider using <code>node apps/web/scripts/local-native-host.mjs</code>. Copy its one-session loopback URL and pairing token from your terminal. No cloud connection; neither value is saved with the model.</p>
+          <label className="runtime-native-field">
+            <span>Local provider URL</span>
+            <input type="url" data-testid="runtime-native-url" aria-label="Local native provider URL"
+              placeholder="http://127.0.0.1:port" autoComplete="off" spellCheck={false}
+              value={nativeUrl} onChange={e=>{invalidateNative();setNativeUrl(e.target.value);}}/>
+          </label>
+          <label className="runtime-native-field">
+            <span>Session pairing token</span>
+            <input type="password" data-testid="runtime-native-token" aria-label="Local native pairing token"
+              placeholder="64 hexadecimal characters" autoComplete="off" spellCheck={false}
+              value={nativeToken} onChange={e=>{invalidateNative();setNativeToken(e.target.value);}}/>
+          </label>
+          <button type="button" className="ribbon-button runtime-native-export"
+            data-testid="runtime-native-export" onClick={()=>void downloadNativeStep()}
+            disabled={!geom || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}>
+            {nativeBusy?'Building verified STEP…':'Build and download experimental STEP'}
+          </button>
+          {nativeBusy&&<button type="button" className="ribbon-button"
+            data-testid="runtime-native-cancel" onClick={()=>{invalidateNative();setNativeReport('Native evaluation cancelled; no STEP published.');}}>Cancel native evaluation</button>}
+          {nativeReport&&<p className="microcopy" role="status" data-testid="runtime-native-result">{nativeReport}</p>}
+          <p className="microcopy">Only the model's live revision is submitted. A changed, invalid or unresolved sketch cannot publish old STEP. OCP research output is a physical experimental solid, <strong>not independently verified production CAD</strong>. This preview viewport remains tessellated.</p>
         </div>
         <div className="inspector-section diagnostics">
           <div className="section-head">EVALUATION <span>{faults.length} pending / invalid</span></div>
