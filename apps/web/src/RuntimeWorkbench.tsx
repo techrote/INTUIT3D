@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
-  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, moveModelFeature, moveModelHoleCenter, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
-  MODEL_DIMENSIONS, makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, previewModelProfile, redoModelSession,
+  addModelHole, createModelExtrusion, createModelThroughCut, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelSketchDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, moveModelFeature, moveModelHoleCenter, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
+  makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, newModelSketchSession, previewModelProfile, previewModelSketchProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
 } from './runtimeSession';
@@ -81,6 +81,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [circleDrawing,setCircleDrawing]=useState<CircleDrawingState>({phase:'idle'});
   const [holeDraft,setHoleDraft]=useState({x:'60',y:'20',diameter:'10'});
   const [arrayDraft,setArrayDraft]=useState({sourceHoleId:'holeA',rows:'2',columns:'2',pitchXmm:'20',pitchYmm:'20'});
+  const [extrudeDraft,setExtrudeDraft]=useState('8');
   const [selected,setSelected]=useState('plate');
   const [activeHole,setActiveHole]=useState<string|null>(null);
   const [layoutSelected,setLayoutSelected]=useState<string[]>(['holeA','holeB']);
@@ -129,7 +130,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     // An accepted journal change may trigger a new native evaluation, but a
     // burst of sketch drags coalesces and unsupported profiles stay pending.
     if(autoNative && nativeUrl.trim() && /^[a-f0-9]{64}$/.test(nativeToken.trim()) &&
-        previewModelProfile(inspectModelSession(next))){
+        previewModelProfile(inspectModelSession(next)) &&
+        modelFeatureTimeline(next).some(row=>row.featureId==='cut'&&row.active)){
       const expectedTicket=nativeTicket.current;
       autoNativeTimer.current=setTimeout(()=>{
         autoNativeTimer.current=null;
@@ -141,11 +143,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const report=useMemo(()=>inspectModelSession(history),[history]);
   const featureRows=useMemo(()=>modelFeatureTimeline(history),[history]);
   const plateActive=featureRows.some(row=>row.featureId==='plate'&&row.active);
+  const cutActive=featureRows.some(row=>row.featureId==='cut'&&row.active);
+  const renderSketch=sketchMode||!plateActive;
   const selectedActive=featureRows.some(row=>row.featureId===selected&&row.active);
   const editableLifecycle=selected==='plate'||selected==='cut';
   const removalImpact=selectedActive&&editableLifecycle
     ?modelFeatureRemovalImpact(history,selected):null;
   const values=useMemo(()=>plateActive?modelDimensionValues(history):null,[history,plateActive]);
+  const sketchValues=useMemo(()=>modelSketchDimensionValues(history),[history]);
   const thicknessBinding=useMemo(()=>plateActive?modelThicknessBinding(history):'independent',[history,plateActive]);
   const holes=useMemo(()=>modelHoleValues(history),[history]);
   const displayedActiveHole=activeHole&&Object.hasOwn(holes,activeHole)?activeHole:null;
@@ -155,10 +160,37 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     x:Math.max(...layoutPoints.map(p=>p.x))-Math.min(...layoutPoints.map(p=>p.x)),
     y:Math.max(...layoutPoints.map(p=>p.y))-Math.min(...layoutPoints.map(p=>p.y)),
   }:null;
-  const geom=useMemo(()=>previewModelProfile(report),[report]);
+  const solidProfile=useMemo(()=>previewModelProfile(report),[report]);
+  const sketchProfile=useMemo(()=>previewModelSketchProfile(report),[report]);
+  // Until an authored cut exists, show the extrusion WITHOUT through-holes.
+  // This is disposable tessellation; derived profiles never become CAD authority.
+  const geom=useMemo(()=>solidProfile
+    ?{...solidProfile,profile:renderSketch||cutActive?solidProfile.profile:
+      {...solidProfile.profile,holes:[]}}
+    :sketchProfile?{profile:sketchProfile,thickness:0}:null,
+    [solidProfile,sketchProfile,renderSketch,cutActive]);
   const faults=useMemo(()=>modelDiagnostics(report),[report]);
   const plate=report.features.find(f=>f.featureId==='plate');
   const cut=report.features.find(f=>f.featureId==='cut');
+  const createExtrusion=()=>{
+    try{
+      if(!extrudeDraft.trim())throw Error('Enter a positive extrusion distance.');
+      const previous=liveHistory.current;
+      const next=createModelExtrusion(previous,Number(extrudeDraft));
+      const changes=runtime.diff(previous,next);
+      acceptHistory(next);setSketchMode(false);setSelected('plate');
+      setMessage(`Authored body.plate extrusion (${extrudeDraft} mm) at revision ${next.document.revision}; invalidated ${changes.invalidatedFeatureIds.join(' → ')||'none'}. Tessellated preview only; not exact.`);
+    }catch(e){setMessage('Extrude refused: '+(e instanceof Error?e.message:String(e)));}
+  };
+  const createCut=()=>{
+    try{
+      const previous=liveHistory.current;
+      const next=createModelThroughCut(previous);
+      const changes=runtime.diff(previous,next);
+      acceptHistory(next);setSketchMode(false);setSelected('cut');
+      setMessage(`Authored through-cut against body.plate at revision ${next.document.revision}; invalidated ${changes.invalidatedFeatureIds.join(' → ')||'none'}. Native Boolean/STEP pending.`);
+    }catch(e){setMessage('Cut refused: '+(e instanceof Error?e.message:String(e)));}
+  };
   const update=(field:ModelDimension,value:number)=>{
     try {
       const next=editModelDimension(history,field,value);
@@ -355,7 +387,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const useIncoming=()=>{
     if(!pendingImport)return;
     ++loadTicket.current;
-    acceptHistory(pendingImport.history);setSelected('plate');setActiveHole(null);setPendingImport(null);
+    acceptHistory(pendingImport.history);
+    const hasPlate=modelFeatureTimeline(pendingImport.history).some(row=>row.featureId==='plate'&&row.active);
+    setSketchMode(!hasPlate);setSelected(hasPlate?'plate':'sketch.plate');
+    setActiveHole(null);setPendingImport(null);
     setMessage('Model archive reopened with durable feature IDs, undo/redo and no cached meshes.');
   };
   // STEP stays in the RUNTIME live session until the very moment the user
@@ -447,6 +482,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           });}}>
           New plate sketch
         </button>
+        <button className="ribbon-button" data-testid="runtime-new-sketch"
+          onClick={()=>{++loadTicket.current;setPendingImport({
+            file:'New sketch-first CAD project',history:newModelSketchSession('workbench.sketch.'+crypto.randomUUID()),
+          });}}>New sketch-first project</button>
         <button className="ribbon-button" onClick={save}>Save model archive</button>
         <button className="ribbon-button" onClick={()=>fileInput.current?.click()}>Open model archive</button>
         <button className="ribbon-button" onClick={()=>{
@@ -467,6 +506,20 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             if(circleDrawing.phase!=='idle'){setCircleDrawing({phase:'idle'});setMessage('Circle sketch cancelled.');}
             else{setSketchMode(true);setCircleDrawing({phase:'centre'});setMessage('Circle: click a centre, then click a radius. Escape cancels.');}
           }}>{circleDrawing.phase!=='idle'?'Cancel circle':'Draw circle · 2 clicks'}</button>
+      </div>
+      <div className="ribbon-group" data-testid="runtime-feature-authoring"><span className="ribbon-label">SOLID FEATURES</span>
+        <label className="runtime-extrusion-distance" aria-label="Extrusion distance">
+          <input type="number" step="any" min="0.001" max="10000"
+            data-testid="runtime-extrusion-draft" aria-label="New extrusion distance in millimetres"
+            value={extrudeDraft} onChange={event=>setExtrudeDraft(event.target.value)}/>
+          <small>mm</small>
+        </label>
+        <button type="button" className="ribbon-button" data-testid="runtime-create-extrusion"
+          disabled={plateActive||!sketchProfile||!!pendingImport}
+          onClick={createExtrusion}>Extrude sketch</button>
+        <button type="button" className="ribbon-button" data-testid="runtime-create-cut"
+          disabled={!plateActive||cutActive||!sketchProfile?.holes.length||!!pendingImport}
+          onClick={createCut}>Cut holes through body.plate</button>
       </div>
       <div className="ribbon-group"><span className="ribbon-label">AUTHORITATIVE HISTORY</span>
         <button className="ribbon-button" disabled={!history.undoStack.length} onClick={undo}>Undo</button>
@@ -497,12 +550,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       </aside>
       <main className="editor-center" aria-label="Model-backed plate editor">
         <div className="viewport-header">
-          <div className="view-label"><strong>{sketchMode?'Sketch XY · solved profiles':'3D extrusion preview'}</strong>
+          <div className="view-label"><strong>{renderSketch?'Sketch XY · solved profiles':cutActive?'3D cut preview':'3D uncut extrusion preview'}</strong>
             <span>{geom?'Public SKETCH solver + profile admission':'Invalid or unresolved geometry'}</span></div>
           <span className={geom?'preview-tag':'preview-tag stale'}>{geom?'TESSELLATED PREVIEW · NOT EXACT':'NO CURRENT VALID MESH'}</span>
         </div>
         <div className="viewport-stage">
-          {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={sketchMode}
+          {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={renderSketch}
               onHoleMove={circleDrawing.phase==='idle'?dragHole:undefined}
               onHoleDiameterEdit={circleDrawing.phase==='idle'?dragHoleDiameter:undefined}
               onHoleSelect={setActiveHole} selectedHoleId={displayedActiveHole}
@@ -511,14 +564,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               onCirclePick={circleDrawing.phase!=='idle'?pickCirclePoint:undefined}/>:
             <div className="empty-overlay" data-testid="runtime-empty">Current dimensions cannot produce an admitted sketch profile. No previous mesh is represented as current.</div>}
           {geom&&<div className="runtime-mesh-caption" data-testid="runtime-boundary">
-            Analytic profile {geom.profile.outer.length} vertices · {geom.profile.holes.length} circular holes · {geom.thickness} mm extrude · no Boolean proof
+            {renderSketch?'Admitted 2D sketch':cutActive?'Cut-intent preview':'Uncut extrusion preview'} · {geom.profile.outer.length} outline vertices · {geom.profile.holes.length} displayed circular holes · {plateActive?geom.thickness+' mm extrude':'no solid yet'} · no Boolean proof
           </div>}
           {sketchMode&&circleDrawing.phase!=='idle'&&<div className="runtime-mesh-caption" data-testid="runtime-circle-stage" role="status">
             {circleDrawing.phase==='centre'?'CIRCLE · Click a centre inside the plate':
               `CIRCLE · Centre (${circleDrawing.center.x}, ${circleDrawing.center.y}) mm · Click radius`}
             {' · Escape to cancel · no journal edit until second click'}
           </div>}
-          <div className="viewport-hint">{sketchMode?(circleDrawing.phase!=='idle'?
+          <div className="viewport-hint">{renderSketch?(circleDrawing.phase!=='idle'?
             'Circle tool: centre click → radius click; profile admission rejects overlaps or outside holes':
             'Drag edge/diameter handles or hole centers; arrow keys nudge focused dimensions (Shift = 0.1 mm)'):
             'Drag to orbit · Wheel to zoom · Right-drag to pan · edit historical dimensions in inspector'}</div>
