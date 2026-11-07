@@ -169,3 +169,19 @@ test('an unordered extra writer must be repaired, not silently included in swap'
   assert.notEqual(writers(doc).status,'ready');
   assert.throws(()=>previewBodyCutSwap(doc,req(doc)),ProjectFormatError);
 });
+
+test('standalone product resequencing fixture runs and reports honest native status',async()=>{
+  const { spawnSync }=await import('node:child_process');
+  const { fileURLToPath }=await import('node:url');
+  const file=fileURLToPath(new URL('../examples/resequence-plate-cuts.mjs',import.meta.url));
+  const run=spawnSync(process.execPath,['--experimental-strip-types',file],
+    {encoding:'utf8',timeout:15000});
+  assert.equal(run.status,0,run.stderr || run.stdout);
+  const result=JSON.parse(run.stdout.trim());
+  assert.equal(result.format,'intuit3d.body-cut-order-demo');
+  assert.equal(result.widthMm,150);
+  assert.equal(result.nativeStepStatus,'not_executed');
+  assert.deepEqual(result.writerOrderAfter,
+    ['extrude.plate','cut.pocket','cut.slot']);
+  assert.equal(result.independentBodyReusable,true);
+});
