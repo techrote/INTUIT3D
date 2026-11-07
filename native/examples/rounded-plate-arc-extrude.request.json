@@ -1,0 +1,171 @@
+{
+  "protocol": "intuit3d/kernel/arc-extrude-v1",
+  "requestId": "plate.arc.profile",
+  "featureId": "feature.extrude",
+  "revision": 8,
+  "units": "mm",
+  "thicknessMm": 8,
+  "profile": {
+    "format": "intuit3d.analytic-arc-profile",
+    "version": 1,
+    "id": "plate:outer",
+    "units": "mm",
+    "status": "analytic_2d_validated_pending_native",
+    "sourceSignature": "solved-profile-revision",
+    "boundary": [
+      {
+        "kind": "line",
+        "id": "profile:curve0",
+        "start": {
+          "x": -52,
+          "y": -40
+        },
+        "end": {
+          "x": 52,
+          "y": -40
+        }
+      },
+      {
+        "kind": "arc",
+        "id": "profile:curve1",
+        "start": {
+          "x": 52,
+          "y": -40
+        },
+        "end": {
+          "x": 60,
+          "y": -32
+        },
+        "center": {
+          "x": 52,
+          "y": -32
+        },
+        "radiusMm": 8,
+        "startAngleRad": -1.5707963267948966,
+        "sweepRad": 1.5707963267948966
+      },
+      {
+        "kind": "line",
+        "id": "profile:curve2",
+        "start": {
+          "x": 60,
+          "y": -32
+        },
+        "end": {
+          "x": 60,
+          "y": 32
+        }
+      },
+      {
+        "kind": "arc",
+        "id": "profile:curve3",
+        "start": {
+          "x": 60,
+          "y": 32
+        },
+        "end": {
+          "x": 52,
+          "y": 40
+        },
+        "center": {
+          "x": 52,
+          "y": 32
+        },
+        "radiusMm": 8,
+        "startAngleRad": 0,
+        "sweepRad": 1.5707963267948966
+      },
+      {
+        "kind": "line",
+        "id": "profile:curve4",
+        "start": {
+          "x": 52,
+          "y": 40
+        },
+        "end": {
+          "x": -52,
+          "y": 40
+        }
+      },
+      {
+        "kind": "arc",
+        "id": "profile:curve5",
+        "start": {
+          "x": -52,
+          "y": 40
+        },
+        "end": {
+          "x": -60,
+          "y": 32
+        },
+        "center": {
+          "x": -52,
+          "y": 32
+        },
+        "radiusMm": 8,
+        "startAngleRad": 1.5707963267948966,
+        "sweepRad": 1.5707963267948966
+      },
+      {
+        "kind": "line",
+        "id": "profile:curve6",
+        "start": {
+          "x": -60,
+          "y": 32
+        },
+        "end": {
+          "x": -60,
+          "y": -32
+        }
+      },
+      {
+        "kind": "arc",
+        "id": "profile:curve7",
+        "start": {
+          "x": -60,
+          "y": -32
+        },
+        "end": {
+          "x": -52,
+          "y": -40
+        },
+        "center": {
+          "x": -52,
+          "y": -32
+        },
+        "radiusMm": 8,
+        "startAngleRad": 3.141592653589793,
+        "sweepRad": 1.5707963267948966
+      }
+    ],
+    "holes": [
+      {
+        "id": "holeA",
+        "centerId": "p.holeA",
+        "x": -30,
+        "y": 0,
+        "radiusMm": 6
+      },
+      {
+        "id": "holeB",
+        "centerId": "p.holeB",
+        "x": 30,
+        "y": 0,
+        "radiusMm": 6
+      }
+    ],
+    "signedBoundaryAreaMm2": 9545.061929829746,
+    "materialAreaMm2": 9318.86725877128,
+    "providerSubmissionReady": true,
+    "globalSelfIntersectionChecked": true,
+    "holeContainmentChecked": true,
+    "nativeProfileAdmissible": false,
+    "exactBrepAvailable": false,
+    "stepQualified": false,
+    "numericalPolicy": {
+      "contactUncertaintyMm": 0.000001,
+      "action": "reject_ambiguous_contact_no_geometry_healing"
+    }
+  },
+  "exportStep": true
+}
