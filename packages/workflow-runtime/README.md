@@ -717,3 +717,58 @@ INTENT/SKETCH histories across authenticated HTTP with explicitly synthetic
 native doubles. Genuine combined C++→AnvilCAD evidence still requires
 \`npm run demo:occt8:independent --workspace @intuit3d/workflow-runtime\`
 with physical source-qualified provisioned binaries. WORKBENCH owns UI adoption.
+
+
+## Persistent WORKBENCH command boundary (Draft #190)
+
+The live session can use one canonical INTENT archive as its durable source.
+No preview model, second undo stack, or alternate native host is introduced.
+With a *single writer per storage key* (localStorage is atomic per key, but not
+compare-and-swap across tabs), WORKBENCH can opt in as follows:
+
+```ts
+import {createPersistentHistorySource} from '@intuit3d/workflow-runtime/persistent-history-source';
+import {createLivePlateSession} from '@intuit3d/workflow-runtime/live-plate-session';
+
+const source=createPersistentHistorySource({
+  runtime,storage:window.localStorage,key:'intuit3d.cad-project.v1',
+  initialHistory:initialAcceptedModelHistory,
+});
+const session=createLivePlateSession({runtime,...source});
+const state=session.refresh();
+const result=await session.applyCommandAndEvaluate({
+  kind:'model.events',projectId:state.projectId,expectedRevision:state.revision,
+  events:[{eventId:'ui.thickness.12',type:'feature.edit',featureId:'plate',
+    patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:12}}}],
+},{url:nativeHost.url,token:nativeHost.token,requestId:'ui.rebuild.12',
+  exportStep:true,requiredBackend:'OCCT-cxx-8.0.1'});
+if(result.kind==='submitted' && result.evaluation.kind==='experimental_plate_evaluated'){
+  // Always request the latest, source-verified bytes at download time.
+  const step=session.currentStep();
+}
+```
+
+Typed commands: `model.events`, `model.undo`, `model.redo`,
+`dimensions.batch`, `sketch.constraints`, `sketch.holes`,
+`sketch.holes.rectangular`, `sketch.holes.circular`,
+`sketch.holes.transform`, `sketch.holes.resize`. Every command requires
+`{projectId,expectedRevision}` from `session.refresh()`; specialized
+`request` objects omit `expectedRevision`, which is injected at dispatch.
+The genuine RUNTIME services perform validation, solver admission, transaction
+commit and dependency invalidation. A stale command returns `kind:'refused'`
+without publishing history or dispatching native evaluation. Undo/redo,
+feature authoring and removal are journal events, not direct mesh edits.
+
+For a saved project after reload, construct the source again **without**
+`initialHistory`; any corrupt or missing stored archive is an explicit
+failure, never a silent reset. `session.reopen(archive,
+{confirmReplacement:true})` is the only explicit replacement path. No native
+STEP receipt survives reload; a fresh provider evaluation is mandatory.
+
+The browser/HTTP synthetic-provider integration test covers a 2→3→2-hole
+workflow, a retrospective 8→12 mm plate edit, rejected overlapping geometry,
+undo/redo, cross-session reopen, two distinct artifact bytes and stale export
+refusal. **It does not establish native geometry**. The pinned OCCT8 worker
+must be source-matched and separately physically executed; a pinned-backend
+selection restricts provider choice but does not promote `exactAuthority` or
+`independentInteroperability` to true.
