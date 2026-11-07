@@ -232,13 +232,13 @@ async function main(){
   // Real browser save -> OS file picker -> isolated #188 validation Worker ->
   // explicit Replace -> same authoritative named source and undo journal.
   // No private owner archive or browser-local model serializer is involved.
-  check(await evaluate("(() => {
+  check(await evaluate(`(() => {
     window.__namedArchiveBlobs=[];
     const prior=URL.createObjectURL.bind(URL);
     URL.createObjectURL=blob=>{window.__namedArchiveBlobs.push(blob);return prior(blob)};
     const save=[...document.querySelectorAll('button')].find(b=>b.textContent==='Save model archive');
     save?.click();return !!save;
-  })()"),'named parameter archive cannot be saved by real browser');
+  })()`),'named parameter archive cannot be saved by real browser');
   await eventually(()=>evaluate('window.__namedArchiveBlobs.length===1'),
     'named parameter browser Save did not create exactly one model archive');
   const namedArchive=await evaluate("(async()=>await window.__namedArchiveBlobs[0].text())()");
@@ -256,11 +256,11 @@ async function main(){
     'isolated archive Worker did not reach import confirmation');
   check(await evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness'"),
     'import validation mutated the live model before confirmation');
-  check(await evaluate("(() => {
+  check(await evaluate(`(() => {
     const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')]
       .find(x=>x.textContent==='Replace with model archive');
     b?.click();return !!b;
-  })()"),'browser refused to confirm named-parameter archive replacement');
+  })()`),'browser refused to confirm named-parameter archive replacement');
   await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]') && document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
     'browser Worker reopen lost the renamed source or edited thickness');
   await screenshot('native-00e-named-parameter-reopened.png');
