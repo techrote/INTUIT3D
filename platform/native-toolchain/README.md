@@ -71,6 +71,7 @@ from the extracted folder:
 
 ```bash
 python3 verify.py
+python3 selftest.py  # fresh 8mm and 12mm actual C++/STEP replay with numeric checks
 ./run.sh --part21-step-audit --step-output /tmp/verified.step \
   < requests/plate-8mm.json
 ```
@@ -81,8 +82,15 @@ correct OCCT toolkits transitively, with no host OCCT fallback. The manifest
 contains the original worker SHA, patched/relocated worker SHA, original
 8/12 mm STEP SHA, immutable OCCT source pin and exact KERNEL checkout SHA,
 per-file SHA-256, SONAME symlink map, C++ runtime resolution and fresh
-post-relocation analytic/STEP results. Missing or stale source/STEP/binary
-evidence fails closed; the packager removes incomplete output.
+post-relocation analytic/STEP results. The packager now extracts its exact
+tar.gz bytes into a second temporary location, verifies the entire inventory,
+and requires the included `selftest.py` to execute fresh 8/12 mm C++ solids
+and Part 21-audited STEP with analytic volume and hole-position checks before
+the archive can report success. The replay requires no source checkout or
+build toolchain; run it after moving the extracted bundle to the target Linux
+machine. An extracted replay failure removes the incomplete output/archive.
+This proves execution after relocation on the tested Linux host, **not**
+cross-distro ABI, Windows or independent external-CAD compatibility.
 
 **Portability boundary:** Linux ELF plus compatible glibc/libstdc++ and Python
 3; this does **not** prove Windows-native execution, general geometry support

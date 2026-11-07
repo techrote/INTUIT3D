@@ -234,6 +234,8 @@ def build(args: argparse.Namespace) -> dict:
         launcher(output)
         shutil.copy2(Path(__file__).with_name("verify_offline_bundle.py"),
                      output / "verify.py")
+        shutil.copy2(Path(__file__).with_name("offline_selftest.py"),
+                     output / "selftest.py")
         (output / "README.txt").write_text(
             f"Official OCCT {VERSION} C++ Linux, commit {COMMIT}\n"
             "python3 verify.py\n"
@@ -269,10 +271,30 @@ def build(args: argparse.Namespace) -> dict:
                 + verifier.stdout + verifier.stderr)
         with tarfile.open(archive, "w:gz", dereference=False) as tar:
             tar.add(output, arcname=output.name)
+        # A source-prefix-relative smoke test does not prove that the
+        # *distributed* archive works. Extract the exact published bytes into
+        # a fresh path and require fresh 8/12mm real C++ / STEP replay.
+        with tempfile.TemporaryDirectory(prefix="intuit-occt801-archive-") as temp:
+            with tarfile.open(archive, "r:gz") as packaged:
+                packaged.extractall(path=temp, filter="data")
+            extracted = Path(temp) / output.name
+            actual = subprocess.run(
+                [sys.executable, str(extracted / "selftest.py")],
+                cwd=temp, capture_output=True, text=True, timeout=210,
+                check=False)
+            require(actual.returncode == 0,
+                    "EXTRACTED_ARCHIVE_CXX_REPLAY_FAIL: "
+                    + actual.stdout[-2000:] + actual.stderr[-2000:])
+            extracted_replay = json.loads(actual.stdout)
+            require(extracted_replay.get("status") == "OFFLINE_CXX_REPLAY_PASS"
+                    and set(extracted_replay.get("cases", {})) == {"8", "12"}
+                    and extracted_replay.get("kernelSourceCommit") == kernel_sha,
+                    "extracted archive returned incomplete or mismatched proof")
         print(json.dumps({
             "status": "OFFLINE_BUNDLE_PASS", "archive": str(archive),
             "archiveSha256": sha256(archive), "archiveBytes": archive.stat().st_size,
-            "kernel": kernel_sha, "relocatedCpp8And12": smoke
+            "kernel": kernel_sha, "relocatedCpp8And12": smoke,
+            "extractedArchiveCppReplay": extracted_replay
         }, indent=2))
         return manifest
     except BaseException:
