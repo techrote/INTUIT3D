@@ -8,7 +8,7 @@ export interface VerifiedLocalStep {
   filename:'plate.step';
   bytes:Uint8Array;
   sha256:string;
-  verification:'same_engine_step_readback';
+  verification:'same_engine_step_readback'|'occt8_part21_plate_subset';
 }
 export type LocalPlateClientResult =
   | Readonly<{kind:'unresolved';code:string;reason:string;artifact:null;
