@@ -4,7 +4,7 @@
 
 INTUIT3D aims to deliver a serious Fusion-inspired CAD workbench without making a strictly chronological feature tree the sole authority. Users should be able to sketch and model directly, introduce dimensions and dependencies retrospectively, reorder independent operations, preserve temporarily unresolved intent, and recover from topology changes without silent loss of engineering meaning.
 
-**Development mode:** ambitious, predominantly agent-implemented, with five coordinated scheduled engineering lanes and one serialized integration owner. The repository is the authority, not an individual agent's prior chat.
+**Development mode:** ambitious, predominantly agent-implemented, with eight independent permanent engineering lanes and serialized Integration-owned admission/merges. The repository is the authority, not an individual agent's prior chat.
 
 ## North-star demonstration
 
@@ -33,6 +33,17 @@ Read in this order:
 - [docs/RESEARCH-INTAKE.md](docs/RESEARCH-INTAKE.md) — radiCADSAC reuse and tangent handling
 - [docs/STATUS.md](docs/STATUS.md) — integration-maintained live programme index
 - [SCHEDUSWARM.md](SCHEDUSWARM.md) — scheduswarm dispatcher **disabled**; principles adapted for fixed scheduled workers
+
+## Run the local model-backed CAD workstation
+
+```sh
+npm ci
+npm run dev:local
+```
+
+This single command launches the React CAD workbench at `http://127.0.0.1:5173` **and** a separate loopback-only RUNTIME/native companion. In the workbench, select **MODEL-BACKED CAD** and paste the provider URL and one-session pairing token printed in the local terminal into the **Local native STEP** panel. `Ctrl+C` shuts down both processes. For a bounded startup check without a geometry request, run `npm run dev:local -- --smoke`.
+
+For *experimental* physical STEP execution on supported Linux configurations, install the pinned OCP prototype dependencies first (`python3 -m pip install -r native/requirements-prototype.txt`, or provision the corresponding `PYTHON` environment). The editor's mesh is a labelled preview; browser-native STEP uses experimental OCP 7.9.3.1 and same-engine readback. **This does not establish OCCT 8.0.1 C++ execution or independently validated STEP interoperability.** Saving a model archive preserves authored intent, not a native B-rep file.
 
 ## Starting point
 
