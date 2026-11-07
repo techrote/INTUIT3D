@@ -39,6 +39,14 @@
     "./runtime-body-cut-chain-provider": {
       "types": "./src/runtime-body-cut-chain-provider.d.mts",
       "node": "./src/runtime-body-cut-chain-provider.mjs"
+    },
+    "./occt8-cut-v1": {
+      "types": "./src/occt8-cut-v1.d.mts",
+      "default": "./src/occt8-cut-v1.mjs"
+    },
+    "./local-occt8-cut-provider": {
+      "types": "./src/local-occt8-cut-provider.d.mts",
+      "node": "./src/local-occt8-cut-provider.mjs"
     }
   },
   "scripts": {
