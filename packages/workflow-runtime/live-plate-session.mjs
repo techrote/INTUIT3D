@@ -36,6 +36,8 @@ export function createLivePlateSession({
   }
   let observed=snapshot().archive;
   let serial=0,controller=null,latest=null,latestArchive=null,lastOutcomeKind=null;
+  // Previews are ephemeral proposals, never a second durable model or native receipt.
+  const editPreviews=new WeakMap();
   function discard({preserveCurrentStep=false}={}) {
     // A fresh native attempt or explicit cancellation does not revoke a
     // *previously verified*, still-current STEP. An actual model edit/reopen
@@ -68,6 +70,35 @@ export function createLivePlateSession({
       throw new Error('live plate session: publishHistory must update readCurrentHistory synchronously');
     return actual;
   }
+
+  /** Compute candidate through accepted INTENT/SKETCH without publishing or evaluating native. */
+  function prepareEdit(edit) {
+    if(typeof edit!=='function') throw new TypeError('live plate session: edit callback required');
+    const before=synchronize();
+    const outcome=edit(before.history);
+    if(outcome && typeof outcome.then==='function')
+      throw new TypeError('live plate session: edits must be synchronous INTENT transactions');
+    if(outcome?.kind==='refused') return outcome;
+    const next=outcome?.kind==='committed'?outcome.history:outcome;
+    const after=snapshot(next);
+    if(after.report.projectId!==before.report.projectId||
+        after.report.revision<=before.report.revision)
+      throw new Error('live plate session: edit must advance the same authoritative project revision');
+    if(snapshot().archive!==before.archive)
+      throw new Error('live plate session: concurrent authoritative edit, retry from current revision');
+    const invalidation=runtime.diff(before.history,next);
+    if(invalidation.projectId!==before.report.projectId||
+        invalidation.previousRevision!==before.report.revision||
+        invalidation.revision!==after.report.revision||
+        invalidation.exactReuseAllowed!==false)
+      throw new Error('live plate session: invalid model dependency fence');
+    return {kind:'candidate',before,after,next,invalidation};
+  }
+  function publishCandidate(candidate) {
+    publish(candidate.next,candidate.after.archive);
+    return {kind:'committed',history:candidate.next,report:candidate.after.report,
+      invalidation:candidate.invalidation};
+  }
   const session = {
     /** Call after external model changes; refuses to retain stale native bytes. */
     refresh() {
@@ -79,27 +110,67 @@ export function createLivePlateSession({
     },
     /** Delegate a genuine INTENT command; commit only if revision/project fences hold. */
     applyEdit(edit) {
-      if(typeof edit!=='function') throw new TypeError('live plate session: edit callback required');
+      const candidate=prepareEdit(edit);
+      return candidate.kind==='refused'?candidate:publishCandidate(candidate);
+    },
+    /**
+     * Solver-backed drag/edit preview without changing the authoritative
+     * history, native job, previous STEP receipt, or undo stack.
+     * The opaque proposal can be committed once, only if its exact source
+     * archive is still current; it cannot be forged from a browser object.
+     */
+    previewEdit(edit) {
+      const candidate=prepareEdit(edit);
+      if(candidate.kind==='refused') return candidate;
+      const proposal=Object.freeze({
+        kind:'preview',projectId:candidate.before.report.projectId,
+        sourceRevision:candidate.before.report.revision,
+        candidateRevision:candidate.after.report.revision,
+        report:JSON.parse(JSON.stringify(candidate.after.report)),
+        invalidation:JSON.parse(JSON.stringify(candidate.invalidation)),
+        exactAuthority:false,nativeEvaluation:null,
+      });
+      editPreviews.set(proposal,{
+        sourceArchive:candidate.before.archive,
+        candidateArchive:candidate.after.archive,
+        next:candidate.next,
+      });
+      return proposal;
+    },
+    /**
+     * Promote a solver-backed preview with a strict archive identity fence.
+     * Never rely on mutable display objects as authority; the proposed
+     * candidate history is held only in this session's private WeakMap.
+     */
+    commitPreview(proposal) {
+      const stored=proposal&&typeof proposal==='object'?editPreviews.get(proposal):null;
+      if(!stored) return {kind:'refused',code:'invalid_preview',
+        reason:'preview is unknown or already committed',notCommitted:true};
       const before=synchronize();
-      const outcome=edit(before.history);
-      if(outcome && typeof outcome.then==='function')
-        throw new TypeError('live plate session: edits must be synchronous INTENT transactions');
-      if(outcome?.kind==='refused') return outcome;
-      const next=outcome?.kind==='committed'?outcome.history:outcome;
-      const after=snapshot(next);
+      if(before.archive!==stored.sourceArchive) return {kind:'refused',
+        code:'stale_preview',reason:'authoritative project changed since preview',
+        notCommitted:true};
+      const after=snapshot(stored.next);
+      if(after.archive!==stored.candidateArchive)
+        throw new Error('live plate session: preview candidate archive changed');
+      const invalidation=runtime.diff(before.history,stored.next);
       if(after.report.projectId!==before.report.projectId||
-          after.report.revision<=before.report.revision)
-        throw new Error('live plate session: edit must advance the same authoritative project revision');
-      if(snapshot().archive!==before.archive)
-        throw new Error('live plate session: concurrent authoritative edit, retry from current revision');
-      const invalidation=runtime.diff(before.history,next);
-      if(invalidation.projectId!==before.report.projectId||
+          after.report.revision<=before.report.revision||
+          invalidation.projectId!==before.report.projectId||
           invalidation.previousRevision!==before.report.revision||
           invalidation.revision!==after.report.revision||
           invalidation.exactReuseAllowed!==false)
-        throw new Error('live plate session: invalid model dependency fence');
-      publish(next,after.archive);
-      return {kind:'committed',history:next,report:after.report,invalidation};
+        throw new Error('live plate session: preview model dependency fence mismatch');
+      // Prevent double-submit. An invalid or stale proposal never dispatches native.
+      editPreviews.delete(proposal);
+      return publishCandidate({next:stored.next,after,invalidation});
+    },
+    /** Publish a live model-backed preview, then rebuild exactly that revision. */
+    async commitPreviewAndEvaluate(proposal,options={}) {
+      const edit=session.commitPreview(proposal);
+      if(edit.kind==='refused') return {kind:'refused',edit,evaluation:null};
+      const evaluation=await session.evaluate(options);
+      return {kind:'submitted',edit,evaluation};
     },
     /** Explicit opt-in required to replace a different authoritative archive. */
     reopen(serialized,{confirmReplacement=false}={}) {
