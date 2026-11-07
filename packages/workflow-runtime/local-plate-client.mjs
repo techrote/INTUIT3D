@@ -125,6 +125,10 @@ export async function evaluateLocalPlate({
   if (exportStep) {
     try {step=await decodeVerifiedLocalStep(envelope.step);}
     catch {return unresolved('invalid_step','STEP payload verification failed');}
+    if(provider===PROVIDERS['OCCT-cxx-8.0.1'] &&
+       (envelope.result.part21Audit?.kind!=='part21-plate-structural-v1' ||
+        envelope.result.part21Audit.sha256!==step.sha256))
+      return unresolved('invalid_host_reply','native Part21 audit does not match verified STEP bytes');
     if (!stillCurrent()) return unresolved('stale_revision','model edited while decoding STEP bytes');
   }
   return {kind:'experimental_plate_evaluated',source:envelope.source,
