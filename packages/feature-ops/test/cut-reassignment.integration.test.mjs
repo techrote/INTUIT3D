@@ -178,3 +178,23 @@ test('bad old cut sketch remains recoverable through valid replacement profile',
   assert.equal(feature(repaired.history,'cut.clearance').payload.sourceSketchId,'sketch.relief');
   assert.equal(status(repaired.history,'sketch.bore'),'invalid_profile');
 });
+
+test('standalone real consumer reassigns a cut and survives archive replay',async()=>{
+  const {spawnSync}=await import('node:child_process');
+  const {fileURLToPath}=await import('node:url');
+  const script=fileURLToPath(new URL('../examples/cut-reassignment.mjs',import.meta.url));
+  const run=spawnSync(process.execPath,['--experimental-strip-types',script],{
+    encoding:'utf8',timeout:20000,maxBuffer:1024*1024
+  });
+  assert.equal(run.status,0,run.stderr || String(run.error));
+  const result=JSON.parse(run.stdout);
+  assert.equal(result.status,'pending_exact_provider');
+  assert.equal(result.movedTo,'body.spacer');
+  assert.deepEqual(result.dependencies,['extrude.spacer','sketch.clearance']);
+  assert.ok(result.changed.includes('cut.clearance'));
+  assert.ok(!result.changed.includes('extrude.bracket'));
+  assert.equal(result.unchangedBodyStatus,'preview_only');
+  assert.equal(result.recoveredAfterUndoRedoArchive,true);
+  assert.equal(result.exactAuthority,false);
+  assert.equal(result.independentInteroperability,false);
+});
