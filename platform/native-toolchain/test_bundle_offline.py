@@ -54,6 +54,44 @@ class OfflineBundleTests(unittest.TestCase):
             self.assertEqual(subprocess.check_output([str(exe)]).strip(), b"42")
             self.assertEqual(len(list(dest.glob("lib*.so"))), len(bundle.TOOLKITS))
 
+    @unittest.skipUnless(shutil.which("patchelf"), "requires real patchelf")
+    def test_copied_toolkit_removes_obsolete_build_prefix_rpath(self):
+        """Actual linked ELF must survive after its vendor install disappears."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            prefix = root / "vendor/lib"
+            dest = root / "relocated/lib"
+            (root / "relocated/bin").mkdir(parents=True)
+            prefix.mkdir(parents=True)
+            dest.mkdir()
+            (root / "math.c").write_text("int answer(void) {return 42;}\\n")
+            (root / "main.c").write_text(
+                '#include <stdio.h>\\nextern int answer(void);\\n'
+                'int main(void) {printf("%d\\\\n", answer()); return 0;}\\n')
+            original = prefix / "libTKMath.so.8.0"
+            subprocess.run([
+                "cc", "-shared", "-fPIC", str(root / "math.c"),
+                "-Wl,-soname,libTKMath.so.8.0", "-Wl,--disable-new-dtags",
+                "-Wl,-rpath," + str(prefix), "-o", str(original)
+            ], check=True, capture_output=True)
+            staged = dest / original.name
+            shutil.copy2(original, staged)
+            before = subprocess.check_output(["readelf", "-d", str(staged)], text=True)
+            self.assertIn(str(prefix), before)
+            bundle.relocate_toolkits(dest)
+            after = subprocess.check_output(["readelf", "-d", str(staged)], text=True)
+            self.assertIn("[$ORIGIN]", after)
+            self.assertNotIn(str(prefix), after)
+            binary = root / "relocated/bin/worker"
+            subprocess.run([
+                "cc", str(root / "main.c"), "-o", str(binary),
+                "-L" + str(dest), "-l:libTKMath.so.8.0",
+                "-Wl,--disable-new-dtags", "-Wl,-rpath,$ORIGIN/../lib"
+            ], check=True, capture_output=True)
+            shutil.rmtree(root / "vendor")
+            self.assertEqual(subprocess.check_output([str(binary)]).strip(), b"42")
+            self.assertIn(str(staged), bundle.validate_elf_resolution(binary, dest))
+
     def test_standalone_hash_verifier_refuses_mutation(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
