@@ -46,4 +46,16 @@ else()
   target_compile_options(intuit3d_occt8_plate PRIVATE -Wall -Wextra -Wpedantic)
   set_target_properties(intuit3d_occt8_plate PROPERTIES
     BUILD_RPATH "${INTUIT3D_OCCT8_PREFIX}/lib;${INTUIT3D_OCCT8_PREFIX}/lib64")
+  # The pinned OCCT 8.0.1 shared toolkits depend on one another. GNU ld's
+  # default DT_RUNPATH is only searched for this executable's direct DT_NEEDED
+  # entries, not for transitive toolkit dependencies (e.g. TKGeomBase ->
+  # TKG2d). Real hosted qualification 42370519769 built the binary but failed
+  # at startup on libTKG2d.so.8.0 despite the correct BUILD_RPATH. On Linux,
+  # emit DT_RPATH so the same *verified OCCT prefix* also resolves transitive
+  # OCCT toolkits. Never add a system OCCT search fallback or change ABI pin.
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+     CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$")
+    target_link_options(intuit3d_occt8_plate PRIVATE
+      "LINKER:--disable-new-dtags")
+  endif()
 endif()
