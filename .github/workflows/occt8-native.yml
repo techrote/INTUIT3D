@@ -163,8 +163,8 @@ jobs:
         run: |
           set -euo pipefail
           examples=kernel-repo/packages/kernel-contract/examples
-          if test -f "$examples/runtime-occt8-l-profile-native.mjs" && \\
-             test -f "$examples/runtime-occt8-l-profile-width-edit-native.mjs" && \\
+          if test -f "$examples/runtime-occt8-l-profile-native.mjs" && \
+             test -f "$examples/runtime-occt8-l-profile-width-edit-native.mjs" && \
              test -f "$examples/runtime-occt8-l-profile-pocket-edit-native.mjs"; then
             echo 'available=true' >> "$GITHUB_OUTPUT"
           elif [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
@@ -191,15 +191,15 @@ jobs:
           npm ci --prefix kernel-repo
           output="$RUNNER_TEMP/intuit3d-native-evidence/l-profile-consumer"
           mkdir -p "$output/thickness" "$output/width" "$output/pocket"
-          node kernel-repo/packages/kernel-contract/examples/runtime-occt8-l-profile-native.mjs \\
+          node kernel-repo/packages/kernel-contract/examples/runtime-occt8-l-profile-native.mjs \
             "$worker" "$output/thickness" 2>&1 | tee "$output/thickness/native-execution.log"
-          node kernel-repo/packages/kernel-contract/examples/runtime-occt8-l-profile-width-edit-native.mjs \\
+          node kernel-repo/packages/kernel-contract/examples/runtime-occt8-l-profile-width-edit-native.mjs \
             "$worker" "$output/width" 2>&1 | tee "$output/width/native-execution.log"
-          node kernel-repo/packages/kernel-contract/examples/runtime-occt8-l-profile-pocket-edit-native.mjs \\
+          node kernel-repo/packages/kernel-contract/examples/runtime-occt8-l-profile-pocket-edit-native.mjs \
             "$worker" "$output/pocket" 2>&1 | tee "$output/pocket/native-execution.log"
-          for path in \\
-            "$output/thickness/initial-8.step" "$output/thickness/edited-12.step" \\
-            "$output/width/l-width-120.step" "$output/width/l-width-140.step" \\
+          for path in \
+            "$output/thickness/initial-8.step" "$output/thickness/edited-12.step" \
+            "$output/width/l-width-120.step" "$output/width/l-width-140.step" \
             "$output/pocket/pocket-3.step" "$output/pocket/pocket-5.step"; do
             test -s "$path" || { echo "::error::Missing real native STEP: $path"; exit 1; }
           done
@@ -209,7 +209,7 @@ jobs:
           done
           sha256sum "$output/"{thickness,width,pocket}/*.step > "$output/six-step-files.sha256"
           sha256sum "$worker" > "$output/worker.sha256"
-          printf 'kernel_sha=%s\\nworkflow_sha=%s\\n' \\
+          printf 'kernel_sha=%s\nworkflow_sha=%s\n' \
             "$candidate" "$GITHUB_SHA" > "$output/source-provenance.txt"
 
       - name: Remove only huge intermediate build directory before artifact upload
