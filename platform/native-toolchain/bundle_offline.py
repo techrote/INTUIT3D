@@ -121,7 +121,7 @@ def relocate_toolkits(directory: Path) -> None:
     physical = [p for p in sorted(directory.iterdir())
                 if p.is_file() and not p.is_symlink()]
     require(bool(physical) and all(
-        re.fullmatch(r"libTK[A-Za-z0-9]+\\.so(?:\\..+)?", p.name)
+        re.fullmatch(r"libTK[A-Za-z0-9]+\.so(?:\..+)?", p.name)
         for p in physical),
         "unexpected or absent physical OCCT toolkit libraries")
     for library in physical:
