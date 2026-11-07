@@ -137,3 +137,24 @@ then. Shared root workspace/CI changes belong to INTEGRATION.
 
 OCCT 8.0.1 uses LGPL-2.1 with special exception; dynamically link toolkits
 and preserve third-party notices. This PR commits no OCCT source/binaries.
+
+## Versioned C++ ordered pocket/cut product increment (candidate)
+
+`intuit3d/kernel/plate-cut-chain-v1` extends the original plate-v1 *without changing it*. A plate has up to 64 nonintersecting circular through-bores and 1–16 explicitly ordered, identified axis-aligned rectangular cuts. Each cut has a strictly positive `cutDepthMm`, measured **downward from the top face**; `cutDepthMm == plate.thickness` is a true through-window. This conservative first OCCT8 slice rejects bore/cut intersection, overlapping/tangent cuts, out-of-bounds tools, ambiguous target body, wrong units and silently widened fuzzy tolerance. Stable `featureId` values are carried in the request; no transient OCCT face numbering is persisted.
+
+**Actual C++ route, once the pinned worker has been compiled:**
+
+```sh
+python3 native/occt8_bridge.py \\
+  --worker /absolute/path/to/intuit3d_occt8_plate \\
+  --step-output /tmp/new-ordered-cxx.step \\
+  < native/examples/occt8-ordered-rect-cuts.request.json
+node packages/kernel-contract/examples/pinned-occt8-cuts.mjs \\
+  /absolute/path/to/intuit3d_occt8_plate /tmp/fresh-cut-output
+python3 -m unittest discover -s native/tests -p test_occt8_cut_chain.py -v
+node --test packages/kernel-contract/test/occt8-cut-chain.test.mjs
+```
+
+The C++ code constructs real `BRepAlgoAPI_Cut` solids sequentially, checks one valid solid plus analytic material volume, area, face and through-bore invariants, writes genuine STEP and requires same-engine reconstruction. The bridge shares the existing isolated subprocess deadline and exclusive artifact publication. The Node contract preserves revision/abort fencing and reports `exactAuthority:false`, `independentInteroperability:false` until production/external CAD gates are independently demonstrated. **Do not enable the plate-only independent Part 21 structural reader or cross-version bore-only audit for this new profile:** they intentionally do not handle extra pocket faces. They fail closed rather than silently grant STEP provenance.
+
+The synthetic/source-only regressions do **not** qualify C++ execution. Only tests executing with a real `INTUIT3D_OCCT8_WORKER` and retaining binary/STEP evidence establish native qualification; full non-OCCT external CAD reconstruction and a browser-operated authoring path are separate requirements. This is a narrow initial production-facing cut shape, not general curve/profile support.

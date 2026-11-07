@@ -36,6 +36,8 @@ export type ExperimentalPlateWorkflowResult = Readonly<{
     backend:string;occtVersion:string;
     observed:unknown;
     artifact:unknown;
+    /** Separate pinned native Part21 structural receipt bound to the STEP SHA. */
+    part21Audit?:Readonly<{kind:'part21-plate-structural-v1';sha256:string}>;
     note:string;
   }>
 );
@@ -65,6 +67,8 @@ export declare function createExperimentalPlateWorkflow<Request extends {
     EXPERIMENTAL_OCCT_VERSION:string;
     parsePlateRequest(raw:unknown):Request;
   };
+  /** Fixed provider contract; not chosen from an authored project. */
+  providerKind?:'ocp'|'occt8';
   runExperimentalPlate:(request:Request,options:{
     readCurrentRevision:()=>number;
     stepOutput?:string;

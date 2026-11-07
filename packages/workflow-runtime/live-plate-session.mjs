@@ -224,7 +224,7 @@ export function createLivePlateSession({
     },
     /** Latest request wins, even if a cancelled provider ignores AbortSignal. */
     async evaluate({url,token,requestId,exportStep=true,signal,fetchImpl,
-      deadlineMs=30000}={}) {
+      deadlineMs=30000,requiredBackend}={}) {
       // A hung HTTP fetch or non-cooperative native adapter must not leave
       // WORKBENCH awaiting a promise indefinitely. The deadline covers busy
       // retries and their backoff, not just one provider attempt.
@@ -258,6 +258,7 @@ export function createLivePlateSession({
           try {
             result=await evaluateImpl({url,token,runtime,readCurrentHistory,
               cutFeatureId,requestId:id,exportStep,signal:abort.signal,
+              ...(requiredBackend?{requiredBackend}:{}),
               ...(fetchImpl?{fetchImpl}:{}),});
           } catch(error) {
             result=refuse('provider_failure',error instanceof Error?error.message:'native adapter failed');

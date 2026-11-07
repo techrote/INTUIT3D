@@ -107,12 +107,16 @@
     "./selected-profile-handles/v1": {
       "types": "./selected-profile-handles.d.mts",
       "default": "./selected-profile-handles.mjs"
+    },
+    "./selected-profile-hole-authoring/v1": {
+      "types": "./selected-profile-hole-authoring.d.mts",
+      "default": "./selected-profile-hole-authoring.mjs"
     }
   },
   "types": "./index.d.mts",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts test/conflict-explanation-contract.mts test/snap-contract.mts test/snap-admission-contract.mts test/profile-discovery-contract.mts test/boundary-guard-contract.mts test/circle-guard-contract.mts test/analytic-area-contract.mts test/dimension-fidelity-contract.mts test/rounded-plate-contract.mts test/rounded-plate-handles-contract.mts test/variable-rounded-plate-contract.mts test/arc-constraints-contract.mts test/arc-profile-contract.mts test/arc-hole-authoring-contract.mts test/arc-profile-tools-contract.mts test/obround-slot-contract.mts test/obround-slot-handles-contract.mts test/centered-hole-plate-contract.mts test/centered-hole-plate-v2-contract.mts test/arc-hole-pattern-contract.mts test/arc-bolt-circle-contract.mts test/arc-hole-anchors-contract.mts test/selected-profile-contract.mts test/selected-profile-handles-contract.mts"
+    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts test/conflict-explanation-contract.mts test/snap-contract.mts test/snap-admission-contract.mts test/profile-discovery-contract.mts test/boundary-guard-contract.mts test/circle-guard-contract.mts test/analytic-area-contract.mts test/dimension-fidelity-contract.mts test/rounded-plate-contract.mts test/rounded-plate-handles-contract.mts test/variable-rounded-plate-contract.mts test/arc-constraints-contract.mts test/arc-profile-contract.mts test/arc-hole-authoring-contract.mts test/arc-profile-tools-contract.mts test/obround-slot-contract.mts test/obround-slot-handles-contract.mts test/centered-hole-plate-contract.mts test/centered-hole-plate-v2-contract.mts test/arc-hole-pattern-contract.mts test/arc-bolt-circle-contract.mts test/arc-hole-anchors-contract.mts test/selected-profile-contract.mts test/selected-profile-handles-contract.mts test/selected-profile-hole-authoring-contract.mts"
   },
   "engines": {
     "node": ">=22"

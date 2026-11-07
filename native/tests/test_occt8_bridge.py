@@ -164,4 +164,73 @@ class Occt8BridgeTests(unittest.TestCase):
                 self.assertGreater(path.stat().st_size,256)
                 results.append(result["source"]["volumeMm3"])
             self.assertGreater(results[1],results[0])
+    @unittest.skipUnless(os.environ.get("INTUIT3D_OCCT8_WORKER"),
+                         "genuine pinned OCCT8 C++ binary required for ordered cuts")
+    def test_real_cpp_ordered_blind_pocket_and_through_window(self):
+        """Run on the hosted OCCT8 C++ qualification job, never a mock."""
+        from occt8_cut_contract import validate_cut_request, cut_metrics
+        worker=Path(os.environ["INTUIT3D_OCCT8_WORKER"])
+        fixture=Path(__file__).resolve().parents[1]/"examples"/"occt8-ordered-rect-cuts.request.json"
+        authored=json.loads(fixture.read_text("utf-8"))
+        volumes=[]
+        hashes=[]
+        with tempfile.TemporaryDirectory() as d:
+            for thickness in (8,12):
+                request=json.loads(json.dumps(authored))
+                request["revision"]=thickness
+                request["plate"]["thickness"]=thickness
+                request["cuts"][1]["cutDepthMm"]=thickness
+                if thickness==12:
+                    request["cuts"][0]["cutDepthMm"]=5
+                validate_cut_request(request)
+                destination=Path(d)/f"ordered-{thickness}.step"
+                response=execute(request,worker=worker,step_output=destination,timeout=120)
+                self.assertEqual(response["status"],"validated_exact",response)
+                self.assertEqual(response["backend"],"OCCT-cxx-8.0.1")
+                self.assertEqual(response["stepVerification"],"occt-8.0.1-same-engine")
+                self.assertTrue(destination.is_file())
+                self.assertGreater(destination.stat().st_size,256)
+                self.assertEqual(response["stepSha256"],hashlib.sha256(destination.read_bytes()).hexdigest())
+                expected_volume,_=cut_metrics(request)
+                self.assertAlmostEqual(response["source"]["volumeMm3"],expected_volume,places=5)
+                volumes.append(response["source"]["volumeMm3"])
+                hashes.append(response["stepSha256"])
+        self.assertGreater(volumes[1],volumes[0])
+        self.assertNotEqual(hashes[0],hashes[1])
+
+
+    @unittest.skipUnless(os.environ.get("INTUIT3D_OCCT8_WORKER"),
+                         "genuine pinned OCCT8 C++ binary required for mixed pockets")
+    def test_real_cpp_circular_blind_pocket_and_rectangle_step(self):
+        """Hosted pinned C++ qualification: actual circular and planar cutter B-reps."""
+        from occt8_cut_contract import (
+            validate_mixed_cut_request, cut_metrics, MIXED_SCHEMA,
+        )
+        fixture=Path(__file__).resolve().parents[1]/"examples"/"occt8-mixed-round-pockets.request.json"
+        authored=json.loads(fixture.read_text("utf-8"))
+        self.assertEqual(authored["protocol"], MIXED_SCHEMA)
+        worker=Path(os.environ["INTUIT3D_OCCT8_WORKER"])
+        with tempfile.TemporaryDirectory() as d:
+            hashes=[]
+            for thickness in (8, 12):
+                request=json.loads(json.dumps(authored))
+                request["revision"]=thickness
+                request["plate"]["thickness"]=thickness
+                request["cuts"][0]["cutDepthMm"]=3 if thickness==8 else 5
+                request["cuts"][1]["cutDepthMm"]=thickness
+                validate_mixed_cut_request(request)
+                output=Path(d)/f"mixed-round-{thickness}.step"
+                result=execute(request,worker=worker,step_output=output,timeout=120)
+                self.assertEqual(result["status"], "validated_exact",result)
+                self.assertEqual(result["backend"], "OCCT-cxx-8.0.1")
+                self.assertTrue(output.is_file())
+                self.assertGreater(output.stat().st_size,256)
+                self.assertEqual(result["stepSha256"],hashlib.sha256(output.read_bytes()).hexdigest())
+                self.assertEqual(len(result["source"]["cylindricalHoles"]),3)
+                expected_volume,_=cut_metrics(request)
+                self.assertAlmostEqual(result["source"]["volumeMm3"],expected_volume,places=5)
+                hashes.append(result["stepSha256"])
+            self.assertNotEqual(*hashes)
+
+
 if __name__ == "__main__": unittest.main()

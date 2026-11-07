@@ -14,6 +14,7 @@ import subprocess
 import sys
 
 from brlcad_flange import digest, extract_verified, fixture_manifest, NotQualified, sample_rays
+from bore_probe import bore_wall_probes
 
 def checked_accept_receipt(lines: list[str], case: dict) -> tuple[dict, float, float]:
     """Require an exact non-OCCT B-rep before accepting sampled mesh geometry.
@@ -80,7 +81,7 @@ def qualify(args):
             lines=proc.stdout.splitlines()
             result, measured, theoretical = checked_accept_receipt(lines, case)
             rows=[x.split() for x in lines if x.startswith('RAY ')]
-            probes=sample_rays(case)
+            probes=sample_rays(case) + bore_wall_probes(case)
             if len(rows)!=len(probes):
                 raise NotQualified('AnvilCAD did not execute all independently specified physical rays')
             observations=[]
@@ -104,7 +105,8 @@ def qualify(args):
                 'relativeVolumeError':abs(measured-theoretical)/theoretical,
                 'importedExactBRep':result.get('imported_exact')=='true',
                 'triangleCount':int(result['tris']),'oneSolid':True,'watertight':True,
-                'rays':observations,'rawExecutionSha256':digest(log)})
+                'rays':observations,'boreWallRaysPerHole':8,
+                'rawExecutionSha256':digest(log)})
         # Explicit post-edit and undo checks are based on actually imported CAD receipts.
         observations=report['cases']
         if not (observations[1]['measuredTriangleVolumeMm3']>observations[0]['measuredTriangleVolumeMm3']

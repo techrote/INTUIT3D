@@ -19,6 +19,8 @@ const artifacts=process.env.INTUIT3D_HANDLE_ARTIFACTS||'apps/web/browser-evidenc
 const home=mkdtempSync(join(tmpdir(),'intuit3d-native-browser-'));
 const children=[];const pending=new Map();const exceptions=[];
 let ws,seq=0,requests=0,host;
+// Deliberately invalid responses are exercised in real Chromium. This is NEVER a native provider.
+let mockReplyMode='valid';
 const check=(ok,why)=>{if(!ok)throw Error(why);};
 const eventually=async(fn,why,tries=90)=>{
   for(let i=0;i<tries;i++){try{const found=await fn();if(found)return found;}catch{}await pause(150);}
@@ -53,13 +55,24 @@ const key=async(name,code,virtualKey)=>{
 async function main(){
   mkdirSync(artifacts,{recursive:true});
   host=createServer(async(req,res)=>{
-    if(req.method==='OPTIONS' && req.url==='/v1/plate/evaluate' && req.headers.origin===origin){
+    if(req.method==='OPTIONS' && ['/v1/plate/evaluate','/v1/plate/capabilities'].includes(req.url) && req.headers.origin===origin){
       res.writeHead(204,{
         'access-control-allow-origin':origin,
         'access-control-allow-methods':'POST, OPTIONS',
         'access-control-allow-headers':'content-type, x-intuit3d-token'
       });
       res.end();return;
+    }
+    if(req.method==='GET' && req.url==='/v1/plate/capabilities' &&
+       req.headers['x-intuit3d-token']===token && req.headers.origin===origin){
+      res.writeHead(200,{'content-type':'application/json','access-control-allow-origin':origin});
+      res.end(JSON.stringify({
+        format:'intuit3d.local-plate-bridge-capability',version:1,
+        backend:'OCP-python-prototype',occtVersion:'7.9.3.1',
+        stepVerification:'same_engine_step_readback',exactAuthority:false,
+        independentInteroperability:false,
+        note:'TEST DOUBLE only: no OCP, CAD kernel, real STEP or independent check was executed',
+      }));return;
     }
     const chunks=[];for await(const part of req)chunks.push(part);
     if(req.method!=='POST'||req.url!=='/v1/plate/evaluate'||
@@ -77,9 +90,19 @@ async function main(){
       source:{projectId:model.projectId,revision:model.revision,archiveSha256:sha(raw.archive)},
       result:{kind:'experimental_plate_evaluated',projectId:model.projectId,revision:model.revision,
         cutFeatureId:raw.cutFeatureId,requestId:raw.requestId,
-        backend:'synthetic-browser-ui-test-only',exactAuthority:false,independentInteroperability:false},
-      step:{filename:'plate.step',bytes:bytes.length,sha256:sha(bytes),base64:bytes.toString('base64'),
-        verification:'same_engine_step_readback'},
+        // The envelope follows the pinned OCP 7.9.3.1 *schema* solely so this
+        // synthetic interaction test can exercise RUNTIME's actual validation.
+        // No OCP was executed; bytes below are intentionally non-STEP.
+        backend:mockReplyMode==='wrong-provider'?'synthetic-browser-ui-test-only':'OCP-python-prototype',
+        occtVersion:'7.9.3.1',exactAuthority:false,independentInteroperability:false,
+        artifact:raw.exportStep?{
+          bytes:bytes.length,sha256:sha(bytes),verification:'same_engine_step_readback',
+          testFixture:'synthetic-browser-ui-test-only',
+        }:null},
+      step:raw.exportStep?{filename:'plate.step',bytes:bytes.length,
+        sha256:mockReplyMode==='bad-step-digest'?'0'.repeat(64):sha(bytes),
+        base64:bytes.toString('base64'),
+        verification:'same_engine_step_readback'}:null,
     }));
   });
   await new Promise(resolve=>host.listen(0,'127.0.0.1',resolve));
@@ -686,6 +709,21 @@ async function main(){
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-evidence]')) && !document.querySelector('[data-testid=runtime-native-download-cached]').disabled"),
     'layout edit failed to auto rebuild current native session revision');
   await screenshot('native-08-retrospective-hole-layout-rebuild.png');
+  // Negative end-to-end checks: an unrecognized provider and corrupt binary
+  // must produce explicit refused states and NEVER leave a cached STEP.
+  mockReplyMode='wrong-provider';
+  await pointerClick('runtime-native-build');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('invalid_host_reply')"),
+    'RUNTIME did not refuse the unrecognized provider');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'invalid provider incorrectly retained a downloadable STEP');
+  mockReplyMode='bad-step-digest';
+  await pointerClick('runtime-native-build');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('invalid_step')"),
+    'RUNTIME did not refuse mismatched STEP SHA-256');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'mismatched STEP digest incorrectly left a downloadable STEP');
+  mockReplyMode='valid';
   // Actual Chromium Ctrl+N creates a sketch-only project, with an Escape-safe
   // replacement gate. The existing model must survive cancellation.
   const projectBeforeNew=await evaluate("document.querySelector('.browser-project')?.textContent");
@@ -713,8 +751,8 @@ async function main(){
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
-    provider:'synthetic HTTP responder, NOT OCP/native/STEP interoperability',
-    downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,realPhysicalGeometry:false,
+    provider:'synthetic HTTP responder with schema-compatible OCP identity, NOT OCP/native/STEP interoperability',
+    downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,wrongProviderRefused:true,badStepDigestRefused:true,realPhysicalGeometry:false,
     retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
       'native-00c-named-thickness-parameter.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png'
     ]},null,2)+'\n');

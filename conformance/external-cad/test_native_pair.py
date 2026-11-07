@@ -9,6 +9,7 @@ import unittest
 import zipfile
 
 from native_pair import PINNED_OCCT, Rejected, parse_probe, verify_native_artifact
+from bore_probe import bore_wall_probes
 
 KERNEL = 'c46d02847468b69a106fbfa6fad715c10399ff2c'
 PLATFORM = 'd5c2c3f54466479bf5bec3b04c3b66ed00549ec4'
@@ -51,6 +52,13 @@ def good_receipt(thickness=8):
         ('exterior',70,0,False), ('central.material',0,0,True)]:
         rays.append(f'RAY {name} {x:.9f} {y:.9f} {2 if solid else 0} '
                     f'{0 if solid else -1:.9f} {thickness if solid else -1:.9f}')
+    case = {'widthMm': 120, 'depthMm': 80, 'thicknessMm': thickness,
+            'holes': [{'x': -30, 'y': 0, 'radius': 6},
+                      {'x': 30, 'y': 0, 'radius': 6}]}
+    for name, x, y, _, occupancy in bore_wall_probes(case):
+        solid = occupancy == 'solid'
+        rays.append(f'RAY {name} {x:.9f} {y:.9f} {2 if solid else 0} '
+                    f'{0 if solid else -1:.9f} {thickness if solid else -1:.9f}')
     rays.append(f'ACCEPT solids=1 source_unit=millimetre imported_exact=true tris=1396 '
                 f'open_edges=0 volume_mm3={wanted*1.0001:.9f} '
                 f'expected_mm3={wanted:.9f} warnings=0')
@@ -81,7 +89,7 @@ class SourceAndPredicateTests(unittest.TestCase):
     def test_sampled_receipt_requires_actual_predicates(self):
         valid = parse_probe(good_receipt(), 8)
         self.assertEqual(valid['triangleCount'], 1396)
-        self.assertEqual(len(valid['rays']), 8)
+        self.assertEqual(len(valid['rays']), 24)
         for changed in (
             good_receipt().replace('imported_exact=true', 'imported_exact=false'),
             good_receipt().replace('warnings=0', 'warnings=1'),
@@ -90,6 +98,12 @@ class SourceAndPredicateTests(unittest.TestCase):
             good_receipt().replace('RAY hole.0 -30.000000000 0.000000000 0',
                                    'RAY hole.0 -30.000000000 0.000000000 2'),
             good_receipt().replace('8.000000000', '7.000000000'),
+            good_receipt().replace('RAY hole.0.outer.east -23.250000000 0.000000000 2',
+                                   'RAY hole.0.outer.east -23.250000000 0.000000000 0'),
+            good_receipt().replace('RAY hole.1.inner.west 24.750000000 0.000000000 0',
+                                   'RAY hole.1.inner.west 24.750000000 0.000000000 2'),
+            good_receipt().replace('RAY hole.0.inner.east -24.750000000 0.000000000 0 -1.000000000 -1.000000000',
+                                   'RAY hole.0.inner.east -24.750000000 0.000000000 0 0.000000000 8.000000000'),
         ):
             with self.subTest(changed=changed[-110:]):
                 with self.assertRaises(Rejected):

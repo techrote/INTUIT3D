@@ -563,3 +563,157 @@ previous receipt. For a real saved file, use a fresh copy from
 not production-certified STEP. The real-INTENT/SKETCH localhost regression
 exercises both mutation paths; native OCP and independent CAD qualifications
 remain separate gates.
+
+
+## Local pinned OCCT 8.0.1 C++ → authoritative browser CAD bridge
+
+`startLocalPinnedOcct8Bridge` is the **Node-only** pinned native alternative
+to `startLocalPlateBridge`. It reuses the already accepted authenticated
+loopback route, INTENT/SKETCH source admission, revision/abort fencing and
+browser-safe `evaluateLocalPlate` / `createLivePlateSession` consumers.
+The browser supplies only authoritative archive, semantic cut/request IDs and
+an export flag, never a native executable or filesystem destination.
+
+```js
+import * as plateContract from '@intuit3d/kernel-contract/plate-v1';
+import {runPinnedOcct8Plate} from '@intuit3d/kernel-contract/local-occt8-provider';
+import {startLocalPinnedOcct8Bridge} from '@intuit3d/workflow-runtime/local-plate-bridge';
+const host=await startLocalPinnedOcct8Bridge({
+  runtime,model,plateContract,runPinnedOcct8Plate,
+  workerExecutable:'/absolute/path/to/intuit3d_occt8_plate',
+  crossVersionStepAudit:false, // optional pinned OCP readback is distinct
+});
+// WORKBENCH continues to use host.url, host.token and the normal live session.
+```
+
+The pinned adapter **requires** KERNEL's separate Part 21 plate-subset
+structural audit and labels its browser verified bytes
+`occt8_part21_plate_subset`. A mismatched provider backend or version,
+absent audit, archive digest disagreement, native artifact substitution and
+corrupted STEP byte transport are rejected. The original OCP 7.9.3.1 path
+still returns `same_engine_step_readback`. **Both paths always report
+`exactAuthority:false` and `independentInteroperability:false`.** Real
+OCCT 8.0.1 plus a narrow Part 21 audit is not production exact authority
+or arbitrary STEP interoperation certification.
+
+`npm test --workspace @intuit3d/workflow-runtime` executes real INTENT and
+SKETCH through HTTP with an explicitly **synthetic** pinned native provider,
+including edit/undo/save/reopen, wrong backend, wrong audit, artifact mutation
+and mismatched serialized archive negative cases.
+
+On a machine with an *actual provisioned pinned C++ binary*, run:
+
+```sh
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+  npm run demo:occt8:bridge --workspace @intuit3d/workflow-runtime
+```
+
+That command uses the real KERNEL `runPinnedOcct8Plate` provider, builds
+an 8 mm two-hole plate, retrospectively changes thickness to 12 mm, then
+resizes the two *solved SKETCH* bore radii and centre spacing in one admitted
+journal edit. It physically rebuilds the new cut, undoes both edits separately,
+reopens both the edited and original archives, and rebuilds through the same
+production-facing HTTP/browser-safe API. It validates actual STEP bytes, independent plate-subset
+audit receipts, model revision, analytic volume and SHA-256. It **fails** if
+the pinned binary is missing. This command is not a claim it ran on every
+CI runner. WORKBENCH pointer/browser use and the external AnvilCAD/BRL-CAD
+STEP checks still require their own executed integration qualification.
+
+
+### One-command authoritative edit → pinned C++ → separately executed non-OCCT STEP sampling
+
+The native demo now optionally reads back **the very STEP bytes returned by
+the live INTENT/SKETCH session**, not an older standalone native fixture.
+When a genuine source-pinned AnvilCAD probe has been compiled by PLATFORM,
+execute the following command on a host with both native executables:
+
+```bash
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+INTUIT3D_ANVIL_STEP_PROBE=/absolute/path/to/intuit_step_probe \
+INTUIT3D_ANVIL_PROBE_SHA256=<actual-64-character-binary-sha256> \
+npm run demo:occt8:independent --workspace @intuit3d/workflow-runtime
+```
+
+This deliberately requires both binaries: no mock or fallback substitutes for
+a missing independent reader. The bounded Node-only
+`@intuit3d/workflow-runtime/nonocct-step-probe` adapter checks the
+probe's binary SHA-256, copies the exact verified downloadable STEP into a
+private temporary path, executes the non-OCCT importer without a shell, and
+requires one source-matched solid, mm units, exact B-rep import, closed mesh,
+volume within the already-declared 1% sampled-mesh budget, zero warnings,
+two material Z intersections and correctly located bore/exterior rays.
+Each of **seven real user states** (8 mm, retrospective 12 mm, resized
+hole centres/radii at 12 mm, undo hole layout, undo thickness, edited-project
+archive reopen, and original-project archive reopen) produces a source-archive/
+STEP/probe/transcript-SHA-bound receipt. The independent reader checks the
+new bore coordinates and material rays, not merely the extrusion volume. Neither STEP bytes nor binaries are committed.
+
+**Evidence boundary:** ordinary package tests use *synthetic text transcripts*
+to exercise refusal of mislocated holes, bad units/topology, and false volume.
+These do not execute AnvilCAD. The command above executes the actual supplied
+non-OCCT binary and C++ provider, but binary origin, pin, license and completed
+hosted execution still require separate PLATFORM/INTEGRATION verification.
+`exactAuthority:false` and `independentInteroperability:false` remain
+unchanged at the application boundary. No general/arbitrary STEP or browser
+qualification is inferred. Integration alone wires native provisioned executables
+into official CI or accepts this new evidence.
+
+
+### Current revision-fenced external STEP receipt (Node host)
+
+The pinned C++ seven-stage demonstration calls
+\`verifyCurrentLivePlateStep({session,evaluation,probeExecutable,expectedProbeSha256})\`
+for each STEP. This obtains \`session.currentStep()\` rather than importing an
+unrelated old buffer. It checks project ID, exact saved archive SHA-256, revision,
+Part21 audit and STEP content SHA **before and after** asynchronous external
+CAD import. An edit, undo, reopen or replacement during import makes the receipt
+stale, never a successful check of the new active project. The function is a
+trusted Node-host consumer API; the browser cannot pick local executable paths.
+The synthetic subprocess test proves only revision fences. Real C++ and AnvilCAD
+executables, binary-source attestation and graphical interaction remain separate
+gates. Exact and general interoperability authority remain false.
+
+
+## Authenticated local provider pairing and pinned-only export
+
+A browser intending to export through pinned OCCT 8.0.1 C++ must not silently
+fall back to experimental OCP 7.9.3.1. The trusted loopback host now provides
+**GET \`/v1/plate/capabilities\`**, protected by the same per-launch token,
+Origin and Host checks as native evaluation. Its response identifies the
+configured backend, version and expected STEP verification. It does **not**
+prove the executable is provisioned, that native geometry executed, or that
+independent CAD import passed. No host filesystem path is disclosed.
+
+The browser-safe API exposes strict opt-in:
+
+\`\`\`js
+import {inspectLocalPlateBridge} from '@intuit3d/workflow-runtime/local-plate-client';
+
+const identity=await inspectLocalPlateBridge({url:hostUrl,token:pairedToken});
+if(identity.kind==='paired' && identity.backend==='OCCT-cxx-8.0.1') {
+  const result=await session.evaluate({
+    url:hostUrl,token:pairedToken,requestId:'model.native.1',
+    requiredBackend:'OCCT-cxx-8.0.1',exportStep:true,
+  });
+  if(result.kind==='experimental_plate_evaluated') {
+    // Read session.currentStep() again at the moment of download.
+    // Keep experimental/native provenance and exact-authority=false.
+  }
+}
+\`\`\`
+
+Supplying \`requiredBackend\` to \`evaluateLocalPlate\` or through
+\`session.evaluate\` / \`applyEditAndEvaluate\` /
+\`reopenAndEvaluate\` / \`commitPreviewAndEvaluate\`
+performs authenticated pairing *before* dispatch. A mismatched provider
+returns \`unresolved/provider_mismatch\` without executing a native job.
+The actual response backend, version, STEP SHA and Part21 evidence remain
+separately checked after execution. Omitting this option preserves the
+existing dual-provider client.
+
+**Tests:** \`npm test --workspace @intuit3d/workflow-runtime\` and
+\`npm run typecheck --workspace @intuit3d/workflow-runtime\` exercise actual
+INTENT/SKETCH histories across authenticated HTTP with explicitly synthetic
+native doubles. Genuine combined C++→AnvilCAD evidence still requires
+\`npm run demo:occt8:independent --workspace @intuit3d/workflow-runtime\`
+with physical source-qualified provisioned binaries. WORKBENCH owns UI adoption.

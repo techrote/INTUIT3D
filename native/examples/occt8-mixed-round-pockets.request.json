@@ -1,0 +1,44 @@
+{
+  "protocol": "intuit3d/kernel/plate-mixed-cut-chain-v2",
+  "requestId": "fixture.mixed-round-pocket",
+  "featureId": "body.plate",
+  "revision": 8,
+  "units": "mm",
+  "plate": {
+    "width": 120,
+    "depth": 80,
+    "thickness": 8,
+    "holes": [
+      {
+        "x": -30,
+        "y": 0,
+        "radius": 6
+      },
+      {
+        "x": 30,
+        "y": 0,
+        "radius": 6
+      }
+    ]
+  },
+  "cuts": [
+    {
+      "featureId": "cut.round-blind",
+      "kind": "circle",
+      "x": -10,
+      "y": 20,
+      "radius": 5,
+      "cutDepthMm": 3
+    },
+    {
+      "featureId": "cut.rect-through",
+      "kind": "rectangle",
+      "x": 5,
+      "y": -20,
+      "width": 10,
+      "depth": 8,
+      "cutDepthMm": 8
+    }
+  ],
+  "exportStep": true
+}

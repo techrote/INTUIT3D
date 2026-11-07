@@ -1,0 +1,43 @@
+{
+  "protocol": "intuit3d/kernel/plate-cut-chain-v1",
+  "requestId": "fixture.pinned-ordered-cuts",
+  "featureId": "body.mounting-plate",
+  "revision": 8,
+  "units": "mm",
+  "plate": {
+    "width": 120,
+    "depth": 80,
+    "thickness": 8,
+    "holes": [
+      {
+        "x": -30,
+        "y": 0,
+        "radius": 6
+      },
+      {
+        "x": 30,
+        "y": 0,
+        "radius": 6
+      }
+    ]
+  },
+  "cuts": [
+    {
+      "featureId": "cut.blind-pocket",
+      "x": -10,
+      "y": 20,
+      "width": 12,
+      "depth": 10,
+      "cutDepthMm": 3
+    },
+    {
+      "featureId": "cut.through-window",
+      "x": 5,
+      "y": -20,
+      "width": 10,
+      "depth": 8,
+      "cutDepthMm": 8
+    }
+  ],
+  "exportStep": true
+}
