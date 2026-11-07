@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {serializeSketch,parseSketch} from '../index.mjs';
+import {rectanglePlateFromProfile} from '../../workflow-runtime/experimental-plate.mjs';
 import {createCenteredHolePlate,inspectCenteredHolePlate,
   editCenteredHolePlateDimension,dragCenteredHolePlateHandle} from '../centered-hole-plate.mjs';
 let doc=createCenteredHolePlate({id:'plate',widthMm:120,heightMm:80,
@@ -10,7 +11,8 @@ function report(step){
   console.log(JSON.stringify({step,status:view.status,dimensions:view.dimensions,
     holeA:p.get('plate:holeA:center')??null,holeB:p.get('plate:holeB:center')??null,
     profileId:view.profileId,areaMm2:view.profile?.areaMm2??null,
-    nativeExact:view.nativeExact}));
+    nativeExact:view.nativeExact,
+    runtimePlateRequest:view.profile?rectanglePlateFromProfile(view.profile,8):null}));
   return view;
 }
 report('initial');

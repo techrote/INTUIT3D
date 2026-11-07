@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {solveSketch,parseSketch,serializeSketch} from '../index.mjs';
+import {rectanglePlateFromProfile} from '../../workflow-runtime/experimental-plate.mjs';
 import {createCenteredHolePlate,inspectCenteredHolePlate,
   editCenteredHolePlateDimension,dragCenteredHolePlateHandle} from '../centered-hole-plate.mjs';
 
@@ -139,4 +140,19 @@ test('public example shows create, edit, drag, undo and reopen, without claiming
   assert.equal(rows[2].holeB.x,115);
   assert.equal(rows[2].holeB.y,50);
   assert.equal(rows[5].nativeExact,false);
+});
+
+test('accepted RUNTIME rectangle adapter consumes the solved profile before and after edge-dependent edits',()=>{
+  const original=rectanglePlateFromProfile(view(initial()).profile,8);
+  assert.deepEqual(original,{width:120,depth:80,thickness:8,holes:[
+    {x:-25,y:0,radius:6},{x:25,y:0,radius:6}
+  ]});
+  const widened=edit(initial(),'widthMm',150);
+  assert.equal(widened.kind,'accepted');
+  const taller=edit(widened.sketch,'heightMm',100);
+  assert.equal(taller.kind,'accepted');
+  const mapped=rectanglePlateFromProfile(taller.profile,8);
+  assert.deepEqual(mapped,{width:150,depth:100,thickness:8,holes:[
+    {x:-40,y:0,radius:6},{x:40,y:0,radius:6}
+  ]});
 });
