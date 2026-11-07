@@ -1,19 +1,35 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { PlateProfile } from '@intuit3d/sketch';
 
 /** A visually useful, disposable tessellation of the ACTUAL admitted SKETCH
  * profile. Never used as document state, a STEP source, or geometric proof. */
-export function RuntimeGeometryViewport({ profile, thickness, sketchMode }: {
+type HoleId = 'holeA' | 'holeB';
+export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
+  onHoleMove?: (id: HoleId,x:number,y:number)=>void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const moving = useRef<{id:HoleId;pointerId:number}|null>(null);
+  const [dragPreview,setDragPreview] = useState<{id:HoleId;x:number;y:number}|null>(null);
   const xs = profile.outer.map(p => p.x), ys = profile.outer.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
   const width = Math.max(1, maxX-minX), height = Math.max(1,maxY-minY);
   const frame = `${minX-width*.12} ${minY-height*.12} ${width*1.24} ${height*1.24}`;
+  // Actual DOM pointer conversion: viewBox scaling and letterboxing are handled
+  // by the root SVG CTM, before undoing the sketch's vertical axis flip.
+  const pointerPosition=(event:ReactPointerEvent<SVGCircleElement>)=>{
+    const screen=event.currentTarget.ownerSVGElement?.getScreenCTM();
+    if(!screen)return null;
+    const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(screen.inverse());
+    const snap=(value:number)=>Math.round(value*2)/2; // 0.5 mm for editable preview
+    const x=snap(point.x),y=snap(minY+maxY-point.y);
+    if(!Number.isFinite(x)||!Number.isFinite(y))return null;
+    return {x,y};
+  };
 
   useEffect(() => {
     if (sketchMode || !host.current) return;
@@ -72,8 +88,40 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode }: {
     <g transform={`translate(0 ${minY+maxY}) scale(1 -1)`}>
       <polygon points={profile.outer.map(p=>`${p.x},${p.y}`).join(' ')}
         fill="#34758b22" stroke="#76d1e5" strokeWidth=".5" vectorEffect="non-scaling-stroke"/>
-      {profile.holes.map(h=><circle key={h.id} cx={h.x} cy={h.y} r={h.radius} fill="#152332"
-        stroke="#e4be81" strokeWidth=".5" vectorEffect="non-scaling-stroke"/>)}
+      {profile.holes.map(h=><g key={h.id}>
+        <circle cx={h.x} cy={h.y} r={h.radius} fill="#152332"
+          stroke="#e4be81" strokeWidth=".5" vectorEffect="non-scaling-stroke"/>
+        {(h.id==='holeA'||h.id==='holeB')&&onHoleMove&&
+          <circle data-testid={`runtime-sketch-hole-${h.id}`}
+            aria-label={`Drag ${h.id} center`}
+            cx={h.x} cy={h.y} r={Math.max(2,Math.min(width,height)/35)}
+            fill="#eef6ed" stroke="#174d69" strokeWidth=".7"
+            style={{cursor:'grab',touchAction:'none'}}
+            onPointerDown={event=>{
+              if(event.button!==0)return;
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              moving.current={id:h.id as HoleId,pointerId:event.pointerId};
+              setDragPreview({id:h.id as HoleId,x:h.x,y:h.y});
+            }}
+            onPointerMove={event=>{
+              if(moving.current?.id!==h.id||moving.current.pointerId!==event.pointerId)return;
+              const point=pointerPosition(event);
+              if(point)setDragPreview({id:h.id as HoleId,...point});
+            }}
+            onPointerUp={event=>{
+              if(moving.current?.id!==h.id||moving.current.pointerId!==event.pointerId)return;
+              const point=pointerPosition(event);
+              moving.current=null;setDragPreview(null);
+              if(point&&(point.x!==h.x||point.y!==h.y))onHoleMove(h.id as HoleId,point.x,point.y);
+            }}
+            onPointerCancel={()=>{moving.current=null;setDragPreview(null);}}
+          />}
+      </g>)}
+      {dragPreview&&<circle cx={dragPreview.x} cy={dragPreview.y}
+        r={Math.max(2.5,Math.min(width,height)/30)}
+        fill="#6af0cd55" stroke="#84f2d3" strokeDasharray="1 1"
+        strokeWidth=".6" pointerEvents="none"/>}
     </g>
     <text x={minX+2} y={minY+8} fontSize={Math.max(2,width/30)} fill="#d1e5f1">
       `SKETCH solver · analytic profile only`

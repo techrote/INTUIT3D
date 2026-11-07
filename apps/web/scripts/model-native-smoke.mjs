@@ -120,6 +120,45 @@ async function main(){
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=enter-model-runtime]'))"),'model editor launch');
   check(await evaluate("(() => {document.querySelector('[data-testid=enter-model-runtime]').click();return true})()"),'cannot enter model editor');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-export]'))"),'native panel');
+  // Real clicks/keyboard edit admitted RUNTIME constraints, then a physical
+  // Chromium pointer drag commits one semantic hole-center transaction.
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-hole-holeA-diameter]');e.focus();e.select();return document.activeElement===e})()"),
+    'cannot focus independent hole dimension');
+  await send('Input.insertText',{text:'16'});await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-diameter]')?.value==='16'"),'hole A diameter edit');
+  check(await evaluate("document.querySelector('[data-testid=runtime-hole-holeB-diameter]')?.value==='12'"),
+    'individual hole edit incorrectly changed second hole');
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-move-cut-earlier]').click();return true})()"),
+    'cannot move authored cut on timeline');
+  check(await evaluate("(() => {const ids=[...document.querySelectorAll('[data-testid=runtime-order] .timeline-event')].map(x=>x.children[1]?.textContent);return ids.indexOf('cut')<ids.indexOf('plate')})()"),
+    'authoritative timeline did not move cut earlier');
+  // Actual keyboard shortcut, with button rather than input focused.
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("(() => {const ids=[...document.querySelectorAll('[data-testid=runtime-order] .timeline-event')].map(x=>x.children[1]?.textContent);return ids.indexOf('plate')<ids.indexOf('cut')})()"),'timeline undo from keyboard');
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-mode-sketch]').click();return true})()"),'cannot enter sketch viewport');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch-hole-holeA]'))"),'sketch handle not rendered');
+  const drag=await evaluate(`(() => {
+    const e=document.querySelector('[data-testid=runtime-sketch-hole-holeA]');
+    const rect=e.getBoundingClientRect();
+    const matrix=e.ownerSVGElement.getScreenCTM();
+    const p0=new DOMPoint(0,0).matrixTransform(matrix);
+    const p8=new DOMPoint(8,0).matrixTransform(matrix);
+    return {x:rect.left+rect.width/2,y:rect.top+rect.height/2,dx:p8.x-p0.x};
+  })()`);
+  check(Number.isFinite(drag.dx)&&Math.abs(drag.dx)>4,'sketch CTM is not draggable');
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:drag.x,y:drag.y});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:drag.x,y:drag.y,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:drag.x+drag.dx,y:drag.y,button:'left',buttons:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:drag.x+drag.dx,y:drag.y,button:'left',clickCount:1});
+  await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)-43)<0.6"),
+    'physical sketch handle drag did not commit the hole A center');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'hole drag falsely promoted cut to exact');
+  await screenshot('native-00-hole-drag-timeline.png');
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-mode-solid]').click();return true})()"),'cannot return to solid viewport');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-3d-viewport]'))"),'3D preview after sketch drag');
+
   check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent.includes('NO EXACT KERNEL')"),
     'experimental bridge promoted to exact');
   check(await evaluate(`(() => {
@@ -173,9 +212,9 @@ async function main(){
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder, NOT OCP/native/STEP interoperability',
-    downloadedFiles:2,staleDownloadRefused:true,realPhysicalGeometry:false,
+    downloadedFiles:2,staleDownloadRefused:true,holeDrag:true,timelineUndo:true,realPhysicalGeometry:false,
     independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png'
+      'native-00-hole-drag-timeline.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
