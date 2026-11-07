@@ -148,6 +148,37 @@ test('browser revisions changed while provider runs cannot publish old results',
     assert.equal(response.artifact,null);
   });
 });
+test('aborting the browser HTTP request cancels the in-flight trusted provider',async()=>{
+  let current=plateProject();
+  let started,aborted;
+  const didStart=new Promise(resolve=>{started=resolve;});
+  const didAbort=new Promise(resolve=>{aborted=resolve;});
+  const provider=async(request,options)=>{
+    started();
+    if (options.signal.aborted) {
+      aborted();
+      return {kind:'unresolved',code:'cancelled'};
+    }
+    await new Promise(resolve=>options.signal.addEventListener('abort',resolve,{once:true}));
+    aborted();
+    return {kind:'unresolved',code:'cancelled'};
+  };
+  await runHost(provider,async host=>{
+    const controller=new AbortController();
+    const pending=evaluateLocalPlate({url:host.url,token:host.token,runtime,
+      readCurrentHistory:()=>current,cutFeatureId:'cut',
+      requestId:'bridge.abort',exportStep:true,signal:controller.signal});
+    await didStart;
+    controller.abort();
+    const result=await pending;
+    assert.equal(result.kind,'unresolved');
+    assert.equal(result.code,'cancelled');
+    await Promise.race([
+      didAbort,
+      new Promise((_,reject)=>setTimeout(()=>reject(Error('native cancellation was not forwarded')),1500)),
+    ]);
+  });
+});
 test('STEP client rejects corrupted bytes and remote URL before network',async()=>{
   await assert.rejects(()=>decodeVerifiedLocalStep({
     filename:'plate.step',bytes:4,sha256:'0'.repeat(64),
