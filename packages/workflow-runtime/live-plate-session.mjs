@@ -38,6 +38,12 @@ export function createLivePlateSession({
   let serial=0,controller=null,latest=null,latestArchive=null,lastOutcomeKind=null;
   // Previews are ephemeral proposals, never a second durable model or native receipt.
   const editPreviews=new WeakMap();
+  let activePreview=null;
+  // Only the latest sampled pointer pose can become an authoritative edit.
+  function retirePreview() {
+    if(activePreview) editPreviews.delete(activePreview);
+    activePreview=null;
+  }
   function discard({preserveCurrentStep=false}={}) {
     // A fresh native attempt or explicit cancellation does not revoke a
     // *previously verified*, still-current STEP. An actual model edit/reopen
@@ -63,6 +69,7 @@ export function createLivePlateSession({
     return current;
   }
   function publish(next,expectedArchive) {
+    retirePreview();
     discard();
     publishHistory(next);
     const actual=synchronize();
@@ -106,6 +113,7 @@ export function createLivePlateSession({
       return {format:LIVE_PLATE_SESSION_FORMAT,version:LIVE_PLATE_SESSION_VERSION,
         projectId:state.report.projectId,revision:state.report.revision,
         inFlight:controller!==null,hasVerifiedStep:!!latest?.step,
+        hasActivePreview:activePreview!==null && editPreviews.has(activePreview),
         lastResultKind:lastOutcomeKind,exactAuthority:false};
     },
     /** Delegate a genuine INTENT command; commit only if revision/project fences hold. */
@@ -120,6 +128,8 @@ export function createLivePlateSession({
      * archive is still current; it cannot be forged from a browser object.
      */
     previewEdit(edit) {
+      // A refused latest pointer position also revokes a previously valid pose.
+      retirePreview();
       const candidate=prepareEdit(edit);
       if(candidate.kind==='refused') return candidate;
       const proposal=Object.freeze({
@@ -135,7 +145,17 @@ export function createLivePlateSession({
         candidateArchive:candidate.after.archive,
         next:candidate.next,
       });
+      activePreview=proposal;
       return proposal;
+    },
+    /** Pointercancel/Escape: discard only this current active proposal. */
+    cancelPreview(proposal) {
+      if(!proposal || proposal!==activePreview || !editPreviews.has(proposal))
+        return {kind:'refused',code:'invalid_preview',
+          reason:'preview is unknown, superseded or already consumed',
+          notCommitted:true};
+      retirePreview();
+      return {kind:'discarded',notCommitted:true,exactAuthority:false};
     },
     /**
      * Promote a solver-backed preview with a strict archive identity fence.
@@ -144,12 +164,16 @@ export function createLivePlateSession({
      */
     commitPreview(proposal) {
       const stored=proposal&&typeof proposal==='object'?editPreviews.get(proposal):null;
-      if(!stored) return {kind:'refused',code:'invalid_preview',
-        reason:'preview is unknown or already committed',notCommitted:true};
-      const before=synchronize();
-      if(before.archive!==stored.sourceArchive) return {kind:'refused',
-        code:'stale_preview',reason:'authoritative project changed since preview',
+      if(!stored || proposal!==activePreview) return {kind:'refused',
+        code:'invalid_preview',
+        reason:'preview is unknown, superseded, cancelled or already committed',
         notCommitted:true};
+      const before=synchronize();
+      if(before.archive!==stored.sourceArchive) {
+        retirePreview();
+        return {kind:'refused',code:'stale_preview',
+          reason:'authoritative project changed since preview',notCommitted:true};
+      }
       const after=snapshot(stored.next);
       if(after.archive!==stored.candidateArchive)
         throw new Error('live plate session: preview candidate archive changed');
@@ -162,7 +186,7 @@ export function createLivePlateSession({
           invalidation.exactReuseAllowed!==false)
         throw new Error('live plate session: preview model dependency fence mismatch');
       // Prevent double-submit. An invalid or stale proposal never dispatches native.
-      editPreviews.delete(proposal);
+      retirePreview();
       return publishCandidate({next:stored.next,after,invalidation});
     },
     /** Publish a live model-backed preview, then rebuild exactly that revision. */
@@ -186,13 +210,17 @@ export function createLivePlateSession({
         exactReuseAllowed:false};
     },
     save() {return synchronize().archive;},
-    cancel() {synchronize();discard({preserveCurrentStep:true});},
+    cancel() {synchronize();retirePreview();discard({preserveCurrentStep:true});},
     /** A download button must obtain bytes through this synchronously, at use time. */
     currentStep() {
       const current=synchronize();
       if(!latest || latestArchive!==current.archive || latest.kind!=='experimental_plate_evaluated')
         return null;
-      return latest.step??null;
+      // Return independent bytes per download. A transferred/detached or
+      // accidentally edited UI buffer cannot corrupt the retained receipt.
+      return latest.step?{
+        ...latest.step,bytes:Uint8Array.from(latest.step.bytes),
+      }:null;
     },
     /** Latest request wins, even if a cancelled provider ignores AbortSignal. */
     async evaluate({url,token,requestId,exportStep=true,signal,fetchImpl,
@@ -254,7 +282,12 @@ export function createLivePlateSession({
         lastOutcomeKind=result.kind;
         if(result.kind==='experimental_plate_evaluated' && result.step ||
            !latest || latestArchive!==before.archive) {
-          latest=result;
+          // The public evaluation result belongs to the caller. Never cache
+          // its mutable Uint8Array for later downloads: a consumer may reuse,
+          // transfer or overwrite those bytes after the promise resolves.
+          latest=result.step?{
+            ...result,step:{...result.step,bytes:Uint8Array.from(result.step.bytes)},
+          }:result;
           latestArchive=before.archive;
         }
         return result;

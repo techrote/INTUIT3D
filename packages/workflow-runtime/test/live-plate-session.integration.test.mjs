@@ -60,6 +60,15 @@ test('live model-backed plate: add hole, thickness edit, undo/reopen and local S
     assert.equal(first.kind,'experimental_plate_evaluated',JSON.stringify(first));
     assert.equal(first.result.intendedPlate.holes.length,2);
     assert.deepEqual(Buffer.from(session.currentStep().bytes),STEP);
+    // Actual HTTP adapter SHA-verifies these test-provider bytes. The caller
+    // must not be able to corrupt the cached copy via either return path.
+    first.step.bytes[0]=0;
+    assert.deepEqual(Buffer.from(session.currentStep().bytes),STEP,
+      'modifying an evaluation response must not alter the native receipt');
+    const downloaded=session.currentStep();
+    downloaded.bytes[0]=0;
+    assert.deepEqual(Buffer.from(session.currentStep().bytes),STEP,
+      'modifying one download buffer must not corrupt later downloads');
     const savedBefore=session.save();
     const denied=session.applyEdit(h=>runtime.editPlateHoles(h,{
       sketchFeatureId:'sketch.plate',eventId:'bad.hole',
@@ -366,7 +375,9 @@ test('solver-backed preview does not mutate project or STEP; one-call commit reb
     assert.deepEqual(admitted.invalidation.invalidatedFeatureIds,
       ['sketch.plate','plate','cut']);
     assert.equal(session.save(),originalArchive,'candidate must not enter authoritative journal');
-    assert.equal(session.currentStep(),originalStep,'uncommitted drag must not revoke STEP');
+    assert.deepEqual(session.currentStep(),originalStep,'uncommitted drag must not revoke STEP');
+    assert.notEqual(session.currentStep(),originalStep,
+      'unchanged current STEP must be returned as independent download bytes');
     assert.equal(nativeRequests,1,'preview does not dispatch physical provider');
     const applied=await session.commitPreviewAndEvaluate(admitted,native('preview.physical'));
     assert.equal(applied.kind,'submitted');
@@ -408,14 +419,23 @@ test('preview refusal and stale archive fences preserve author intent with no na
   assert.equal(first.kind,'preview');
   assert.equal(competing.kind,'preview');
   assert.equal(session.save(),original);
+  assert.equal(session.refresh().hasActivePreview,true);
+  const old=await session.commitPreviewAndEvaluate(first,{requestId:'preview.old'});
+  assert.equal(old.kind,'refused');
+  assert.equal(old.edit.code,'invalid_preview',
+    'older pointer pose must not commit after a newer pose is rendered');
+  assert.equal(old.evaluation,null);
+  assert.equal(session.cancelPreview(first).code,'invalid_preview',
+    'late pointercancel must not discard a newer gesture');
   // Display-layer mutation must never become authoritative candidate geometry.
-  first.report.features[0].diagnostics.push('UI tampering must be ignored');
-  const accepted=session.commitPreview(first);
+  competing.report.features[0].diagnostics.push('UI tampering must be ignored');
+  const accepted=session.commitPreview(competing);
   assert.equal(accepted.kind,'committed');
   assert.equal(accepted.report.features.find(f=>f.featureId==='sketch.plate').profile.holes.length,3);
-  const stale=await session.commitPreviewAndEvaluate(competing,{requestId:'preview.stale'});
+  assert.equal(session.refresh().hasActivePreview,false);
+  const stale=await session.commitPreviewAndEvaluate(competing,{requestId:'preview.used'});
   assert.equal(stale.kind,'refused');
-  assert.equal(stale.edit.code,'stale_preview');
+  assert.equal(stale.edit.code,'invalid_preview');
   assert.equal(stale.evaluation,null);
   const foreign=createLivePlateSession({runtime,
     readCurrentHistory:()=>history,publishHistory:next=>{history=next;}});
@@ -423,4 +443,40 @@ test('preview refusal and stale archive fences preserve author intent with no na
   assert.equal(dispatched,0,'previews, refused edits and stale tokens cannot invoke native');
   assert.equal(history.document.revision,accepted.report.revision);
   assert.equal(session.currentStep(),null,'committed preview revokes old geometry');
+  const external=attempt('preview.external','previewD',60,20);
+  assert.equal(external.kind,'preview');
+  history=runtime.undo(history,['preview.external.undo']);
+  assert.equal(session.commitPreview(external).code,'stale_preview');
+  assert.equal(session.refresh().hasActivePreview,false);
+});
+
+test('rejected latest pose and pointercancel never publish a previous drag sample',()=>{
+  let history=initialProject();
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>history,publishHistory:next=>{history=next;}});
+  const pose=(eventId,x,y)=>session.previewEdit(h=>runtime.editPlateHoles(h,{
+    sketchFeatureId:'sketch.plate',eventId,expectedRevision:h.document.revision,
+    admission:'require_admissible',operations:[{kind:'add',id:'holeC',x,y,radius:4}],
+  }));
+  const before=session.save(),revision=history.document.revision;
+  const first=pose('drag.first',60,20);
+  const second=pose('drag.second',70,20);
+  assert.equal(first.kind,'preview');assert.equal(second.kind,'preview');
+  assert.equal(session.commitPreview(first).code,'invalid_preview');
+  assert.equal(pose('drag.invalid',35,40).kind,'refused');
+  assert.equal(session.commitPreview(second).code,'invalid_preview',
+    'latest invalid pointer sample must revoke earlier valid pose');
+  assert.equal(session.refresh().hasActivePreview,false);
+  const third=pose('drag.third',60,20);
+  assert.equal(third.kind,'preview');
+  assert.equal(session.cancelPreview(third).kind,'discarded');
+  assert.equal(session.commitPreview(third).code,'invalid_preview');
+  assert.equal(session.cancelPreview(third).code,'invalid_preview');
+  assert.equal(session.save(),before);
+  assert.equal(history.document.revision,revision);
+  const final=pose('drag.final',75,20);
+  assert.equal(final.kind,'preview');
+  assert.equal(session.commitPreview(final).kind,'committed');
+  assert.equal(session.commitPreview(final).code,'invalid_preview');
+  assert.notEqual(session.save(),before);
 });

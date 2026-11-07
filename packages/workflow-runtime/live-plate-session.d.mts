@@ -11,6 +11,8 @@ export interface LivePlateSessionState {
   revision:number;
   inFlight:boolean;
   hasVerifiedStep:boolean;
+  /** A solver-backed pointer pose is pending commit/cancellation. */
+  hasActivePreview:boolean;
   lastResultKind:LocalPlateClientResult['kind']|null;
   exactAuthority:false;
 }
@@ -67,7 +69,13 @@ export interface LivePlateSession {
   applyEdit(edit:(history:UndoHistory)=>SessionEdit):SessionEditResult;
   /** Compute real solver/profile admission without publishing history or requesting native work. */
   previewEdit(edit:(history:UndoHistory)=>SessionEdit):SessionEditPreviewResult;
-  /** Commit a proposal only if its entire originating archive remains current.
+  /** Discard only the matching current gesture, without editing or native work. */
+  cancelPreview(proposal:SessionEditPreview):
+    | Readonly<{kind:'discarded';notCommitted:true;exactAuthority:false}>
+    | Extract<SessionEditResult,{kind:'refused'}>;
+  /** Commit only the most recent unconsumed proposal.
+   * Replaced, rejected, and pointer-cancelled poses cannot commit.
+   * This still requires the entire originating archive to remain current.
    * Returns a refused result for stale/reused/foreign session previews.
    */
   commitPreview(proposal:SessionEditPreview):SessionEditResult;

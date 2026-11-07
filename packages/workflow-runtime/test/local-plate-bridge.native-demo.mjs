@@ -101,12 +101,20 @@ try {
   // dependency closure but DOES NOT publish intent or revoke current STEP.
   const beforeThirdPreview=session.save();
   const beforeThirdStep=session.currentStep();
+  const proposedEarly=session.previewEdit(h=>runtime.editPlateHoles(h,{
+    sketchFeatureId:'sketch.plate',eventId:'author.bridge.third.hole.early',
+    expectedRevision:current.document.revision,admission:'require_admissible',
+    operations:[{kind:'add',id:'holeC',x:70,y:20,radius:4}],
+  }));
+  assert.equal(proposedEarly.kind,'preview');
+  // A drag has multiple solver samples; only final pointer pose is committable.
   const proposedThird=session.previewEdit(h=>runtime.editPlateHoles(h,{
     sketchFeatureId:'sketch.plate',eventId:'author.bridge.third.hole',
     expectedRevision:current.document.revision,admission:'require_admissible',
     operations:[{kind:'add',id:'holeC',x:60,y:20,radius:4}],
   }));
   assert.equal(proposedThird.kind,'preview',JSON.stringify(proposedThird));
+  assert.equal(session.commitPreview(proposedEarly).code,'invalid_preview');
   assert.equal(proposedThird.exactAuthority,false);
   assert.deepEqual(proposedThird.invalidation.invalidatedFeatureIds,
     ['sketch.plate','plate','cut']);

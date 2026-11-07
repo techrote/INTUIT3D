@@ -12,6 +12,7 @@ const session=createLivePlateSession({runtime,readCurrentHistory:()=>current,
 const state:LivePlateSessionState=session.refresh();
 const currentRevision:number=state.revision;
 const authority:false=state.exactAuthority;
+const activeGesture:boolean=state.hasActivePreview;
 const archive:string=session.save();
 const restored=session.reopen(archive);
 if(restored.kind==='opened') {
@@ -60,7 +61,7 @@ async function browserDownload() {
   session.cancel();
   return result;
 }
-void [currentRevision,authority,browserDownload,editAndDownloadInOneCommand];
+void [currentRevision,authority,activeGesture,browserDownload,editAndDownloadInOneCommand];
 
 async function solverPreviewThenNative() {
   // WORKBENCH pointer move: solve/validate now; do not publish the document,
@@ -82,6 +83,11 @@ async function solverPreviewThenNative() {
   if(committed.kind==='submitted'){
     const result:LocalPlateClientResult=committed.evaluation;
     void result;
+  }
+  const cancelled=session.cancelPreview(proposal);
+  if(cancelled.kind==='discarded') {
+    const uncommitted:true=cancelled.notCommitted;
+    void uncommitted;
   }
   void [noExact,noNative,sourceRevision,report];
   return committed;
