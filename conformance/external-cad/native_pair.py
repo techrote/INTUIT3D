@@ -15,6 +15,8 @@ import subprocess
 import sys
 import zipfile
 
+from bore_probe import bore_wall_probes
+
 PINNED_OCCT = 'b8f597c677811d1f9f4d8a97f5ae2825c0353a42'
 SHA = re.compile(r'^[0-9a-f]{64}$')
 GIT = re.compile(r'^[0-9a-f]{40}$')
@@ -103,6 +105,11 @@ def parse_probe(stdout: str, thickness: int) -> dict:
               ('solid.nw', -20, -80/6, True), ('solid.ne', 20, -80/6, True),
               ('solid.sw', -20, 80/6, True), ('solid.se', 20, 80/6, True),
               ('exterior', 70, 0, False), ('central.material', 0, 0, True)]
+    case = {'widthMm': 120, 'depthMm': 80, 'thicknessMm': thickness,
+            'holes': [{'x': -30, 'y': 0, 'radius': 6},
+                      {'x': 30, 'y': 0, 'radius': 6}]}
+    probes.extend((name, x, y, expected == 'solid')
+                  for name, x, y, _, expected in bore_wall_probes(case))
     lines = [line.split() for line in lines if line.startswith('RAY ')]
     if len(lines) != len(probes):
         raise Rejected('independent CAD missing coordinate-anchored probes')
@@ -118,7 +125,8 @@ def parse_probe(stdout: str, thickness: int) -> dict:
         if (not all(math.isfinite(v) for v in (rx, ry, low, high))
             or abs(rx - x) > 0.000001 or abs(ry - y) > 0.000001
             or count != (2 if solid else 0)
-            or (solid and (abs(low) > 0.05 or abs(high - thickness) > 0.05))):
+            or (solid and (abs(low) > 0.05 or abs(high - thickness) > 0.05))
+            or (not solid and (low != -1.0 or high != -1.0))):
             raise Rejected(f'independent CAD ray failed at {name}')
         ray_evidence.append({'name': name, 'xMm': rx, 'yMm': ry,
                              'hits': count, 'entryZMm': low if count else None,
@@ -126,7 +134,7 @@ def parse_probe(stdout: str, thickness: int) -> dict:
     return {'measuredTriangleVolumeMm3': measured, 'expectedAnalyticVolumeMm3': expected,
             'relativeVolumeError': abs(measured - expected) / expected,
             'triangleCount': triangles, 'importedExactBRep': True,
-            'rays': ray_evidence}
+            'boreWallRaysPerHole': 8, 'rays': ray_evidence}
 
 def execute(args: argparse.Namespace) -> int:
     if args.output_dir.exists():

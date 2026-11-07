@@ -35,8 +35,116 @@ fn intersections(m: &Mesh, x: f64, y: f64) -> Vec<f64> {
     zs.dedup_by(|a,b| (*a-*b).abs()<1e-5);
     zs
 }
+
+// Distinct, bounded KERNEL-002 L-profile STEP fixture. All observations below
+// come from the separately implemented AnvilCAD imported mesh, not from
+// the OCCT same-engine receipt or an AP214 text scan.
+fn l_profile(args: &[String]) {
+    if args.len()!=9 { fail("usage: --l-profile STEP WIDTH DEPTH THICKNESS LEG_WIDTH FOOT_HEIGHT POCKET_DEPTH"); }
+    let (width,depth,thickness,leg,foot,pocket)=(
+        number(&args[3]),number(&args[4]),number(&args[5]),
+        number(&args[6]),number(&args[7]),number(&args[8]));
+    // Explicit admission of the four source-matched authored scenarios only.
+    // Positions of the window and blind pocket are immutable in this fixture.
+    let near=|a:f64,b:f64| (a-b).abs()<1e-8;
+    if !near(depth,80.0)||!near(leg,30.0)||!near(foot,20.0) ||
+       !((near(width,120.0)&&near(thickness,8.0)&&near(pocket,3.0))||
+         (near(width,120.0)&&near(thickness,12.0)&&near(pocket,3.0))||
+         (near(width,140.0)&&near(thickness,8.0)&&near(pocket,3.0))||
+         (near(width,120.0)&&near(thickness,8.0)&&near(pocket,5.0))) {
+        fail("unsupported authored L-profile/through-window/blind-pocket fixture");
+    }
+    let source=fs::read_to_string(&args[2]).unwrap_or_else(|_|fail("cannot read original L-profile STEP"));
+    let cad=import(&source).unwrap_or_else(|e|fail(&format!("independent L-profile import failed: {e}")));
+    if cad.length_unit!="millimetre" && cad.length_unit!="millimeter" {
+        fail("independent L-profile units are not millimetres");
+    }
+    if cad.bodies.len()!=1 || !cad.bodies[0].solid {
+        fail("L-profile did not import as precisely one solid");
+    }
+    let body=&cad.bodies[0];
+    if body.exact.is_none() || !cad.warnings.is_empty() {
+        fail("L-profile lacks exact B-rep or emitted import warnings");
+    }
+    let mesh=&body.mesh;
+    if mesh.vertices.is_empty() || mesh.faces.is_empty() {fail("empty independent L-profile mesh");}
+    let mut oriented:HashMap<(u32,u32),usize>=HashMap::new();
+    let mut signed_volume=0.0f64;
+    let mut tris=0usize;
+    for tri in mesh.faces.iter().flat_map(|f| &f.triangles) {
+        let a=point(mesh,tri[0]); let b=point(mesh,tri[1]); let c=point(mesh,tri[2]); tris+=1;
+        let cross=[b[1]*c[2]-b[2]*c[1],b[2]*c[0]-b[0]*c[2],b[0]*c[1]-b[1]*c[0]];
+        signed_volume+=(a[0]*cross[0]+a[1]*cross[1]+a[2]*cross[2])/6.0;
+        for k in 0..3 { *oriented.entry((tri[k],tri[(k+1)%3])).or_default()+=1; }
+    }
+    let unpaired=oriented.iter().filter(|((a,b),n)| **n!=1||oriented.get(&(*b,*a))!=Some(&1)).count();
+    if tris<8 || unpaired!=0 || !signed_volume.is_finite() {
+        fail("L-profile imported mesh is open, degenerate or invalid");
+    }
+    // Six-edge L sketch: 30-mm leg, 20-mm foot, 10x8 through window
+    // centred (15,-30) and 8x10 top-down pocket centred (-45,10).
+    let wanted=(width*foot+leg*(depth-foot)-80.0)*thickness-80.0*pocket;
+    let volume=signed_volume.abs();
+    if !wanted.is_finite()||wanted<=0.0||(volume-wanted).abs()>wanted*0.01 {
+        fail(&format!("independent L-profile mesh volume mismatch: {volume} vs {wanted}"));
+    }
+    // Each expected terminal Z is determined from independently authored
+    // stock/cut dimensions: None denotes exterior or through-window void.
+    // The blind-pocket rays must terminate at its *floor*, not at the top face.
+    let mut rays:Vec<(&str,f64,f64,Option<f64>)>=vec![
+        ("foot.solid",0.0,-30.0,Some(thickness)),
+        ("leg.solid",-width/2.0+10.0,0.0,Some(thickness)),
+        ("notch.void",0.0,0.0,None),
+        ("exterior.void",width/2.0+4.0,-30.0,None),
+        ("foot.tip.inner",width/2.0-1.0,-30.0,Some(thickness)),
+        ("foot.tip.outer",width/2.0+1.0,-30.0,None),
+        ("leg.notch.inner",-width/2.0+leg-1.0,0.0,Some(thickness)),
+        ("leg.notch.outer",-width/2.0+leg+1.0,0.0,None),
+        ("foot.front.inner",0.0,-depth/2.0+1.0,Some(thickness)),
+        ("foot.front.outer",0.0,-depth/2.0-1.0,None),
+        ("leg.top.inner",-width/2.0+10.0,depth/2.0-1.0,Some(thickness)),
+        ("leg.top.outer",-width/2.0+10.0,depth/2.0+1.0,None),
+        ("window.centre",15.0,-30.0,None),
+        ("window.east.inner",19.0,-30.0,None),
+        ("window.east.outer",21.0,-30.0,Some(thickness)),
+        ("window.west.inner",11.0,-30.0,None),
+        ("window.west.outer",9.0,-30.0,Some(thickness)),
+        ("window.north.inner",15.0,-27.0,None),
+        ("window.north.outer",15.0,-25.0,Some(thickness)),
+        ("window.south.inner",15.0,-33.0,None),
+        ("window.south.outer",15.0,-35.0,Some(thickness)),
+        ("pocket.centre",-45.0,10.0,Some(thickness-pocket)),
+        ("pocket.east.inner",-41.5,10.0,Some(thickness-pocket)),
+        ("pocket.east.outer",-40.5,10.0,Some(thickness)),
+        ("pocket.west.inner",-48.5,10.0,Some(thickness-pocket)),
+        ("pocket.west.outer",-49.5,10.0,Some(thickness)),
+        ("pocket.north.inner",-45.0,14.5,Some(thickness-pocket)),
+        ("pocket.north.outer",-45.0,15.5,Some(thickness)),
+        ("pocket.south.inner",-45.0,5.5,Some(thickness-pocket)),
+        ("pocket.south.outer",-45.0,4.5,Some(thickness)),
+    ];
+    for (name,x,y,end) in rays.drain(..) {
+        let zs=intersections(mesh,x,y);
+        match end {
+            Some(top) => {
+                if zs.len()!=2 || zs[0].abs()>0.05 || (zs[1]-top).abs()>0.05 {
+                    fail(&format!("{name}: wrong independent material/pocket-floor ray at ({x},{y}): {zs:?}"));
+                }
+            }
+            None => if !zs.is_empty() {
+                fail(&format!("{name}: unexpected material in absent L-profile/window at ({x},{y}): {zs:?}"));
+            },
+        }
+        println!("L_RAY {name} {x:.9} {y:.9} {} {:.9} {:.9}",
+            zs.len(),zs.first().copied().unwrap_or(-1.0),zs.last().copied().unwrap_or(-1.0));
+    }
+    println!("L_ACCEPT solids=1 source_unit={} imported_exact=true tris={} open_edges=0 volume_mm3={volume:.9} expected_mm3={wanted:.9} warnings=0",
+        cad.length_unit,tris);
+}
+
 fn main() {
     let args:Vec<String>=env::args().collect();
+    if args.get(1).map(String::as_str)==Some("--l-profile") { l_profile(&args); return; }
     if args.len()!=6 { fail("usage: intuit_step_probe INPUT.step WIDTH DEPTH THICKNESS x,y,r;x,y,r;..."); }
     let width=number(&args[2]); let depth=number(&args[3]); let thickness=number(&args[4]);
     if !(width>0.0 && depth>0.0 && thickness>0.0) { fail("invalid plate dimensions"); }
@@ -93,6 +201,24 @@ fn main() {
     probes.push(("exterior".into(),width/2.0+10.0,0.0,false));
     if !holes.iter().any(|h|h.0.abs()<1e-9 && h.1.abs()<1e-9) {
         probes.push(("central.material".into(),0.0,0.0,true));
+    }
+    // The original centre/volume probes cannot identify a wrong individual
+    // bore radius when another radius compensates to preserve removed area.
+    // Require empty just inside and full material just outside EACH wall.
+    // Four orientations also expose asymmetric or displaced hole contours.
+    for (i, &(hx, hy, radius)) in holes.iter().enumerate() {
+        let delta = (radius * 0.15).min(0.75);
+        for (direction, dx, dy) in [
+            ("east", 1.0, 0.0), ("west", -1.0, 0.0),
+            ("north", 0.0, -1.0), ("south", 0.0, 1.0),
+        ] {
+            let near = radius - delta;
+            let far = radius + delta;
+            probes.push((format!("hole.{i}.inner.{direction}"),
+                         hx + dx * near, hy + dy * near, false));
+            probes.push((format!("hole.{i}.outer.{direction}"),
+                         hx + dx * far, hy + dy * far, true));
+        }
     }
     for (name,x,y,material) in probes {
         let zs=intersections(mesh,x,y);
