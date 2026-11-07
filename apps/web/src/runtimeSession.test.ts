@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelFeature, removeModelHole,
-  makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, patternModelHoles, previewModelProfile, redoModelSession,
+  makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, patternModelHoles, previewModelProfile, redoModelSession, resizeModelHoleLayout,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
 } from './runtimeSession.ts';
 
@@ -296,4 +296,40 @@ test('Make Independent bakes resolved 12 mm and permits later direct edits, undo
   assert.equal(inspectModelSession(redone).exactGeometryAvailable,false);
   assert.throws(()=>makeModelThicknessIndependent(redone),/already independent/);
   assert.equal(serializeModelSession(changed),baselineArchive,'refused/detached edits never mutate source');
+});
+
+
+test('selected retrospective hole-layout resize is one admitted journal event and invalidates plate/cut',()=>{
+  const original=newModelPlateSession('workbench.layout.resize');
+  const before=modelHoleValues(original);
+  const result=resizeModelHoleLayout(original,{
+    holeIds:['holeA','holeB'],scaleX:1.2,scaleY:1,radiusScale:1.25,
+  });
+  assert.equal(result.kind,'committed');
+  if(result.kind!=='committed')return;
+  assert.deepEqual(modelHoleValues(result.history),{
+    holeA:{x:30,y:40,diameter:15},holeB:{x:90,y:40,diameter:15},
+  });
+  assert.deepEqual(result.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  assert.equal(result.invalidation.exactReuseAllowed,false);
+  assert.equal(result.report.features.find(f=>f.featureId==='cut')?.status,'pending_exact_provider');
+  const reopened=reopenModelSession(serializeModelSession(result.history));
+  assert.deepEqual(modelHoleValues(reopened),modelHoleValues(result.history));
+  const undone=undoModelSession(reopened);
+  assert.deepEqual(modelHoleValues(undone),before);
+  assert.deepEqual(modelHoleValues(redoModelSession(undone)),modelHoleValues(result.history));
+  const refused=resizeModelHoleLayout(original,{
+    holeIds:['holeA','holeB'],scaleX:0.1,scaleY:1,radiusScale:1,
+  });
+  assert.equal(refused.kind,'refused','overlapping bores must not be committed');
+  assert.deepEqual(modelHoleValues(original),before,'refusal must preserve authored source');
+  assert.throws(()=>resizeModelHoleLayout(original,{
+    holeIds:['holeA','missing'],scaleX:1.2,scaleY:1,radiusScale:1,
+  }),/Unknown authored hole/);
+  assert.throws(()=>resizeModelHoleLayout(original,{
+    holeIds:['holeA','holeA'],scaleX:1.2,scaleY:1,radiusScale:1,
+  }),/distinct holes/);
+  assert.throws(()=>resizeModelHoleLayout(original,{
+    holeIds:['holeA','holeB'],scaleX:0,scaleY:1,radiusScale:1,
+  }),/scaling must be finite/);
 });
