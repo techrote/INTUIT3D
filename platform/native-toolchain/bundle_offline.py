@@ -240,7 +240,7 @@ def build(args: argparse.Namespace) -> dict:
             f"Official OCCT {VERSION} C++ Linux, commit {COMMIT}\n"
             "python3 verify.py\n"
             "./run.sh --part21-step-audit --step-output /tmp/plate.step < requests/plate-8mm.json\n"
-            "Offline pinned native C++ 8/12 mm geometry and STEP, requires compatible Linux glibc/libstdc++ and Python 3.\n"
+            "Offline pinned native C++ 8/12 mm plus dimensional edit/restoration STEP replay; requires compatible Linux glibc/libstdc++ and Python 3.\n"
             "Part 21 plate-subset and OCCT readback do not certify external CAD interoperability.\n")
         resolution = validate_elf_resolution(
             output / "bin/intuit3d_occt8_plate", output / "lib")
@@ -287,7 +287,9 @@ def build(args: argparse.Namespace) -> dict:
                     + actual.stdout[-2000:] + actual.stderr[-2000:])
             extracted_replay = json.loads(actual.stdout)
             require(extracted_replay.get("status") == "OFFLINE_CXX_REPLAY_PASS"
-                    and set(extracted_replay.get("cases", {})) == {"8", "12"}
+                    and set(extracted_replay.get("cases", {})) == {"8", "12", "edited8", "restored8"}
+                    and extracted_replay.get("dimensionEditExecuted") is True
+                    and extracted_replay.get("dimensionsRestored") is True
                     and extracted_replay.get("kernelSourceCommit") == kernel_sha,
                     "extracted archive returned incomplete or mismatched proof")
         print(json.dumps({
