@@ -9,6 +9,7 @@
     "skipLibCheck": false
   },
   "files": [
-    "test/type-contract.mts"
+    "test/type-contract.mts",
+    "test/variable-contract.mts"
   ]
 }
