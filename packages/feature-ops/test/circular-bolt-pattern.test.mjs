@@ -46,7 +46,7 @@ test('stale, colliding, wrong-body and invalid patterns do not reach the runtime
   f=>f.request.units='cm',f=>f.request.frame='world_xy',
   f=>f.request.pattern.instances=1,f=>f.request.pattern.instances=33,
   f=>f.request.pattern.pivotXmm=NaN,f=>f.request.pattern.sweepDegrees=0,
-  f=>f.request.pattern.sweepDegrees=361,f=>f.request.pattern.idPrefix='source.hole',
+  f=>f.request.pattern.sweepDegrees=361,f=>f.features[0].payload.sketch.circles.push({id:'array:p1',center:'point.2',radius:3}),
   f=>f.features[2].payload.targetBodyId='body.other',
   f=>f.features[2].dependsOn=[],
   f=>f.features.push({id:'cut.extra',writeTargets:['body.1']}),
