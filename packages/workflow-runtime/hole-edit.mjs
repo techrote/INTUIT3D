@@ -108,3 +108,48 @@ export function planRectangularHoleArray(source,solution,request){
     fail('plate-v1 supports at most 64 circular holes');
   return operations;
 }
+
+/**
+ * One-shot circular array of a SOLVED source hole around a caller-selected
+ * pivot. The source is instance 0 and remains untouched; copies have stable
+ * independent IDs. Full +/-360 degree sweeps omit the duplicate endpoint,
+ * while partial arcs include both endpoints. No associative design intent or
+ * native geometric accuracy is claimed by this operation planner.
+ */
+export function planCircularHolePattern(source,solution,request){
+  const {sourceHoleId,idPrefix,instances,pivotXmm,pivotYmm,sweepDegrees=360}=request??{};
+  if(typeof sourceHoleId!=='string'||!sourceHoleId||
+      typeof idPrefix!=='string'||!/^[A-Za-z][\w:.-]{0,89}$/.test(idPrefix)||
+      !Number.isSafeInteger(instances)||instances<2||instances>32||
+      !finite(pivotXmm)||!finite(pivotYmm)||
+      !finite(sweepDegrees)||sweepDegrees===0||Math.abs(sweepDegrees)>360)
+    fail('circular array requires a source, stable prefix, 2–32 instances, finite pivot and nonzero sweep <=360 degrees');
+  if(solution?.status!=='solved'||!solution.geometry)
+    fail('circular array requires actual solved SKETCH geometry');
+  const circle=source.circles.find(c=>c.id===sourceHoleId);
+  const solvedCircle=solution.geometry.circles?.find(c=>c.id===sourceHoleId);
+  const center=solution.geometry.points?.find(p=>p.id===circle?.center);
+  if(!circle||!solvedCircle||!center||
+      !finite(solvedCircle.radius)||solvedCircle.radius<=0||
+      !finite(center.x)||!finite(center.y))
+    fail('source hole has no usable solved circle and centre');
+  const dx=center.x-pivotXmm,dy=center.y-pivotYmm;
+  const orbitRadius=Math.hypot(dx,dy);
+  if(!finite(orbitRadius)||orbitRadius===0)
+    fail('circular array pivot must differ from the solved hole centre');
+  const fullCircle=Math.abs(sweepDegrees)===360;
+  const step=(sweepDegrees*Math.PI/180)/(fullCircle?instances:instances-1);
+  const operations=[];
+  for(let i=1;i<instances;i++){
+    const theta=step*i;
+    const c=Math.cos(theta),s=Math.sin(theta);
+    const x=pivotXmm+dx*c-dy*s;
+    const y=pivotYmm+dx*s+dy*c;
+    if(!finite(x)||!finite(y))
+      fail('circular array produced non-finite coordinates');
+    operations.push({kind:'add',id:`${idPrefix}:p${i}`,x,y,radius:solvedCircle.radius});
+  }
+  if(source.circles.length+operations.length>64)
+    fail('plate-v1 supports at most 64 circular holes');
+  return operations;
+}

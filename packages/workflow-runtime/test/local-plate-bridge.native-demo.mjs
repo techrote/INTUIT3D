@@ -134,8 +134,28 @@ try {
   const undoneArray=await evaluate('bridge.native.undo.array');
   assert.deepEqual(undoneArray.plate.holes.map(h=>h.radius),[5,5]);
   assert.ok(Math.abs(undoneArray.volumeMm3-afterUndoThirdHole.volumeMm3)<1e-5);
+  // One-shot polar bolt-circle pattern, using the already admitted source
+  // hole. This produces real OCP cut/STEP through the same localhost bridge.
+  const circular=session.applyEdit(h=>runtime.patternCircularHoles(h,{
+    sketchFeatureId:'sketch.plate',eventId:'author.bridge.polar',
+    expectedRevision:current.document.revision,admission:'require_admissible',
+    sourceHoleId:'holeA',idPrefix:'boltCircle',
+    instances:4,pivotXmm:45,pivotYmm:40,sweepDegrees:360,
+  }));
+  assert.equal(circular.kind,'committed',JSON.stringify(circular));
+  assert.deepEqual(circular.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  current=runtime.reopen(runtime.save(circular.history));
+  const withPolarArray=await evaluate('bridge.native.polar');
+  assert.deepEqual(withPolarArray.plate.holes.map(h=>h.radius),[5,5,5,5,5]);
+  assert.ok(withPolarArray.volumeMm3<undoneArray.volumeMm3);
+  assert.notEqual(withPolarArray.sha256,undoneArray.sha256);
+  current=runtime.reopen(runtime.save(runtime.undo(current,['undo.bridge.polar'])));
+  const undonePolarArray=await evaluate('bridge.native.undo.polar');
+  assert.deepEqual(undonePolarArray.plate.holes.map(h=>h.radius),[5,5]);
+  assert.ok(Math.abs(undonePolarArray.volumeMm3-undoneArray.volumeMm3)<1e-5);
+
   console.log(JSON.stringify({status:'real_experimental_native_bridge_pass',
     first,second,changedHoles,undoneHoles,withThirdHole,afterUndoThirdHole,
-    withArray,undoneArray,
+    withArray,undoneArray,withPolarArray,undonePolarArray,
     redoAdmitted:true,independentStep:false,productionExact:false},null,2));
 } finally {session.cancel();await host.close();}

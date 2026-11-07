@@ -57,6 +57,16 @@ if(arrayHoles.kind==='committed') {
   void invalidated;
 }
 
+const polarHoles=runtime.patternCircularHoles(session,{
+  sketchFeatureId:'sketch.plate',eventId:'author.contract.polar',
+  expectedRevision:session.document.revision,sourceHoleId:'holeA',
+  idPrefix:'polar',instances:4,pivotXmm:45,pivotYmm:40,sweepDegrees:360,
+});
+if(polarHoles.kind==='committed') {
+  const invalidated:readonly string[]=polarHoles.invalidation.invalidatedFeatureIds;
+  void invalidated;
+}
+
 const delta:WorkflowInvalidation=runtime.diff(session,session);
 const direct:WorkflowInvalidation=diffWorkflowPlans(model.planProject(session.document),model.planProject(session.document));
 const exact:false=delta.exactReuseAllowed;
