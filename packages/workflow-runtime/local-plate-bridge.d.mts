@@ -2,6 +2,9 @@ import type {createExperimentalPlateWorkflow} from './experimental-plate.mjs';
 
 export declare const LOCAL_PLATE_BRIDGE_FORMAT:'intuit3d.local-plate-bridge';
 export declare const LOCAL_PLATE_BRIDGE_VERSION:1;
+/** Authenticated provider-configuration identity, not native execution evidence. */
+export declare const LOCAL_PLATE_CAPABILITY_FORMAT:'intuit3d.local-plate-bridge-capability';
+export declare const LOCAL_PLATE_CAPABILITY_VERSION:1;
 
 /** Node-only listener, bound to 127.0.0.1, with a per-launch secret. */
 export interface LocalPlateBridge {
