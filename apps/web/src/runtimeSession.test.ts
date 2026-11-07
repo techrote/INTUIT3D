@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  editModelDimension, inspectModelSession, modelDimensionValues,
+  editModelDimension, editModelHole, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelFeature,
   newModelPlateSession, previewModelProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
 } from './runtimeSession.ts';
@@ -86,4 +86,73 @@ test('new plate projects cannot silently reuse an existing semantic project iden
   assert.equal(previewModelProfile(inspectModelSession(second))?.profile.holes.length,2);
   const reopened=reopenModelSession(serializeModelSession(second));
   assert.equal(reopened.document.projectId,'workbench.plate.second');
+});
+
+test('individual hole diameter is one authoritative constraint edit with undo and archive replay',()=>{
+  const initial=newModelPlateSession();
+  const before=modelHoleValues(initial);
+  assert.deepEqual(before,{holeA:{x:35,y:40,diameter:12},holeB:{x:85,y:40,diameter:12}});
+  const result=editModelHole(initial,'holeA','diameter',16);
+  assert.equal(result.kind,'committed');
+  if(result.kind!=='committed')return;
+  assert.equal(modelHoleValues(result.history).holeA.diameter,16);
+  assert.equal(modelHoleValues(result.history).holeB.diameter,12);
+  assert.deepEqual(result.invalidation.changedFeatureIds,['sketch.plate']);
+  assert.deepEqual(result.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  assert.equal(result.sketchStatus,'analytic_profile_only');
+  assert.equal(result.report.exactGeometryAvailable,false);
+  assert.equal(previewModelProfile(result.report)?.profile.holes.find(x=>x.id==='holeA')?.radius,8);
+  const reopened=reopenModelSession(serializeModelSession(result.history));
+  assert.deepEqual(modelHoleValues(reopened),modelHoleValues(result.history));
+  assert.deepEqual(modelHoleValues(undoModelSession(reopened)),before);
+  assert.equal(modelHoleValues(redoModelSession(undoModelSession(reopened))).holeA.diameter,16);
+});
+
+test('dragging both hole center coordinates is one revision-fenced, undoable SKETCH transaction',()=>{
+  const h=newModelPlateSession();
+  const moved=moveModelHoleCenter(h,'holeA',45,42);
+  assert.equal(moved.kind,'committed');
+  if(moved.kind!=='committed')return;
+  assert.equal(moved.history.document.revision,h.document.revision+1);
+  assert.deepEqual(modelHoleValues(moved.history).holeA,{x:45,y:42,diameter:12});
+  assert.deepEqual(modelHoleValues(h).holeA,{x:35,y:40,diameter:12});
+  assert.equal(moved.sketchStatus,'analytic_profile_only');
+  const undone=undoModelSession(moved.history);
+  assert.deepEqual(modelHoleValues(undone).holeA,modelHoleValues(h).holeA);
+  assert.deepEqual(modelHoleValues(reopenModelSession(serializeModelSession(moved.history))).holeA,
+    {x:45,y:42,diameter:12});
+});
+
+test('invalid hole position refuses drag but numeric repair can retain unresolved authored intent',()=>{
+  const h=newModelPlateSession();
+  const refused=moveModelHoleCenter(h,'holeB',35,40);
+  assert.equal(refused.kind,'refused');
+  if(refused.kind!=='refused')return;
+  assert.equal(refused.notCommitted,true);
+  assert.equal(modelHoleValues(h).holeB.x,85);
+  const kept=editModelHole(h,'holeB','x',35,'preserve_unresolved');
+  assert.equal(kept.kind,'committed');
+  if(kept.kind!=='committed')return;
+  assert.equal(modelHoleValues(kept.history).holeB.x,35);
+  assert.equal(previewModelProfile(kept.report),null);
+  assert.equal(kept.report.features.find(x=>x.featureId==='cut')?.status,'blocked_dependency');
+  assert.equal(kept.report.exactGeometryAvailable,false);
+  assert.equal(modelHoleValues(undoModelSession(kept.history)).holeB.x,85);
+  assert.throws(()=>editModelHole(h,'holeB','diameter',0),/diameter must be positive/);
+});
+
+test('authored timeline controls move stable features without rewiring dependency evaluation',()=>{
+  const h=newModelPlateSession();
+  const original=inspectModelSession(h);
+  const moved=moveModelFeature(h,'cut','earlier');
+  const after=inspectModelSession(moved.history);
+  assert.deepEqual(after.authoredOrder,['sketch.plate','cut','plate','parameter.t']);
+  assert.deepEqual(after.executableOrder,original.executableOrder);
+  assert.deepEqual(moved.structuralInvalidation.changedFeatureIds,[]);
+  assert.deepEqual(moved.structuralInvalidation.invalidatedFeatureIds,[]);
+  assert.equal(after.features.find(x=>x.featureId==='plate')?.status,'preview_only');
+  assert.equal(after.features.find(x=>x.featureId==='cut')?.status,'pending_exact_provider');
+  assert.deepEqual(inspectModelSession(undoModelSession(moved.history)).authoredOrder,original.authoredOrder);
+  assert.deepEqual(inspectModelSession(reopenModelSession(serializeModelSession(moved.history))).authoredOrder,after.authoredOrder);
+  assert.throws(()=>moveModelFeature(h,'sketch.plate','earlier'),/No adjacent/);
 });
