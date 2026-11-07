@@ -391,13 +391,37 @@ async function main(){
   check(await evaluate("(async()=>{const a=await window.__nativeStepBlobs.at(-1).text();return a.includes('SYNTHETIC UI TEST, NOT OCCT')})()"),
     'cached STEP contents do not match the verified local HTTP fixture');
   await screenshot('native-06-live-session-build-and-download.png');
+  // Opt-in live rebuild must rebuild the edited authoritative revision without
+  // an extra click, retaining bytes but never automatically downloading them.
+  const beforeAutoCount=await evaluate('window.__nativeStepBlobs.length');
+  const beforeAutoStep=await evaluate("(async()=>await window.__nativeStepBlobs.at(-1).text())()");
+  check(await evaluate("(() => {const x=document.querySelector('[data-testid=runtime-native-auto-rebuild]');x.click();return x.checked})()"),
+    'cannot enable live native rebuild');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-dimension-thickness]');e.focus();e.select();return document.activeElement===e})()"),
+    'cannot focus retrospective thickness for live native rebuild');
+  await send('Input.insertText',{text:'17'});await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='17'"),
+    'live edit did not commit authoritative 17 mm thickness');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'live edit did not immediately revoke old native receipt');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-evidence]')) && !document.querySelector('[data-testid=runtime-native-download-cached]').disabled"),
+    'live RUNTIME rebuild did not publish the newly admitted revision');
+  check(await evaluate('window.__nativeStepBlobs.length')===beforeAutoCount,
+    'automatic native evaluation unexpectedly downloaded a STEP file');
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-native-download-cached]').click();return true})()"),
+    'live-rebuilt current STEP cannot be explicitly downloaded');
+  await eventually(()=>evaluate('window.__nativeStepBlobs.length==='+String(beforeAutoCount+1)),
+    'live-rebuilt STEP explicit download');
+  check(await evaluate("(async()=>await window.__nativeStepBlobs.at(-1).text())()")!==beforeAutoStep,
+    'live reconstruction reused the previous-revision STEP payload');
+  await screenshot('native-07-auto-native-rebuild-after-dimension-edit.png');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder, NOT OCP/native/STEP interoperability',
-    downloadedFiles:3,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,realPhysicalGeometry:false,
+    downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,realPhysicalGeometry:false,
     independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png'
+      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
