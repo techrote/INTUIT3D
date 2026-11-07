@@ -267,7 +267,7 @@ async function main(){
   // journalled or exported. Pointer coordinates use the actual SVG CTM.
   await pointerClick('runtime-circle-tool');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-circle-stage]'))"),'circle tool not armed');
-  const beforeCircle=Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\\d+/)?.[0]);
+  const beforeCircle=Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
   const clickSketchPoint=async(x,y)=>{
     const pos=await evaluate(`(() => {
       const svg=document.querySelector('[data-testid=runtime-sketch]');
@@ -283,13 +283,13 @@ async function main(){
   };
   await clickSketchPoint(60,65);
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-circle-stage]')?.textContent?.includes('Click radius')"),'first circle click did not acquire centre');
-  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\\d+/)?.[0])===beforeCircle,
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===beforeCircle,
     'first circle click incorrectly journalled incomplete intent');
   await screenshot('native-00b-circle-draft.png');
   await clickSketchPoint(65,65);
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===3"),
     'two-click circle was not admitted into the authoritative sketch');
-  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\\d+/)?.[0])===beforeCircle+1,
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===beforeCircle+1,
     'two-click circle did not create exactly one undoable document revision');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'sketch-drawn circle falsely promoted STEP/exact state');
