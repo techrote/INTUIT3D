@@ -130,12 +130,12 @@ async function main(){
     'individual hole edit incorrectly changed second hole');
   check(await evaluate("(() => {document.querySelector('[data-testid=runtime-move-cut-earlier]').click();return true})()"),
     'cannot move authored cut on timeline');
-  check(await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-order]').innerText;return s.indexOf('cut')<s.indexOf('plate')})()"),
+  check(await evaluate("(() => {const ids=[...document.querySelectorAll('[data-testid=runtime-order] .timeline-event')].map(x=>x.children[1]?.textContent);return ids.indexOf('cut')<ids.indexOf('plate')})()"),
     'authoritative timeline did not move cut earlier');
   // Actual keyboard shortcut, with button rather than input focused.
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
-  await eventually(()=>evaluate("(() => {const s=document.querySelector('[data-testid=runtime-order]').innerText;return s.indexOf('plate')<s.indexOf('cut')})()"),'timeline undo from keyboard');
+  await eventually(()=>evaluate("(() => {const ids=[...document.querySelectorAll('[data-testid=runtime-order] .timeline-event')].map(x=>x.children[1]?.textContent);return ids.indexOf('plate')<ids.indexOf('cut')})()"),'timeline undo from keyboard');
   check(await evaluate("(() => {document.querySelector('[data-testid=runtime-mode-sketch]').click();return true})()"),'cannot enter sketch viewport');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch-hole-holeA]'))"),'sketch handle not rendered');
   const drag=await evaluate(`(() => {
