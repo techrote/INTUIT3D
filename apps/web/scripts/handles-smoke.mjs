@@ -487,7 +487,7 @@ async function main() {
   await key('e','KeyE',69);
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-combo]')?.textContent.includes('Cut circular holes through body.plate')"),
     'E combo did not transition from extrusion to explicit target-body cut');
-  check(await evaluate("!document.querySelector('[data-testid=runtime-feature-cut]') && document.querySelector('[data-testid=runtime-feature-combo]')?.textContent.includes('Native provider')"),
+  check(await evaluate("!document.querySelector('[data-testid=runtime-feature-cut]') && document.querySelector('[data-testid=runtime-feature-combo]')?.textContent.includes('native provider')"),
     'E cut combo claimed native geometry or authored before confirmation');
   await screenshot('16a-e-combo-cut.png');
   check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-feature-combo-confirm]');b?.click();return !!b})()"),
