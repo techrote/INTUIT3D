@@ -94,8 +94,8 @@ export function removeSelectedBodyOperation(history,request,services){
   const s=header(history,request,['format','version','expectedProjectId',
     'expectedRevision','units','frame','targetBodyId','featureId',
     'expectedDependents','mode','confirmCascade','eventIds'],services);
-  const {features,impact}=selection(history,request,s);
   distinct(request.expectedDependents,'expectedDependents');
+  const {features,impact}=selection(history,request,s);
   if(!same(request.expectedDependents,impact.transitiveDependents))
     fail('selection or downstream dependencies have changed');
   if(!['reject_if_referenced','keep_dependents_pending',
@@ -111,8 +111,8 @@ export function removeSelectedBodyOperation(history,request,services){
   distinct(request.eventIds,'eventIds');
   const victims=request.mode==='cascade_descendants'?
     impact.cascadeIds:[request.featureId];
-  if(!same(request.eventIds.length?[...request.eventIds]:[],request.eventIds)||
-     request.eventIds.length!==victims.length) fail('wrong number of event IDs');
+  if(request.eventIds.length!==victims.length)
+    fail('wrong number of event IDs');
   const modelRequest={format:MODEL_FORMAT,version:1,action:'remove',
     expectedProjectId:request.expectedProjectId,
     expectedRevision:request.expectedRevision,featureId:request.featureId,
