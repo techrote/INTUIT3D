@@ -13,7 +13,7 @@ import * as discovery from '@intuit3d/sketch/profile-discovery/v1';
 import { createWorkflowRuntime } from '@intuit3d/workflow-runtime';
 import type { UndoHistory } from '@intuit3d/model/transactions';
 import type { RuntimeReport, RuntimeFeature } from '@intuit3d/workflow-runtime';
-import type { SketchDocument, SketchConstraint, PlateProfile } from '@intuit3d/sketch';
+import type { SketchDocument, PlateProfile } from '@intuit3d/sketch';
 
 export const runtime = createWorkflowRuntime({ model, transactions, bindings, dimensions, archive, sketch, discovery });
 export type ModelSession = UndoHistory;
