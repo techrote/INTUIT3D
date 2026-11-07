@@ -47,6 +47,10 @@
     "./parameter-edit": {
       "types": "./src/parameter-edit.ts",
       "default": "./src/parameter-edit.ts"
+    },
+    "./semantic-selection": {
+      "types": "./src/semantic-selection.ts",
+      "default": "./src/semantic-selection.ts"
     }
   },
   "scripts": {
