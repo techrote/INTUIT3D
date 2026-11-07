@@ -275,17 +275,17 @@ test('one-call reopen and native rebuild refuses unconfirmed replacement; rebuil
 test('hung native attempt times out promptly, retains same-archive STEP, and recovers without late publication',async()=>{
   let history=initialProject(),calls=0,releaseHung;
   const hung=new Promise(resolve=>{releaseHung=resolve;});
-  const receipt=options=>({kind:'experimental_plate_evaluated',
+  const receipt=(options,attempt)=>({kind:'experimental_plate_evaluated',
     exactAuthority:false,independentInteroperability:false,
     source:{projectId:history.document.projectId,revision:history.document.revision},
     result:{requestId:options.requestId,cutFeatureId:options.cutFeatureId},
-    step:{filename:'synthetic.step',bytes:new Uint8Array([calls]),sha256:'synthetic.'+calls}});
+    step:{filename:'synthetic.step',bytes:new Uint8Array([attempt]),sha256:'synthetic.'+attempt}});
   const session=createLivePlateSession({runtime,
     readCurrentHistory:()=>history,publishHistory:h=>{history=h;},
     evaluateImpl:async options=>{
-      calls++;
-      if(calls===2) await hung; // Deliberately ignores AbortSignal.
-      return receipt(options);
+      const attempt=++calls;
+      if(attempt===2) await hung; // Deliberately ignores AbortSignal.
+      return receipt(options,attempt);
     }});
   const initial=await session.evaluate({requestId:'deadline.initial'});
   assert.equal(initial.kind,'experimental_plate_evaluated');
