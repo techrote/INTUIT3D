@@ -48,6 +48,25 @@ def expected_volume(thickness: int) -> float:
     return (120 * 80 - 70 * 50 - 10 * 12) * thickness - math.pi * 25 * 3
 
 
+def expected_centroid(thickness: int) -> tuple[float, float, float]:
+    """Independent first-moment oracle for occupied material, in millimetres.
+
+    The source polygon is the 120x80 centred stock minus the 70x50 notch
+    at y=15. Remove a 10x12 through-window at (47,10) and a 3mm-deep
+    radius-5 blind pocket at (-47,10) from the *upper* surface.
+    """
+    volume = expected_volume(thickness)
+    through = 120.0 * thickness
+    blind = math.pi * 25.0 * 3.0
+    stock = (120.0 * 80.0 - 70.0 * 50.0) * thickness
+    return (
+        (-47.0 * through + 47.0 * blind) / volume,
+        (-70.0 * 50.0 * 15.0 * thickness - 10.0 * through - 10.0 * blind) / volume,
+        ((stock - through) * thickness / 2.0
+         - blind * (thickness - 1.5)) / volume,
+    )
+
+
 def rays(thickness: int) -> list[tuple[str, float, float, float | None]]:
     """Model-coordinate ray oracle; no CAD import or native receipt dependency."""
     require(thickness in (8, 12), "unsupported U-bracket fixture thickness")
@@ -118,7 +137,8 @@ def parse_receipt(stdout: str, thickness: int) -> dict:
     summary = dict(pairs)
     require(len(summary) == len(pairs) and set(summary) == {
         "solids", "source_unit", "imported_exact", "tris", "open_edges",
-        "volume_mm3", "expected_mm3", "warnings",
+        "volume_mm3", "expected_mm3", "centroid_x_mm",
+        "centroid_y_mm", "centroid_z_mm", "warnings",
     }, "duplicate, unsupported or missing independent solid fields")
     require(summary["solids"] == "1" and summary["source_unit"] in
             ("millimetre", "millimeter") and summary["imported_exact"] == "true"
@@ -127,6 +147,7 @@ def parse_receipt(stdout: str, thickness: int) -> dict:
     try:
         triangles = int(summary["tris"])
         measured, claimed = float(summary["volume_mm3"]), float(summary["expected_mm3"])
+        centroid = tuple(float(summary[f"centroid_{axis}_mm"]) for axis in "xyz")
     except ValueError as exc:
         raise Rejected("invalid independent U-bracket volume") from exc
     oracle = expected_volume(thickness)
@@ -134,8 +155,15 @@ def parse_receipt(stdout: str, thickness: int) -> dict:
             and abs(claimed-oracle) <= 1e-5 and
             abs(measured-oracle) <= oracle*.01,
             "independently reconstructed U-bracket volume outside 1%")
+    expected_centre = expected_centroid(thickness)
+    require(all(math.isfinite(p) and abs(p - e) <= .15
+                for p, e in zip(centroid, expected_centre)),
+            "independently imported U-bracket material centroid mismatches source fixture")
     return dict(importedExactBRep=True, measuredVolumeMm3=measured,
-                expectedVolumeMm3=oracle, rayCount=len(observations),
+                expectedVolumeMm3=oracle,
+                measuredCentroidMm=dict(zip("xyz", centroid)),
+                expectedCentroidMm=dict(zip("xyz", expected_centre)),
+                rayCount=len(observations),
                 triangles=triangles, rays=observations, sourceUnit=summary["source_unit"])
 
 
