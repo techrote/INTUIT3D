@@ -140,8 +140,14 @@ if(initialMapping && finalMapping) {
     if(beforePhysical.kind==='experimental_physical_only'&&
        afterPhysical.kind==='experimental_physical_only'){
      assert.notEqual(beforePhysical.stepSha256,afterPhysical.stepSha256);
-     assert.ok(beforePhysical.observed.source.volumeMm3 <
-               afterPhysical.observed.source.volumeMm3);
+     for(const [result,expected] of [[beforePhysical,33825],[afterPhysical,50575]]) {
+       assert.equal(result.observed.source.solidCount,1);
+       assert.equal(result.observed.stepReadback.solidCount,1);
+       assert.ok(Math.abs(result.observed.source.volumeMm3-expected)<1e-6,
+         'OCCT8 B-rep mass differs from independent analytic expectation');
+       assert.ok(Math.abs(result.observed.stepReadback.volumeMm3-expected)<1e-6,
+         'pinned OCCT8 STEP readback mass differs from intended solid');
+     }
     }
   }catch(e){if(e?.code!=='ENOENT' && e?.code!=='EACCES')throw e;}
  }
@@ -163,6 +169,24 @@ if(initialMapping && finalMapping) {
  const proof=makeSelection(reopened,raw);
  assert.throws(()=>mapAdmittedChainToPinnedL(raw,proof,reopened.document.revision));
 }
+// A source sketch removed in a separate model revision may not be reused in a
+// new native request. INTENT may refuse the removal itself while dependent.
+let deletedSourceOutcome='rejected_by_intent';
+try {
+ const removed=runtime.commit(reopened,[{eventId:'remove.pocket.source',
+   type:'feature.remove',featureId:'sketch.pocket'}],
+   reopened.document.revision);
+ assert.equal(model.featuresOf(removed.document).some(f=>f.id==='sketch.pocket'),false);
+ if(await loadKernel67()) {
+  const kernel=await loadKernel67();
+  assert.throws(()=>kernel.chain.requestFromRuntimeBodyCutChain(
+    removed,'body.bracket',{runtime,model,requestId:'cad.deleted',exportStep:true}));
+ }
+ deletedSourceOutcome='rejected_by_runtime_kernel';
+} catch(e) {
+ if(e instanceof assert.AssertionError)throw e;
+ if(!/model|runtime|commit|dependent|feature|journal|invalid|cannot/i.test(String(e)))throw e;
+}
 await writeFile(join(out,'authoritative-history.json'),runtime.save(reopened),{flag:'wx'});
 await writeFile(join(out,'manifest.json'),JSON.stringify({
  sourceMain:SOURCE_MAIN,sourceKernel67:SOURCE_KERNEL,pinnedOcctSource:SOURCE_OCCT,
@@ -172,7 +196,7 @@ await writeFile(join(out,'manifest.json'),JSON.stringify({
  expectedVolume8Pocket3:33825,expectedVolume12Pocket5:50575,
  initialMapping,finalMapping,beforePhysical,afterPhysical,
  pocketInvalidation:pocketEdit.invalidation,thicknessInvalidation:edit.invalidation,
- pendingExact:true,exactAuthority:false,independentInteroperability:false
+ deletedSourceOutcome,pendingExact:true,exactAuthority:false,independentInteroperability:false
 },null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify({contractExperiment:'DONE',pinnedSource:SOURCE_KERNEL,
  semanticUndoRedoArchive:'passed',mapping:finalMapping?'admitted':'missing_unmerged_PR67_source',
