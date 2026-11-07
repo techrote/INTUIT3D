@@ -155,7 +155,7 @@ export async function runNonOcctPlateProbe({probeExecutable,expectedProbeSha256,
     return Object.freeze({format:NONOCCT_STEP_PROBE_FORMAT,
       version:NONOCCT_STEP_PROBE_VERSION,kind:'executed_nonocct_plate_sample',
       source:{...source},stepSha256:step.sha256,probeSha256:expectedProbeSha256,
-      transcriptSha256:sha256(Buffer.from(transcript,'utf8')),sample,
+      transcriptSha256:sha256(Buffer.from(transcript,'utf8')),rawTranscript:transcript,sample,
       exactAuthority:false,independentInteroperability:false,
       note:'External probe execution is source/sample evidence, not general STEP or product exact authority. Independent build provenance must be verified separately.'});
   } finally { await rm(folder,{recursive:true,force:true}); }
