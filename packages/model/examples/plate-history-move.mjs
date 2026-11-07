@@ -16,7 +16,7 @@ const make = (id, kind, dependsOn, writeTargets, payload) => ({
 });
 let document = newProject('project.plate.holes.timeline');
 document = commitEvent(document, make('parameter.thickness','parameter',[],[],
-  { thicknessMm: 8 }));
+  { parameter: { name:'thickness',unit:'mm', expression: {op:'literal',value:8,unit:'mm'} } }));
 document = commitEvent(document, make('feature.sketch','sketch',[],['sketch.plate'],
   { widthMm: 120,heightMm: 80,holeCentersMm:[[30,40],[90,40]],holeRadiusMm: 6 }));
 document = commitEvent(document, make('feature.cut','cut',['feature.extrude'],
@@ -40,7 +40,7 @@ assert.deepEqual(planProject(session.document).executableOrder, [
 ]);
 session = commitUndoableTransaction(session,[{
   eventId:'event.edit.thickness',type:'feature.edit',
-  featureId:'parameter.thickness',patch:{payload:{thicknessMm:12}},
+  featureId:'parameter.thickness',patch:{payload:{parameter:{name:'thickness',unit:'mm',expression:{op:'literal',value:12,unit:'mm'}}}},
 }]);
 const delta = planIncrementalEvaluation(moved.history.document,session.document);
 assert.deepEqual(delta.readyToEvaluate,[
@@ -48,9 +48,9 @@ assert.deepEqual(delta.readyToEvaluate,[
 ]);
 assert.deepEqual(delta.unchangedReady,['feature.sketch','feature.annotation']);
 session = undoTransaction(session,['event.undo.thickness']);
-assert.equal(featuresOf(session.document)[0].payload.thicknessMm,8);
+assert.equal(featuresOf(session.document)[0].payload.parameter.expression.value,8);
 session = redoTransaction(session,['event.redo.thickness']);
-assert.equal(featuresOf(session.document)[0].payload.thicknessMm,12);
+assert.equal(featuresOf(session.document)[0].payload.parameter.expression.value,12);
 session = deserializeModelArchive(
   serializeModelArchive(createModelArchive(session))
 ).history;
@@ -60,7 +60,7 @@ console.log(JSON.stringify({
   projectId:session.document.projectId,revision:session.document.revision,
   authoredOrder:planProject(session.document).authoredOrder,
   executableOrder:planProject(session.document).executableOrder,
-  editedThicknessMm:featuresOf(session.document)[0].payload.thicknessMm,
+  editedThicknessMm:featuresOf(session.document)[0].payload.parameter.expression.value,
   readyToEvaluateAfterThicknessEdit:delta.readyToEvaluate,
   unchangedReadyAfterThicknessEdit:delta.unchangedReady,
   geometryProvenance:'model-intent-only; native STEP not executed',
