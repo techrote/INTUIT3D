@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelHoleGroup, moveModelFeature, removeModelHole,
-  makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, patternModelHoles, previewModelProfile, redoModelSession, resizeModelHoleLayout,
+  editNamedThicknessParameter, inspectNamedThicknessParameter, makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, patternModelHoles, previewModelProfile, redoModelSession, resizeModelHoleLayout,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
 } from './runtimeSession.ts';
 
@@ -360,4 +360,38 @@ test('Ctrl-selected hole centres translate together as one admitted journal edit
     'an analytically solved but out-of-plate group is not a usable cutting profile');
   assert.deepEqual(modelHoleValues(initial),before,'rejected group move cannot corrupt source');
   assert.throws(()=>moveModelHoleGroup(initial,['holeA','holeA'],3,0),/distinct/);
+});
+
+test('atomic named thickness rename and value preserve IDs, grip binding, undo and archive',()=>{
+  const before=newModelPlateSession('workbench.parameter.test');
+  assert.deepEqual(inspectNamedThicknessParameter(before),
+    {featureId:'parameter.t',name:'thickness',valueMm:10,literalEditable:true});
+  const changed=editNamedThicknessParameter(before,'plateThickness',12);
+  assert.equal(changed.document.revision,before.document.revision+1);
+  assert.equal(changed.undoStack.length,before.undoStack.length+1);
+  assert.equal(inspectNamedThicknessParameter(changed)?.name,'plateThickness');
+  assert.equal(modelDimensionValues(changed).thickness,12);
+  const invalidated=runtime.diff(before,changed).invalidatedFeatureIds;
+  assert.ok(invalidated.includes('plate')&&invalidated.includes('cut'));
+  assert.equal(state(inspectModelSession(changed),'cut'),'pending_exact_provider');
+  assert.equal(inspectModelSession(changed).exactGeometryAvailable,false);
+  const reopened=reopenModelSession(serializeModelSession(changed));
+  assert.equal(inspectNamedThicknessParameter(reopened)?.name,'plateThickness');
+  const undone=undoModelSession(reopened);
+  assert.equal(inspectNamedThicknessParameter(undone)?.name,'thickness');
+  assert.equal(modelDimensionValues(undone).thickness,10);
+  const redone=redoModelSession(undone);
+  assert.equal(inspectNamedThicknessParameter(redone)?.name,'plateThickness');
+  const grip=editModelDimension(redone,'thickness',13);
+  assert.equal(inspectNamedThicknessParameter(grip)?.name,'plateThickness',
+    '3D grip must not revert a user-authored parameter rename');
+  assert.equal(modelDimensionValues(grip).thickness,13);
+  const snapshot=serializeModelSession(grip);
+  assert.throws(()=>editNamedThicknessParameter(grip,'invalid name',15),/malformed|inspector/i);
+  assert.throws(()=>editNamedThicknessParameter(grip,'plateThickness',0),/finite and positive/);
+  assert.throws(()=>editNamedThicknessParameter(grip,'plateThickness',13),/does not change/);
+  assert.equal(serializeModelSession(grip),snapshot);
+  const frozen=makeModelThicknessIndependent(grip).history;
+  assert.equal(inspectNamedThicknessParameter(frozen),null);
+  assert.equal(modelDimensionValues(frozen).thickness,13);
 });
