@@ -20,6 +20,7 @@ import tarfile
 import tempfile
 
 from qualify import COMMIT, VERSION, TOOLKITS, compare_geometry, verify_prefix
+from reproducible_archive import ROOT_NAME as ARCHIVE_ROOT_NAME, write_archive
 
 BRIDGE_FILES = ("occt8_bridge.py", "plate_envelope.py", "protocol.py",
                 "process_supervision.py")
@@ -269,15 +270,14 @@ def build(args: argparse.Namespace) -> dict:
             capture_output=True, text=True, check=False)
         require(verifier.returncode == 0, "bundle checksum verification failed: "
                 + verifier.stdout + verifier.stderr)
-        with tarfile.open(archive, "w:gz", dereference=False) as tar:
-            tar.add(output, arcname=output.name)
+        write_archive(output, archive)
         # A source-prefix-relative smoke test does not prove that the
         # *distributed* archive works. Extract the exact published bytes into
         # a fresh path and require fresh 8/12mm real C++ / STEP replay.
         with tempfile.TemporaryDirectory(prefix="intuit-occt801-archive-") as temp:
             with tarfile.open(archive, "r:gz") as packaged:
                 packaged.extractall(path=temp, filter="data")
-            extracted = Path(temp) / output.name
+            extracted = Path(temp) / ARCHIVE_ROOT_NAME
             actual = subprocess.run(
                 [sys.executable, str(extracted / "selftest.py")],
                 cwd=temp, capture_output=True, text=True, timeout=210,
