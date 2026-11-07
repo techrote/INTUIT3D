@@ -79,6 +79,10 @@
     "./local-occt8-orthogonal-profile-provider": {
       "types": "./src/local-occt8-orthogonal-profile-provider.d.mts",
       "node": "./src/local-occt8-orthogonal-profile-provider.mjs"
+    },
+    "./runtime-occt8-orthogonal-profile-provider": {
+      "types": "./src/runtime-occt8-orthogonal-profile-provider.d.mts",
+      "node": "./src/runtime-occt8-orthogonal-profile-provider.mjs"
     }
   },
   "scripts": {
