@@ -161,7 +161,8 @@ export async function runExperimentalPlate(requestInput, {
       if (createHash('sha256').update(staged).digest('hex') !== sha256)
         return unresolved(request, 'requires_reconciliation');
       publishOperation = 'sync-stage';
-      const handle = await fs.open(stage, 'r');
+      // Windows FlushFileBuffers requires a writable handle; 'r' fsync => EPERM.
+      const handle = await fs.open(stage, 'r+');
       try { await handle.sync(); } finally { await handle.close(); }
       if (signal?.aborted) return unresolved(request, 'cancelled');
       if (revisionOf(readCurrentRevision) !== request.revision)
