@@ -32,6 +32,29 @@ For one independently supplied local project:
       --step-output /tmp/new-cxx-plate.step \
       < native/examples/plate-two-holes.request.json
 
+For an additional **independent implementation of a bounded STEP plate reader**,
+pass `--part21-step-audit` to the same command (it may be combined with
+`--cross-version-step-audit`). The new `native/occt8/part21_oracle.py`
+runs as a separate deadline-supervised standard-library process. It parses
+the **actual ISO 10303-21 file**, checks one closed manifold B-rep solid,
+two-sided edge usage, explicit millimetre units, vertex envelope, vertical
+cylindrical surfaces and both bore-circle boundaries. It computes a
+plate-subset analytic volume from these read-back entities, then binds the
+report to the exact STEP SHA-256 before publication. Executable standalone
+usage, after generating a STEP and matching plate request:
+
+    python3 native/occt8/part21_oracle.py \
+      --step /tmp/new-cxx-plate.step \
+      --intent native/examples/plate-two-holes.request.json \
+      --report /tmp/plate-part21.json
+
+This is **not** a general-purpose STEP reader or full CAD interoperability
+certification; it cannot independently integrate arbitrary trimmed curved
+surfaces, test other CAD applications or establish OCCT 8.0.1 C++ execution.
+The typed Node contract exposes `part21Audit` separately, still with
+`exactAuthority:false` and `independentInteroperability:false`. The
+existing optional cross-version OCP verification remains distinct.
+
 The optional `--cross-version-step-audit` flag requires the pinned **OCP 7.9.3.1**
 Python dependency. It loads the actual staged STEP file in a *second isolated
 process*, verifies the measured geometry, independent arithmetic, authored
