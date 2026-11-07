@@ -100,9 +100,11 @@ class Occt8BridgeTests(unittest.TestCase):
                     return subprocess.CompletedProcess(args,0,b"",b"")
                 with patch("occt8_bridge.run_isolated_worker",side_effect=run):
                     result=execute(request,worker=worker,step_output=destination,
-                                   cross_version_audit=True,timeout=25)
+                                   cross_version_audit=True,part21_audit=True,timeout=25)
                 self.assertEqual(result["status"],"validated_exact",result)
                 self.assertEqual(result["stepVerification"],"occt-7.9.3.1-separate-process")
+                self.assertEqual(result["part21Audit"]["kind"],"part21-plate-structural-v1")
+                self.assertEqual(result["part21Audit"]["sha256"],result["stepSha256"])
                 self.assertGreater(destination.stat().st_size,256)
                 self.assertEqual(result["stepSha256"],
                                  hashlib.sha256(destination.read_bytes()).hexdigest())
@@ -141,7 +143,7 @@ class Occt8BridgeTests(unittest.TestCase):
                 return subprocess.CompletedProcess(args,0,b"",b"")
             with patch("occt8_bridge.run_isolated_worker",side_effect=run):
                 result=execute(FIXTURE,worker=worker,step_output=destination,
-                               cross_version_audit=True,timeout=25)
+                               cross_version_audit=True,part21_audit=True,timeout=25)
             self.assertEqual(result["status"],"requires_reconciliation",result)
             self.assertFalse(destination.exists())
 
