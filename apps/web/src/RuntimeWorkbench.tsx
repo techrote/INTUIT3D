@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
   addModelHole, createModelExtrusion, createModelThroughCut, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelSketchDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, moveModelFeature, moveModelHoleCenter, moveModelHoleGroup, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
-  makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, newModelSketchSession, previewModelProfile, previewModelSketchProfile, redoModelSession,
+  editNamedThicknessParameter, inspectNamedThicknessParameter, makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, newModelSketchSession, previewModelProfile, previewModelSketchProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
 } from './runtimeSession';
@@ -157,6 +157,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const values=useMemo(()=>plateActive?modelDimensionValues(history):null,[history,plateActive]);
   const sketchValues=useMemo(()=>modelSketchDimensionValues(history),[history]);
   const thicknessBinding=useMemo(()=>plateActive?modelThicknessBinding(history):'independent',[history,plateActive]);
+  const namedThickness=useMemo(()=>plateActive?inspectNamedThicknessParameter(history):null,[history,plateActive]);
+  const [namedParameterDraft,setNamedParameterDraft]=useState({name:'thickness',value:'10'});
+  useEffect(()=>{
+    if(namedThickness)setNamedParameterDraft({name:namedThickness.name,value:String(namedThickness.valueMm)});
+  },[namedThickness]);
   const holes=useMemo(()=>modelHoleValues(history),[history]);
   const displayedActiveHole=activeHole&&Object.hasOwn(holes,activeHole)?activeHole:null;
   const layoutIds=layoutSelected.filter(id=>Object.hasOwn(holes,id));
@@ -218,6 +223,15 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       acceptHistory(next);
       setMessage(`Revision ${next.document.revision}: changed ${field}; invalidated ${invalidation.invalidatedFeatureIds.join(' → ') || 'none'} (no exact geometry reused).`);
     } catch(error) {setMessage(error instanceof Error?error.message:'Dimension edit failed');}
+  };
+  const applyNamedParameter=()=>{
+    try{
+      const prior=liveHistory.current;
+      const next=editNamedThicknessParameter(prior,namedParameterDraft.name.trim(),Number(namedParameterDraft.value));
+      const invalidation=runtime.diff(prior,next);
+      acceptHistory(next);
+      setMessage(`Named parameter committed as ONE undoable INTENT event; invalidated ${invalidation.invalidatedFeatureIds.join(' → ')||'no dependent geometry'}. Native STEP revoked; rebuild required.`);
+    }catch(e){setMessage('Named parameter edit refused: '+(e instanceof Error?e.message:String(e)));}
   };
   const makeIndependent=()=>{
     try{
@@ -709,9 +723,32 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             <strong>Extrusion thickness · {thicknessBinding==='named_parameter'?'linked parameter':'independent dimension'}</strong>
             <span data-testid="runtime-thickness-link-state">
               {thicknessBinding==='named_parameter'
-                ? 'Linked: thickness (parameter.t) → plate.thicknessMm'
+                ? `Linked: ${namedThickness?.name??'unknown'} (parameter.t) → plate.thicknessMm`
                 : 'Independent: plate.thicknessMm is an authored numeric dimension'}
             </span>
+            {namedThickness&&<div className="runtime-hole-add" data-testid="runtime-named-parameter-editor">
+              <strong>Authoritative named source · {namedThickness.featureId}</strong>
+              <label className="runtime-native-field">
+                <span>Parameter name</span>
+                <input type="text" data-testid="runtime-parameter-name" aria-label="Thickness parameter name"
+                  autoComplete="off" spellCheck={false} value={namedParameterDraft.name}
+                  onChange={e=>setNamedParameterDraft(d=>({...d,name:e.target.value}))}/>
+              </label>
+              <label className="runtime-native-field">
+                <span>Value · mm</span>
+                <input type="number" step="any" data-testid="runtime-parameter-value"
+                  aria-label="Thickness parameter value in mm" value={namedParameterDraft.value}
+                  onChange={e=>setNamedParameterDraft(d=>({...d,value:e.target.value}))}
+                  disabled={!namedThickness.literalEditable}/>
+              </label>
+              <button type="button" className="ribbon-button runtime-native-export"
+                data-testid="runtime-parameter-apply"
+                disabled={!!pendingImport||!namedThickness.literalEditable||
+                  (namedParameterDraft.name===namedThickness.name&&
+                   namedParameterDraft.value===String(namedThickness.valueMm))}
+                onClick={applyNamedParameter}>Apply parameter name + value</button>
+              <p className="microcopy">One revision-fenced INTENT rename/value edit preserves stable parameter and body IDs. A renamed source stays renamed when the extrusion grip moves. Nonliteral formulas are never overwritten here.</p>
+            </div>}
             <button type="button" className="ribbon-button runtime-native-export"
               data-testid="runtime-freeze-thickness"
               disabled={thicknessBinding!=='named_parameter' || !!pendingImport}
