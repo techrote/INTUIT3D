@@ -15,6 +15,10 @@
     "./sketch/v1": {
       "types": "./sketch.d.mts",
       "default": "./sketch.mjs"
+    },
+    "./svg/v1": {
+      "types": "./svg.d.mts",
+      "default": "./svg.mjs"
     }
   },
   "scripts": {

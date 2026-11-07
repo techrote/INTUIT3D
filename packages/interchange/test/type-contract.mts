@@ -1,4 +1,4 @@
-import {importAsciiDxf,exportAsciiDxf,toLinearSketch,toArcSketch,exportSolvedSketch} from '../index.mjs';
+import {importAsciiDxf,exportAsciiDxf,toLinearSketch,toArcSketch,exportSolvedSketch,renderDxfSketchSvg} from '../index.mjs';
 import {solveSketch} from '../../sketch/index.mjs';
 import {solveArcSketch} from '../../sketch/arc-constraints.mjs';
 import type {DxfSketch,DxfEntity,DxfArc} from '../index.mjs';
@@ -10,4 +10,5 @@ const a=toArcSketch(original);
 const exported:DxfSketch=exportSolvedSketch(l,l.document,solveSketch(l.document));
 const exportedArc:DxfSketch=exportSolvedSketch(a,a.document,solveArcSketch(a.document));
 const bytes:string=exportAsciiDxf(exported);
-void [bytes,exportedArc];
+const svg:string=renderDxfSketchSvg(exported,{paddingMm:5,strokeWidthMm:0.3});
+void [bytes,svg,exportedArc];
