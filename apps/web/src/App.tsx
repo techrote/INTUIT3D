@@ -12,6 +12,7 @@ import {
 } from './recoveryFence';
 import { SketchViewport } from './components/SketchViewport';
 import { SolidViewport } from './components/SolidViewport';
+import { RuntimeWorkbench } from './RuntimeWorkbench';
 import './styles.css';
 
 type ViewMode = 'solid' | 'sketch';
@@ -69,6 +70,7 @@ interface Action {
 
 export default function App() {
   const [workspace, setWorkspace] = useState<Workspace>(() => newWorkspace());
+  const [modelBacked, setModelBacked] = useState(false);
   const [view, setView] = useState<ViewMode>('solid');
   const [bottomTab, setBottomTab] = useState<BottomTab>('chronology');
   const [selected, setSelected] = useState('extrude-plate');
@@ -224,6 +226,8 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [recovery.kind, save, stepRedo, stepUndo]);
 
+  if (modelBacked) return <RuntimeWorkbench onClose={() => setModelBacked(false)} />;
+
   return (
     <div className="app-shell">
       <header className="titlebar">
@@ -240,7 +244,7 @@ export default function App() {
         <div className="ribbon-group"><span className="ribbon-label">WORKSPACE</span><button className={view === 'solid' ? 'ribbon-button active' : 'ribbon-button'} onClick={() => setView('solid')}><Glyph name="cube" /> Solid</button><button className={view === 'sketch' ? 'ribbon-button active' : 'ribbon-button'} onClick={() => setView('sketch')}><Glyph name="sketch" /> Sketch</button></div>
         <div className="ribbon-group"><span className="ribbon-label">HISTORY</span><button className="ribbon-button" onClick={stepUndo} disabled={!workspace.past.length}><Glyph name="undo" /> Undo</button><button className="ribbon-button" onClick={stepRedo} disabled={!workspace.future.length}><Glyph name="redo" /> Redo</button></div>
         <div className="ribbon-group advanced"><span className="ribbon-label">EXPERIMENT</span><button className="ribbon-button" onClick={() => dispatch({ kind: 'pending-reference', enabled: !workspace.document.futureReference })}><Glyph name="plus" /> {workspace.document.futureReference ? 'Remove datum' : 'Future datum'}</button></div>
-        <div className="toolstrip-right"><span className="stage-chip">ALPHA · PREVIEW ONLY</span><span className="avatar">I3</span></div>
+        <div className="toolstrip-right"><button className="ribbon-button runtime-entry" data-testid="enter-model-runtime" onClick={() => setModelBacked(true)}>Model-backed plate workflow</button><span className="stage-chip">ALPHA · PREVIEW ONLY</span><span className="avatar">I3</span></div>
       </nav>
       <div className="workspace-grid">
         <aside className="sidepanel browser-panel" aria-label="Model browser">
