@@ -196,3 +196,7 @@ test('retrospective dimension edit after recovery invalidates only the physical 
     ['feature.sketch','feature.extrude','feature.cut','feature.fillet']);
   assert.deepEqual(delta.unchangedReady,['parameter.thickness','feature.unrelated']);
 });
+
+test('published interactive plate recovery example executes without a native geometry claim', async () => {
+  await import('../examples/recoverable-plate-cut.mjs');
+});
