@@ -6,7 +6,7 @@
 import {deserializeProject, planProject} from '../model/src/index.ts';
 import {parseSketch} from '../sketch/index.mjs';
 import {inspectCenteredHolePlate} from '../sketch/centered-hole-plate.mjs';
-import {parseRoundedPlateIntent,solveRoundedPlate} from '../sketch/rounded-plate.mjs';
+import {parseRoundedPlateIntent,solveRoundedPlate,parseVariableRoundedPlateIntent,solveVariableRoundedPlate} from '../sketch/rounded-plate.mjs';
 
 export const ENGINEERING_DRAWING_VERSION = 1;
 export const ENGINEERING_DRAWING_FORMAT = 'intuit3d.engineering.plate-sheet';
@@ -190,8 +190,20 @@ export function renderPlateDrawingSvg(measurement,{title='MOUNTING PLATE', drawi
     required(near(previous,start),'open rounded outline');
     detail.push('<path class="outline" data-outline="rounded-plate" d="'+
       commands.join(' ')+' Z"/>');
-    detail.push(T(right-11,top+14,'4 × R'+fmt(m.cornerRadiusMm),'small'));
-    detail.push(T(291,187,'OUTLINE: '+fmt(m.perimeterMm)+' mm','tiny','start'));
+    if(m.cornerRadiiMm){
+      const arcs=m.boundaryCurves.filter(c=>c.kind==='arc');
+      required(arcs.length===4 &&
+        arcs.every(c=>m.cornerRadiiMm[c.sourceVertexId]===c.radiusMm),
+        'variable radius annotations do not match the source curves');
+      // Independent corner radii and their vertex identities come from the
+      // authored SKETCH v2 contract, not a radius inferred from pixels.
+      arcs.forEach((arc,i)=>detail.push(T(291,185+8*i,
+        'R '+arc.sourceVertexId+': '+fmt(arc.radiusMm)+' mm','tiny','start')));
+      detail.push(T(291,219,'OUTLINE: '+fmt(m.perimeterMm)+' mm','tiny','start'));
+    }else{
+      detail.push(T(right-11,top+14,'4 × R'+fmt(m.cornerRadiusMm),'small'));
+      detail.push(T(291,187,'OUTLINE: '+fmt(m.perimeterMm)+' mm','tiny','start'));
+    }
   }else{
     required(m.outlineKind===undefined,'unsupported outline geometry');
     const vertices=m.boundary.map(p=>fmt(X(p.xMm))+','+fmt(Y(p.yMm))).join(' ');
@@ -312,5 +324,74 @@ export function createRoundedPlateSheet(request) {
   return {format:ENGINEERING_DRAWING_FORMAT,version:1,
     mimeType:'image/svg+xml',
     filename:(drawingId??'rounded-plate').replace(/[^a-zA-Z0-9._-]/g,'_')+'.svg',
+    measurement,svg};
+}
+
+
+/**
+ * Measure four independent corner fillets authored through accepted SKETCH v2.
+ * The saved INTENT feature, solved sketch, and original corner ID/radius map
+ * remain authoritative. This adds no alternative geometry solver.
+ */
+export function measureVariableRoundedPlateFromProject(source) {
+  const base=measurePlateFromProject(source);
+  const project=deserializeProject(source.projectJson);
+  const entry=planProject(project).features.find(f=>f.feature.id===source.sketchFeatureId);
+  required(entry?.status==='ready' && entry.feature.kind==='sketch',
+    'variable-fillet sketch feature missing or not ready');
+  const intentJson=entry.feature.payload.variableRoundedPlateIntent;
+  required(typeof intentJson==='string', 'authored variableRoundedPlateIntent missing');
+  const intent=parseVariableRoundedPlateIntent(intentJson);
+  const sketch=parseSketch(entry.feature.payload.sketchDocument);
+  const result=solveVariableRoundedPlate(sketch,intent);
+  required(result.status==='solved' &&
+    result.geometry?.status==='analytic_curved_profile_only',
+    'variable rounded plate profile is not solved: '+result.status);
+  const curved=result.geometry;
+  required(curved.units==='mm' && curved.previewOnly===true &&
+    curved.holes.length===base.holes.length &&
+    curved.holes.every((hole,i)=>hole.id===base.holes[i].id &&
+      hole.x===base.holes[i].xMm && hole.y===base.holes[i].yMm &&
+      hole.radius===base.holes[i].radiusMm),
+    'variable rounded profile holes differ from the solved plate');
+  const arcs=curved.boundary.filter(e=>e.kind==='arc');
+  const radii=curved.cornerRadiiMm;
+  required(curved.boundary.length===8 && arcs.length===4 &&
+    radii && typeof radii==='object' && !Array.isArray(radii) &&
+    Object.keys(radii).length===4 &&
+    arcs.every(e=>finite(e.radiusMm) && e.radiusMm>0 &&
+      radii[e.sourceVertexId]===e.radiusMm) &&
+    intent.cornerRadii.every(c=>radii[c.vertexId]===c.radiusMm),
+    'authored variable corner radii do not match analytic curves');
+  const boundaryLengths=curved.boundary.map(curve=>({
+    id:curve.id,kind:curve.kind,
+    lengthMm:curve.kind==='arc'?
+      Math.abs(curve.sweepRad)*curve.radiusMm:
+      Math.hypot(curve.end.x-curve.start.x,curve.end.y-curve.start.y)
+  }));
+  const perimeterMm=boundaryLengths.reduce((sum,c)=>sum+c.lengthMm,0);
+  required(boundaryLengths.every(c=>finite(c.lengthMm)&&c.lengthMm>0) &&
+    finite(perimeterMm)&&perimeterMm>0 &&
+    finite(curved.areaMm2)&&curved.areaMm2>0 &&
+    curved.areaMm2<base.analyticAreaMm2,
+    'unrepresentable variable-fillet area or perimeter');
+  return {
+    ...base,outlineKind:'rounded_plate',
+    boundaryCurves:structuredClone(curved.boundary),
+    boundaryLengths,perimeterMm,cornerRadiiMm:structuredClone(radii),
+    analyticAreaMm2:curved.areaMm2,
+    provenance:{...base.provenance,
+      variableIntentId:intent.id,variableIntentSignature:result.intentSignature}
+  };
+}
+
+/** One-call saved-project drawing/export for independent SKETCH v2 fillets. */
+export function createVariableRoundedPlateSheet(request) {
+  const {title,drawingId,...source}=request ?? {};
+  const measurement=measureVariableRoundedPlateFromProject(source);
+  const svg=renderPlateDrawingSvg(measurement,{title,drawingId});
+  return {format:ENGINEERING_DRAWING_FORMAT,version:1,
+    mimeType:'image/svg+xml',
+    filename:(drawingId??'variable-rounded-plate').replace(/[^a-zA-Z0-9._-]/g,'_')+'.svg',
     measurement,svg};
 }
