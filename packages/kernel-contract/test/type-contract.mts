@@ -133,3 +133,23 @@ const executedMixed:Promise<LocalOcct8MixedCutResult>=runPinnedOcct8MixedCutChai
 void executedMixed;
 // @ts-expect-error pinned native mixed cut must be revision fenced
 runPinnedOcct8MixedCutChain(parsedMixed,{workerExecutable:'/trusted/occt8'});
+
+// Compile the additive typed selected L-profile request for native consumers.
+import type {Occt8LProfileRequest} from '../src/occt8-l-profile-v3.mjs';
+import {parseOcct8LProfileRequest} from '../src/occt8-l-profile-v3.mjs';
+import {runPinnedOcct8LProfileChain}
+  from '../src/local-occt8-l-profile-provider.mjs';
+const selectedLProfile:Occt8LProfileRequest={
+  protocol:'intuit3d/kernel/l-profile-cut-chain-v3',requestId:'l.types',
+  featureId:'body.l',revision:2,units:'mm',exportStep:false,
+  profile:{profileId:'sketch.l',width:120,depth:80,
+    thickness:8,legWidth:30,footHeight:20},
+  cuts:[
+    {featureId:'pocket.l',kind:'circle',x:-45,y:10,radius:5,cutDepthMm:3},
+    {featureId:'window.l',kind:'rectangle',x:15,y:-30,
+      width:10,depth:8,cutDepthMm:8}
+  ]
+};
+const parsedLProfile:Occt8LProfileRequest=parseOcct8LProfileRequest(selectedLProfile);
+void parsedLProfile;
+void runPinnedOcct8LProfileChain;

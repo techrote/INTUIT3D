@@ -124,13 +124,13 @@ Request read_request(const std::filesystem::path& path) {
   for(int i=0;i<cut_count;++i) {
     RectCut c{};
     std::string kind="R";
-    if(!(file>>c.id) || (q.mixed_chain && !(file>>kind)) ||
+    if(!(file>>c.id) || ((q.mixed_chain||q.l_profile_chain) && !(file>>kind)) ||
        !(file>>c.x>>c.y>>c.width>>c.depth>>c.cut_depth))
       throw std::runtime_error("truncated ordered cut");
     if(kind!="R" && kind!="C")
       throw std::runtime_error("unsupported cut profile kind");
     c.circular=(kind=="C");
-    if(!id_ok(c.id)||!std::isfinite(c.x)||!std::isfinite(c.y)||
+    if(!id_ok(c.id)||(q.l_profile_chain&&c.id==q.profile_id)||!std::isfinite(c.x)||!std::isfinite(c.y)||
        !dimension(c.width)||!dimension(c.cut_depth)||
        (c.circular ? c.depth!=0 : !dimension(c.depth))||
        c.cut_depth>q.thickness||
