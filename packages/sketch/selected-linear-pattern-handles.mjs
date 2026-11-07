@@ -118,7 +118,15 @@ export function dragSelectedLinearPatternHandle(source,selection,command) {
     semanticProfileId:updated.semanticProfileId,
     patternId:p.patternId,pattern:updated.pattern,
     handleId:handle.id,
-    changedConstraintIds:result.changedConstraintIds??result.editedConstraintIds,
+    // The underlying batch setter may rewrite an unchanged pitch alongside
+    // a radius change. Report only actually changed authored constraints so
+    // consumer invalidation is neither speculative nor falsely expansive.
+    changedConstraintIds:(result.changedConstraintIds??result.editedConstraintIds)
+      .filter(id=>{
+        const old=doc.constraints.find(c=>c.id===id);
+        const next=result.sketch.constraints.find(c=>c.id===id);
+        return JSON.stringify(old)!==JSON.stringify(next);
+      }),
     gesture:{
       target:{x:command.xMm,y:command.yMm},
       appliedPoint:{...applied.position},
