@@ -22,10 +22,11 @@ npm run demo:native --workspace @intuit3d/workflow-runtime
 # Real RUNTIME trusted HTTP bridge -> actual pinned OCP, not a synthetic provider.
 npm run demo:bridge --workspace @intuit3d/workflow-runtime
 # DIFFERENT real mechanical part: FEATUREOPS flange with INTENT retrospective
-# named-parameter 10→16 mm edit, undo/reopen, then RUNTIME solved-hole 2x2
-# pattern and undo. SIX real same-engine experimental OCP STEP artifacts.
+# named-parameter 10→16 mm edit, Make Independent/freeze with one-step undo,
+# then RUNTIME solved-hole 2x2 pattern and undo. SEVEN real experimental OCP STEP artifacts.
 node tooling/featureops-native-flange.mjs "$output/flange"
-for variant in four thick five undo pattern undo-pattern; do test -s "$output/flange.$variant.step"; done
+for variant in four thick frozen five undo pattern undo-pattern; do test -s "$output/flange.$variant.step"; done
+test -s "$output/flange.frozen.intuit3d.json"
 test -s "$output/flange.intuit3d.json"
 test -s "$output/flange.pattern.intuit3d.json"
 # Real Chromium UI -> RUNTIME local host -> experimental OCP -> browser STEP download.
@@ -36,5 +37,5 @@ INTUIT3D_REAL_NATIVE_BROWSER_ARTIFACTS="$output/real-native-browser" node toolin
 test -s "$output/model.initial.step"
 test -s "$output/model.edited.step"
 test -s "$output/model.intuit3d.json"
-echo 'MODEL_NATIVE_EXPERIMENTAL_EXECUTED: real INTENT/SKETCH/RUNTIME/FEATUREOPS to OCP 7.9.3.1 with two-hole, named 10→16 mm parameter, four/five/seven-hole STEP, undo and archives'
+echo 'MODEL_NATIVE_EXPERIMENTAL_EXECUTED: real INTENT/SKETCH/RUNTIME/FEATUREOPS to OCP 7.9.3.1 with two-hole, named 10→16 mm parameter freeze, four/five/seven-hole STEP, undo and archives'
 echo 'NOT_QUALIFIED: production OCCT 8.0.1 C++, independent external STEP consumer, Windows native OCP, human acceptance'
