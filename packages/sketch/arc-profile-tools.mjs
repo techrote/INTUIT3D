@@ -9,6 +9,7 @@ import {createArcSketch,serializeArcSketch,editArcConstraint,solveArcSketch}
 import {prepareArcProfileForProvider} from './arc-profile.mjs';
 import {createArcHoleSelection,serializeArcHoleSelection,inspectArcHoleControls,
   editArcProfileHole} from './arc-hole-authoring.mjs';
+import {inspectArcHoleAnchor,proposeArcHoleAnchor} from './arc-hole-anchors.mjs';
 
 export const ARC_PROFILE_TOOLS_VERSION=1;
 export const ARC_PROFILE_TOOLS_FORMAT='intuit3d.arc-profile-tools';
@@ -48,11 +49,16 @@ export function inspectArcProfileTools(source,selected) {
       constraintId:c.id,dimensionKind:c.kind,valueMm:c.value,position});
   }
   for(const h of inspectArcHoleControls(doc,selection).controls){
+    const anchored=inspectArcHoleAnchor(doc,selection,h.id);
+    // Following an earlier plate edit, authoritative solved coordinates may
+    // differ from the serialized nonlinear-solver seed of a dependent hole.
+    const p=points.get(h.centerPointId)||{x:h.xMm,y:h.yMm};
     controls.push({kind:'hole_center',id:'hole-center:'+h.id,circleId:h.id,
-      position:{x:h.xMm,y:h.yMm},canMove:h.canMove});
+      position:{x:p.x,y:p.y},
+      canMove:h.canMove||(anchored.mode==='anchored'&&anchored.canEdit)});
     controls.push({kind:'hole_diameter',id:'hole-diameter:'+h.id,
       circleId:h.id,valueMm:h.diameterMm,
-      position:{x:h.xMm+h.diameterMm/2,y:h.yMm}});
+      position:{x:p.x+h.diameterMm/2,y:p.y}});
   }
   let profile=null,profileError=null;
   if(solved.status==='solved'){
@@ -119,10 +125,19 @@ export function editArcProfileWithTool(source,selected,command,expected){
         }
       }else if(handle.kind==='hole_center'){
         if(!handle.canMove)return refuse('hole centre has other authored dependencies');
-        result=editArcProfileWithTool(doc,selection,{
-          kind:'hole',change:{kind:'move',circleId:handle.circleId,
-            xMm:target.x,yMm:target.y}
-        },stamp);
+        const binding=inspectArcHoleAnchor(doc,selection,handle.circleId);
+        if(binding.mode==='anchored'){
+          const anchored=proposeArcHoleAnchor(doc,selection,{
+            kind:'drag-center',circleId:handle.circleId,handleId:handle.id,
+            xMm:target.x,yMm:target.y},stamp);
+          if(anchored.kind!=='accepted')return refuse(anchored.reason);
+          result=evaluate(anchored.sketch,anchored.selection);
+        }else{
+          result=editArcProfileWithTool(doc,selection,{
+            kind:'hole',change:{kind:'move',circleId:handle.circleId,
+              xMm:target.x,yMm:target.y}
+          },stamp);
+        }
         appliedPoint=target;
       }else if(handle.kind==='hole_diameter'){
         const center=inspection.controls.find(h=>
@@ -155,19 +170,52 @@ export function editArcProfileWithTool(source,selected,command,expected){
       // single-hole transactions, intermediate overlaps cannot prevent a
       // valid group translation and the operation is one journal edit.
       const controls=inspectArcHoleControls(doc,selection).controls;
+      const anchors=command.circleIds.map(id=>inspectArcHoleAnchor(doc,selection,id));
       const chosen=command.circleIds.map(id=>controls.find(c=>c.id===id));
-      if(chosen.some(c=>!c||!c.canMove||!c.centerConstraintId))
+      const solved=solveArcSketch(doc);
+      if(solved.status!=='solved')
+        return refuse('selected-hole translation requires a solved source sketch');
+      if(chosen.some((c,i)=>!c||(anchors[i].mode==='fixed'?
+        !c.canMove||!c.centerConstraintId:anchors[i].mode!=='anchored')))
         return refuse('selected hole missing or constrained by other geometry');
+      const solvedPoints=new Map(solved.geometry.points.map(p=>[p.id,p]));
       const next=structuredClone(doc);
-      for(const control of chosen){
-        const x=control.xMm+command.deltaXMm,y=control.yMm+command.deltaYMm;
+      for(let i=0;i<chosen.length;i++){
+        const control=chosen[i],binding=anchors[i];
+        const current=solvedPoints.get(control.centerPointId);
+        const x=current.x+command.deltaXMm,y=current.y+command.deltaYMm;
         if(!finite(x)||!finite(y))return refuse('hole translation overflows coordinates');
-        const fixed=next.constraints.find(c=>c.id===control.centerConstraintId);
         const center=next.points.find(p=>p.id===control.centerPointId);
-        if(!fixed||!center)return refuse('missing authored hole centre dimension');
-        fixed.x=x;fixed.y=y;center.x=x;center.y=y;
+        if(!center)return refuse('missing authored hole centre');
+        if(binding.mode==='anchored'){
+          const dx=binding.binding.offsetXMm+command.deltaXMm;
+          const dy=binding.binding.offsetYMm+command.deltaYMm;
+          if(!finite(dx)||!finite(dy))return refuse('hole offset overflows dimensions');
+          next.constraints.find(c=>c.id===binding.binding.xConstraintId).value=dx;
+          next.constraints.find(c=>c.id===binding.binding.yConstraintId).value=dy;
+        }else{
+          const fixed=next.constraints.find(c=>c.id===control.centerConstraintId);
+          if(!fixed)return refuse('missing fixed hole dimension');
+          fixed.x=x;fixed.y=y;
+        }
+        center.x=x;center.y=y;
       }
       return {...evaluate(next,selection),movedHoleIds:command.circleIds.slice()};
+    }
+    if(['bind-hole','unbind-hole','hole-offset'].includes(command.kind)){
+      const keys=command.kind==='bind-hole'?['kind','circleId','anchorPointId']:
+        command.kind==='unbind-hole'?['kind','circleId']:
+        ['kind','circleId','offsetXMm','offsetYMm'];
+      if(!exact(command,keys)||!validId(command.circleId))
+        return refuse('invalid anchored-hole command');
+      const authored=command.kind==='bind-hole'?
+        {kind:'bind',circleId:command.circleId,anchorPointId:command.anchorPointId}:
+        command.kind==='unbind-hole'?{kind:'detach',circleId:command.circleId}:
+        {kind:'edit-offset',circleId:command.circleId,
+          offsetXMm:command.offsetXMm,offsetYMm:command.offsetYMm};
+      const result=proposeArcHoleAnchor(doc,selection,authored,stamp);
+      if(result.kind!=='accepted')return refuse(result.reason);
+      return evaluate(result.sketch,result.selection);
     }
     if(command.kind==='hole'){
       if(!exact(command,['kind','change']))
