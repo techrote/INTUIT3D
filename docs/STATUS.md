@@ -1,5 +1,19 @@
 # INTUIT3D — live integration status
 
+## 6 November 2026 — accepted #46/#47/#48/#43 and owner-approved sixth lane
+
+**Dated accepted-main merge checkpoint:** `8fee31ad8eafa3f33b1d88a279ea093472def8e6` (not a release or immutable live-HEAD claim). [Prior exact-main CI #42308452240](https://github.com/techrote/INTUIT3D/actions/runs/42308452240) passed Ubuntu/Windows at `75a8db4f3cdcec6f0273fce922c8e59da889bb74`. **Combined-main push run [#42314981372](https://github.com/techrote/INTUIT3D/actions/runs/42314981372) had not yet been verified at drafting; no combined pass is inferred from separate candidate evidence.**
+
+- **INTENT [#46](https://github.com/techrote/INTUIT3D/pull/46)** merged at `860302fdf89d70e65cdfc33d6b7c271ca8a46f0c`: explicit confirmed orphaned-dimension dependency release, revision fence, undo/replay; [candidate #42309145865](https://github.com/techrote/INTUIT3D/actions/runs/42309145865) passed Ubuntu/Windows (147 model tests/OS), Linux experimental OCP 68.
+- **SKETCH [#47](https://github.com/techrote/INTUIT3D/pull/47)** merged at `c6110bf2b63c3f0de8a45014ef1e6fb18861206b`: exact-dyadic analytic net-area sign and representability gate; [candidate #42310825795](https://github.com/techrote/INTUIT3D/actions/runs/42310825795) passed Ubuntu/Windows (111 sketch tests/OS). Rounded area preview is not B-rep truth.
+- **Experimental KERNEL [#48](https://github.com/techrote/INTUIT3D/pull/48)** merged at `826b812ab8bdc1f812a5f83f35c44c078767aa31`: separate standard-library AP214 support/radius numerical oracle; [candidate #42312413476](https://github.com/techrote/INTUIT3D/actions/runs/42312413476) passed both workspace OSes and real 79-test Linux OCP 7.9.3.1. The gate uses `max(1e-11 mm, |target| × 1e-12)` as a **declared bounded serialization equivalence**, not exact equality or external STEP conformance.
+- **WORKBENCH [#43](https://github.com/techrote/INTUIT3D/pull/43)** merged at `8fee31ad8eafa3f33b1d88a279ea093472def8e6`: unit-aware fx calculator with rounded-away precision refusal and real browser error/undo; [workspace #42313707408](https://github.com/techrote/INTUIT3D/actions/runs/42313707408) passed Ubuntu/Windows (131 web tests/OS), [actual Ubuntu Chromium #42313707426](https://github.com/techrote/INTUIT3D/actions/runs/42313707426) passed. Stored scalar is only numeric preview, never an authored expression.
+
+**Owner steering [ST-005](OWNER-STEERING.md):** [approved issue #49](https://github.com/techrote/INTUIT3D/issues/49) adds a sixth independent RUNTIME worker with exclusive `packages/workflow-runtime/**` custody; no worker schedule, root builds or dispatchers changed by this documentation PR. The founding five-lane count is historical, not current authority.
+
+**Remaining product gates:** no authoritative browser-to-INTENT/SKETCH workflow, complete history→native-extrude/cut→save/reopen→independent STEP user flow, pinned OCCT 8.0.1 C++ or Windows native exact kernel, external STEP consumer, qualified topological lineage or human acceptance. Experimental OCP 7.9.3.1 Linux and actual Chromium preview results must not be promoted into production exact geometry evidence. The additive Integration public-contract test in this PR qualifies semantics and planar preview only.
+
+
 ## 6 November 2026 — accepted #39–#42; combined-main CI passed
 
 **Accepted #39–#42 feature checkpoint:** `d6d5cc05cbdeb1b93f32b1f90958de1ac84a8fe0` (not a release; this is a dated checkpoint, **not a claim that it remains live HEAD**). [Exact accepted-main Actions #42307335706](https://github.com/techrote/INTUIT3D/actions/runs/42307335706) **passed Ubuntu and Windows** at this SHA. Intermediate push runs were superseded/cancelled after later merges; they must not be treated as distinct failures or as a substitute for the final run.
