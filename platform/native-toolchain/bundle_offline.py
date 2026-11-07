@@ -227,6 +227,13 @@ def build(args: argparse.Namespace) -> dict:
     require(sys.platform == "linux", "Linux ELF bundle requires Linux")
     output = args.output.resolve()
     archive = Path(str(output) + ".tar.gz")
+    replay_evidence = (args.replay_evidence.absolute()
+                       if args.replay_evidence is not None else None)
+    require(replay_evidence is None or (
+            not os.path.lexists(replay_evidence)
+            and not replay_evidence.is_relative_to(output)
+            and not output.is_relative_to(replay_evidence)),
+            "fresh STEP evidence path must be new and outside bundle output")
     require(not output.exists() and not archive.exists(),
             "output folder/archive already exists; no overwrites")
     report = json.loads((args.qualification / "qualification.json").read_text())
@@ -276,6 +283,8 @@ def build(args: argparse.Namespace) -> dict:
                      output / "verify.py")
         shutil.copy2(Path(__file__).with_name("offline_selftest.py"),
                      output / "selftest.py")
+        shutil.copy2(Path(__file__).with_name("replay_evidence.py"),
+                     output / "replay_evidence.py")
         (output / "README.txt").write_text(
             f"Official OCCT {VERSION} C++ Linux, commit {COMMIT}\n"
             "python3 verify.py\n"
@@ -319,9 +328,11 @@ def build(args: argparse.Namespace) -> dict:
             with tarfile.open(archive, "r:gz") as packaged:
                 packaged.extractall(path=temp, filter="data")
             extracted = Path(temp) / ARCHIVE_ROOT_NAME
+            command = [sys.executable, str(extracted / "selftest.py")]
+            if replay_evidence is not None:
+                command.extend(["--evidence-dir", str(replay_evidence)])
             actual = subprocess.run(
-                [sys.executable, str(extracted / "selftest.py")],
-                cwd=temp, capture_output=True, text=True, timeout=210,
+                command, cwd=temp, capture_output=True, text=True, timeout=210,
                 check=False)
             require(actual.returncode == 0,
                     "EXTRACTED_ARCHIVE_CXX_REPLAY_FAIL: "
@@ -333,16 +344,31 @@ def build(args: argparse.Namespace) -> dict:
                     and extracted_replay.get("dimensionsRestored") is True
                     and extracted_replay.get("kernelSourceCommit") == kernel_sha,
                     "extracted archive returned incomplete or mismatched proof")
+            if replay_evidence is not None:
+                fresh = extracted_replay.get("freshStepEvidence")
+                require(isinstance(fresh, dict)
+                        and fresh.get("directory") == str(replay_evidence)
+                        and replay_evidence.is_dir()
+                        and set(fresh.get("stepSha256", {})) ==
+                            {"8", "12", "edited8", "restored8"},
+                        "extracted STEP replay evidence was not durably preserved")
+                for case, expected in fresh["stepSha256"].items():
+                    require(sha256(replay_evidence / f"fresh-{case}.step") == expected
+                            and expected == extracted_replay["cases"][case]["stepSha256"],
+                            f"preserved fresh {case} STEP changed after receipt")
         print(json.dumps({
             "status": "OFFLINE_BUNDLE_PASS", "archive": str(archive),
             "archiveSha256": sha256(archive), "archiveBytes": archive.stat().st_size,
             "kernel": kernel_sha, "relocatedCpp8And12": smoke,
-            "extractedArchiveCppReplay": extracted_replay
+            "extractedArchiveCppReplay": extracted_replay,
+            "freshStepEvidence": extracted_replay.get("freshStepEvidence")
         }, indent=2))
         return manifest
     except BaseException:
         shutil.rmtree(output, ignore_errors=True)
         archive.unlink(missing_ok=True)
+        if replay_evidence is not None and replay_evidence.is_dir():
+            shutil.rmtree(replay_evidence, ignore_errors=True)
         raise
 
 
@@ -350,6 +376,8 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     for arg in ("qualification", "prefix", "kernel-tree", "output"):
         p.add_argument("--" + arg, required=True, type=Path)
+    p.add_argument("--replay-evidence", type=Path,
+                   help="preserve four extracted C++ STEP outputs, requests and hashes")
     try:
         build(p.parse_args())
     except (ArchiveError, BundleError, ABIError, OSError, ValueError, KeyError,
