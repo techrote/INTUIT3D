@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
-  editModelDimension, inspectModelSession, modelDiagnostics, modelDimensionValues,
+  editModelDimension, editModelHole, inspectModelSession, modelDiagnostics, modelDimensionValues, modelHoleValues, moveModelFeature, moveModelHoleCenter,
   MODEL_DIMENSIONS, newModelPlateSession, previewModelProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
-  type ModelDimension, type ModelSession,
+  type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
 import { evaluateLocalPlate } from '@intuit3d/workflow-runtime/local-plate-client';
@@ -34,6 +34,39 @@ function ScalarInput({ field, value, onCommit }: {
         onBlur={()=>{if(cancelledBlur.current){cancelledBlur.current=false;return;}const next=Number(text);if(text.trim()!=='' && Number.isFinite(next) && next>0){
           if(!Object.is(next,value))onCommit(field,next);
         }else setText(String(value));}}/>
+      <small>mm</small>
+    </span>
+  </label>;
+}
+
+const HOLES: readonly ModelHole[] = ['holeA','holeB'];
+const HOLE_FIELDS: readonly ModelHoleField[] = ['x','y','diameter'];
+
+function HoleScalarInput({hole,field,value,onCommit}:{
+  hole:ModelHole;field:ModelHoleField;value:number;
+  onCommit:(hole:ModelHole,field:ModelHoleField,value:number)=>void;
+}) {
+  const [text,setText]=useState(String(value));
+  const cancelledBlur=useRef(false);
+  const label=hole+' '+(field==='diameter'?'diameter':field.toUpperCase()+' center');
+  return <label className="runtime-scalar">
+    <span>{field==='diameter'?'Diameter':field.toUpperCase()+' center'}</span>
+    <span className="runtime-scalar-control">
+      <input type="number" step="any" min={field==='diameter'?'0':undefined}
+        data-testid={`runtime-hole-${hole}-${field}`} aria-label={label}
+        value={text} onChange={e=>setText(e.target.value)}
+        onKeyDown={e=>{
+          if(e.key==='Enter')e.currentTarget.blur();
+          if(e.key==='Escape'){cancelledBlur.current=true;setText(String(value));e.currentTarget.blur();}
+        }}
+        onBlur={()=>{
+          if(cancelledBlur.current){cancelledBlur.current=false;return;}
+          const next=Number(text);
+          if(text.trim()!=='' && Number.isFinite(next) &&
+              (field!=='diameter'||next>0) && Math.abs(next)<=10000){
+            if(!Object.is(next,value))onCommit(hole,field,next);
+          }else setText(String(value));
+        }}/>
       <small>mm</small>
     </span>
   </label>;
@@ -71,6 +104,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   useEffect(()=>()=>{nativeOperation.current?.abort();},[]);
   const report=useMemo(()=>inspectModelSession(history),[history]);
   const values=useMemo(()=>modelDimensionValues(history),[history]);
+  const holes=useMemo(()=>modelHoleValues(history),[history]);
   const geom=useMemo(()=>previewModelProfile(report),[report]);
   const faults=useMemo(()=>modelDiagnostics(report),[report]);
   const plate=report.features.find(f=>f.featureId==='plate');
@@ -82,6 +116,30 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       acceptHistory(next);
       setMessage(`Revision ${next.document.revision}: changed ${field}; invalidated ${invalidation.invalidatedFeatureIds.join(' → ') || 'none'} (no exact geometry reused).`);
     } catch(error) {setMessage(error instanceof Error?error.message:'Dimension edit failed');}
+  };
+  const editHole=(hole:ModelHole,field:ModelHoleField,value:number)=>{
+    try{
+      const previous=liveHistory.current;
+      const result=editModelHole(previous,hole,field,value,'preserve_unresolved');
+      if(result.kind==='refused'){setMessage(result.reason);return;}
+      acceptHistory(result.history);
+      setMessage(`Revision ${result.history.document.revision}: ${hole} ${field} edited; ${result.invalidation.invalidatedFeatureIds.join(' → ') || 'no structural invalidation'}. ${result.sketchStatus}; no exact geometry reused.`);
+    }catch(e){setMessage('Hole edit refused: '+String(e));}
+  };
+  const dragHole=(hole:ModelHole,x:number,y:number)=>{
+    try{
+      const result=moveModelHoleCenter(liveHistory.current,hole,x,y);
+      if(result.kind==='refused'){setMessage(`Drag refused: ${result.candidateFeature.diagnostics.join('; ') || result.reason}`);return;}
+      acceptHistory(result.history);
+      setMessage(`Moved ${hole} center to (${x}, ${y}) mm in one undoable sketch transaction; native STEP requires rebuild.`);
+    }catch(e){setMessage('Hole drag refused: '+String(e));}
+  };
+  const moveTimeline=(id:string,direction:'earlier'|'later')=>{
+    try{
+      const moved=moveModelFeature(liveHistory.current,id,direction);
+      acceptHistory(moved.history);
+      setMessage(`Authored timeline moved ${id} to position ${moved.toIndex+1}. Dependency evaluation and semantic body targets remain authoritative; no exact artifact was reused.`);
+    }catch(e){setMessage('Timeline move refused: '+String(e));}
   };
   const undo=()=>{
     try{acceptHistory(undoModelSession(liveHistory.current));setMessage(null);}
@@ -212,8 +270,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     </header>
     <nav className="toolstrip" aria-label="Model-backed CAD controls">
       <div className="ribbon-group"><span className="ribbon-label">GEOMETRY</span>
-        <button className={!sketchMode?'ribbon-button active':'ribbon-button'} onClick={()=>setSketchMode(false)}>Solid</button>
-        <button className={sketchMode?'ribbon-button active':'ribbon-button'} onClick={()=>setSketchMode(true)}>Sketch</button>
+        <button className={!sketchMode?'ribbon-button active':'ribbon-button'} data-testid="runtime-mode-solid" onClick={()=>setSketchMode(false)}>Solid</button>
+        <button className={sketchMode?'ribbon-button active':'ribbon-button'} data-testid="runtime-mode-sketch" onClick={()=>setSketchMode(true)}>Sketch</button>
       </div>
       <div className="ribbon-group"><span className="ribbon-label">AUTHORITATIVE HISTORY</span>
         <button className="ribbon-button" disabled={!history.undoStack.length} onClick={undo}>Undo</button>
@@ -245,12 +303,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <span className={geom?'preview-tag':'preview-tag stale'}>{geom?'TESSELLATED PREVIEW · NOT EXACT':'NO CURRENT VALID MESH'}</span>
         </div>
         <div className="viewport-stage">
-          {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={sketchMode}/>:
+          {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={sketchMode} onHoleMove={dragHole}/>:
             <div className="empty-overlay" data-testid="runtime-empty">Current dimensions cannot produce an admitted sketch profile. No previous mesh is represented as current.</div>}
           {geom&&<div className="runtime-mesh-caption" data-testid="runtime-boundary">
             Analytic profile {geom.profile.outer.length} vertices · {geom.profile.holes.length} circular holes · {geom.thickness} mm extrude · no Boolean proof
           </div>}
-          <div className="viewport-hint">{sketchMode?'Profile from public SKETCH solver · Edit dimension values in inspector':
+          <div className="viewport-hint">{sketchMode?'Drag circular-hole center handles (0.5 mm snap) or edit independent hole dimensions in inspector':
             'Drag to orbit · Wheel to zoom · Right-drag to pan · edit historical dimensions in inspector'}</div>
         </div>
         <section className="timeline" aria-label="Authoritative history versus dependency schedule">
@@ -260,7 +318,17 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           </div><span className="timeline-note">INTENT authoritative chronology and DAG</span></div>
           <div className="timeline-rail" data-testid="runtime-order">
             {(timeline==='authored'?report.authoredOrder:report.executableOrder).map((id,i)=>
-              <div key={id} className="timeline-event"><span className="timeline-index">{i+1}</span><span>{id}</span></div>)}
+              <div key={id} className="timeline-event">
+                <span className="timeline-index">{i+1}</span><span>{id}</span>
+                {timeline==='authored'&&<span className="timeline-move-actions">
+                  <button type="button" data-testid={`runtime-move-${id}-earlier`}
+                    aria-label={`Move ${id} earlier`} disabled={i===0}
+                    onClick={()=>moveTimeline(id,'earlier')}>◀</button>
+                  <button type="button" data-testid={`runtime-move-${id}-later`}
+                    aria-label={`Move ${id} later`} disabled={i===report.authoredOrder.length-1}
+                    onClick={()=>moveTimeline(id,'later')}>▶</button>
+                </span>}
+              </div>)}
           </div>
         </section>
       </main>
@@ -272,7 +340,17 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <div className="section-head">EDIT RETROSPECTIVE DIMENSIONS</div>
           {MODEL_DIMENSIONS.map(field=><ScalarInput key={field+':'+history.document.revision} field={field}
             value={values[field]} onCommit={update}/>)}
-          <p className="microcopy">Values edit the actual SKETCH constraints or the retrospective INTENT thickness parameter. Every edit is a revision-fenced undoable journal transaction.</p>
+          <p className="microcopy">Values edit actual SKETCH constraints or the retrospective INTENT thickness parameter. Every edit is a revision-fenced undoable journal transaction.</p>
+        </div>
+        <div className="inspector-section" data-testid="runtime-hole-inspector">
+          <div className="section-head">INDIVIDUAL CIRCULAR HOLES</div>
+          {HOLES.map(hole=><div key={hole} className="runtime-hole-editor" data-testid={`runtime-hole-editor-${hole}`}>
+            <strong>{hole==='holeA'?'Hole A':'Hole B'} · {hole}</strong>
+            {HOLE_FIELDS.map(field=><HoleScalarInput
+              key={`${hole}.${field}.${history.document.revision}`}
+              hole={hole} field={field} value={holes[hole][field]} onCommit={editHole}/>)}
+          </div>)}
+          <p className="microcopy">Each hole is a stable SKETCH entity. Drag its center in Sketch mode for an atomic, admissible move; numeric edits preserve unresolved intent for repair. Undo/redo and archive include all constraint edits.</p>
         </div>
         <div className="inspector-section runtime-native" data-testid="runtime-native-panel">
           <div className="section-head">LOCAL NATIVE STEP · EXPERIMENTAL</div>
