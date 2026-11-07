@@ -3,7 +3,8 @@ import type {UndoHistory} from '@intuit3d/model/transactions';
 import type {WorkflowRuntime} from '../index.mjs';
 import {startLocalPlateBridge,startLocalPinnedOcct8Bridge} from '../local-plate-bridge.mjs';
 import type {LocalPlateBridge} from '../local-plate-bridge.mjs';
-import {evaluateLocalPlate,decodeVerifiedLocalStep} from '../local-plate-client.mjs';
+import {evaluateLocalPlate,decodeVerifiedLocalStep,inspectLocalPlateBridge} from '../local-plate-client.mjs';
+import type {LocalPlateBridgeIdentity,PinnedPlateBackend} from '../local-plate-client.mjs';
 import type {LocalPlateClientResult,VerifiedLocalStep} from '../local-plate-client.mjs';
 import {runPinnedOcct8Plate} from '@intuit3d/kernel-contract/local-occt8-provider';
 import * as model from '@intuit3d/model';
@@ -44,9 +45,18 @@ export async function pinnedNativeHostConsumer(){
     workerExecutable:'/trusted/native/intuit3d_occt8_plate',
     crossVersionStepAudit:false,
   });
+  const identity:LocalPlateBridgeIdentity=await inspectLocalPlateBridge({
+    url:pinned.url,token:pinned.token,
+  });
+  if(identity.kind==='paired') {
+    const backend:PinnedPlateBackend=identity.backend;
+    const notExact:false=identity.exactAuthority;
+    void [backend,notExact];
+  }
   const result=await evaluateLocalPlate({
     url:pinned.url,token:pinned.token,runtime,readCurrentHistory:()=>current,
     cutFeatureId:'cut',requestId:'pinned.consumer',exportStep:true,
+    requiredBackend:'OCCT-cxx-8.0.1',
   });
   if(result.kind==='experimental_plate_evaluated'&&result.step){
     const evidence:VerifiedLocalStep['verification']=result.step.verification;
