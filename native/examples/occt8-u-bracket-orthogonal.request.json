@@ -1,0 +1,65 @@
+{
+  "protocol": "intuit3d/kernel/orthogonal-profile-cut-chain-v4",
+  "requestId": "selected.u.bracket.8",
+  "featureId": "body.u.bracket",
+  "revision": 8,
+  "units": "mm",
+  "profile": {
+    "profileId": "sketch.u.bracket",
+    "thickness": 8,
+    "vertices": [
+      {
+        "x": -60,
+        "y": -40
+      },
+      {
+        "x": 60,
+        "y": -40
+      },
+      {
+        "x": 60,
+        "y": 40
+      },
+      {
+        "x": 35,
+        "y": 40
+      },
+      {
+        "x": 35,
+        "y": -10
+      },
+      {
+        "x": -35,
+        "y": -10
+      },
+      {
+        "x": -35,
+        "y": 40
+      },
+      {
+        "x": -60,
+        "y": 40
+      }
+    ]
+  },
+  "cuts": [
+    {
+      "featureId": "cut.left.blind",
+      "kind": "circle",
+      "x": -47,
+      "y": 10,
+      "radius": 5,
+      "cutDepthMm": 3
+    },
+    {
+      "featureId": "cut.right.through",
+      "kind": "rectangle",
+      "x": 47,
+      "y": 10,
+      "width": 10,
+      "depth": 12,
+      "cutDepthMm": 8
+    }
+  ],
+  "exportStep": true
+}
