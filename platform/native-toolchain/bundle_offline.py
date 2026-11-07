@@ -108,7 +108,11 @@ def validate_elf_resolution(worker: Path, lib: Path) -> str:
                   if re.search(r"libTK[A-Za-z0-9]+\.so", line)]
     require(occt_lines, "compiled worker loaded no OCCT shared toolkits")
     for line in occt_lines:
-        require(str(lib.resolve()) + "/" in line,
+        # GNU ld.so normally prints $ORIGIN/../lib without canonicalizing
+        # the path; compare resolved paths, not string prefixes.
+        location = line.split("=>", 1)[-1].split(" (", 1)[0].strip()
+        require(Path(location).is_absolute() and
+                Path(location).resolve().is_relative_to(lib.resolve()),
                 f"unbundled OCCT library resolved from host/build prefix: {line}")
     return command.stdout
 
