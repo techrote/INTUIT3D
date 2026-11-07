@@ -6,7 +6,7 @@ import {
   solveVariableRoundedPlate,serializeVariableRoundedPlateIntent,
   parseVariableRoundedPlateIntent,inspectVariableRoundedPlateHandles,
   dragVariableRoundedPlateCorner,solveRoundedPlate
-} from '../rounded-plate.mjs';
+} from '@intuit3d/sketch/rounded-plate/v2';
 const raw=()=>({version:2,id:'fillet:plate',edgeIds:['bottom','right','top','left'],
   holeIds:['holeA','holeB'],cornerRadii:[
     {vertexId:'p0',radiusMm:4},{vertexId:'p1',radiusMm:8},
