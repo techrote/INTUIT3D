@@ -209,12 +209,28 @@ export function moveModelHoleGroup(
   if (![deltaX, deltaY].every(Number.isFinite) || (deltaX === 0 && deltaY === 0))
     throw Error('Group drag requires a finite, nonzero translation.');
   const holes = modelHoleValues(h);
+  const admitted = previewModelSketchProfile(runtime.inspect(h));
+  if (!admitted) throw Error('Group drag requires a currently admitted solved sketch profile.');
+  // This workbench currently authors an axis-aligned rectangular plate. The
+  // SKETCH solver can satisfy the constraints of a circle whose entire rim
+  // moved outside that plate, so a direct physical-hole drag additionally
+  // verifies the requested rim against the actual admitted plate bounds.
+  // This is a conservative UI admission fence, not a replacement solver.
+  const minX = Math.min(...admitted.outer.map(p => p.x));
+  const maxX = Math.max(...admitted.outer.map(p => p.x));
+  const minY = Math.min(...admitted.outer.map(p => p.y));
+  const maxY = Math.max(...admitted.outer.map(p => p.y));
   const edits = holeIds.map(id => {
     const origin = holes[id];
     if (!origin) throw Error('Unknown authored hole in group drag: ' + id);
     const x = origin.x + deltaX, y = origin.y + deltaY;
     if (![x, y].every(value => Number.isFinite(value) && Math.abs(value) <= 10000))
       throw Error('Group drag target lies outside the supported coordinate range.');
+    const circle = admitted.holes.find(hole => hole.id === id);
+    if (!circle) throw Error('Selected hole is absent from the admitted profile: ' + id);
+    if (x - circle.radius <= minX || x + circle.radius >= maxX ||
+        y - circle.radius <= minY || y + circle.radius >= maxY)
+      throw Error('Group translation would invalidate the solved SKETCH profile; no edit committed.');
     return {constraintId: id + ':fixed', patch: {x, y}};
   });
   const result = runtime.editSketchConstraints(h, {
