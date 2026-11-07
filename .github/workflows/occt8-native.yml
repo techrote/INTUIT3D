@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && 'a017a50fa3f97d4ca9de079e5b7f1870c9602d85') || inputs.kernel_ref || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
+          ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && '7e893a6deb4ca7d88c7bd92ec42fb828cfc87a5c') || inputs.kernel_ref || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
           path: kernel-repo
           persist-credentials: false
       - name: Install native build dependencies
@@ -156,7 +156,7 @@ jobs:
       # Real RUNTIME + INTENT + SKETCH L-profile source and C++ output gates.
       # A source-matched OCCT 8.0.1 binary is REQUIRED, not simulated or OCP.
       # On the workflow-change PR this run is pinned to immutable KERNEL-002
-      # source a017a50fa3f97d4ca9de079e5b7f1870c9602d85; accepted-main KERNEL-001 push keeps its own SHA.
+      # source 7e893a6deb4ca7d88c7bd92ec42fb828cfc87a5c; accepted-main KERNEL-001 push keeps its own SHA.
       - name: Check authored L-profile physical fixture availability
         id: lprofile
         shell: bash
@@ -184,7 +184,7 @@ jobs:
           test -x "$worker"
           candidate="$(git -C kernel-repo rev-parse HEAD)"
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            test "$candidate" = "a017a50fa3f97d4ca9de079e5b7f1870c9602d85" || {
+            test "$candidate" = "7e893a6deb4ca7d88c7bd92ec42fb828cfc87a5c" || {
               echo "::error::KERNEL-002 source moved: $candidate"; exit 1;
             }
           fi
@@ -212,6 +212,67 @@ jobs:
           printf 'kernel_sha=%s\nworkflow_sha=%s\n' \
             "$candidate" "$GITHUB_SHA" > "$output/source-provenance.txt"
 
+      # New KERNEL-002 v4 source: one selected 8-edge orthogonal U-profile,
+      # blind circular pocket + through rectangular window, real 8→12 mm edit.
+      # Required physical execution on this workflow-change candidate; not
+      # satisfied by Node/schema/OCP or an earlier KERNEL branch's C++ run.
+      - name: Require selected U-profile v4 fixture on KERNEL-002 PR qualification
+        id: uprofile
+        shell: bash
+        run: |
+          set -euo pipefail
+          example="kernel-repo/packages/kernel-contract/examples/pinned-occt8-orthogonal-profile.mjs"
+          fixture="kernel-repo/native/examples/occt8-u-bracket-orthogonal.request.json"
+          if test -f "$example" && test -f "$fixture"; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            echo '::error::Pinned KERNEL-002 v4 candidate lacks selected U-profile fixture'; exit 1
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Execute compiled pinned OCCT8 C++ U-bracket Boolean and two distinct STEP outputs
+        if: steps.uprofile.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker="$RUNNER_TEMP/intuit3d-native-evidence/qualification/worker-build/intuit3d_occt8_plate"
+          test -x "$worker"
+          kernel="$(git -C kernel-repo rev-parse HEAD)"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            test "$kernel" = '7e893a6deb4ca7d88c7bd92ec42fb828cfc87a5c' || {
+              echo "::error::Unreviewed KERNEL candidate source: $kernel"; exit 1;
+            }
+          fi
+          export INTUIT3D_OCCT8_WORKER="$worker"
+          python3 -m unittest discover -s kernel-repo/native/tests \
+            -p test_occt8_orthogonal_contract.py -v \
+            2>&1 | tee "$RUNNER_TEMP/intuit3d-native-evidence/u-bracket-native-tests.log"
+          output="$RUNNER_TEMP/intuit3d-native-evidence/u-bracket-physical"
+          mkdir -p "$output"
+          node kernel-repo/packages/kernel-contract/examples/pinned-occt8-orthogonal-profile.mjs \
+            "$worker" "$output" 2>&1 | tee "$output/native-execution.log"
+          test -s "$output/u-8.step"
+          test -s "$output/u-12.step"
+          test -s "$output/manifest.json"
+          python3 - "$output/manifest.json" <<'PY'
+          import json, math, sys
+          with open(sys.argv[1], encoding='utf-8') as f: r=json.load(f)
+          assert r['result']=='PINNED_OCCT8_CPP_SELECTED_ORTHOGONAL_TWO_STEP_EXECUTED',r
+          assert r['version']=='OCCT-8.0.1-C++',r
+          a,b=r['observations']
+          assert [a['thicknessMm'],b['thicknessMm']]==[8,12],r
+          assert a['stepSha256']!=b['stepSha256'] and a['profileId']==b['profileId'],r
+          assert a['cuts']==b['cuts'],r
+          assert all(not x['exactAuthority'] and not x['independentInteroperability'] for x in (a,b)),r
+          for x,expected in ((a,6100*8-75*math.pi-960),(b,6100*12-75*math.pi-1440)):
+              assert abs(x['measuredVolumeMm3']-expected)<1e-5,(x,expected)
+              assert abs(x['sameEngineVolumeMm3']-expected)<1e-5,(x,expected)
+          print('PINNED_CXX_U_BRACKET_PASS actual 8/12 physical solid, volume, two STEP SHA receipts')
+          PY
+          sha256sum "$worker" "$output/u-8.step" "$output/u-12.step" \
+            > "$output/worker-and-step-files.sha256"
+          printf 'kernel_sha=%s\nworkflow_sha=%s\n' "$kernel" "$GITHUB_SHA" \
+            > "$output/source-provenance.txt"
       - name: Remove only huge intermediate build directory before artifact upload
         if: always()
         run: |
