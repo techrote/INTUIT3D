@@ -94,6 +94,23 @@ export interface PlateHoleBatchRequest {
   operations:ReadonlyArray<PlateHoleOperation>;
 }
 export type PlateHoleBatchResult=SketchConstraintBatchResult;
+/** One-shot, NON-associative rectangular copies of a real solved source hole.
+ * The source occupies row 0/column 0; new IDs are `idPrefix:r<Row>c<Col>`.
+ * Pitches are signed millimetres; all added holes are independently authored.
+ */
+export interface RectangularHoleArrayRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  admission?:'require_admissible'|'preserve_unresolved';
+  sourceHoleId:string;
+  idPrefix:string;
+  columns:number;
+  rows:number;
+  pitchXmm:number;
+  pitchYmm:number;
+}
+
 
 export interface RuntimeServices {
   model: { planProject(document: ProjectDocument): EvaluationPlan };
@@ -127,6 +144,8 @@ export interface WorkflowRuntime {
   editSketchConstraints(history: UndoHistory, request: SketchConstraintBatchRequest): SketchConstraintBatchResult;
   /** One authoritative edit of the number, centres and radii of circular holes. */
   editPlateHoles(history:UndoHistory,request:PlateHoleBatchRequest):PlateHoleBatchResult;
+  /** Copy solved hole geometry into a bounded 2–32-cell array in one model event. */
+  patternPlateHoles(history:UndoHistory,request:RectangularHoleArrayRequest):PlateHoleBatchResult;
   undo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   redo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   save(history: UndoHistory): string;
