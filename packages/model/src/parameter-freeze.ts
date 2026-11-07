@@ -248,9 +248,13 @@ export function previewParameterFreeze(
       fail('baked feature is not scalar-admissible: ' + entry.featureId);
     }
   }
-  for (const id of invalidation.invalidatedFeatureIds) {
-    if (admissible(beforeGates.get(id)) &&
-        afterGates.has(id) && !admissible(afterGates.get(id))) {
+  // Inspect ALL previously admitted consumers, not just those found by the
+  // structural invalidation planner: a manually-authored expression might
+  // mention a parameter without a corresponding explicit dependency edge.
+  // Even malformed historical intent must not become silently admitted.
+  for (const [id, priorGate] of beforeGates) {
+    if (id === retiredParameterId || !admissible(priorGate)) continue;
+    if (!admissible(afterGates.get(id))) {
       fail('freeze regresses an admitted dependent feature: ' + id);
     }
   }
