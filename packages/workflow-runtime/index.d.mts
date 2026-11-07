@@ -78,6 +78,23 @@ export type SketchConstraintBatchResult =
       sourceRevision:number;candidateRevision:number;notCommitted:true;
       candidateFeature:RuntimeFeature;reason:string}>;
 
+/**
+ * Atomic sketch-circle authoring. Radius is the actual SKETCH radius in mm.
+ * Adds allocate stable circle, centre-point, fixed and radius constraint IDs;
+ * removal refuses externally referenced geometry rather than dropping intent.
+ */
+export type PlateHoleOperation =
+  | Readonly<{kind:'add';id:string;x:number;y:number;radius:number}>
+  | Readonly<{kind:'remove';id:string}>;
+export interface PlateHoleBatchRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  admission?:'require_admissible'|'preserve_unresolved';
+  operations:ReadonlyArray<PlateHoleOperation>;
+}
+export type PlateHoleBatchResult=SketchConstraintBatchResult;
+
 export interface RuntimeServices {
   model: { planProject(document: ProjectDocument): EvaluationPlan };
   transactions: {
@@ -108,6 +125,8 @@ export interface WorkflowRuntime {
   editDimensions(history: UndoHistory, request: DimensionBatchEditRequest): UndoHistory;
   /** One revision-fenced, undoable model event; optional refusal before commit. */
   editSketchConstraints(history: UndoHistory, request: SketchConstraintBatchRequest): SketchConstraintBatchResult;
+  /** One authoritative edit of the number, centres and radii of circular holes. */
+  editPlateHoles(history:UndoHistory,request:PlateHoleBatchRequest):PlateHoleBatchResult;
   undo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   redo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   save(history: UndoHistory): string;
