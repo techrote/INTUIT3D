@@ -9,7 +9,7 @@ test('download filename follows authoritative project and revision, never fixed 
   const next=editModelDimension(first,'thickness',12);
   assert.match(modelArchiveDownloadName(first),/^intuit3d-workbench[.]sketch[.]user-12-r\d+[.]i3d-model[.]json$/);
   assert.notEqual(modelArchiveDownloadName(first),modelArchiveDownloadName(next));
-  const unsafe=modelArchiveDownloadName(newModelPlateSession('../../folder\\unsafe:;name'));
+  const unsafe=modelArchiveDownloadName({document:{...first.document,projectId:'../../folder\\unsafe:;name'}});
   assert.match(unsafe,/^intuit3d-[a-zA-Z0-9._-]+-r\d+[.]i3d-model[.]json$/);
   assert.ok(!unsafe.includes('..')&&!unsafe.includes('/')&&!unsafe.includes('\\'));
 });
