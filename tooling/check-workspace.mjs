@@ -16,6 +16,7 @@ const lanes = Object.freeze({
   'packages/sketch': 'SKETCH',
   'packages/kernel-contract': 'KERNEL',
   'packages/workflow-runtime': 'RUNTIME',
+  'packages/feature-ops': 'FEATUREOPS',
 });
 const phases = ['typecheck', 'lint', 'test', 'build'];
 
@@ -114,7 +115,7 @@ export function main(args = process.argv.slice(2)) {
       console.log(`EXECUTED: ${workspace.path} ${phase}`);
     }
   }
-  for (const lane of ['WORKBENCH', 'INTENT', 'SKETCH', 'KERNEL', 'RUNTIME']) {
+  for (const lane of ['WORKBENCH', 'INTENT', 'SKETCH', 'KERNEL', 'RUNTIME', 'FEATUREOPS']) {
     if (!encountered.has(lane)) console.log(`LANE_NOT_IMPLEMENTED: ${lane}`);
   }
   console.log('WORKSPACE_GATE_COMPLETE: only listed executed phases are qualified; no implied CAD or graphical acceptance');
