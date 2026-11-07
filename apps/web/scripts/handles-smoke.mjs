@@ -477,7 +477,7 @@ async function main() {
   // Undo and redo the entire cut command; extrusion and sketch survive.
   check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
     'cut undo control missing');
-  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-feature-cut]') && document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-cut]')?.classList.contains('removed') && document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),
     'undo did not remove only the through-cut');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()"),
     'cut redo control missing');
