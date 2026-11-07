@@ -6,6 +6,7 @@
 import {deserializeProject, planProject} from '../model/src/index.ts';
 import {parseSketch} from '../sketch/index.mjs';
 import {inspectCenteredHolePlate} from '../sketch/centered-hole-plate.mjs';
+import {parseRoundedPlateIntent,solveRoundedPlate} from '../sketch/rounded-plate.mjs';
 
 export const ENGINEERING_DRAWING_VERSION = 1;
 export const ENGINEERING_DRAWING_FORMAT = 'intuit3d.engineering.plate-sheet';
@@ -77,6 +78,45 @@ export function measurePlateFromProject({projectJson, sketchFeatureId, profileId
 }
 
 /**
+ * Extend the accepted plate source with a real SKETCH v1 constructive fillet
+ * intent saved alongside the authoritative sketchDocument in the same INTENT
+ * sketch feature payload. We do not infer fillets from UI pixels or invent a
+ * substitute geometry engine. Curved source geometry remains preview-only.
+ */
+export function measureRoundedPlateFromProject(source) {
+  const base=measurePlateFromProject(source);
+  const project=deserializeProject(source.projectJson);
+  const entry=planProject(project).features.find(f=>f.feature.id===source.sketchFeatureId);
+  required(entry?.status==='ready' && entry.feature.kind==='sketch',
+    'rounded sketch feature is missing or not ready');
+  const intentJson=entry.feature.payload.roundedPlateIntent;
+  required(typeof intentJson==='string', 'authored roundedPlateIntent missing');
+  const intent=parseRoundedPlateIntent(intentJson);
+  const sketch=parseSketch(entry.feature.payload.sketchDocument);
+  const result=solveRoundedPlate(sketch,intent);
+  required(result.status==='solved' && result.geometry?.status==='analytic_curved_profile_only',
+    'rounded plate profile is not solved: '+result.status);
+  const curved=result.geometry;
+  required(curved.units==='mm' && curved.previewOnly===true &&
+    curved.holes.length===base.holes.length &&
+    curved.holes.every((h,i)=>h.id===base.holes[i].id &&
+      h.x===base.holes[i].xMm && h.y===base.holes[i].yMm &&
+      h.radius===base.holes[i].radiusMm),
+    'rounded profile holes differ from the solved authored plate');
+  required(finite(curved.areaMm2) && curved.areaMm2>0 &&
+    curved.areaMm2<base.analyticAreaMm2,
+    'invalid analytic rounded material area');
+  return {
+    ...base,outlineKind:'rounded_plate',
+    boundaryCurves:structuredClone(curved.boundary),
+    cornerRadiusMm:intent.radiusMm,
+    analyticAreaMm2:curved.areaMm2,
+    provenance:{...base.provenance,roundedIntentId:intent.id,
+      roundedIntentSignature:result.intentSignature}
+  };
+}
+
+/**
  * Standalone SVG A3 landscape engineering sheet. 1 sheet unit = 1 physical
  * millimetre; the drawing's declared scale is explicit when it must shrink.
  * Text, dimensions, centre marks and table are presentation-derived only.
@@ -102,8 +142,48 @@ export function renderPlateDrawingSvg(measurement,{title='MOUNTING PLATE', drawi
     '<text class="'+cls+'" x="'+fmt(x)+'" y="'+fmt(y)+
     '" text-anchor="'+anchor+'">'+xml(value)+'</text>';
   const detail=[];
-  const vertices=m.boundary.map(p=>fmt(X(p.xMm))+','+fmt(Y(p.yMm))).join(' ');
-  detail.push('<polygon class="outline" points="'+vertices+'" fill="none"/>');
+  if(m.outlineKind==='rounded_plate'){
+    // Render the actual source fillet arcs with SVG A commands. Never draw
+    // a straight polygon across the rounded corners or sample them into mesh.
+    required(Array.isArray(m.boundaryCurves) && m.boundaryCurves.length===8,
+      'expected four analytic straight edges and four arcs');
+    const tolerance=Math.max(1e-7,1e-10*Math.max(m.widthMm,m.heightMm));
+    const near=(a,c)=>Math.hypot(a.x-c.x,a.y-c.y)<=tolerance;
+    let start=null,previous=null;
+    const commands=[];
+    m.boundaryCurves.forEach((curve,i)=>{
+      required(curve && (curve.kind==='line'||curve.kind==='arc') &&
+        curve.start && curve.end &&
+        [curve.start.x,curve.start.y,curve.end.x,curve.end.y].every(finite),
+        'invalid analytic boundary curve');
+      if(i===0){
+        start=curve.start;
+        commands.push('M '+fmt(X(start.x))+' '+fmt(Y(start.y)));
+      }else required(near(previous,curve.start),'disconnected rounded outline');
+      if(curve.kind==='line'){
+        required(i%2===0,'unexpected rounded-plate line order');
+        commands.push('L '+fmt(X(curve.end.x))+' '+fmt(Y(curve.end.y)));
+      }else{
+        required(i%2===1 && finite(curve.radiusMm) && curve.radiusMm>0 &&
+          finite(curve.sweepRad) && Math.abs(Math.abs(curve.sweepRad)-Math.PI/2)<1e-9,
+          'unsupported rounded-plate arc geometry');
+        const radius=fmt(curve.radiusMm*scale);
+        // Source SKETCH is y-up; SVG is y-down. Positive Cartesian sweep
+        // therefore uses the SVG counterclockwise (0) arc sweep flag.
+        commands.push('A '+radius+' '+radius+' 0 0 '+
+          (curve.sweepRad>0?'0':'1')+' '+fmt(X(curve.end.x))+' '+fmt(Y(curve.end.y)));
+      }
+      previous=curve.end;
+    });
+    required(near(previous,start),'open rounded outline');
+    detail.push('<path class="outline" data-outline="rounded-plate" d="'+
+      commands.join(' ')+' Z"/>');
+    detail.push(T(right-11,top+14,'4 × R'+fmt(m.cornerRadiusMm),'small'));
+  }else{
+    required(m.outlineKind===undefined,'unsupported outline geometry');
+    const vertices=m.boundary.map(p=>fmt(X(p.xMm))+','+fmt(Y(p.yMm))).join(' ');
+    detail.push('<polygon class="outline" points="'+vertices+'" fill="none"/>');
+  }
   for(let i=0;i<m.holes.length;i++){
     const hole=m.holes[i],cx=X(hole.xMm),cy=Y(hole.yMm),r=hole.radiusMm*scale;
     detail.push('<circle class="outline" data-entity="'+xml(hole.id)+
@@ -208,5 +288,16 @@ export function createDimensionedPlateSheet(request) {
   const svg=renderPlateDrawingSvg(measurement,{title,drawingId});
   return {format:ENGINEERING_DRAWING_FORMAT,version:1,
     mimeType:'image/svg+xml',filename:(drawingId??'plate').replace(/[^a-zA-Z0-9._-]/g,'_')+'.svg',
+    measurement,svg};
+}
+
+/** Saved, revised INTENT+SKETCH constructive fillet -> dimensioned A3 SVG. */
+export function createRoundedPlateSheet(request) {
+  const {title,drawingId,...source}=request ?? {};
+  const measurement=measureRoundedPlateFromProject(source);
+  const svg=renderPlateDrawingSvg(measurement,{title,drawingId});
+  return {format:ENGINEERING_DRAWING_FORMAT,version:1,
+    mimeType:'image/svg+xml',
+    filename:(drawingId??'rounded-plate').replace(/[^a-zA-Z0-9._-]/g,'_')+'.svg',
     measurement,svg};
 }
