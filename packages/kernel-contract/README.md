@@ -207,3 +207,39 @@ body, use separate STEP artifacts and declare `exactAuthority:false` and
 `independentInteroperability:false`. This feature is **not** production
 OCCT 8.0.1 or a general arbitrary-profile Boolean intersection oracle.
 
+
+
+## Authoritative two-cut journal → physical B-rep/STEP (experimental)
+
+The Node-only `@intuit3d/kernel-contract/runtime-body-cut-chain-provider`
+consumes **committed** INTENT/FEATUREOPS body writers, solved RUNTIME/SKETCH
+profiles and explicitly ordered dependency edges. It does not replay from
+chronological list order, assume the last UI item is the target body, or
+silently infer a through-all cut from an explicitly invalid blind extent.
+A later `blocked_dependency` cut is admitted only when INTENT itself says
+the feature is semantically ready, its sketch is separately solved and its
+named predecessor is in the unique body-writer chain. Unlike the semantic
+planner, the provider constructs **one real physical solid** with sequential
+OCP Booleans; its partial mass oracle checks every cut.
+
+The demonstration authors two cutting SKETCH profiles on an L-bracket,
+commits a through-cut followed by a blind 3 mm pocket, saves/reopens, edits
+the earlier extrusion thickness 8→12 mm, rebuilds the physical body and
+generates two distinct STEP Part 21 artifacts. It proves that an unrelated
+spacer body does not join the invalidation set. It uses the accepted
+INTENT `body-cut-chain/v1` preview and RUNTIME authoring contracts; it does
+not require the unmerged FEATUREOPS ordered-cut candidate.
+
+```bash
+node --test packages/kernel-contract/test/runtime-body-cut-chain-provider.test.mjs
+node packages/kernel-contract/examples/runtime-ordered-cuts-native.mjs /tmp/new-ordered-cuts
+python3 -m unittest discover -s native/tests -p test_runtime_ordered_cuts.py -v
+```
+
+Physical OCP 7.9.3.1 and same-engine STEP readback are required for the last
+two commands. The expected one-solid material volumes are 33,825 mm³ for
+8 mm and 51,225 mm³ for 12 mm. Failure to remove the exact declared area,
+unsolved sketch, unordered writer, aliased identity, incorrect cut depth,
+changed revision, timeout or erroneous STEP readback refuses publication.
+No result grants production OCCT 8.0.1 C++ authority, independent non-OCCT
+interoperability or a usable browser cut control.
