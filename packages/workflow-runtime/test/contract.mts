@@ -5,7 +5,7 @@ import * as dimensions from '@intuit3d/model/dimension-batch-edit';
 import * as archive from '@intuit3d/model/archive';
 import * as sketch from '@intuit3d/sketch';
 import * as discovery from '@intuit3d/sketch/profile-discovery/v1';
-import {createWorkflowRuntime, type RuntimeReport, type RuntimeFeature} from '../index.mjs';
+import {createWorkflowRuntime, diffWorkflowPlans, type WorkflowInvalidation, type RuntimeReport, type RuntimeFeature} from '../index.mjs';
 
 const runtime=createWorkflowRuntime({model,transactions,bindings,dimensions,archive,sketch,discovery});
 const session=transactions.startUndoHistory(model.newProject('runtime.contract'));
@@ -15,3 +15,9 @@ if(result?.status==='preview_only') {
   const body:string|undefined=result.bodyId;
   void body;
 }
+
+const delta:WorkflowInvalidation=runtime.diff(session,session);
+const direct:WorkflowInvalidation=diffWorkflowPlans(model.planProject(session.document),model.planProject(session.document));
+const exact:false=delta.exactReuseAllowed;
+const affected:readonly string[]=direct.invalidatedFeatureIds;
+void exact;void affected;
