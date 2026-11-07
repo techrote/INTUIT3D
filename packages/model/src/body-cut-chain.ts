@@ -255,3 +255,178 @@ export function commitUndoableBodyCutAppend(
   const preview = previewBodyCutAppend(history.document, request);
   return commitUndoableTransaction(history, [preview.event], request.expectedRevision);
 }
+
+
+/**
+ * Retrospective pocket depth/through-all editing, within the already published
+ * body-cut-chain/v1 public subpath. This does NOT rerun a Boolean: it records a
+ * new authoritative cut extent and invalidates the cut's dependent geometry.
+ */
+export const BODY_CUT_EXTENT_EDIT_FORMAT = 'intuit3d.body-cut-extent-edit' as const;
+export const BODY_CUT_EXTENT_EDIT_VERSION = 1 as const;
+
+export interface BodyCutExtentEditRequest {
+  readonly format: typeof BODY_CUT_EXTENT_EDIT_FORMAT;
+  readonly version: typeof BODY_CUT_EXTENT_EDIT_VERSION;
+  readonly expectedProjectId: string;
+  readonly expectedRevision: number;
+  readonly eventId: string;
+  readonly cutFeatureId: string;
+  readonly targetBodyId: string;
+  /** Expected currently authored extent; protects the exact inspector selection. */
+  readonly fromExtent: BodyCutExtent;
+  readonly toExtent: BodyCutExtent;
+  readonly admission: 'require_ready' | 'permit_unresolved';
+}
+export interface BodyCutExtentInspection {
+  readonly format: 'intuit3d.body-cut-extent-inspection';
+  readonly version: 1;
+  readonly projectId: string;
+  readonly revision: number;
+  readonly cutFeatureId: string;
+  readonly targetBodyId: string;
+  readonly extent: BodyCutExtent;
+  readonly semanticStatus: FeatureStatus;
+}
+export interface BodyCutExtentEditPreview {
+  readonly format: 'intuit3d.body-cut-extent-edit-preview';
+  readonly version: 1;
+  readonly event: JournalEvent;
+  readonly document: ProjectDocument;
+  readonly plan: EvaluationPlan;
+  readonly invalidation: IncrementalEvaluationPlan;
+  readonly cutFeatureId: string;
+  readonly targetBodyId: string;
+  readonly previousExtent: BodyCutExtent;
+  readonly nextExtent: BodyCutExtent;
+  readonly semanticStatus: FeatureStatus;
+  readonly exactGeometryAuthority: false;
+  readonly requiresNativeRebuild: true;
+}
+function parsedExtent(raw: unknown): BodyCutExtent {
+  if (!plain(raw) || !(
+    (exact(raw, ['kind']) && raw.kind === 'through_all') ||
+    (exact(raw, ['kind','depthMm']) && raw.kind === 'blind' &&
+      typeof raw.depthMm === 'number' && Number.isFinite(raw.depthMm) && raw.depthMm > 0)
+  )) fail('expected explicit through_all or positive blind depth in mm');
+  return raw as unknown as BodyCutExtent;
+}
+function authoredExtent(feature: Feature): BodyCutExtent {
+  const data = feature.payload;
+  if (data.throughAll === true && data.depthMm === undefined) {
+    return { kind: 'through_all' };
+  }
+  if (data.throughAll === false && typeof data.depthMm === 'number' &&
+      Number.isFinite(data.depthMm) && data.depthMm > 0) {
+    return { kind: 'blind', depthMm: data.depthMm };
+  }
+  fail('selected cut has no unambiguous authored extent');
+}
+function selectedCut(input: ProjectDocument, featureId: string, bodyId: string): Feature {
+  id(featureId, 'cut feature ID');
+  id(bodyId, 'target body ID');
+  const selected = featuresOf(input).find((feature) => feature.id === featureId);
+  if (!selected || selected.kind !== 'cut' ||
+      selected.writeTargets.length !== 1 ||
+      selected.writeTargets[0] !== bodyId ||
+      selected.payload.targetBodyId !== bodyId) {
+    fail('selected cut is not an active explicit writer of the requested body');
+  }
+  return selected;
+}
+/** Inspect the authored extent, not a native measurement or UI cache. */
+export function inspectBodyCutExtent(
+  input: ProjectDocument, cutFeatureId: string, targetBodyId: string,
+): BodyCutExtentInspection {
+  const doc = parseProject(input);
+  const cut = selectedCut(doc, cutFeatureId, targetBodyId);
+  const status = planProject(doc).features.find((row) =>
+    row.feature.id === cutFeatureId)!.status;
+  return {
+    format: 'intuit3d.body-cut-extent-inspection', version: 1,
+    projectId: doc.projectId, revision: doc.revision,
+    cutFeatureId, targetBodyId, extent: authoredExtent(cut),
+    semanticStatus: status,
+  };
+}
+
+/**
+ * Change an EARLIER blind pocket or through-cut without recreating the feature.
+ * Preserve its sketch/profile, body, dependencies and identity. The incremental
+ * plan invalidates every downstream body writer but leaves independent bodies
+ * structurally reusable. It never claims an OCCT result or STEP receipt.
+ */
+export function previewBodyCutExtentEdit(
+  input: ProjectDocument, request: BodyCutExtentEditRequest,
+): BodyCutExtentEditPreview {
+  const doc = parseProject(input);
+  if (!plain(request) || !exact(request, [
+    'format','version','expectedProjectId','expectedRevision','eventId',
+    'cutFeatureId','targetBodyId','fromExtent','toExtent','admission',
+  ]) || request.format !== BODY_CUT_EXTENT_EDIT_FORMAT ||
+      request.version !== BODY_CUT_EXTENT_EDIT_VERSION ||
+      (request.admission !== 'require_ready' &&
+        request.admission !== 'permit_unresolved')) {
+    fail('unsupported cut extent edit request');
+  }
+  id(request.eventId, 'event ID');
+  id(request.expectedProjectId, 'project ID');
+  const fromExtent = parsedExtent(request.fromExtent);
+  const toExtent = parsedExtent(request.toExtent);
+  if (doc.projectId !== request.expectedProjectId ||
+      doc.revision !== request.expectedRevision) {
+    throw new ProjectRevisionError('body cut extent: stale project or revision');
+  }
+  const cut = selectedCut(doc, request.cutFeatureId, request.targetBodyId);
+  const existing = authoredExtent(cut);
+  if (JSON.stringify(existing) !== JSON.stringify(fromExtent)) {
+    fail('selected cut extent differs from expected authored value');
+  }
+  if (JSON.stringify(fromExtent) === JSON.stringify(toExtent)) {
+    fail('cut extent edit must change the authored depth or mode');
+  }
+  const before = planProject(doc);
+  const existingStatus = before.features.find((row) =>
+    row.feature.id === cut.id)!.status;
+  if (request.admission === 'require_ready' && existingStatus !== 'ready') {
+    fail('selected cut is not dependency-ready');
+  }
+  const { depthMm: _discardDepth, ...rest } = cut.payload;
+  const event: JournalEvent = {
+    eventId: request.eventId, type: 'feature.edit', featureId: cut.id,
+    patch: { payload: {
+      ...rest, throughAll: toExtent.kind === 'through_all',
+      ...(toExtent.kind === 'blind' ? { depthMm: toExtent.depthMm } : {}),
+    } },
+  };
+  const staged = previewTransaction(doc, [event], doc.revision);
+  const after = new Map(staged.plan.features.map((row) =>
+    [row.feature.id, row.status]));
+  const semanticStatus = after.get(cut.id)!;
+  if (request.admission === 'require_ready' && semanticStatus !== 'ready') {
+    fail('edited cut is not dependency-ready');
+  }
+  for (const row of before.features) {
+    if (row.status === 'ready' && after.get(row.feature.id) !== 'ready') {
+      fail('cut extent edit regresses previously ready feature: ' + row.feature.id);
+    }
+  }
+  return {
+    format: 'intuit3d.body-cut-extent-edit-preview', version: 1,
+    event: staged.document.journal[staged.document.journal.length - 1]!,
+    document: staged.document, plan: staged.plan,
+    invalidation: planIncrementalEvaluation(doc, staged.document),
+    cutFeatureId: cut.id, targetBodyId: request.targetBodyId,
+    previousExtent: existing, nextExtent: toExtent, semanticStatus,
+    exactGeometryAuthority: false, requiresNativeRebuild: true,
+  };
+}
+
+/** Atomic journal edit and one undo frame; pending is never called exact. */
+export function commitUndoableBodyCutExtentEdit(
+  input: UndoHistory, request: BodyCutExtentEditRequest,
+): UndoHistory {
+  const history = parseUndoHistory(input);
+  const preview = previewBodyCutExtentEdit(history.document, request);
+  return commitUndoableTransaction(history, [preview.event], request.expectedRevision);
+}

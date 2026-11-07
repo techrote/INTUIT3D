@@ -12,6 +12,7 @@ const session=createLivePlateSession({runtime,readCurrentHistory:()=>current,
 const state:LivePlateSessionState=session.refresh();
 const currentRevision:number=state.revision;
 const authority:false=state.exactAuthority;
+const activeGesture:boolean=state.hasActivePreview;
 const archive:string=session.save();
 const restored=session.reopen(archive);
 if(restored.kind==='opened') {
@@ -49,6 +50,7 @@ async function editAndDownloadInOneCommand() {
 async function browserDownload() {
   const result:LocalPlateClientResult=await session.evaluate({
     url:'http://127.0.0.1:3000',token:'0'.repeat(64),exportStep:true,
+    deadlineMs:30000,
   });
   const step:VerifiedLocalStep|null=session.currentStep();
   if(result.kind==='experimental_plate_evaluated'&&step) {
@@ -59,4 +61,35 @@ async function browserDownload() {
   session.cancel();
   return result;
 }
-void [currentRevision,authority,browserDownload,editAndDownloadInOneCommand];
+void [currentRevision,authority,activeGesture,browserDownload,editAndDownloadInOneCommand];
+
+async function solverPreviewThenNative() {
+  // WORKBENCH pointer move: solve/validate now; do not publish the document,
+  // make an undo entry or ask the local native worker until pointer release.
+  const proposal=session.previewEdit(h=>runtime.editPlateHoles(h,{
+    sketchFeatureId:'sketch.plate',eventId:'session.contract.preview',
+    expectedRevision:h.document.revision,admission:'require_admissible',
+    operations:[{kind:'add',id:'previewHole',x:60,y:20,radius:4}],
+  }));
+  if(proposal.kind==='refused') return proposal;
+  const noExact:false=proposal.exactAuthority;
+  const noNative:null=proposal.nativeEvaluation;
+  const sourceRevision:number=proposal.sourceRevision;
+  const report=proposal.report;
+  // Pointer release: a token is valid only for this session and this source archive.
+  const committed=await session.commitPreviewAndEvaluate(proposal,{
+    url:'http://127.0.0.1:3000',token:'0'.repeat(64),exportStep:true,
+  });
+  if(committed.kind==='submitted'){
+    const result:LocalPlateClientResult=committed.evaluation;
+    void result;
+  }
+  const cancelled=session.cancelPreview(proposal);
+  if(cancelled.kind==='discarded') {
+    const uncommitted:true=cancelled.notCommitted;
+    void uncommitted;
+  }
+  void [noExact,noNative,sourceRevision,report];
+  return committed;
+}
+void solverPreviewThenNative;

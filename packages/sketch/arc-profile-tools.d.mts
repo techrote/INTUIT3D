@@ -16,7 +16,9 @@ export type ArcProfileToolChange =
   | {kind:'drag-dimension';constraintId:string;xMm:number;yMm:number}
   | {kind:'hole';change:ArcHoleChange}
   | {kind:'array';sourceCircleId:string;patternId:string;
-     rows:number;columns:number;spacingXmm:number;spacingYmm:number};
+     rows:number;columns:number;spacingXmm:number;spacingYmm:number}
+  | {kind:'drag-handle';handleId:string;xMm:number;yMm:number}
+  | {kind:'translate-holes';circleIds:string[];deltaXMm:number;deltaYMm:number};
 export type ArcProfileToolStamp={sourceSignature:string;selectionSignature:string};
 export interface ArcProfileToolInspection extends ArcProfileToolStamp {
   format:'intuit3d.arc-profile-tools';version:1;
@@ -31,7 +33,10 @@ export type ArcProfileToolResult =
   | (ArcProfileToolStamp & {kind:'accepted';format:'intuit3d.arc-profile-tools';
       version:1;sketch:ArcSketchDocument;selection:ArcHoleSelection;
       solution:ArcSketchSolution;profile:AnalyticArcProfile;
-      createdIds:string[];appliedValueMm:number|null;previewOnly:true});
+      createdIds:string[];appliedValueMm:number|null;previewOnly:true;
+      gesture?:{handleId:string;target:{x:number;y:number};
+        appliedPoint:{x:number;y:number};deviationMm:number};
+      movedHoleIds?:string[]});
 export function inspectArcProfileTools(
   source:ArcSketchDocument,selection:ArcHoleSelection):ArcProfileToolInspection;
 export function editArcProfileWithTool(

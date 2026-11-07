@@ -262,13 +262,91 @@ async function main(){
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'direct sketch edit incorrectly asserted exact geometry');
   await screenshot('native-00b-direct-dimensions.png');
+  // Two real viewport clicks create a solved circle via one authoritative
+  // RUNTIME/SKETCH transaction. The first click is ephemeral; no dummy cut is
+  // journalled or exported. Pointer coordinates use the actual SVG CTM.
+  await pointerClick('runtime-circle-tool');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-circle-stage]'))"),'circle tool not armed');
+  const beforeCircle=Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
+  const clickSketchPoint=async(x,y)=>{
+    const pos=await evaluate(`(() => {
+      const svg=document.querySelector('[data-testid=runtime-sketch]');
+      if(!svg)return null;
+      const matrix=svg.getScreenCTM();
+      const p=new DOMPoint(${x},81-${y}).matrixTransform(matrix);
+      return {x:p.x,y:p.y};
+    })()`);
+    check(pos&&Number.isFinite(pos.x)&&Number.isFinite(pos.y),'cannot project circle click');
+    await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:pos.x,y:pos.y});
+    await send('Input.dispatchMouseEvent',{type:'mousePressed',x:pos.x,y:pos.y,button:'left',clickCount:1});
+    await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:pos.x,y:pos.y,button:'left',clickCount:1});
+  };
+  await clickSketchPoint(60,65);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-circle-stage]')?.textContent?.includes('Click radius')"),'first circle click did not acquire centre');
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===beforeCircle,
+    'first circle click incorrectly journalled incomplete intent');
+  await screenshot('native-00b-circle-draft.png');
+  await clickSketchPoint(65,65);
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===3"),
+    'two-click circle was not admitted into the authoritative sketch');
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===beforeCircle+1,
+    'two-click circle did not create exactly one undoable document revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'sketch-drawn circle falsely promoted STEP/exact state');
+  await screenshot('native-00b-circle-committed.png');
+  // Newly drawn holes are immediately editable, including real radial
+  // pointer drags and keyboard arrows; no browser-side CAD state is authored.
+  const drawnId=await evaluate("Array.from(document.querySelectorAll('[data-testid^=runtime-hole-editor-]')).map(x=>x.getAttribute('data-testid').slice(20)).find(x=>x.startsWith('hole.user.'))");
+  check(drawnId,'drawn hole ID missing');
+  const diameterHandle=await evaluate(`(() => {
+    const h=document.querySelector('[data-testid="runtime-sketch-diameter-${drawnId}"]');
+    if(!h)return null;
+    const x=Number(h.getAttribute('cx')),y=Number(h.getAttribute('cy')),m=h.getScreenCTM();
+    const a=new DOMPoint(x,y).matrixTransform(m);
+    const b=new DOMPoint(x,y-2).matrixTransform(m);
+    return {x:a.x,y:a.y,dx:b.x-a.x,dy:b.y-a.y};
+  })()`);
+  check(diameterHandle&&Number.isFinite(diameterHandle.dy)&&Math.abs(diameterHandle.dy)>3,
+    'radial diameter handle cannot be projected into actual Chromium');
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:diameterHandle.x,y:diameterHandle.y});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:diameterHandle.x,y:diameterHandle.y,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:diameterHandle.x+diameterHandle.dx,y:diameterHandle.y+diameterHandle.dy,button:'left',buttons:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:diameterHandle.x+diameterHandle.dx,y:diameterHandle.y+diameterHandle.dy,button:'left',clickCount:1});
+  const drawnDiameter=()=>evaluate(`Number(document.querySelector('[data-testid="runtime-hole-${drawnId}-diameter"]')?.value)`);
+  await eventually(async()=>await drawnDiameter()===14,'radial pointer did not commit 14 mm solved diameter');
+  check(await evaluate(`document.querySelector('[data-testid=runtime-active-hole]')?.textContent.includes('${drawnId}')`),
+    'selected radial cut did not reach inspector');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'radial sketch edit incorrectly promoted physical exactness');
+  await screenshot('native-00b-circle-radial-edited.png');
+  check(await evaluate(`(() => {const h=document.querySelector('[data-testid="runtime-sketch-diameter-${drawnId}"]');h?.focus();return document.activeElement===h})()`),
+    'new radial diameter handle was not keyboard focusable');
+  await key('ArrowRight','ArrowRight',39);
+  await eventually(async()=>await drawnDiameter()===15,'keyboard radial arrow did not author 15 mm diameter');
+  const historyButton=async(label)=>evaluate(`(() => {
+    const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()===${JSON.stringify(label)});
+    b?.click();return !!b;
+  })()`);
+  check(await historyButton('Undo'),'cannot undo radial keyboard resize');
+  await eventually(async()=>await drawnDiameter()===14,'undo lost pointer-edited diameter');
+  check(await historyButton('Undo'),'cannot undo radial pointer resize');
+  await eventually(async()=>await drawnDiameter()===10,'undo lost original drawn diameter');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Undo');b?.click();return !!b})()"),'cannot undo sketch drawn circle');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===2"),
+    'one undo did not remove drawn circle');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Redo');b?.click();return !!b})()"),'cannot redo sketch drawn circle');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===3"),
+    'redo did not restore drawn circle identity');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Undo');b?.click();return !!b})()"),'cannot clear circle fixture for following regression');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===2"),
+    'cleanup undo did not restore two-hole fixture');
   // Actual Chromium clicks, keyboard-model transactions and rendered circle.
   const beforeAdd=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
   check(await evaluate("(() => {document.querySelector('[data-testid=runtime-add-hole]').click();return true})()"),'cannot add a real sketch hole');
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===3"),'added hole did not reach React inspector');
   const addedId=await evaluate("Array.from(document.querySelectorAll('[data-testid^=runtime-hole-editor-]')).map(x=>x.getAttribute('data-testid')?.slice(20)).find(x=>x?.startsWith('hole.user.'))");
   check(typeof addedId==='string'&&addedId.startsWith('hole.user.'),'new hole identity missing');
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('3 circular holes')"),'added circle not shown in solved profile');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('3 displayed circular holes')"),'added circle not shown in solved profile');
   check(await evaluate(`Boolean(document.querySelector('[data-testid="runtime-sketch-hole-${addedId}"]'))`),'added circle has no drag affordance');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),'new cut falsely labelled exact');
   await screenshot('native-00c-added-hole.png');
@@ -295,7 +373,7 @@ async function main(){
     'physical pointer did not commit solver-backed rectangular array');
   check(await evaluate("Array.from(document.querySelectorAll('[data-testid^=runtime-hole-editor-]')).filter(x=>x.dataset.testid.startsWith('runtime-hole-editor-array.')).length===3"),
     'array did not author three stable copied hole IDs');
-  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('6 circular holes')"),
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('6 displayed circular holes')"),
     'one-shot array not rendered in actual viewport');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'array incorrectly promoted preview geometry to exact');
@@ -505,8 +583,15 @@ async function main(){
     return {a:val('holeA-x'),b:val('holeB-x'),
       da:val('holeA-diameter'),db:val('holeB-diameter')};
   })()`);
-  check(await evaluate("document.querySelector('[data-testid=runtime-layout-select-holeA]')?.checked && document.querySelector('[data-testid=runtime-layout-select-holeB]')?.checked"),
-    'seed holes were not selected for retrospective layout edit');
+  // A new project starts with one selected circle to prevent accidental
+  // whole-group drags. Explicitly Ctrl/checkbox-select both before committing
+  // a two-hole dimensional layout edit; do not rely on a hidden default.
+  for (const hole of ['holeA','holeB']) {
+    if (!await evaluate(`document.querySelector('[data-testid=runtime-layout-select-${hole}]')?.checked`))
+      await pointerClick(`runtime-layout-select-${hole}`);
+  }
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-layout-select-holeA]')?.checked && document.querySelector('[data-testid=runtime-layout-select-holeB]')?.checked"),
+    'explicit two-hole selection for retrospective layout edit');
   check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-layout-scaleX]');e.focus();e.select();return document.activeElement===e})()"),
     'cannot focus combined layout pitch dimension');
   await send('Input.insertText',{text:'120'});

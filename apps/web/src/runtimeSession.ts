@@ -198,6 +198,57 @@ export function editModelHole(
   });
 }
 
+/** Translate an explicitly selected set of authored circles in a single
+ * revision-fenced SKETCH edit.  A partial move is never published: the solver
+ * admits the entire translated group or retains the original journal. */
+export function moveModelHoleGroup(
+  h: ModelSession, holeIds: readonly ModelHole[], deltaX: number, deltaY: number,
+): SketchConstraintBatchResult {
+  if (holeIds.length < 2 || holeIds.length > 32 || new Set(holeIds).size !== holeIds.length)
+    throw Error('Group drag requires 2–32 distinct authored holes.');
+  if (![deltaX, deltaY].every(Number.isFinite) || (deltaX === 0 && deltaY === 0))
+    throw Error('Group drag requires a finite, nonzero translation.');
+  const holes = modelHoleValues(h);
+  const admitted = previewModelSketchProfile(runtime.inspect(h));
+  if (!admitted) throw Error('Group drag requires a currently admitted solved sketch profile.');
+  // This workbench currently authors an axis-aligned rectangular plate. The
+  // SKETCH solver can satisfy the constraints of a circle whose entire rim
+  // moved outside that plate, so a direct physical-hole drag additionally
+  // verifies the requested rim against the actual admitted plate bounds.
+  // This is a conservative UI admission fence, not a replacement solver.
+  const minX = Math.min(...admitted.outer.map(p => p.x));
+  const maxX = Math.max(...admitted.outer.map(p => p.x));
+  const minY = Math.min(...admitted.outer.map(p => p.y));
+  const maxY = Math.max(...admitted.outer.map(p => p.y));
+  const edits = holeIds.map(id => {
+    const origin = holes[id];
+    if (!origin) throw Error('Unknown authored hole in group drag: ' + id);
+    const x = origin.x + deltaX, y = origin.y + deltaY;
+    if (![x, y].every(value => Number.isFinite(value) && Math.abs(value) <= 10000))
+      throw Error('Group drag target lies outside the supported coordinate range.');
+    const circle = admitted.holes.find(hole => hole.id === id);
+    if (!circle) throw Error('Selected hole is absent from the admitted profile: ' + id);
+    if (x - circle.radius <= minX || x + circle.radius >= maxX ||
+        y - circle.radius <= minY || y + circle.radius >= maxY)
+      throw Error('Group translation would invalidate the solved SKETCH profile; no edit committed.');
+    return {constraintId: id + ':fixed', patch: {x, y}};
+  });
+  const result = runtime.editSketchConstraints(h, {
+    sketchFeatureId: 'sketch.plate',
+    eventId: `workbench.drag.group.${h.document.revision}`,
+    expectedRevision: h.document.revision,
+    admission: 'require_admissible',
+    edits,
+  });
+  // The runtime may accept solved constraints while profile discovery finds
+  // that a circle has crossed the plate boundary. A drag must be usable, not
+  // just solvable: refuse that candidate before exposing its new history.
+  if (result.kind === 'committed' &&
+      !previewModelSketchProfile(runtime.inspect(result.history)))
+    throw Error('Group translation would invalidate the solved SKETCH profile; no edit committed.');
+  return result;
+}
+
 /** A two-axis drag is one undoable constraint transaction, not two moves. */
 export function moveModelHoleCenter(
   h:ModelSession, hole:ModelHole, x:number,y:number,
@@ -276,6 +327,56 @@ export function newModelPlateSession(projectId = 'workbench.plate.one'): ModelSe
   });
 }
 
+/** Begin with one authoritative solved SKETCH feature and no manufactured solid.
+ * Unlike the complete mounting-plate example, the user authors extrusion and
+ * cut separately. The profile contains two circular construction candidates;
+ * neither is a solid cut until the user commits the cut feature. */
+export function newModelSketchSession(projectId = 'workbench.sketch.one'): ModelSession {
+  const seeded=runtime.commit(initial(projectId), [
+    created('create.sketch', feature('sketch.plate', 'sketch', [], [],
+      { sketch: sketch.plateSketchFixture() as unknown as model.JsonValue })),
+  ]);
+  // The new-project template is a baseline, not an undoable user edit:
+  // undoing it would remove the workbench's only source sketch and strand
+  // numeric tools that correctly require an active SKETCH feature.
+  return transactions.startUndoHistory(seeded.document);
+}
+
+/** Commit an actual body-producing extrusion to the INTENT journal.
+ * Restoring a removed extrusion retains its existing semantic identity. */
+export function createModelExtrusion(h: ModelSession, thicknessMm: number): ModelSession {
+  if (!Number.isFinite(thicknessMm) || thicknessMm<=0 || thicknessMm>10000)
+    throw Error('Extrusion thickness must be finite and positive (up to 10,000 mm).');
+  const profile=previewModelSketchProfile(runtime.inspect(h));
+  if(!profile) throw Error('The sketch has no admitted solved profile for extrusion.');
+  const existing=modelFeatureTimeline(h).find(f=>f.featureId==='plate');
+  if(existing?.active) throw Error('An extrusion already exists in this project.');
+  if(existing) throw Error('Extrusion was removed; select its tombstone and restore it without changing its authored dimension.');
+  return runtime.commit(h,[
+    created(`workbench.extrude.${h.document.revision}`,feature('plate','extrude',
+      ['sketch.plate'],['body.plate'],{sourceSketchId:'sketch.plate',thicknessMm})),
+  ],h.document.revision);
+}
+
+/** Create an explicitly body-targeted circular through-cut from the already
+ * admitted SKETCH profile. This is semantic intent, not a native Boolean. */
+export function createModelThroughCut(h: ModelSession): ModelSession {
+  const report=runtime.inspect(h);
+  if(!modelFeatureTimeline(h).some(f=>f.featureId==='plate'&&f.active) ||
+      report.features.find(f=>f.featureId==='plate')?.status!=='preview_only')
+    throw Error('Create an admitted extrusion before cutting this body.');
+  if(!previewModelSketchProfile(report)?.holes.length)
+    throw Error('Add a solved circular hole before committing the cut.');
+  const existing=modelFeatureTimeline(h).find(f=>f.featureId==='cut');
+  if(existing?.active) throw Error('A cut already exists in this project.');
+  if(existing) throw Error('Cut was removed; restore its original semantic feature instead of duplicating the body operation.');
+  return runtime.commit(h,[
+    created(`workbench.cut.${h.document.revision}`,feature('cut','cut',
+      ['plate'],['body.plate'],
+      {sourceSketchId:'sketch.plate',targetBodyId:'body.plate'})),
+  ],h.document.revision);
+}
+
 function getFeature(h: ModelSession, id: string): model.Feature {
   const f = model.featuresOf(h.document).find(item => item.id === id);
   if (!f) throw Error('Missing authoritative feature ' + id);
@@ -331,6 +432,13 @@ export function makeModelThicknessIndependent(h: ModelSession): {
     history,bakedThicknessMm:preview.baked[0].value,
     invalidatedFeatureIds:preview.invalidation.invalidatedFeatureIds,
   };
+}
+
+/** Source-sketch dimensions remain editable before an extrusion exists. */
+export function modelSketchDimensionValues(h: ModelSession): Record<Exclude<ModelDimension,'thickness'>,number> {
+  const a=dimension(h,'holeA:fixed'),b=dimension(h,'holeB:fixed');
+  return {width:dimension(h,'width'),depth:dimension(h,'height'),
+    holeDiameter:2*dimension(h,'holeA:diameter'),holePitch:b-a};
 }
 
 export function modelDimensionValues(h: ModelSession): Record<ModelDimension, number> {
@@ -398,6 +506,14 @@ export function inspectModelSession(h: ModelSession): RuntimeReport {
   return runtime.inspect(h);
 }
 
+/** Public RUNTIME/SKETCH admission is already useful before any solid exists.
+ * Never represent this analytic 2D profile as a proven B-rep. */
+export function previewModelSketchProfile(report:RuntimeReport):PlateProfile|null {
+  const source=report.features.find(f=>f.featureId==='sketch.plate');
+  return source?.status==='analytic_profile_only' && source.profile?.status==='analytic_profile_only'
+    ? source.profile:null;
+}
+
 export function previewModelProfile(report: RuntimeReport): {profile:PlateProfile;thickness:number}|null {
   const plate = report.features.find(f => f.featureId === 'plate');
   if (plate?.status !== 'preview_only' || !plate.profile || !plate.thicknessMm ||
@@ -429,10 +545,11 @@ export function reopenModelSession(text: string): ModelSession {
   // Accept a genuine authored plate/cut tombstone archive without
   // resurrecting deleted geometry; unrelated document formats are refused.
   const rows=model.featureTimelineOf(h.document);
-  if(!['sketch.plate','plate','cut'].every(id=>rows.some(t=>t.featureId===id)) ||
-      !rows.some(t=>t.featureId==='sketch.plate'&&t.active))
+  if(!rows.some(t=>t.featureId==='sketch.plate'&&t.active) ||
+      rows.some(t=>t.active&&!['sketch.plate','plate','cut','parameter.t'].includes(t.featureId)))
     throw Error('Archive does not contain the supported plate/sketch/cut history.');
   modelHoleValues(h);
+  modelSketchDimensionValues(h);
   if(rows.some(t=>t.featureId==='plate'&&t.active))modelDimensionValues(h);
   runtime.inspect(h);
   return h;

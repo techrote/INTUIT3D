@@ -313,3 +313,19 @@ separate CAD implementation.
 ### Retrospective selected-hole layout edit (experimental workbench)
 
 In the model-backed inspector, **Retrospective hole layout** selects stable authored circle IDs. Set independent X-spacing, Y-spacing and bore-diameter percentages and apply once. WORKBENCH uses the accepted `runtime.resizePlateHoleLayout` contract, an explicit selection-centre pivot, the SKETCH solver and one undoable INTENT event; it does **not** modify preview triangles or create an associative pattern. Overlaps/refused dimensions preserve the original document. Undo/redo and Save/Open retain IDs, and edits revoke old STEP receipts. Opt-in Live rebuild creates new revision-fenced experimental physical STEP bytes when the local provider is paired. Production OCCT 8.0.1 and independent external STEP still require separate qualification. Browser regression: `npm run test:browser:handles --workspace @intuit3d/web` (actual Chromium, synthetic HTTP provider for the UI test).
+
+## Two-click circle authoring (model-backed SKETCH)
+
+In **Model-backed CAD → Sketch**, choose **Draw circle · 2 clicks**. The
+first click records only a temporary centre; the second defines the diameter
+from the current SVG millimetre projection (0.5 mm snapping). Escape or Cancel
+abandons the tool with **no authored event**. RUNTIME/SKETCH admits the complete
+circle into the single authoritative journal or refuses overlaps/out-of-bounds
+profiles without committing a partial feature. A successful circle has a stable
+hole ID, can be dragged/dimensioned, and participates in undo/redo, archive
+save/reopen and native STEP invalidation. The sketch shows a temporary ghost
+circle while drawing; it is never B-rep or exact geometry.
+
+Regression: `node --experimental-strip-types --test src/circleDrawing.test.ts`
+and the real Chromium `npm run test:browser:handles --workspace @intuit3d/web`
+(two actual pointer clicks, one journal revision, undo/redo and screenshots).

@@ -728,3 +728,60 @@ Import `inspectBodyCutChain`, `previewBodyCutAppend`, and `commitUndoableBodyCut
 A request declares `extent: {kind: 'through_all'}` or `{kind: 'blind', depthMm: 3}`, plus project/revision fences and an admission policy. `require_ready` refuses an absent sketch or an unresolved cut; `permit_unresolved` intentionally leaves a not-yet-created sketch pending. Ambiguous/parallel same-body writers, unsupported terminal operations, duplicate semantic IDs, stale revisions and invalid depths are rejected without modifying the source. The returned structural invalidation identifies affected upstream/downstream features; unrelated bodies stay unaffected. Undo/redo and archive reopening preserve the original feature/body IDs and authored cut selection.
 
 Run `node packages/model/examples/sequential-body-cuts.mjs` for a plate with an existing through-cut, a new blind pocket, retrospective plate-width edit, partial replay, undo/redo and save/reopen. **This contract is semantic only.** The SKETCH/RUNTIME consumer must re-admit the `profileCandidateId`; KERNEL must separately evaluate the actual B-rep and STEP under a current-revision receipt. A planner status of `ready` is not physical Boolean success, a certified volume or an independent STEP reader result. The established FEATUREOPS profile authoring restriction on second writers remains its own consumer change; this API provides the explicit safe dependency contract rather than bypassing it.
+
+
+### Retrospective cut-extent editing (body-cut-chain/v1)
+
+The public `@intuit3d/model/body-cut-chain` subpath now additionally exports
+`inspectBodyCutExtent`, `previewBodyCutExtentEdit` and
+`commitUndoableBodyCutExtentEdit`. A selected existing cut can switch between
+`through_all` and positive finite `blind.depthMm`, preserving semantic
+feature identity, explicit body target, source sketch/profile and dependency
+ordering. An earlier edited cut invalidates its dependent cuts while independent
+bodies remain structurally reusable. One revision-fenced journal edit is one
+undo/redo frame and survives model archive reopening.
+
+The request pins project/revision, selected cut, body and original authored
+extent. Stale/mismatched/ambiguous or invalid edits reject atomically. The
+preview always reports `exactGeometryAuthority: false` and
+`requiresNativeRebuild: true`; actual sketch admission, physical Boolean
+construction, native STEP receipts and external CAD import remain distinct
+RUNTIME/KERNEL/PLATFORM responsibilities.
+
+```bash
+node packages/model/examples/retrospective-pocket-depth.mjs
+node --experimental-strip-types --test packages/model/test/body-cut-extent-edit.test.mjs
+```
+
+
+## Retarget an existing cut to a new sketch/profile — v1
+
+Import `inspectCutProfileSource`, `previewCutProfileSourceEdit` and
+`commitUndoableCutProfileSourceEdit` from
+`@intuit3d/model/cut-profile-source`. This is a concrete user command:
+replace the selected hole-cut loop, or restore an earlier cut after its
+source sketch was removed by selecting a different authored sketch.
+
+The `intuit3d.cut-profile-source` v1 request fences project/revision,
+cut ID, target body ID, previous source sketch and previous profile candidate.
+It specifies the new source sketch and discovered `cycle:` profile ID.
+`releasePreviousSketchDependency: true` explicitly transfers the old sketch
+edge; `false` preserves any independent dependency and can leave the
+cut pending. No other dependency edge, body writer, downstream feature ID,
+cut extent or authored chronology changes. `require_ready` checks **model
+structural readiness only**, never SKETCH profile solution or native Boolean
+validity; `permit_unresolved` makes future/missing source selections pending
+and re-evaluable once authored. Preview exposes the exact invalidation frontier.
+
+Execute the representative plate + two cuts + revised Ø14 hole + retired
+old sketch + undo/redo + archive example:
+
+```bash
+node --experimental-strip-types packages/model/examples/retarget-cut-profile.mjs
+node --experimental-strip-types --test packages/model/test/cut-profile-source.test.mjs
+```
+
+**RUNTIME/WORKBENCH consumer requirement:** admit the selected `cycle:`
+against the current SKETCH solver, invalidate previous native/STEP receipts
+and run new native geometry before marking a result exact. MODEL preserves
+the cut/body semantics but cannot certify that the selected loop cuts material.

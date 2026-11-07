@@ -449,3 +449,117 @@ provides an immediately consumable WORKBENCH edit/rebuild action, while
 Consumers must label existing OCP 7.9.3.1 STEP experimental, not validated
 production exactness. Real native demonstration:
 `npm run demo:bridge --workspace @intuit3d/workflow-runtime`.
+
+## Recoverable native refresh and one-command project reopen (RUNTIME-002)
+
+The **existing** `createLivePlateSession()` now keeps a successfully verified
+current-revision experimental STEP available when a *new evaluation of the
+same canonical INTENT archive* is cancelled, returns unavailable, or runs with
+`exportStep:false`. The current download accessor still checks the full
+authoritative serialized archive. Any actual edit, external history mutation,
+undo, or replacement archive revokes the old receipt immediately. This is
+not an offline cache of a stale solid: the old bytes remain accessible only
+while their exact authored inputs remain current. `refresh().lastResultKind`
+reports the most recent provider outcome separately from
+`refresh().hasVerifiedStep`.
+
+WORKBENCH can restore a saved archive and physically rebuild with a single
+typed consumer call:
+
+```js
+const result = await session.reopenAndEvaluate(savedArchive, {
+  confirmReplacement: true,  // required if replacing a different document
+  url: pairedHost.url, token: pairedHost.token,
+  requestId: 'workbench.reopen.1', exportStep: true,
+});
+if (result.kind === 'submitted' &&
+    result.evaluation.kind === 'experimental_plate_evaluated') {
+  const current = session.currentStep(); // recheck at download-click time
+}
+```
+
+Without explicit replacement confirmation, `kind:'refused'` returns without
+altering the document **or submitting a native job**. With confirmation, the
+previous revision's STEP is synchronously invalidated; the new current archive
+must earn a fresh experimental native receipt. The demonstration
+`npm run demo:bridge --workspace @intuit3d/workflow-runtime` exercises a
+real OCP save → extra-hole edit → confirmed reopen → physical STEP rebuild
+sequence. `npm test --workspace @intuit3d/workflow-runtime` also covers
+the trusted localhost path and deterministic provider failure/retry behaviour.
+These are **experimental** OCP/same-engine checks, not OCCT 8 production or
+independent external STEP evidence.
+
+### Bounded live native evaluation
+
+`createLivePlateSession(...).evaluate({url,token,exportStep:true,deadlineMs:30000})` has a **total** 30-second default deadline (adjustable from 25 to 120000 milliseconds), covering provider execution and bounded host-busy retries. A hung HTTP/native adapter that ignores `AbortSignal` now resolves as `{kind:'unresolved',code:'timeout'}` instead of leaving the browser awaiting forever. Explicit cancellation likewise settles promptly; old workers remain fenced and their late responses cannot publish. `refresh().lastResultKind` records the failed attempt while `currentStep()` retains prior same-archive SHA-verified experimental bytes. Any committed edit, external project mutation or confirmed archive replacement still revokes them. Native host timeouts and browser deadlines are separate controls; none establishes production exactness or independent STEP validation.
+
+
+
+## Solver-backed edits without publishing on every pointer move
+
+`createLivePlateSession()` now supports a **two-phase model-backed edit** for
+interactive dimensions, hole moves, and other actual INTENT/SKETCH commands.
+A preview is an ephemeral candidate journal **inside the same authoritative
+runtime**, not another project, preview-mesh geometry authority, or native solid.
+
+```js
+// Pointer move: create a real INTENT/SKETCH candidate without touching the
+// current document, undo journal, native worker, or still-current STEP bytes.
+const proposal = session.previewEdit(history => runtime.editSketchConstraints(history, {
+  sketchFeatureId: 'sketch.plate',
+  eventId: 'drag.holeA.' + history.document.revision,
+  expectedRevision: history.document.revision,
+  admission: 'require_admissible',
+  edits: [{constraintId: 'holeA:fixed',patch: {x: 40, y: 40}}],
+}));
+if (proposal.kind === 'preview') {
+  // Display proposal.report and its solver/profile diagnostics as a
+  // NON-AUTHORITATIVE visual candidate, not as validated exact geometry.
+  // Pointer release: the opaque token commits once only if the source
+  // archive remains byte-identical; then one real native evaluation runs.
+  const result = await session.commitPreviewAndEvaluate(proposal, nativeOptions);
+  if (result.kind === 'submitted') {
+    // Only result.evaluation can contain current-revision experimental STEP;
+    // even that is NOT qualified exact or independent interoperability.
+  }
+}
+```
+
+Each `previewEdit()` replaces the previous sampled pose, including when
+the latest pointer position fails SKETCH admission. Only the **latest**
+successful proposal can commit. Earlier release callbacks return
+`invalid_preview`, not silently commit an older geometry. On pointercancel /
+Escape call `session.cancelPreview(proposal)`, which discards only that matching
+gesture without changing history, STEP, or native evaluation. A delayed
+pointercancel cannot discard a more recent proposal.
+`session.refresh().hasActivePreview` is available to the UI.
+
+If another edit, undo, project reopen or replacement occurs before release, the
+preview commit returns `{kind:'refused',code:'stale_preview'}` without publishing
+its candidate or dispatching a provider. A consumed/foreign token returns
+`invalid_preview`. Normal SKETCH admission refusal also performs no commit.
+A preview does not revoke an already verified current STEP; **a committed
+preview does revoke it immediately**, and the new provider result is
+revision-fenced by the existing live session.
+
+Run the deterministic model/solver/local-host test with
+`node --experimental-strip-types --test packages/workflow-runtime/test/live-plate-session.integration.test.mjs`
+from a locked installed repository. The loopback provider in this test is a
+synthetic native test double. The separately existing `npm run demo:bridge
+--workspace @intuit3d/workflow-runtime` exercises experimental OCP; neither
+is independent STEP verification. WORKBENCH owns wiring pointer
+press/move/release to this API, and INTEGRATION owns cross-package admission.
+
+### Safe repeated STEP downloads after interactive edits
+
+At the moment of download obtain `const receipt=session.currentStep()`; never
+reuse an older receipt across an edit, undo or reopen. The session retains an
+independent copy of SHA-verified experimental STEP bytes: mutating or transferring
+an `evaluation.step.bytes` response or a previously returned
+`currentStep().bytes` buffer cannot alter a subsequent download. The latest
+revision fence remains mandatory and a committed gesture still invalidates the
+previous receipt. For a real saved file, use a fresh copy from
+`session.currentStep()` and label it **experimental OCP / same-engine readback**,
+not production-certified STEP. The real-INTENT/SKETCH localhost regression
+exercises both mutation paths; native OCP and independent CAD qualifications
+remain separate gates.

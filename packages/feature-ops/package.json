@@ -23,6 +23,22 @@
     "./extrusion-reconfiguration/v1": {
       "types": "./extrusion-reconfiguration.d.mts",
       "default": "./src/extrusion-reconfiguration.mjs"
+    },
+    "./ordered-cut/v1": {
+      "types": "./ordered-cut.d.mts",
+      "default": "./src/ordered-cut.mjs"
+    },
+    "./ordered-cut-extent-edit/v1": {
+      "types": "./ordered-cut-extent-edit.d.mts",
+      "default": "./src/ordered-cut-extent-edit.mjs"
+    },
+    "./circular-bolt-pattern/v1": {
+      "types": "./circular-bolt-pattern.d.mts",
+      "default": "./src/circular-bolt-pattern.mjs"
+    },
+    "./rectangular-hole-grid/v1": {
+      "types": "./rectangular-hole-grid.d.mts",
+      "default": "./src/rectangular-hole-grid.mjs"
     }
   },
   "peerDependencies": {

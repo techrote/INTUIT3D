@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420mm" height="297mm" viewBox="0 0 420 297" role="img">
+<title>MOUNTING PLATE — DIMENSIONED TOP VIEW — I3D-DEMO-001</title>
+<metadata>{&quot;format&quot;:&quot;intuit3d.engineering.plate-sheet&quot;,&quot;version&quot;:1,&quot;status&quot;:&quot;analytic_sketch_only&quot;,&quot;units&quot;:&quot;mm&quot;,&quot;provenance&quot;:{&quot;projectId&quot;:&quot;example.mounting.plate&quot;,&quot;projectRevision&quot;:2,&quot;sketchFeatureId&quot;:&quot;sketch.plate&quot;,&quot;profileId&quot;:&quot;plate:profile&quot;,&quot;sketchSignature&quot;:&quot;{\&quot;version\&quot;:1,\&quot;units\&quot;:\&quot;mm\&quot;,\&quot;points\&quot;:[{\&quot;id\&quot;:\&quot;plate:p0\&quot;,\&quot;x\&quot;:0,\&quot;y\&quot;:0},{\&quot;id\&quot;:\&quot;plate:p1\&quot;,\&quot;x\&quot;:120,\&quot;y\&quot;:0},{\&quot;id\&quot;:\&quot;plate:p2\&quot;,\&quot;x\&quot;:120,\&quot;y\&quot;:80},{\&quot;id\&quot;:\&quot;plate:p3\&quot;,\&quot;x\&quot;:0,\&quot;y\&quot;:80},{\&quot;id\&quot;:\&quot;plate:mid\&quot;,\&quot;x\&quot;:0,\&quot;y\&quot;:40},{\&quot;id\&quot;:\&quot;plate:holeA:center\&quot;,\&quot;x\&quot;:35,\&quot;y\&quot;:40},{\&quot;id\&quot;:\&quot;plate:holeB:center\&quot;,\&quot;x\&quot;:85,\&quot;y\&quot;:40}],\&quot;lines\&quot;:[{\&quot;id\&quot;:\&quot;plate:bottom\&quot;,\&quot;start\&quot;:\&quot;plate:p0\&quot;,\&quot;end\&quot;:\&quot;plate:p1\&quot;},{\&quot;id\&quot;:\&quot;plate:right\&quot;,\&quot;start\&quot;:\&quot;plate:p1\&quot;,\&quot;end\&quot;:\&quot;plate:p2\&quot;},{\&quot;id\&quot;:\&quot;plate:top\&quot;,\&quot;start\&quot;:\&quot;plate:p2\&quot;,\&quot;end\&quot;:\&quot;plate:p3\&quot;},{\&quot;id\&quot;:\&quot;plate:left\&quot;,\&quot;start\&quot;:\&quot;plate:p3\&quot;,\&quot;end\&quot;:\&quot;plate:p0\&quot;}],\&quot;circles\&quot;:[{\&quot;id\&quot;:\&quot;plate:holeA\&quot;,\&quot;center\&quot;:\&quot;plate:holeA:center\&quot;,\&quot;radius\&quot;:6},{\&quot;id\&quot;:\&quot;plate:holeB\&quot;,\&quot;center\&quot;:\&quot;plate:holeB:center\&quot;,\&quot;radius\&quot;:6}],\&quot;constraints\&quot;:[{\&quot;id\&quot;:\&quot;plate:anchor\&quot;,\&quot;kind\&quot;:\&quot;fixed\&quot;,\&quot;point\&quot;:\&quot;plate:p0\&quot;,\&quot;x\&quot;:0,\&quot;y\&quot;:0},{\&quot;id\&quot;:\&quot;plate:horizontal-bottom\&quot;,\&quot;kind\&quot;:\&quot;horizontal\&quot;,\&quot;line\&quot;:\&quot;plate:bottom\&quot;},{\&quot;id\&quot;:\&quot;plate:horizontal-top\&quot;,\&quot;kind\&quot;:\&quot;horizontal\&quot;,\&quot;line\&quot;:\&quot;plate:top\&quot;},{\&quot;id\&quot;:\&quot;plate:vertical-left\&quot;,\&quot;kind\&quot;:\&quot;vertical\&quot;,\&quot;line\&quot;:\&quot;plate:left\&quot;},{\&quot;id\&quot;:\&quot;plate:vertical-right\&quot;,\&quot;kind\&quot;:\&quot;vertical\&quot;,\&quot;line\&quot;:\&quot;plate:right\&quot;},{\&quot;id\&quot;:\&quot;plate:width\&quot;,\&quot;kind\&quot;:\&quot;distanceX\&quot;,\&quot;a\&quot;:\&quot;plate:p0\&quot;,\&quot;b\&quot;:\&quot;plate:p1\&quot;,\&quot;value\&quot;:150},{\&quot;id\&quot;:\&quot;plate:height\&quot;,\&quot;kind\&quot;:\&quot;distanceY\&quot;,\&quot;a\&quot;:\&quot;plate:p1\&quot;,\&quot;b\&quot;:\&quot;plate:p2\&quot;,\&quot;value\&quot;:80},{\&quot;id\&quot;:\&quot;plate:midpoint\&quot;,\&quot;kind\&quot;:\&quot;midpoint\&quot;,\&quot;point\&quot;:\&quot;plate:mid\&quot;,\&quot;a\&quot;:\&quot;plate:p0\&quot;,\&quot;b\&quot;:\&quot;plate:p3\&quot;},{\&quot;id\&quot;:\&quot;plate:leftInset\&quot;,\&quot;kind\&quot;:\&quot;distanceX\&quot;,\&quot;a\&quot;:\&quot;plate:p0\&quot;,\&quot;b\&quot;:\&quot;plate:holeA:center\&quot;,\&quot;value\&quot;:35},{\&quot;id\&quot;:\&quot;plate:rightInset\&quot;,\&quot;kind\&quot;:\&quot;distanceX\&quot;,\&quot;a\&quot;:\&quot;plate:holeB:center\&quot;,\&quot;b\&quot;:\&quot;plate:p1\&quot;,\&quot;value\&quot;:35},{\&quot;id\&quot;:\&quot;plate:holeA:centerline\&quot;,\&quot;kind\&quot;:\&quot;distanceY\&quot;,\&quot;a\&quot;:\&quot;plate:mid\&quot;,\&quot;b\&quot;:\&quot;plate:holeA:center\&quot;,\&quot;value\&quot;:0},{\&quot;id\&quot;:\&quot;plate:holeB:centerline\&quot;,\&quot;kind\&quot;:\&quot;distanceY\&quot;,\&quot;a\&quot;:\&quot;plate:mid\&quot;,\&quot;b\&quot;:\&quot;plate:holeB:center\&quot;,\&quot;value\&quot;:0},{\&quot;id\&quot;:\&quot;plate:holeA:radius\&quot;,\&quot;kind\&quot;:\&quot;radius\&quot;,\&quot;circle\&quot;:\&quot;plate:holeA\&quot;,\&quot;value\&quot;:6},{\&quot;id\&quot;:\&quot;plate:holeB:radius\&quot;,\&quot;kind\&quot;:\&quot;radius\&quot;,\&quot;circle\&quot;:\&quot;plate:holeB\&quot;,\&quot;value\&quot;:6}]}&quot;,&quot;solverStatus&quot;:&quot;solved&quot;},&quot;scale&quot;:1,&quot;nativeExact&quot;:false,&quot;independentStepQualified&quot;:false}</metadata>
+<style>
+.border{stroke:#28384b;stroke-width:.55;fill:none}
+.outline{stroke:#111c29;stroke-width:.7;fill:none}
+.thin{stroke:#647d91;stroke-width:.24;fill:none}
+.center{stroke:#31818b;stroke-width:.22;stroke-dasharray:5 2 1 2;fill:none}
+.dimension{stroke:#273849;stroke-width:.3;fill:none;marker-start:url(#arr);marker-end:url(#arr)}
+.datum{fill:#fff;stroke:#198d96;stroke-width:.4}
+.panel{fill:#f5f8fa;stroke:#cad4de;stroke-width:.35}
+text{font-family:Arial,Helvetica,sans-serif;fill:#24354a}
+.small{font-size:3.3px}.tiny{font-size:2.8px}
+.label{font-size:4.2px;font-weight:700}
+.dimension-label{font-size:4.2px;font-weight:600}
+.heading{font-size:8px;font-weight:700;letter-spacing:.8px}
+</style>
+<defs><marker id="arr" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#273849"/></marker></defs>
+<rect x="0" y="0" width="420" height="297" fill="white"/>
+<rect class="border" x="10" y="10" width="400" height="277"/>
+<rect class="border" x="14" y="14" width="392" height="269"/>
+<text class="heading" x="22" y="29" text-anchor="start">INTUIT3D / ENGINEERING INSPECTION</text>
+<text class="small" x="22" y="37" text-anchor="start">DIMENSIONED TOP VIEW   ·   ANALYTIC SKETCH ONLY</text>
+<line class="thin" x1="20" y1="44" x2="400" y2="44"/>
+<polygon class="outline" points="90,167 240,167 240,87 90,87" fill="none"/>
+<circle class="outline" data-entity="plate:holeA" cx="125" cy="127" r="6"/>
+<line class="center" x1="117" y1="127" x2="133" y2="127"/>
+<line class="center" x1="125" y1="119" x2="125" y2="135"/>
+<circle class="datum" cx="125" cy="127" r="1"/>
+<text class="small" x="125" y="117" text-anchor="middle">H1</text>
+<circle class="outline" data-entity="plate:holeB" cx="205" cy="127" r="6"/>
+<line class="center" x1="197" y1="127" x2="213" y2="127"/>
+<line class="center" x1="205" y1="119" x2="205" y2="135"/>
+<circle class="datum" cx="205" cy="127" r="1"/>
+<text class="small" x="205" y="117" text-anchor="middle">H2</text>
+<line class="thin" x1="90" y1="84" x2="90" y2="62"/>
+<line class="thin" x1="240" y1="84" x2="240" y2="62"/>
+<line class="dimension" x1="90" y1="67" x2="240" y2="67"/>
+<text class="dimension-label" x="165" y="63" text-anchor="middle">150 mm</text>
+<line class="thin" x1="90" y1="87" x2="65" y2="87"/>
+<line class="thin" x1="90" y1="167" x2="65" y2="167"/>
+<line class="dimension" x1="70" y1="87" x2="70" y2="167"/>
+<text class="dimension-label" transform="translate(66 127) rotate(-90)" text-anchor="middle">80 mm</text>
+<line class="thin" x1="125" y1="134" x2="125" y2="190"/>
+<line class="thin" x1="205" y1="134" x2="205" y2="190"/>
+<line class="dimension" x1="125" y1="187" x2="205" y2="187"/>
+<text class="small" x="165" y="194" text-anchor="middle">PITCH 80 mm</text>
+<line class="center" x1="83" y1="127" x2="247" y2="127"/>
+<rect class="panel" x="286" y="65" width="119" height="111" rx="1"/>
+<text class="label" x="292" y="76" text-anchor="start">HOLE LOCATION TABLE</text>
+<line class="thin" x1="291" y1="82" x2="400" y2="82"/>
+<text class="tiny" x="292" y="91" text-anchor="start">ID</text>
+<text class="tiny" x="317" y="91" text-anchor="start">X</text>
+<text class="tiny" x="347" y="91" text-anchor="start">Y</text>
+<text class="tiny" x="379" y="91" text-anchor="start">DIA</text>
+<text class="small" x="292" y="108" text-anchor="start">H1</text>
+<text class="small" x="315" y="108" text-anchor="start">35</text>
+<text class="small" x="347" y="108" text-anchor="start">40</text>
+<text class="small" x="377" y="108" text-anchor="start">Ø12</text>
+<text class="small" x="292" y="125" text-anchor="start">H2</text>
+<text class="small" x="315" y="125" text-anchor="start">115</text>
+<text class="small" x="347" y="125" text-anchor="start">40</text>
+<text class="small" x="377" y="125" text-anchor="start">Ø12</text>
+<line class="thin" x1="291" y1="145" x2="400" y2="145"/>
+<text class="tiny" x="292" y="156" text-anchor="start">X/Y DATUM: LOWER LEFT</text>
+<text class="tiny" x="292" y="167" text-anchor="start">ALL DIMENSIONS IN mm</text>
+<rect class="panel" x="20" y="227" width="380" height="48"/>
+<line class="thin" x1="280" y1="227" x2="280" y2="275"/>
+<line class="thin" x1="20" y1="244" x2="400" y2="244"/>
+<line class="thin" x1="20" y1="260" x2="400" y2="260"/>
+<text class="label" x="27" y="239" text-anchor="start">MOUNTING PLATE — DIMENSIONED TOP VIEW</text>
+<text class="small" x="27" y="254" text-anchor="start">DRAWING: I3D-DEMO-001</text>
+<text class="small" x="27" y="270" text-anchor="start">PROJECT: example.mounting.plate</text>
+<text class="small" x="287" y="239" text-anchor="start">TOP VIEW  /  SCALE 1:1</text>
+<text class="small" x="287" y="254" text-anchor="start">PROJECT REV: 2</text>
+<text class="small" x="287" y="270" text-anchor="start">STATUS: SKETCH / NOT NATIVE</text>
+<text class="tiny" x="20" y="285" text-anchor="start">INFORMATIONAL 2D DRAWING. NOT A QUALIFIED B-REP, STEP OR MANUFACTURING CERTIFICATE.</text>
+</svg>
