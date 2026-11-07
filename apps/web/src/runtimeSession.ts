@@ -331,13 +331,18 @@ export function modelDiagnostics(report: RuntimeReport): RuntimeFeature[] {
   return report.features.filter(f => !['intent_ready','analytic_profile_only','preview_only'].includes(f.status));
 }
 
+/** A user operation may contain several atomic journal commands (e.g. freeze
+ * + release + retire). The transaction contract needs one FRESH compensating
+ * event ID for every command, but still creates just ONE undo/redo frame. */
 export function undoModelSession(h: ModelSession): ModelSession {
-  if (!h.undoStack.length) return h;
-  return runtime.undo(h,[`undo.workbench.${h.document.revision}`]);
+  const frame=h.undoStack[h.undoStack.length-1];
+  if (!frame) return h;
+  return runtime.undo(h,frame.map((_,i)=>`undo.workbench.${h.document.revision}.${i}`));
 }
 export function redoModelSession(h: ModelSession): ModelSession {
-  if (!h.redoStack.length) return h;
-  return runtime.redo(h,[`redo.workbench.${h.document.revision}`]);
+  const frame=h.redoStack[h.redoStack.length-1];
+  if (!frame) return h;
+  return runtime.redo(h,frame.map((_,i)=>`redo.workbench.${h.document.revision}.${i}`));
 }
 export function serializeModelSession(h: ModelSession): string { return runtime.save(h); }
 export function reopenModelSession(text: string): ModelSession {
