@@ -272,12 +272,19 @@ fn u_bracket(args: &[String]) {
     }
     let mut oriented:HashMap<(u32,u32),usize>=HashMap::new();
     let mut signed_volume=0.0f64;
+    // Tetrahedra between imported mesh and origin give volume and first
+    // moments without trusting the native producer's mass-properties receipt.
+    let mut first_moment=[0.0f64;3];
     let mut tris=0usize;
     for tri in mesh.faces.iter().flat_map(|face| &face.triangles) {
         let a=point(mesh,tri[0]); let b=point(mesh,tri[1]); let c=point(mesh,tri[2]);
         tris+=1;
         let cross=[b[1]*c[2]-b[2]*c[1],b[2]*c[0]-b[0]*c[2],b[0]*c[1]-b[1]*c[0]];
-        signed_volume+=(a[0]*cross[0]+a[1]*cross[1]+a[2]*cross[2])/6.0;
+        let tetra=(a[0]*cross[0]+a[1]*cross[1]+a[2]*cross[2])/6.0;
+        signed_volume+=tetra;
+        for axis in 0..3 {
+            first_moment[axis]+=tetra*(a[axis]+b[axis]+c[axis])/4.0;
+        }
         for i in 0..3 { *oriented.entry((tri[i],tri[(i+1)%3])).or_default()+=1; }
     }
     let open=oriented.iter().filter(|((a,b),count)|
@@ -285,9 +292,33 @@ fn u_bracket(args: &[String]) {
     let expected=(120.0*80.0-70.0*50.0-10.0*12.0)*thickness
         -std::f64::consts::PI*25.0*3.0;
     let measured=signed_volume.abs();
-    if tris<8 || open!=0 || !measured.is_finite() || 
-       (measured-expected).abs()>expected*0.01 {
+    if tris<8 || open!=0 || !measured.is_finite() || measured<1.0 ||
+        (measured-expected).abs()>expected*0.01 {
         fail(&format!("wrong independent U-bracket topology/volume: {measured} vs {expected}, open={open}"));
+    }
+    // Analytic first moments of source fixture: 120x80 stock less 70x50
+    // notch centred at Y=15; through 10x12 at (47,10); R5 blind pocket
+    // at (-47,10) for the top 3mm. Equal volume cannot mask displaced cuts.
+    let through_volume=120.0*thickness;
+    let blind_volume=std::f64::consts::PI*25.0*3.0;
+    let stock_volume=(120.0*80.0-70.0*50.0)*thickness;
+    let expected_centroid=[
+        (-47.0*through_volume+47.0*blind_volume)/expected,
+        (-70.0*50.0*15.0*thickness-10.0*through_volume-10.0*blind_volume)/expected,
+        ((stock_volume-through_volume)*thickness/2.0
+           -blind_volume*(thickness-1.5))/expected,
+    ];
+    let measured_centroid=[
+        first_moment[0]/signed_volume,
+        first_moment[1]/signed_volume,
+        first_moment[2]/signed_volume,
+    ];
+    for axis in 0..3 {
+        if !measured_centroid[axis].is_finite() ||
+           (measured_centroid[axis]-expected_centroid[axis]).abs()>0.15 {
+            fail(&format!("independent U-bracket material centroid axis {axis} wrong: {:.6} vs {:.6} mm",
+                          measured_centroid[axis],expected_centroid[axis]));
+        }
     }
     // Fixed world XY anchors from the source fixture's independently specified
     // polygon vertices and cut dimensions. 'None' means no material along Z.
@@ -357,8 +388,8 @@ fn u_bracket(args: &[String]) {
                  zs.len(),zs.first().copied().unwrap_or(-1.0),
                  zs.last().copied().unwrap_or(-1.0));
     }
-    println!("U_ACCEPT solids=1 source_unit={} imported_exact=true tris={} open_edges=0 volume_mm3={measured:.9} expected_mm3={expected:.9} warnings=0",
-             cad.length_unit,tris);
+    println!("U_ACCEPT solids=1 source_unit={} imported_exact=true tris={} open_edges=0 volume_mm3={measured:.9} expected_mm3={expected:.9} centroid_x_mm={:.9} centroid_y_mm={:.9} centroid_z_mm={:.9} warnings=0",
+             cad.length_unit,tris,measured_centroid[0],measured_centroid[1],measured_centroid[2]);
 }
 
 fn main() {
