@@ -4,24 +4,69 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": {"types": "./index.d.mts", "default": "./index.mjs"},
-    "./drag-projection/v1": {"types": "./drag-projection.d.mts", "default": "./drag-projection.mjs"},
-    "./conflict-explanation/v1": {"types": "./conflict-explanation.d.mts", "default": "./conflict-explanation.mjs"},
-    "./snapping/v1": {"types": "./snap.d.mts", "default": "./snap.mjs"},
-    "./snap-admission/v1": {"types": "./snap-admission.d.mts", "default": "./snap-admission.mjs"},
-    "./profile-discovery/v1": {"types": "./profile-discovery.d.mts", "default": "./profile-discovery.mjs"},
-    "./boundary-guard/v1": {"types": "./boundary-guard.d.mts", "default": "./boundary-guard.mjs"},
-    "./circle-guard/v1": {"types": "./circle-guard.d.mts", "default": "./circle-guard.mjs"},
-    "./analytic-area/v1": {"types": "./analytic-area.d.mts", "default": "./analytic-area.mjs"},
-    "./dimension-fidelity/v1": {"types": "./dimension-fidelity.d.mts", "default": "./dimension-fidelity.mjs"},
-    "./rounded-plate/v1": {"types": "./rounded-plate.d.mts", "default": "./rounded-plate.mjs"},
-    "./rounded-plate/v2": {"types": "./rounded-plate.d.mts", "default": "./rounded-plate.mjs"},
-    "./rounded-plate-handles/v1": {"types": "./rounded-plate-handles.d.mts", "default": "./rounded-plate-handles.mjs"}
+    ".": {
+      "types": "./index.d.mts",
+      "default": "./index.mjs"
+    },
+    "./drag-projection/v1": {
+      "types": "./drag-projection.d.mts",
+      "default": "./drag-projection.mjs"
+    },
+    "./conflict-explanation/v1": {
+      "types": "./conflict-explanation.d.mts",
+      "default": "./conflict-explanation.mjs"
+    },
+    "./snapping/v1": {
+      "types": "./snap.d.mts",
+      "default": "./snap.mjs"
+    },
+    "./snap-admission/v1": {
+      "types": "./snap-admission.d.mts",
+      "default": "./snap-admission.mjs"
+    },
+    "./profile-discovery/v1": {
+      "types": "./profile-discovery.d.mts",
+      "default": "./profile-discovery.mjs"
+    },
+    "./boundary-guard/v1": {
+      "types": "./boundary-guard.d.mts",
+      "default": "./boundary-guard.mjs"
+    },
+    "./circle-guard/v1": {
+      "types": "./circle-guard.d.mts",
+      "default": "./circle-guard.mjs"
+    },
+    "./analytic-area/v1": {
+      "types": "./analytic-area.d.mts",
+      "default": "./analytic-area.mjs"
+    },
+    "./dimension-fidelity/v1": {
+      "types": "./dimension-fidelity.d.mts",
+      "default": "./dimension-fidelity.mjs"
+    },
+    "./rounded-plate/v1": {
+      "types": "./rounded-plate.d.mts",
+      "default": "./rounded-plate.mjs"
+    },
+    "./rounded-plate/v2": {
+      "types": "./rounded-plate.d.mts",
+      "default": "./rounded-plate.mjs"
+    },
+    "./rounded-plate-handles/v1": {
+      "types": "./rounded-plate-handles.d.mts",
+      "default": "./rounded-plate-handles.mjs"
+    },
+    "./arc-constraints/v1": {
+      "types": "./arc-constraints.d.mts",
+      "default": "./arc-constraints.mjs"
+    }
   },
   "types": "./index.d.mts",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts test/conflict-explanation-contract.mts test/snap-contract.mts test/snap-admission-contract.mts test/profile-discovery-contract.mts test/boundary-guard-contract.mts test/circle-guard-contract.mts test/analytic-area-contract.mts test/dimension-fidelity-contract.mts test/rounded-plate-contract.mts test/rounded-plate-handles-contract.mts test/variable-rounded-plate-contract.mts"
+    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts test/conflict-explanation-contract.mts test/snap-contract.mts test/snap-admission-contract.mts test/profile-discovery-contract.mts test/boundary-guard-contract.mts test/circle-guard-contract.mts test/analytic-area-contract.mts test/dimension-fidelity-contract.mts test/rounded-plate-contract.mts test/rounded-plate-handles-contract.mts test/variable-rounded-plate-contract.mts test/arc-constraints-contract.mts"
   },
-  "engines": {"node": ">=22"}
+  "engines": {
+    "node": ">=22"
+  }
 }
