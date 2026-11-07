@@ -15,6 +15,10 @@
     "./occt8-v1": {
       "types": "./src/occt8-v1.d.mts",
       "default": "./src/occt8-v1.mjs"
+    },
+    "./local-occt8-provider": {
+      "types": "./src/local-occt8-provider.d.mts",
+      "node": "./src/local-occt8-provider.mjs"
     }
   },
   "scripts": {
