@@ -169,3 +169,55 @@ test('trusted host must choose native worker and pinned audit, not browser',asyn
     workerExecutable:'/fixture/pinned-occt8',providerKind:'ocp',
   }),/override provider identity/);
 });
+
+
+test('solved two-hole layout resize is one native revision, reversible and replayed from archive',async()=>{
+  let current=plateProject();
+  const calls=[];
+  const session=createLivePlateSession({
+    runtime,readCurrentHistory:()=>current,publishHistory:h=>{current=h;},
+  });
+  await withHost(fakePinnedFactory(calls),async host=>{
+    const options=requestId=>({url:host.url,token:host.token,requestId,exportStep:true});
+    const initialArchive=session.save();
+    const initial=await session.evaluate(options('occt8.layout.original'));
+    assert.equal(initial.kind,'experimental_plate_evaluated');
+    assert.deepEqual(initial.result.intendedPlate.holes.map(h=>[h.x,h.y,h.radius]),
+      [[-25,0,6],[25,0,6]]);
+    const updated=await session.applyEditAndEvaluate(h=>runtime.resizePlateHoleLayout(h,{
+      sketchFeatureId:'sketch.plate',eventId:'occt8.layout.resize',
+      expectedRevision:h.document.revision,admission:'require_admissible',
+      holeIds:['holeA','holeB'],pivotXmm:60,pivotYmm:40,
+      scaleX:0.8,scaleY:1,radiusScale:0.75,
+    }),options('occt8.layout.resized'));
+    assert.equal(updated.kind,'submitted',JSON.stringify(updated));
+    assert.equal(updated.evaluation.kind,'experimental_plate_evaluated');
+    assert.deepEqual(updated.edit.invalidation.invalidatedFeatureIds,
+      ['sketch.plate','plate','cut']);
+    assert.deepEqual(updated.evaluation.result.intendedPlate.holes.map(h=>[h.x,h.y,h.radius]),
+      [[-20,0,4.5],[20,0,4.5]]);
+    assert.notEqual(updated.evaluation.step.sha256,initial.step.sha256);
+    assert.equal(session.currentStep()?.sha256,updated.evaluation.step.sha256);
+    const resizedArchive=session.save();
+    assert.notEqual(resizedArchive,initialArchive);
+    const undone=await session.applyEditAndEvaluate(
+      h=>runtime.undo(h,['occt8.layout.undo']),options('occt8.layout.undone'));
+    assert.equal(undone.kind,'submitted');
+    assert.equal(undone.evaluation.kind,'experimental_plate_evaluated');
+    assert.equal(undone.evaluation.step.sha256,initial.step.sha256);
+    const restored=await session.reopenAndEvaluate(resizedArchive,{
+      ...options('occt8.layout.reopened'),confirmReplacement:true,
+    });
+    assert.equal(restored.kind,'submitted');
+    assert.equal(restored.evaluation.step.sha256,updated.evaluation.step.sha256);
+    assert.equal(session.save(),resizedArchive);
+    const reopenedInitial=await session.reopenAndEvaluate(initialArchive,{
+      ...options('occt8.layout.initial.reopened'),confirmReplacement:true,
+    });
+    assert.equal(reopenedInitial.kind,'submitted');
+    assert.equal(reopenedInitial.evaluation.step.sha256,initial.step.sha256);
+    assert.equal(session.save(),initialArchive);
+    assert.equal(calls.length,5);
+    assert.ok(calls.every(x=>x.options.part21StepAudit===true));
+  });
+});
