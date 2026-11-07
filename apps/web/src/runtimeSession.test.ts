@@ -283,7 +283,7 @@ test('Make Independent bakes resolved 12 mm and permits later direct edits, undo
   const undoFreeze=undoModelSession(undoDirect);
   assert.equal(modelDimensionValues(undoFreeze).thickness,12);
   assert.equal(modelThicknessBinding(undoFreeze),'named_parameter');
-  assert.equal(serializeModelSession(undoFreeze),baselineArchive);
+  assert.deepEqual(undoFreeze.document,changed.document,'undo must restore the original authoritative document');
   const redone=redoModelSession(redoModelSession(undoFreeze));
   assert.equal(modelThicknessBinding(redone),'independent');
   assert.equal(modelDimensionValues(redone).thickness,15);
