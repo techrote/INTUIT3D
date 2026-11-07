@@ -61,3 +61,29 @@ async function browserDownload() {
   return result;
 }
 void [currentRevision,authority,browserDownload,editAndDownloadInOneCommand];
+
+async function solverPreviewThenNative() {
+  // WORKBENCH pointer move: solve/validate now; do not publish the document,
+  // make an undo entry or ask the local native worker until pointer release.
+  const proposal=session.previewEdit(h=>runtime.editPlateHoles(h,{
+    sketchFeatureId:'sketch.plate',eventId:'session.contract.preview',
+    expectedRevision:h.document.revision,admission:'require_admissible',
+    operations:[{kind:'add',id:'previewHole',x:60,y:20,radius:4}],
+  }));
+  if(proposal.kind==='refused') return proposal;
+  const noExact:false=proposal.exactAuthority;
+  const noNative:null=proposal.nativeEvaluation;
+  const sourceRevision:number=proposal.sourceRevision;
+  const report=proposal.report;
+  // Pointer release: a token is valid only for this session and this source archive.
+  const committed=await session.commitPreviewAndEvaluate(proposal,{
+    url:'http://127.0.0.1:3000',token:'0'.repeat(64),exportStep:true,
+  });
+  if(committed.kind==='submitted'){
+    const result:LocalPlateClientResult=committed.evaluation;
+    void result;
+  }
+  void [noExact,noNative,sourceRevision,report];
+  return committed;
+}
+void solverPreviewThenNative;

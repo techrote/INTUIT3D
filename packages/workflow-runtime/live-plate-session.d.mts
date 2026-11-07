@@ -20,6 +20,23 @@ export type SessionEditResult =
       invalidation:WorkflowInvalidation}>
   | Readonly<{kind:'refused';reason:string;notCommitted?:boolean;
       [key:string]:unknown}>;
+/** Authored SKETCH/INTENT candidate; not a committed revision or native solid.
+ * The actual candidate document stays privately owned by the session, and
+ * this opaque token is accepted only once against its exact source archive.
+ */
+export type SessionEditPreview = Readonly<{
+  kind:'preview';
+  projectId:string;
+  sourceRevision:number;
+  candidateRevision:number;
+  report:RuntimeReport;
+  invalidation:WorkflowInvalidation;
+  exactAuthority:false;
+  nativeEvaluation:null;
+}>;
+export type SessionEditPreviewResult =
+  | SessionEditPreview
+  | Extract<SessionEditResult,{kind:'refused'}>;
 export type SessionReopenResult =
   | Readonly<{kind:'opened';history:UndoHistory;report:RuntimeReport;
       exactReuseAllowed:false}>
@@ -48,6 +65,17 @@ export interface LivePlateSession {
   refresh():LivePlateSessionState;
   /** Genuine synchronous INTENT/ SKETCH transaction; never a private journal. */
   applyEdit(edit:(history:UndoHistory)=>SessionEdit):SessionEditResult;
+  /** Compute real solver/profile admission without publishing history or requesting native work. */
+  previewEdit(edit:(history:UndoHistory)=>SessionEdit):SessionEditPreviewResult;
+  /** Commit a proposal only if its entire originating archive remains current.
+   * Returns a refused result for stale/reused/foreign session previews.
+   */
+  commitPreview(proposal:SessionEditPreview):SessionEditResult;
+  /** One call: commit an admitted preview, then evaluate the committed revision. */
+  commitPreviewAndEvaluate(
+    proposal:SessionEditPreview,
+    options?:Readonly<LivePlateEvaluationOptions>,
+  ):Promise<SessionEditAndEvaluateResult>;
   /** Restore an identical archive, or explicitly confirm replacing current state. */
   reopen(serialized:string,options?:Readonly<{confirmReplacement?:boolean}>):SessionReopenResult;
   save():string;

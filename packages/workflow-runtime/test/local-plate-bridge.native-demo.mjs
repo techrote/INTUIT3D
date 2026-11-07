@@ -97,13 +97,25 @@ try {
     .find(f=>f.featureId==='plate').profile.holes.map(h=>h.radius),[5,5]);
   // Real third-hole creation: one model transaction, full SKETCH admission,
   // then a fresh OCP Boolean and STEP over authenticated localhost HTTP.
-  // Browser-consumable one-call path: commit this real SKETCH/INTENT edit,
-  // then evaluate the new revision via the actual OCP/HTTP provider.
-  const addedAndBuilt=await session.applyEditAndEvaluate(h=>runtime.editPlateHoles(h,{
+  // A drag-like model-backed proposal computes the actual SKETCH profile and
+  // dependency closure but DOES NOT publish intent or revoke current STEP.
+  const beforeThirdPreview=session.save();
+  const beforeThirdStep=session.currentStep();
+  const proposedThird=session.previewEdit(h=>runtime.editPlateHoles(h,{
     sketchFeatureId:'sketch.plate',eventId:'author.bridge.third.hole',
     expectedRevision:current.document.revision,admission:'require_admissible',
     operations:[{kind:'add',id:'holeC',x:60,y:20,radius:4}],
-  }),{url:host.url,token:host.token,requestId:'bridge.native.three.holes',
+  }));
+  assert.equal(proposedThird.kind,'preview',JSON.stringify(proposedThird));
+  assert.equal(proposedThird.exactAuthority,false);
+  assert.deepEqual(proposedThird.invalidation.invalidatedFeatureIds,
+    ['sketch.plate','plate','cut']);
+  assert.equal(session.save(),beforeThirdPreview);
+  assert.equal(session.currentStep(),beforeThirdStep);
+  // Pointer release: commit exactly this revision-fenced proposal, then
+  // produce a NEW physical OCP B-rep/STEP through the live loopback host.
+  const addedAndBuilt=await session.commitPreviewAndEvaluate(proposedThird,{
+    url:host.url,token:host.token,requestId:'bridge.native.three.holes',
     exportStep:true});
   assert.equal(addedAndBuilt.kind,'submitted');
   const added=addedAndBuilt.edit;
