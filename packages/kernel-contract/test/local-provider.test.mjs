@@ -61,7 +61,7 @@ test('real local subprocess produces explicit experimental measured report; stal
 test('STEP publication is an exclusive final step: existing exports cannot be overwritten', async()=>fixture(async({dir,script})=>{
   const path=join(dir,'out.step');
   const first=await runExperimentalPlate(request(true),{...options(script),stepOutput:path});
-  assert.equal(first.kind,'experimental_report');
+  assert.equal(first.kind,'experimental_report',JSON.stringify(first));
   assert.equal(first.artifact.path,path);
   assert.equal(first.artifact.verification,'same_engine_step_readback');
   assert.ok(first.artifact.bytes>0);
