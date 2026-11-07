@@ -53,6 +53,14 @@ const key=async(name,code,virtualKey)=>{
 async function main(){
   mkdirSync(artifacts,{recursive:true});
   host=createServer(async(req,res)=>{
+    if(req.method==='OPTIONS' && req.url==='/v1/plate/evaluate' && req.headers.origin===origin){
+      res.writeHead(204,{
+        'access-control-allow-origin':origin,
+        'access-control-allow-methods':'POST, OPTIONS',
+        'access-control-allow-headers':'content-type, x-intuit3d-token'
+      });
+      res.end();return;
+    }
     const chunks=[];for await(const part of req)chunks.push(part);
     if(req.method!=='POST'||req.url!=='/v1/plate/evaluate'||
       req.headers['x-intuit3d-token']!==token ||req.headers.origin!==origin){
