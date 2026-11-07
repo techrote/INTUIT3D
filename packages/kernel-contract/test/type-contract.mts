@@ -119,3 +119,17 @@ void chainRequest;void chainExecuted;
 // @ts-expect-error live multi-cut publication must be revision fenced
 runExperimentalRuntimeBodyCutChain(journal,'body.bracket',{
   ...chainServices,requestId:'chain.native'});
+
+import {parseOcct8MixedCutRequest,type Occt8MixedCutRequest}
+  from '../src/occt8-mixed-cut-v2.mjs';
+import {runPinnedOcct8MixedCutChain,type LocalOcct8MixedCutResult}
+  from '../src/local-occt8-mixed-cut-provider.mjs';
+declare const pinnedMixed:Occt8MixedCutRequest;
+const parsedMixed:Occt8MixedCutRequest=parseOcct8MixedCutRequest(pinnedMixed);
+const executedMixed:Promise<LocalOcct8MixedCutResult>=runPinnedOcct8MixedCutChain(parsedMixed,{
+  workerExecutable:'/trusted/occt8/bin/intuit3d_occt8_plate',
+  readCurrentRevision:()=>parsedMixed.revision,
+});
+void executedMixed;
+// @ts-expect-error pinned native mixed cut must be revision fenced
+runPinnedOcct8MixedCutChain(parsedMixed,{workerExecutable:'/trusted/occt8'});

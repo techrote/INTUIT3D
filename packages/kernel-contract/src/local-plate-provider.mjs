@@ -9,6 +9,8 @@ import {fileURLToPath} from 'node:url';
 import {assessPlateResponse, KernelContractError, parsePlateRequest} from './plate-v1.mjs';
 import {assessOcct8PlateResponse} from './occt8-v1.mjs';
 import {parseOcct8CutRequest, assessOcct8CutResponse} from './occt8-cut-v1.mjs';
+import {parseOcct8MixedCutRequest, assessOcct8MixedCutResponse}
+  from './occt8-mixed-cut-v2.mjs';
 
 const DEFAULT_SUPERVISOR = fileURLToPath(new URL('../../../native/run_plate.py', import.meta.url));
 const DEFAULT_OCCT8_SUPERVISOR = fileURLToPath(new URL('../../../native/occt8_bridge.py', import.meta.url));
@@ -59,6 +61,18 @@ export async function runPinnedOcct8CutChain(requestInput, {
     part21StepAudit:false, crossVersionStepAudit:false});
 }
 
+// Additive mixed-profile C++ operation: round/rectangular blind and through
+// pockets remain experimental until the exact C++ binary and STEP are tested.
+export async function runPinnedOcct8MixedCutChain(requestInput, {
+  workerExecutable, nativeSupervisor = DEFAULT_OCCT8_SUPERVISOR, ...options
+} = {}) {
+  if (typeof workerExecutable !== 'string' || !workerExecutable.trim())
+    throw new KernelContractError('pinned C++ workerExecutable path is required');
+  return runLocalPlate(requestInput, {...options, nativeSupervisor, backendKind:'occt8',
+    requestKind:'mixed-cut-chain', workerExecutable:resolve(workerExecutable),
+    part21StepAudit:false, crossVersionStepAudit:false});
+}
+
 async function runLocalPlate(requestInput, {
   readCurrentRevision,
   pythonExecutable = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3'),
@@ -72,8 +86,10 @@ async function runLocalPlate(requestInput, {
   part21StepAudit = true,
   crossVersionStepAudit = false,
 } = {}) {
-  const request = requestKind === 'cut-chain'
-    ? parseOcct8CutRequest(requestInput) : parsePlateRequest(requestInput);
+  const request = requestKind === 'cut-chain' ?
+    parseOcct8CutRequest(requestInput) :
+    requestKind === 'mixed-cut-chain' ?
+      parseOcct8MixedCutRequest(requestInput) : parsePlateRequest(requestInput);
   if (typeof readCurrentRevision !== 'function')
     throw new KernelContractError('readCurrentRevision callback is mandatory');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 600000)
@@ -173,6 +189,7 @@ async function runLocalPlate(requestInput, {
     let assessment;
     try {
       assessment = (requestKind === 'cut-chain' ? assessOcct8CutResponse :
+        requestKind === 'mixed-cut-chain' ? assessOcct8MixedCutResponse :
         backendKind === 'occt8' ? assessOcct8PlateResponse : assessPlateResponse)(
         request, raw, {currentRevision:revisionOf(readCurrentRevision)});
       if (backendKind === 'occt8' && assessment.kind === 'experimental_report' &&

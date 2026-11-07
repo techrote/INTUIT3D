@@ -40,6 +40,14 @@
       "types": "./src/runtime-body-cut-chain-provider.d.mts",
       "node": "./src/runtime-body-cut-chain-provider.mjs"
     },
+    "./occt8-mixed-cut-v2": {
+      "types": "./src/occt8-mixed-cut-v2.d.mts",
+      "default": "./src/occt8-mixed-cut-v2.mjs"
+    },
+    "./local-occt8-mixed-cut-provider": {
+      "types": "./src/local-occt8-mixed-cut-provider.d.mts",
+      "node": "./src/local-occt8-mixed-cut-provider.mjs"
+    },
     "./occt8-cut-v1": {
       "types": "./src/occt8-cut-v1.d.mts",
       "default": "./src/occt8-cut-v1.mjs"
