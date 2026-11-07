@@ -63,6 +63,20 @@ class ExternalCadHarness(unittest.TestCase):
         rays4=mod.sample_rays(cases[0]); rays5=mod.sample_rays(cases[2]); raysu=mod.sample_rays(cases[3])
         self.assertIn('central.material',[x[0] for x in rays4]); self.assertNotIn('central.material',[x[0] for x in rays5]); self.assertIn('central.material',[x[0] for x in raysu]);
         self.assertEqual(sum(r[-1]=='empty' for r in rays5),6)
+    def test_actual_744_zero_exit_brep_conversion_error_is_not_acceptance(self):
+        # Exact category from hosted artifact 13579449166: exit 0 plus
+        # OpenNURBS Curve/Edge_Curve/Closed_Shell conversion errors.
+        observed = ("Reading Data from physical STEP...\\n"
+                    "[stderr]\\n"
+                    "Error: ::LoadONBrep(ON_Brep *brep) not implemented for Curve\\n"
+                    "Error: Closed_Shell::LoadONBrep() - Error loading openNURBS brep.\\n"
+                    "done!\\n")
+        with self.assertRaisesRegex(mod.NotQualified, 'B-rep conversion errors'):
+            mod.require_successful_step_g_conversion(observed, 'flange.four.step')
+        mod.require_successful_step_g_conversion(
+            'FIRST PASS complete: 686 instances; 0 ERRORS 0 WARNINGS', 'flange.four.step'
+        )
+
     def test_actual_pinned_744_step_g_cli_regression(self):
         # Original exact hosted failure: step-g rejects --strict --exact
         # --repair none --report FILE, supporting only [-v] -o OUT IN.
