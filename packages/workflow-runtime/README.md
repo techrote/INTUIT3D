@@ -193,3 +193,31 @@ Consumer ownership: WORKBENCH integrates these browser APIs and a paired
 local-host UI only within `apps/web/**`; INTEGRATION qualifies full host/browser
 interaction, source/lock/CI and merging. RUNTIME changes only
 `packages/workflow-runtime/**`.
+
+## Atomic model-backed sketch edits (consumer-ready)
+
+`runtime.editSketchConstraints(history, {sketchFeatureId, eventId, expectedRevision, edits, admission})` accepts **1–64 uniquely identified real SKETCH constraint patches**. It invokes the public SKETCH `validateSketch`/`editConstraint` for each edit, then speculatively commits **one** INTENT `feature.edit` journal event and re-runs the authoritative dimension/DAG/solver/profile pipeline. No separate CAD model, geometry solver, topology source or duplicate undo stack is created.
+
+Use `admission:'require_admissible'` (default) for a consumer command that must produce a single solved analytic profile. On failure the result is `{kind:'refused',notCommitted:true,candidateFeature,...}` and the original undo history remains unchanged. Use `admission:'preserve_unresolved'` for intentional authoring of a temporarily contradictory or invalid sketch: it remains editable with typed blocked upstream/dependent feature statuses. On success the result is `{kind:'committed',history,report,sketchStatus,invalidation}`. Consumers should replace their live history **only** with the returned committed history and cancel/rebuild native work after every resulting revision change. Even a successful profile is `analytic_profile_only`, the downstream extrusion `preview_only`, and the cut `pending_exact_provider` until an actual experimental native evaluation is performed.
+
+Example, usable from WORKBENCH's model-backed history:
+
+```js
+const result=runtime.editSketchConstraints(history,{
+  sketchFeatureId:'sketch.plate',eventId:'edit.holes.'+history.document.revision,
+  expectedRevision:history.document.revision,
+  edits:[
+    {constraintId:'holeA:diameter',patch:{value:5}},
+    {constraintId:'holeB:diameter',patch:{value:5}},
+  ],
+});
+if (result.kind==='committed') {
+  // One undoable journal event; existing native STEP must be rebuilt.
+  history=result.history;
+} else {
+  // Candidate diagnostics only; no saved/live state has been changed.
+  showDiagnostics(result.candidateFeature);
+}
+```
+
+`npm test --workspace @intuit3d/workflow-runtime` exercises actual INTENT/SKETCH hole, plate and profile editing, one-step undo/redo, archived replay, atomic refusal and repair of unresolved intent. `npm run typecheck --workspace @intuit3d/workflow-runtime` verifies the consumer declarations. With the pinned Linux OCP backend, `npm run demo:bridge --workspace @intuit3d/workflow-runtime` additionally exercises **real HTTP native STEP** for thickness edit, then both hole radii edit, then archived undo and new native reconstruction. Same-engine experimental STEP remains **neither production exact authority nor independent interchange qualification**.
