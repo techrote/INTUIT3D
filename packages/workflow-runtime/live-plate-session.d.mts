@@ -58,6 +58,8 @@ export interface LivePlateEvaluationOptions {
   token?:string;
   requestId?:string;
   exportStep?:boolean;
+  /** Require one configured native backend; do not silently fall back to OCP. */
+  requiredBackend?:import('./local-plate-client.mjs').PinnedPlateBackend;
   signal?:AbortSignal;
   fetchImpl?:typeof fetch;
   /** Inclusive deadline across native attempts and busy retries (25–120000 ms; default 30000). */
