@@ -1,4 +1,9 @@
 import test from 'node:test';
+import * as fs from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
 import assert from 'node:assert/strict';
 import {newProject,commitEvent,serializeProject,deserializeProject}
   from '../../model/src/index.ts';
@@ -87,7 +92,8 @@ test('one corner radius and earlier width edit regenerate distinct replay-stable
 test('missing v2 intent, unadmitted overlapping radii and forged v2 map fail closed',()=>{
   const doc=createProject();
   const noIntent=commitEvent(doc,{eventId:'variable.missing',type:'feature.edit',
-    featureId:sketchFeatureId,patch:{payload:{variableRoundedPlateIntent:null}}});
+    featureId:sketchFeatureId,patch:{payload:{sketchDocument:serializeSketch(sketch),
+      variableRoundedPlateIntent:null}}});
   assert.throws(()=>measureVariableRoundedPlateFromProject(args(noIntent)),
     /variableRoundedPlateIntent missing/);
   const crossing=editVariableRoundedPlateRadius(intent,'plate:p1',75);
@@ -98,4 +104,27 @@ test('missing v2 intent, unadmitted overlapping radii and forged v2 map fail clo
   measured.cornerRadiiMm['plate:p1']=19;
   assert.throws(()=>renderPlateDrawingSvg(measured),
     /variable radius annotations do not match/);
+});
+
+
+test('executable public example writes a real SVG sheet from a serialized edited project',()=>{
+  const {mkdtempSync,readFileSync,rmSync,statSync}=fs;
+  const dir=mkdtempSync(join(tmpdir(),'intuit3d-variable-drawing-'));
+  const output=join(dir,'actual-dimensioned-variable-plate.svg');
+  try{
+    const cmd=fileURLToPath(new URL('../examples/create-variable-rounded-plate.mjs',import.meta.url));
+    const proc=spawnSync(process.execPath,['--experimental-strip-types',cmd,output],
+      {encoding:'utf8',timeout:30000});
+    assert.equal(proc.status,0,proc.stderr||proc.stdout);
+    const data=JSON.parse(proc.stdout);
+    assert.equal(data.revision,2);
+    assert.deepEqual(data.dimensionsMm,[150,80]);
+    assert.equal(data.cornerRadiiMm['plate:p1'],10);
+    assert.ok(statSync(output).size>2000);
+    const svg=readFileSync(output,'utf8');
+    assert.match(svg,/width="420mm" height="297mm"/);
+    assert.match(svg,/R plate:p1: 10 mm/);
+    assert.equal((svg.match(/ A [0-9.]+ [0-9.]+ 0 0 [01] /g)||[]).length,4);
+    assert.match(svg,/ANALYTIC SKETCH ONLY/);
+  }finally{rmSync(dir,{recursive:true,force:true});}
 });
