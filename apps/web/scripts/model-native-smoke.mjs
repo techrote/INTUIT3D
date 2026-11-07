@@ -207,6 +207,37 @@ async function main(){
   await eventually(()=>evaluate(`Boolean(document.querySelector('[data-testid="runtime-hole-editor-${addedId}"]'))`),'undo lost new circle identity');
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent!=="+JSON.stringify(beforeAdd)),'add/remove did not author journal revisions');
 
+  // Real Chromium pointer click, authoritative solver admission and a
+  // six-hole 3D preview (three originals including added one + three copies).
+  const patternButton=await evaluate(`(() => {
+    const b=document.querySelector('[data-testid=runtime-pattern-holes]');
+    b.scrollIntoView({block:'center',behavior:'instant'});
+    const r=b.getBoundingClientRect();
+    return {x:r.left+r.width/2,y:r.top+r.height/2};
+  })()`);
+  check(patternButton&&patternButton.y>0&&patternButton.y<900,
+    'hole pattern control is not reachable by Chromium pointer');
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:patternButton.x,y:patternButton.y});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:patternButton.x,y:patternButton.y,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:patternButton.x,y:patternButton.y,button:'left',clickCount:1});
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===6"),
+    'physical pointer did not commit solver-backed rectangular array');
+  check(await evaluate("Array.from(document.querySelectorAll('[data-testid^=runtime-hole-editor-]')).filter(x=>x.dataset.testid.startsWith('runtime-hole-editor-array.')).length===3"),
+    'array did not author three stable copied hole IDs');
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('6 circular holes')"),
+    'one-shot array not rendered in actual viewport');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'array incorrectly promoted preview geometry to exact');
+  await screenshot('native-00d-one-shot-hole-array.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Undo');b.click();return true})()"),
+    'array undo cannot be triggered');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===3"),
+    'one undo did not remove all three array copies');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Redo');b.click();return true})()"),
+    'array redo cannot be triggered');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===6"),
+    'array redo did not restore independent circles and IDs');
+
   check(await evaluate("(() => {document.querySelector('[data-testid=runtime-mode-solid]').click();return true})()"),'cannot return to solid viewport');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-3d-viewport]'))"),'3D preview after sketch drag');
 
@@ -263,9 +294,9 @@ async function main(){
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder, NOT OCP/native/STEP interoperability',
-    downloadedFiles:2,staleDownloadRefused:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,realPhysicalGeometry:false,
+    downloadedFiles:2,staleDownloadRefused:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,realPhysicalGeometry:false,
     independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png'
+      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
