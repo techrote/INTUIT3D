@@ -244,9 +244,9 @@ export function editSelectedLinearHolePattern(source,selection,command) {
   if(admitted.semanticProfileId!==selected.semanticProfileId)
     return refusal(stamp,'semantic_profile_changed');
   const expected=new Set(selected.profile.holeIds);
-  if(command.kind==='create-pattern')
-    for(let i=0;i<targetCount;i++)expected.add(ids(command.patternId,i).holeId);
-  else for(const m of removed)expected.delete(m.holeId);
+  for(let i=formerCount;i<targetCount;i++)
+    expected.add(ids(command.patternId,i).holeId);
+  for(const m of removed)expected.delete(m.holeId);
   if(admitted.holeIds.length!==expected.size||
      admitted.holeIds.some(id=>!expected.has(id)))
     return refusal(stamp,'hole_membership_changed');
