@@ -118,6 +118,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       <div className="title-divider"/>
       <div className="project-title">Mounting plate · <span data-testid="runtime-revision">revision {report.revision}</span></div>
       <div className="title-actions">
+        <button className="ribbon-button" data-testid="runtime-new-plate"
+          onClick={()=>{++loadTicket.current;setPendingImport({
+            file:'New mounting plate (fresh project)',history:newModelPlateSession('workbench.plate.'+crypto.randomUUID()),
+          });}}>
+          New plate sketch
+        </button>
         <button className="ribbon-button" onClick={save}>Save model archive</button>
         <button className="ribbon-button" onClick={()=>fileInput.current?.click()}>Open model archive</button>
         <button className="ribbon-button" onClick={()=>{
