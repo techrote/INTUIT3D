@@ -111,28 +111,9 @@ export function createLivePlateSession({
     return {kind:'committed',history:candidate.next,report:candidate.after.report,
       invalidation:candidate.invalidation};
   }
-  const session = {
-    /** Call after external model changes; refuses to retain stale native bytes. */
-    refresh() {
-      const state=synchronize();
-      return {format:LIVE_PLATE_SESSION_FORMAT,version:LIVE_PLATE_SESSION_VERSION,
-        projectId:state.report.projectId,revision:state.report.revision,
-        inFlight:controller!==null,hasVerifiedStep:!!latest?.step,
-        hasActivePreview:activePreview!==null && editPreviews.has(activePreview),
-        lastResultKind:lastOutcomeKind,exactAuthority:false};
-    },
-    /** Delegate a genuine INTENT command; commit only if revision/project fences hold. */
-    applyEdit(edit) {
-      const candidate=prepareEdit(edit);
-      return candidate.kind==='refused'?candidate:publishCandidate(candidate);
-    },
-    /**
-     * Versioned declarative edit for WORKBENCH. The existing INTENT history
-     * and SKETCH solver are the only authorities; this is not a parallel model.
-     * Each command is project/revision-fenced before invoking the real runtime.
-     * A stale/rejected command sends no native request and leaves STEP intact.
-     */
-    applyCommand(command) {
+  // Execute a command against an INTENT history candidate, never against a
+  // cached preview or native B-rep. Also used by atomic multi-command staging.
+  function executeCommand(history,command) {
       if(!command || typeof command!=='object' ||
           typeof command.projectId!=='string' || !command.projectId ||
           !Number.isSafeInteger(command.expectedRevision) ||
@@ -150,7 +131,6 @@ export function createLivePlateSession({
         sourceProjectId:source.document.projectId,
         sourceRevision:source.document.revision,
       });
-      return session.applyEdit(history=>{
         // This guard runs inside the same synchronous edit/commit boundary.
         // A changed storage value is also refused by publishHistory.
         if(history.document.projectId!==command.projectId ||
@@ -186,7 +166,90 @@ export function createLivePlateSession({
           case 'sketch.holes.resize': return runtime.resizePlateHoleLayout(history,request);
           default: throw new TypeError('live plate session: unsupported CAD command');
         }
+  }
+
+  const session = {
+    /** Call after external model changes; refuses to retain stale native bytes. */
+    refresh() {
+      const state=synchronize();
+      return {format:LIVE_PLATE_SESSION_FORMAT,version:LIVE_PLATE_SESSION_VERSION,
+        projectId:state.report.projectId,revision:state.report.revision,
+        inFlight:controller!==null,hasVerifiedStep:!!latest?.step,
+        hasActivePreview:activePreview!==null && editPreviews.has(activePreview),
+        lastResultKind:lastOutcomeKind,exactAuthority:false};
+    },
+    /** Delegate a genuine INTENT command; commit only if revision/project fences hold. */
+    applyEdit(edit) {
+      const candidate=prepareEdit(edit);
+      return candidate.kind==='refused'?candidate:publishCandidate(candidate);
+    },
+    /**
+     * Versioned declarative edit for WORKBENCH. The existing INTENT history
+     * and SKETCH solver are the only authorities; this is not a parallel model.
+     * Each command is project/revision-fenced before invoking the real runtime.
+     * A stale/rejected command sends no native request and leaves STEP intact.
+     */
+    applyCommand(command) {
+      return session.applyEdit(history=>executeCommand(history,command));
+    },
+    /**
+     * Apply 1–16 typed authoring commands to the same canonical INTENT journal
+     * as ONE durable archive publication. Each intermediate result is a real
+     * model/SKETCH transaction; no intermediate revision or native job escapes.
+     * Any refused intermediate operation abandons ALL staged edits. Journal
+     * undo semantics remain those of the individual INTENT transactions.
+     */
+    applyCommands(batch) {
+      if(!batch || typeof batch!=='object' || batch.kind!=='commands.batch' ||
+          typeof batch.projectId!=='string' || !batch.projectId ||
+          !Number.isSafeInteger(batch.expectedRevision) || batch.expectedRevision<0 ||
+          !Array.isArray(batch.commands) || batch.commands.length<1 ||
+          batch.commands.length>16)
+        throw new TypeError('live plate session: commands.batch requires a project/revision fence and 1–16 operations');
+      return session.applyEdit(history=>{
+        if(history.document.projectId!==batch.projectId ||
+            history.document.revision!==batch.expectedRevision)
+          return {kind:'refused',code:'stale_command',notCommitted:true,
+            reason:'batch project/revision differs from authoritative CAD history',
+            sourceProjectId:history.document.projectId,
+            sourceRevision:history.document.revision};
+        let working=history;
+        for(let index=0;index<batch.commands.length;index++) {
+          const operation=batch.commands[index];
+          if(!operation || typeof operation!=='object' ||
+              Array.isArray(operation) ||
+              Object.hasOwn(operation,'projectId') ||
+              Object.hasOwn(operation,'expectedRevision') ||
+              Object.hasOwn(operation,'commands'))
+            throw new TypeError('live plate session: batch operation must omit outer fences and nested batches');
+          const outcome=executeCommand(working,{
+            ...operation,projectId:batch.projectId,
+            expectedRevision:working.document.revision,
+          });
+          if(outcome?.kind==='refused')
+            return {...outcome,kind:'refused',notCommitted:true,commandIndex:index};
+          const next=outcome?.kind==='committed'?outcome.history:outcome;
+          if(!next?.document ||
+              next.document.projectId!==batch.projectId ||
+              !Number.isSafeInteger(next.document.revision) ||
+              next.document.revision<=working.document.revision)
+            throw new Error('live plate session: batch command did not advance authoritative model revision');
+          // Deliberately run the real model/solver service per intermediate
+          // history, rather than admitting a syntactically valid shadow model.
+          const report=runtime.inspect(next);
+          if(report.projectId!==batch.projectId ||
+              report.revision!==next.document.revision)
+            throw new Error('live plate session: batch intermediate report mismatch');
+          working=next;
+        }
+        return working;
       });
+    },
+    /** One durable batch publication, followed by at most one native request. */
+    async applyCommandsAndEvaluate(batch,options={}) {
+      const edit=session.applyCommands(batch);
+      if(edit.kind==='refused') return {kind:'refused',edit,evaluation:null};
+      return {kind:'submitted',edit,evaluation:await session.evaluate(options)};
     },
     /** Commit a typed command then request physical evaluation of its revision. */
     async applyCommandAndEvaluate(command,options={}) {
