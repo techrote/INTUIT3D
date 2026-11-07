@@ -95,6 +95,10 @@
     "./dimension-value-edit": {
       "types": "./src/dimension-value-edit.ts",
       "default": "./src/dimension-value-edit.ts"
+    },
+    "./dimension-source-override": {
+      "types": "./src/dimension-source-override.ts",
+      "default": "./src/dimension-source-override.ts"
     }
   },
   "scripts": {
