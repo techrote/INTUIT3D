@@ -239,3 +239,236 @@ export function commitUndoableCutProfileSourceEdit(
   const preview = previewCutProfileSourceEdit(history.document, request);
   return commitUndoableTransaction(history, [preview.event], request.expectedRevision);
 }
+
+
+/**
+ * @intuit3d/model/cut-profile-source-batch/v1
+ *
+ * Replace one sketch feeding several dependent cuts without a transient
+ * partially-repaired document reaching RUNTIME. An optional new authored
+ * SKETCH and retirement of the displaced SKETCH belong to the SAME journal
+ * transaction and undo frame. Every cut/profile target is an explicit user
+ * selection, never inferred from a mesh, kernel index or coincident loop.
+ */
+export const CUT_PROFILE_SOURCE_BATCH_FORMAT = 'intuit3d.cut-profile-source-batch' as const;
+export const CUT_PROFILE_SOURCE_BATCH_VERSION = 1 as const;
+
+export type CutProfileBatchEdit = Pick<CutProfileSourceEditRequest,
+  'eventId' | 'cutFeatureId' | 'targetBodyId' |
+  'expectedSourceSketchId' | 'expectedProfileCandidateId' |
+  'sourceSketchId' | 'profileCandidateId' |
+  'releasePreviousSketchDependency'>;
+
+export interface CutProfileSourceBatchRequest {
+  readonly format: typeof CUT_PROFILE_SOURCE_BATCH_FORMAT;
+  readonly version: typeof CUT_PROFILE_SOURCE_BATCH_VERSION;
+  readonly expectedProjectId: string;
+  readonly expectedRevision: number;
+  readonly admission: 'require_ready' | 'permit_unresolved';
+  /** At least one explicitly selected existing cut, at most 32 per gesture. */
+  readonly edits: readonly CutProfileBatchEdit[];
+  /** Optional SKETCH-authored intent; not a model-created geometric profile. */
+  readonly replacementSketch?: {
+    readonly eventId: string;
+    readonly feature: Feature;
+  };
+  /**
+   * Optional retirement of a no-longer-referenced old sketch in the same
+   * action. Refuses retirement if any other active feature still depends on it.
+   */
+  readonly retireSketch?: {
+    readonly eventId: string;
+    readonly featureId: string;
+  };
+}
+
+export interface CutProfileSourceBatchPreview {
+  readonly format: 'intuit3d.cut-profile-source-batch-preview';
+  readonly version: 1;
+  readonly document: ProjectDocument;
+  readonly events: readonly JournalEvent[];
+  readonly plan: EvaluationPlan;
+  readonly invalidation: IncrementalEvaluationPlan;
+  readonly editedCutIds: readonly string[];
+  readonly newlyAuthoredSketchId: string | null;
+  readonly retiredSketchId: string | null;
+  readonly cutStatuses: readonly {
+    readonly featureId: string;
+    readonly status: FeatureStatus;
+  }[];
+  readonly requiresSketchAdmission: true;
+  readonly requiresNativeRebuild: true;
+  readonly exactGeometryAuthority: false;
+}
+
+const BATCH_EDIT_FIELDS = [
+  'eventId', 'cutFeatureId', 'targetBodyId', 'expectedSourceSketchId',
+  'expectedProfileCandidateId', 'sourceSketchId', 'profileCandidateId',
+  'releasePreviousSketchDependency',
+] as const;
+const BATCH_FIELDS = [
+  'format', 'version', 'expectedProjectId', 'expectedRevision', 'admission',
+  'edits', 'replacementSketch', 'retireSketch',
+] as const;
+
+function exactBatchFields(value: Record<string, unknown>, fields: readonly string[]): boolean {
+  return Object.keys(value).length === fields.length &&
+    fields.every((field) => Object.hasOwn(value, field));
+}
+function isBatchEdit(value: unknown): value is CutProfileBatchEdit {
+  if (!plain(value) || !exactBatchFields(value, BATCH_EDIT_FIELDS)) return false;
+  return isRequest({
+    ...value,
+    format: CUT_PROFILE_SOURCE_FORMAT,
+    version: CUT_PROFILE_SOURCE_VERSION,
+    expectedProjectId: 'validation.project',
+    expectedRevision: 0,
+    admission: 'permit_unresolved',
+  });
+}
+function isBatchRequest(value: unknown): value is CutProfileSourceBatchRequest {
+  if (!plain(value) || Object.keys(value).some((key) =>
+    !BATCH_FIELDS.includes(key as typeof BATCH_FIELDS[number]))) return false;
+  if (!['format','version','expectedProjectId','expectedRevision','admission','edits']
+    .every((key) => Object.hasOwn(value, key))) return false;
+  if (value.format !== CUT_PROFILE_SOURCE_BATCH_FORMAT || value.version !== 1 ||
+      !isId(value.expectedProjectId) ||
+      typeof value.expectedRevision !== 'number' ||
+      !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0 ||
+      (value.admission !== 'require_ready' && value.admission !== 'permit_unresolved') ||
+      !Array.isArray(value.edits) || value.edits.length < 1 ||
+      value.edits.length > 32 || !value.edits.every(isBatchEdit)) return false;
+  if (value.replacementSketch !== undefined &&
+      (!plain(value.replacementSketch) ||
+       !exactBatchFields(value.replacementSketch, ['eventId','feature']) ||
+       !isId(value.replacementSketch.eventId) ||
+       !plain(value.replacementSketch.feature))) return false;
+  if (value.retireSketch !== undefined &&
+      (!plain(value.retireSketch) ||
+       !exactBatchFields(value.retireSketch, ['eventId','featureId']) ||
+       !isId(value.retireSketch.eventId) ||
+       !isId(value.retireSketch.featureId))) return false;
+  return true;
+}
+
+/**
+ * Stage a complete reattachment transaction before changing the undo history.
+ *
+ * A replacement sketch can be created first; each selected cut then switches
+ * its explicit profile source; finally, an otherwise unused old sketch may be
+ * retired. Strict readiness applies to the FINAL document, so an intermediate
+ * pending cut does not block repairing all of its downstream users together.
+ * Previously ready unrelated features may never become silently unresolved.
+ */
+export function previewCutProfileSourceBatch(
+  input: ProjectDocument, request: CutProfileSourceBatchRequest,
+): CutProfileSourceBatchPreview {
+  const source = parseProject(input);
+  if (!isBatchRequest(request)) fail('invalid cut source batch request');
+  if (request.expectedProjectId !== source.projectId ||
+      request.expectedRevision !== source.revision) {
+    throw new ProjectRevisionError('cut profile source batch: stale project/revision');
+  }
+
+  const cutIds = new Set<string>();
+  for (const edit of request.edits) {
+    if (cutIds.has(edit.cutFeatureId)) fail('same cut selected more than once');
+    cutIds.add(edit.cutFeatureId);
+  }
+  let working = source;
+  const events: JournalEvent[] = [];
+  let createdId: string | null = null;
+  if (request.replacementSketch !== undefined) {
+    const { eventId, feature } = request.replacementSketch;
+    if (feature.kind !== 'sketch' || !isId(feature.id) ||
+        !request.edits.some((edit) => edit.sourceSketchId === feature.id)) {
+      fail('replacement must be a selected, newly authored SKETCH feature');
+    }
+    const event: JournalEvent = { type: 'feature.create', eventId, feature };
+    working = previewTransaction(working, [event]).document;
+    events.push(event);
+    createdId = feature.id;
+  }
+
+  for (const edit of request.edits) {
+    const preview = previewCutProfileSourceEdit(working, {
+      ...edit, format: CUT_PROFILE_SOURCE_FORMAT,
+      version: CUT_PROFILE_SOURCE_VERSION,
+      expectedProjectId: source.projectId, expectedRevision: working.revision,
+      admission: 'permit_unresolved',
+    });
+    events.push(preview.event);
+    working = preview.document;
+  }
+
+  let retiredId: string | null = null;
+  if (request.retireSketch !== undefined) {
+    const { eventId, featureId } = request.retireSketch;
+    const oldSketch = featuresOf(working).find((feature) => feature.id === featureId);
+    if (!oldSketch || oldSketch.kind !== 'sketch' ||
+        !request.edits.some((edit) => edit.expectedSourceSketchId === featureId)) {
+      fail('retirement must select an active displaced SKETCH');
+    }
+    // A sketch still serving a feature cannot be removed as a side effect of
+    // retargeting SOME of its consumers. The user must explicitly retarget each.
+    for (const feature of featuresOf(working)) {
+      if (feature.id !== featureId && (feature.dependsOn.includes(featureId) ||
+          feature.payload.sourceSketchId === featureId)) {
+        fail('source sketch is still used by ' + feature.id);
+      }
+    }
+    const event: JournalEvent = {
+      type: 'feature.remove', eventId, featureId,
+    };
+    working = previewTransaction(working, [event]).document;
+    events.push(event);
+    retiredId = featureId;
+  }
+
+  // Validate all events, including event-ID uniqueness, as ONE undoable frame.
+  const staged = previewTransaction(source, events, source.revision);
+  const statuses = new Map(staged.plan.features.map((row) =>
+    [row.feature.id, row.status] as const));
+  const invalidation = planIncrementalEvaluation(source, staged.document);
+  const affected = new Set(invalidation.invalidatedFeatureIds);
+  if (request.admission === 'require_ready') {
+    for (const cutId of cutIds) {
+      if (statuses.get(cutId) !== 'ready') {
+        fail('retargeted cut is not dependency-ready: ' + cutId);
+      }
+    }
+  }
+  for (const row of planProject(source).features) {
+    if (row.status !== 'ready' || row.feature.id === retiredId) continue;
+    const next = statuses.get(row.feature.id);
+    if (next !== 'ready' &&
+        !(request.admission === 'permit_unresolved' && affected.has(row.feature.id))) {
+      fail('source batch regresses previously ready feature ' + row.feature.id);
+    }
+  }
+  return {
+    format: 'intuit3d.cut-profile-source-batch-preview', version: 1,
+    document: staged.document,
+    events: staged.document.journal.slice(source.revision),
+    plan: staged.plan, invalidation,
+    editedCutIds: [...cutIds],
+    newlyAuthoredSketchId: createdId, retiredSketchId: retiredId,
+    cutStatuses: [...cutIds].map((featureId) => ({
+      featureId, status: statuses.get(featureId)!,
+    })),
+    requiresSketchAdmission: true,
+    requiresNativeRebuild: true,
+    exactGeometryAuthority: false,
+  };
+}
+
+/** One authoritative, revision-fenced undo frame for the complete replacement. */
+export function commitUndoableCutProfileSourceBatch(
+  input: UndoHistory, request: CutProfileSourceBatchRequest,
+): UndoHistory {
+  const history = parseUndoHistory(input);
+  const preview = previewCutProfileSourceBatch(history.document, request);
+  return commitUndoableTransaction(
+    history, preview.events, request.expectedRevision,
+  );
+}
