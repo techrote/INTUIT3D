@@ -82,28 +82,54 @@ async function main(){
   } catch(error) {
     throw new Error(String(error)+'; viteExit='+vite.exitCode+'; stderr='+viteStderr);
   }
-  const chrome=spawn(browser(),[
-    '--headless=new','--no-sandbox','--disable-dev-shm-usage','--use-gl=angle',
-    '--use-angle=swiftshader','--enable-unsafe-swiftshader',
-    '--disable-background-networking','--no-first-run',
-    '--window-size=1360,900','--remote-debugging-port=0',
-    '--user-data-dir='+home,'about:blank',
-  ],{stdio:['ignore','pipe','pipe'],detached:process.platform!=='win32'});
-  children.push(chrome);
-  let chromeStderr='';
-  chrome.stdout?.resume();
-  chrome.stderr?.on('data',chunk=>{chromeStderr=(chromeStderr+chunk.toString()).slice(-8192);});
-  // The Linux runner can briefly delay the first SwiftShader subprocess.
-  // A failed startup remains a failing acceptance gate, but now has concrete
-  // exit/signal/stderr evidence rather than an unexplained CDP-port timeout.
-  let p;
-  try {
-    p=await eventually(()=>existsSync(join(home,'DevToolsActivePort')) &&
-      readFileSync(join(home,'DevToolsActivePort'),'utf8'),'CDP port',180);
-  } catch(error) {
-    throw new Error(String(error)+'; chromeExit='+chrome.exitCode+
-      '; chromeSignal='+chrome.signalCode+'; stderr='+chromeStderr);
+
+  // This real-native test runs after memory-intensive Python/OCP/STEP work.
+  // Github's Linux browser can hang before emitting DevToolsActivePort, even
+  // while the Chrome PID is alive (observed on exact accepted-main run
+  // 42336300195). Use the SAME bounded, explicitly instrumented two-mode
+  // Chromium launch fallback as the already qualified browser-smoke harness.
+  // Missing browser rendering is never accepted as a test pass.
+  const executable=browser();
+  const browserVersion=spawnSync(executable,['--version'],{encoding:'utf8'});
+  const rendererModes=[
+    ['--headless=new','--use-gl=angle','--use-angle=swiftshader'],
+    ['--headless','--use-gl=swiftshader','--no-zygote'],
+  ];
+  const launchFailures=[];
+  let p=null;
+  for(let attempt=0;attempt<rendererModes.length && !p;attempt++){
+    const profile=join(home,attempt===0?'primary':'fallback');
+    const chrome=spawn(executable,[
+      ...rendererModes[attempt],'--no-sandbox','--disable-dev-shm-usage',
+      '--enable-unsafe-swiftshader','--disable-background-networking',
+      '--no-first-run','--no-default-browser-check','--window-size=1360,900',
+      '--remote-debugging-port=0','--user-data-dir='+profile,'about:blank',
+    ],{stdio:['ignore','pipe','pipe'],detached:process.platform!=='win32'});
+    children.push(chrome);
+    let stderr='';
+    chrome.stdout?.resume();
+    chrome.stderr?.on('data',chunk=>{stderr=(stderr+chunk.toString()).slice(-12000);});
+    chrome.on('error',err=>{stderr=(stderr+'\\nspawn: '+err.message).slice(-12000);});
+    try{
+      p=await eventually(()=>existsSync(join(profile,'DevToolsActivePort'))&&
+        readFileSync(join(profile,'DevToolsActivePort'),'utf8'),
+        'Chromium CDP port / attempt '+(attempt+1),120);
+    }catch(error){
+      launchFailures.push({
+        attempt:attempt+1,reason:String(error),
+        exitCode:chrome.exitCode,signalCode:chrome.signalCode,
+        browserVersion:(browserVersion.stdout||browserVersion.stderr||'').trim(),
+        flags:rendererModes[attempt],stderr
+      });
+      console.error('CHROMIUM_LAUNCH_ATTEMPT_FAILED '+JSON.stringify(launchFailures.at(-1)));
+      try{
+        if(process.platform!=='win32'&&chrome.pid)process.kill(-chrome.pid,'SIGKILL');
+        else chrome.kill('SIGKILL');
+      }catch{try{chrome.kill('SIGKILL')}catch{}}
+    }
   }
+  if(!p)throw Error('Chromium native browser/CDP startup failed after two bounded attempts: '+
+    JSON.stringify({launchFailures,viteExit:vite.exitCode,viteStderr}));
   const endpoint='http://127.0.0.1:'+Number(p.split('\n')[0]);
   const target=await eventually(async()=>{
     const reply=await fetch(endpoint+'/json/list');const all=await reply.json();
