@@ -43,6 +43,10 @@
     "./dimension-dependency-reconcile": {
       "types": "./src/dimension-dependency-reconcile.ts",
       "default": "./src/dimension-dependency-reconcile.ts"
+    },
+    "./parameter-edit": {
+      "types": "./src/parameter-edit.ts",
+      "default": "./src/parameter-edit.ts"
     }
   },
   "scripts": {
