@@ -121,6 +121,47 @@ def parse_ray(output: str, *, expected: str, thickness: float, tolerance: float 
         raise ValueError(expected)
     return {'expected': expected, 'hitCount':len(hits), 'lineOfSightMm':[h[1] for h in hits]}
 
+ROOT_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_.:+-]*(?:/(?:R)?)?\\Z")
+
+def top_objects(output: str) -> tuple[str, ...]:
+    """Parse mged -c database.g tops; refuse ambiguous or unrecognized listings.
+
+    BRL-CAD can mark combinations with '/' and regions with '/R', and may
+    print several top-level names on one line. Only stdout is authoritative.
+    """
+    stdout = output.split('\\n[stderr]\\n', 1)[0]
+    roots = []
+    for raw_line in stdout.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith('mged> '):
+            line = line[len('mged> '):].strip()
+            if line == 'tops':
+                continue
+        columns = line.split()
+        if not columns or not all(ROOT_TOKEN.fullmatch(token) for token in columns):
+            raise NotQualified(f'Unrecognized mged tops output: {raw_line[:160]!r}')
+        for item in columns:
+            name = item.removesuffix('/R') if item.endswith('/R') else item.removesuffix('/')
+            if name in roots:
+                raise NotQualified(f'Duplicate mged top-level object {name!r}')
+            roots.append(name)
+    if not roots:
+        raise NotQualified('mged tops yielded no unambiguous geometry object')
+    return tuple(roots)
+
+def selected_top_object(output: str, specified: str | None) -> str:
+    """Auto-select only a unique root; explicit names must match exactly."""
+    names = top_objects(output)
+    if specified:
+        if specified not in names:
+            raise NotQualified(f'Selected object {specified!r} is not an exact top-level object: {names!r}')
+        return specified
+    if len(names) != 1:
+        raise NotQualified(f'Import has {len(names)} top-level objects; supply exact --object: {names!r}')
+    return names[0]
+
 def sample_rays(c: dict):
     t = float(c['thicknessMm'])
     x = float(c['widthMm']) / 2
@@ -149,18 +190,18 @@ def execute(case: dict, root: Path, args, exe: dict) -> dict:
         raise NotQualified(f'Strict import did not produce database and report: {name}')
     imp_json = json.loads(imp.read_text())  # retained for independent coverage review
     roots = run([exe['mged'][0],'-c',str(database),'tops'],output/'mged-tops.log',args.timeout)
-    if args.object not in roots:
-        raise NotQualified(f'Configured BRL-CAD object {args.object!r} not listed by tops: {name}')
+    selected_root = selected_top_object(roots, args.object)
     expected_vol = (case['widthMm']*case['depthMm'] - sum(math.pi*h['radius']**2 for h in case['holes']))*case['thicknessMm']
-    vol = run([exe['gqa'][0],'-Av',str(database),args.object],output/'gqa-volume.log',args.timeout)
-    measured = parse_volume(vol,args.object,expected_vol,args.volume_tolerance)
+    vol = run([exe['gqa'][0],'-Av',str(database),selected_root],output/'gqa-volume.log',args.timeout)
+    measured = parse_volume(vol,selected_root,expected_vol,args.volume_tolerance)
     rays = []
     for probe,px,py,pz,expected in sample_rays(case):
         script = f'xyz {px:.12g} {py:.12g} {pz:.12g}; dir 0 0 -1; s; q'
-        report = run([exe['nirt'][0],'-b','-s','-e',script,str(database),args.object],
+        report = run([exe['nirt'][0],'-b','-s','-e',script,str(database),selected_root],
                      output / ('nirt-'+probe+'.log'),args.timeout)
         rays.append({'probe':probe,'xyzMm':[px,py,pz],**parse_ray(report,expected=expected,thickness=case['thicknessMm'])})
-    return {'filename':name,'sha256':digest(target),'importDatabaseSha256':digest(database),
+    return {'filename':name,'selectedRoot':selected_root,'topLevelObjects':list(top_objects(roots)),
+            'sha256':digest(target),'importDatabaseSha256':digest(database),
             'importReportSha256':digest(imp),'importReport':imp_json,
             'expectedVolumeMm3':expected_vol,'measuredRayVolumeMm3':measured,
             'volumeRelativeError':abs(measured-expected_vol)/expected_vol,
@@ -170,7 +211,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--bundle', type=Path, required=True,help='Original GitHub Actions ZIP, e.g. artifact 13563062028')
     ap.add_argument('--output-dir', type=Path, required=True,help='A fresh evidence directory; existing paths rejected')
-    ap.add_argument('--object',default=None,help='Exact single imported BRL-CAD root object; required for full external run')
+    ap.add_argument('--object',default=None,help='Optional exact imported root name; automatically selected if sole top-level object')
     ap.add_argument('--step-g',default='step-g')
     ap.add_argument('--mged',default='mged')
     ap.add_argument('--gqa',default='gqa')
@@ -195,8 +236,8 @@ def main(argv=None) -> int:
         report['status']='INPUT_VERIFIED_NOT_EXTERNAL_CAD'
         code=0
         if not args.verify_input_only:
-            if not args.object or not re.fullmatch(r'[A-Za-z0-9_.:/+-]{1,128}',args.object):
-                raise NotQualified('Pass exact --object from mged imported.g tops (one root only); refusing ambiguous body')
+            if args.object is not None and not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.:+-]{0,127}',args.object):
+                raise NotQualified('Invalid exact --object name; refuse unsafe/ambiguous selection')
             exe={}
             for flag in ('step-g','mged','gqa','nirt'):
                 exe[flag]=tool(getattr(args,flag.replace('-','_')))
