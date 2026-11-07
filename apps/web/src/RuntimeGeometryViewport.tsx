@@ -7,7 +7,7 @@ import { handleDimensionAtPoint, nudgeSketchHandle, type SketchDimensionHandle }
 
 /** A visually useful, disposable tessellation of the ACTUAL admitted SKETCH
  * profile. Never used as document state, a STEP source, or geometric proof. */
-type HoleId = 'holeA' | 'holeB';
+type HoleId = string;
 export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
   onHoleMove?: (id: HoleId,x:number,y:number)=>void;
@@ -110,7 +110,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       {profile.holes.map(h=><g key={h.id}>
         <circle data-testid={`runtime-sketch-outline-hole-${h.id}`} cx={h.x} cy={h.y} r={h.radius} fill="#152332"
           stroke="#e4be81" strokeWidth=".5" vectorEffect="non-scaling-stroke"/>
-        {(h.id==='holeA'||h.id==='holeB')&&onHoleMove&&
+        {onHoleMove&&
           <circle data-testid={`runtime-sketch-hole-${h.id}`}
             aria-label={`Drag ${h.id} center`}
             cx={h.x} cy={h.y} r={Math.max(2,Math.min(width,height)/35)}

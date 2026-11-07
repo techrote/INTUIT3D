@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelFeature,
+  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelFeature, removeModelHole,
   newModelPlateSession, previewModelProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
 } from './runtimeSession.ts';
@@ -183,4 +183,35 @@ test('direct sketch edge/diameter edits commit via accepted model contracts, ref
   assert.equal(refused.kind,'refused');
   assert.equal(serializeModelSession(initial),serializeModelSession(newModelPlateSession('workbench.direct.dimension')));
   assert.equal(editModelSketchHandle(initial,'holeA.diameter',100).kind,'refused');
+});
+
+test('added hole is a real editable cut with durable identity, archive, undo and removal',()=>{
+  const h=newModelPlateSession('workbench.add.circles');
+  const added=addModelHole(h,'holeC',60,20,10);
+  assert.equal(added.kind,'committed');
+  if(added.kind!=='committed')return;
+  assert.equal(added.history.document.revision,h.document.revision+1);
+  assert.equal(previewModelProfile(added.report)?.profile.holes.length,3);
+  assert.deepEqual(modelHoleValues(added.history).holeC,{x:60,y:20,diameter:10});
+  assert.deepEqual(added.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  const moved=moveModelHoleCenter(added.history,'holeC',62,22);
+  assert.equal(moved.kind,'committed');
+  if(moved.kind!=='committed')return;
+  const resized=editModelHole(moved.history,'holeC','diameter',12);
+  assert.equal(resized.kind,'committed');
+  if(resized.kind!=='committed')return;
+  const reopened=reopenModelSession(serializeModelSession(resized.history));
+  assert.deepEqual(modelHoleValues(reopened).holeC,{x:62,y:22,diameter:12});
+  assert.equal(modelHoleValues(undoModelSession(reopened)).holeC.diameter,10);
+  const removed=removeModelHole(reopened,'holeC');
+  assert.equal(removed.kind,'committed');
+  if(removed.kind!=='committed')return;
+  assert.equal(previewModelProfile(removed.report)?.profile.holes.length,2);
+  assert.equal(modelHoleValues(removed.history).holeC,undefined);
+  assert.deepEqual(modelHoleValues(undoModelSession(removed.history)).holeC,{x:62,y:22,diameter:12});
+  assert.equal(modelHoleValues(reopenModelSession(serializeModelSession(removed.history))).holeC,undefined);
+  assert.throws(()=>removeModelHole(h,'holeA'),/Base hole/);
+  const outside=addModelHole(h,'holeOutside',1000,1000,10);
+  assert.equal(outside.kind,'refused');
+  assert.deepEqual(Object.keys(modelHoleValues(h)),['holeA','holeB']);
 });
