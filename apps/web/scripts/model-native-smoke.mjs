@@ -488,6 +488,18 @@ async function main(){
   await screenshot('native-07-auto-native-rebuild-after-dimension-edit.png');
   // Actual Chromium inputs -> admitted combined RUNTIME/SKETCH layout edit.
   // HTTP STEP bytes remain explicitly synthetic UI test evidence.
+  // Start this dimensional acceptance with a clean two-hole plate; the prior
+  // array/pointer tests intentionally leave six circles and are not a valid
+  // physical comparator for an independent two-hole pitch/bore adjustment.
+  await pointerClick('runtime-new-plate');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'new authoritative plate did not open replacement review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(x=>x.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'cannot start fresh model-backed two-hole plate');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===2"),
+    'fresh plate was not restored to two authored hole IDs');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-evidence]'))"),
+    'fresh plate was not automatically rebuilt by the persistent native session');
   const beforeLayout=await evaluate(`(() => {
     const val=id=>Number(document.querySelector('[data-testid="runtime-hole-'+id+'"]')?.value);
     return {a:val('holeA-x'),b:val('holeB-x'),
