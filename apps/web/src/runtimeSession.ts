@@ -681,9 +681,15 @@ export function reopenModelSession(text: string): ModelSession {
   // Accept a genuine authored plate/cut tombstone archive without
   // resurrecting deleted geometry; unrelated document formats are refused.
   const rows=model.featureTimelineOf(h.document);
+  const living=new Map(model.featuresOf(h.document).map(f=>[f.id,f.kind]));
   if(!rows.some(t=>t.featureId==='sketch.plate'&&t.active) ||
-      rows.some(t=>t.active&&!['sketch.plate','plate','cut','parameter.t'].includes(t.featureId)))
+      rows.some(t=>t.active&&
+        !['sketch.plate','plate','cut'].includes(t.featureId)&&
+        living.get(t.featureId)!=='parameter'))
     throw Error('Archive does not contain the supported plate/sketch/cut history.');
+  // Additional named INTENT parameters are safe semantic sources, not a new
+  // unsupported solid/mesh. Keep the rest of this plate workbench's bounded
+  // feature inventory while preserving genuine multi-row archive history.
   modelHoleValues(h);
   modelSketchDimensionValues(h);
   if(rows.some(t=>t.featureId==='plate'&&t.active))modelDimensionValues(h);
