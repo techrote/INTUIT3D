@@ -20,6 +20,7 @@ import type { UndoHistory } from './transactions.ts';
 import { planIncrementalEvaluation } from './incremental.ts';
 import type { IncrementalEvaluationPlan } from './incremental.ts';
 import { inspectBodyCutChain } from './body-cut-chain.ts';
+import { TOPOLOGY_REFERENCE_FORMAT } from './topology.ts';
 
 export const BODY_CUT_ORDER_FORMAT = 'intuit3d.body-cut-order' as const;
 export const BODY_CUT_ORDER_VERSION = 1 as const;
@@ -117,6 +118,14 @@ function orderedBodyWriters(doc: ProjectDocument, bodyId: string): Feature[] {
   return ordered;
 }
 function replacedDependency(feature: Feature, oldId: string, newId: string): readonly string[] {
+  // A body-writer edge might ALSO be the only dependency for an authored
+  // face/edge/body selection. Never discard that independent design intent.
+  for (const value of Object.values(feature.payload)) {
+    if (plain(value) && value.format === TOPOLOGY_REFERENCE_FORMAT &&
+        plain(value.anchor) && value.anchor.featureId === oldId) {
+      fail('cannot reorder ' + feature.id + ': authored topology still targets ' + oldId);
+    }
+  }
   if (!feature.dependsOn.includes(oldId)) fail('missing expected body predecessor on ' + feature.id);
   return feature.dependsOn.map((id) => id === oldId ? newId : id);
 }
