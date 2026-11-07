@@ -233,7 +233,7 @@ async function main(){
   // table: preview must not commit, commit must be one undo frame, and no
   // native exactness may leak from a new derived parameter expression.
   const formulaRevision=Number((await evaluate(
-    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\\d+/)?.[0]);
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
   check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-formula-expression-0]');e?.focus();e?.select();return document.activeElement===e})()"),
     'formula spreadsheet field cannot receive keyboard focus');
   await send('Input.insertText',{text:'14'});
@@ -246,7 +246,7 @@ async function main(){
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='14'"),
     'model-owned spreadsheet commit did not rebuild extrusion dimensions');
   check(Number((await evaluate(
-    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\\d+/)?.[0])===formulaRevision+1,
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===formulaRevision+1,
     'one edited formula row did not create exactly one journal revision');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'formula spreadsheet falsely promoted physical STEP authority');
