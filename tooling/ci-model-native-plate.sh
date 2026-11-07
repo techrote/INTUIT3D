@@ -19,8 +19,15 @@ node tooling/model-native-plate.mjs "$output/model" 12
 # coordinator against this same pinned OCP environment. This is the admission
 # test that #61's exact-head source-only hosted CI did NOT perform.
 npm run demo:native --workspace @intuit3d/workflow-runtime
+# Real RUNTIME trusted HTTP bridge -> actual pinned OCP, not a synthetic provider.
+npm run demo:bridge --workspace @intuit3d/workflow-runtime
+# Real Chromium UI -> RUNTIME local host -> experimental OCP -> browser STEP download.
+# The WORKBENCH generated-lock browser CI separately covers stale-response
+# cancellation with a deterministic synthetic server; this is real geometry.
+npm run build --workspace @intuit3d/web
+INTUIT3D_REAL_NATIVE_BROWSER_ARTIFACTS="$output/real-native-browser" node tooling/real-native-browser-smoke.mjs
 test -s "$output/model.initial.step"
 test -s "$output/model.edited.step"
 test -s "$output/model.intuit3d.json"
 echo 'MODEL_NATIVE_EXPERIMENTAL_EXECUTED: real INTENT/SKETCH/RUNTIME to OCP 7.9.3.1 with two STEP files and serialized archive'
-echo 'NOT_QUALIFIED: OCCT 8.0.1 C++, external STEP consumer, Windows native OCP, browser exactness, human acceptance'
+echo 'NOT_QUALIFIED: production OCCT 8.0.1 C++, independent external STEP consumer, Windows native OCP, human acceptance'
