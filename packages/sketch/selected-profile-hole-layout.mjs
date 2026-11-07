@@ -19,7 +19,8 @@ const refusal=(stamp,reason,detail=null,sourceStatus=null,diagnostics=[])=>({
   kind:'refused',version:1,sourceSignature:stamp,reason,detail,
   sourceStatus,diagnostics,previewOnly:true,nativeExact:false
 });
-const near=(a,b)=>Math.abs(a-b)<=1e-8;
+// Match the existing linear solver's 1e-9 mm residual admission bound.
+const near=(a,b)=>Math.abs(a-b)<=1e-9;
 
 /** Show the actual editable constraint triplets and dependent-hole references. */
 export function inspectSelectedProfileHoleLayout(source,selection){
