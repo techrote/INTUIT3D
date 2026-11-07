@@ -1,6 +1,6 @@
 import type {UndoHistory} from '@intuit3d/model/transactions';
 import type {WorkflowRuntime,RuntimeReport,WorkflowInvalidation} from '@intuit3d/workflow-runtime';
-import type {FeatureOpsServices} from './index.d.mts';
+import type {FeatureOpsServices} from './index.mjs';
 
 export declare const CUT_REASSIGN_FORMAT: 'intuit3d.feature-ops.cut-reassignment';
 export declare const CUT_REASSIGN_VERSION: 1;
