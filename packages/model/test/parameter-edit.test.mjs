@@ -130,7 +130,7 @@ test('forward expression dependency remains pending, then recovers after retrosp
 test('old dependency edges and unrelated payload fields are not silently erased',()=>{
   let h=boundPlate();
   h=edit(h,'edit.one','parameter.t',ref('parameter.future'),'permit_unresolved');
-  h=edit(h,'edit.two','parameter.t',literal(15));
+  h=edit(h,'edit.two','parameter.t',literal(15),'permit_unresolved');
   assert.ok(read(h.document,'parameter.t').dependsOn.includes('parameter.future'));
   assert.equal(gate(h.document,'parameter.t').status,'unready');
   assert.equal(read(h.document,'parameter.t').payload.parameter.name,'thickness');
