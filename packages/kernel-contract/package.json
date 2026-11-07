@@ -23,6 +23,10 @@
     "./local-arc-profile-provider": {
       "types": "./src/local-arc-profile-provider.d.mts",
       "node": "./src/local-arc-profile-provider.mjs"
+    },
+    "./runtime-profile-provider": {
+      "types": "./src/runtime-profile-provider.d.mts",
+      "node": "./src/runtime-profile-provider.mjs"
     }
   },
   "scripts": {
