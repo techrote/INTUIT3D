@@ -510,7 +510,7 @@ const proposal = session.previewEdit(history => runtime.editSketchConstraints(hi
   eventId: 'drag.holeA.' + history.document.revision,
   expectedRevision: history.document.revision,
   admission: 'require_admissible',
-  edits: [{constraintId: 'holeA:fixed',patch: {x: -20, y: 0}}],
+  edits: [{constraintId: 'holeA:fixed',patch: {x: 40, y: 40}}],
 }));
 if (proposal.kind === 'preview') {
   // Display proposal.report and its solver/profile diagnostics as a
