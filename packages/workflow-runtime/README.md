@@ -772,3 +772,47 @@ refusal. **It does not establish native geometry**. The pinned OCCT8 worker
 must be source-matched and separately physically executed; a pinned-backend
 selection restricts provider choice but does not promote `exactAuthority` or
 `independentInteroperability` to true.
+
+### Atomic ordered CAD command batches
+
+WORKBENCH can author a dependent edit burst **without publishing partial
+sketch/feature states** using `session.applyCommands(batch)`. The outer
+`projectId` / `expectedRevision` fence applies to the *entire* batch;
+each bounded operation receives the next real INTENT revision internally.
+The canonical history source is written **once**, after every accepted
+transaction and SKETCH/profile admission; any refused operation reports its
+zero-based `commandIndex` and commits nothing. Invalid arguments throw
+without publishing any intermediate edits. This is not a second preview
+model, native geometry result or a new undo-log format.
+
+```ts
+const {projectId,revision}=session.refresh();
+const outcome=await session.applyCommandsAndEvaluate({
+  kind:'commands.batch',projectId,expectedRevision:revision,
+  commands:[
+    {kind:'model.events',events:[{eventId:'edit.thickness.12',
+      type:'feature.edit',featureId:'plate',
+      patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:12}}}]},
+    {kind:'sketch.holes',request:{sketchFeatureId:'sketch.plate',
+      eventId:'edit.add.holeC',
+      operations:[{kind:'add',id:'holeC',x:60,y:20,radius:4}]}},
+  ],
+},{requiredBackend:'OCCT-cxx-8.0.1',exportStep:true});
+if(outcome.kind==='submitted') {
+  // A submitted native evaluation can still be unresolved. It is never
+  // implicitly production-exact or independently interoperable.
+  const verifiedCurrent=session.currentStep();
+}
+```
+
+This commits two ordinary undoable INTENT transactions in one **durable
+archive replacement**, not one combined undo entry. A future undo of the
+whole group must undo both transactions through the normal model contract.
+There is at most one native evaluation after admission; any changed
+revision revokes previous STEP receipts immediately. Synchronous
+single-writer storage is still required: `Storage.getItem/setItem` is
+not cross-tab compare-and-swap. Run
+`node --test packages/workflow-runtime/test/atomic-command-batch.integration.test.mjs`
+for real INTENT/SKETCH + loopback HTTP testing with a clearly synthetic
+native provider. Physical pinned OCCT8 and external STEP geometry still
+require their separate executable acceptance.
