@@ -75,6 +75,10 @@
     "./feature-lifecycle": {
       "types": "./src/feature-lifecycle.ts",
       "default": "./src/feature-lifecycle.ts"
+    },
+    "./cut-reattachment": {
+      "types": "./src/cut-reattachment.ts",
+      "default": "./src/cut-reattachment.ts"
     }
   },
   "scripts": {
