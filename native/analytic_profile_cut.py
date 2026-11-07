@@ -18,6 +18,51 @@ from analytic_profile_extrude import parse_request, require, nearby, ID
 SCHEMA = 'intuit3d/kernel/profile-body-cut-v1'
 POCKET_SCHEMA = 'intuit3d/kernel/profile-body-cut-v2'
 CHAIN_SCHEMA = 'intuit3d/kernel/profile-body-cut-chain-v3'
+NOTCH_SCHEMA = 'intuit3d/kernel/profile-body-notch-v4'
+
+
+def _rect_bounds(profile, label):
+    """Restrict v4 to genuine axis-aligned authored rectangles, not fitted meshes."""
+    curves = profile.get('boundary')
+    require(isinstance(curves, list) and len(curves) == 4 and
+            all(isinstance(c, dict) and c.get('kind') == 'line' for c in curves),
+            f'{label}: a four-edge rectangular line profile is required')
+    points = [c['start'] for c in curves]
+    xs = [p['x'] for p in points]
+    ys = [p['y'] for p in points]
+    xmin, xmax, ymin, ymax = min(xs), max(xs), min(ys), max(ys)
+    require(xmax - xmin > 1e-6 and ymax - ymin > 1e-6 and
+            {(p['x'], p['y']) for p in points} == {
+                (xmin, ymin), (xmax, ymin), (xmax, ymax), (xmin, ymax)},
+            f'{label}: profile must be an axis-aligned rectangle')
+    require(nearby((xmax-xmin)*(ymax-ymin), profile['signedBoundaryAreaMm2'],
+                   profile['signedBoundaryAreaMm2']),
+            f'{label}: invalid rectangle material area')
+    return xmin, xmax, ymin, ymax
+
+
+def _notch_overlap(base_profile, cutter_profile):
+    """Independent rectangle intersection oracle for an ordinary side notch.
+
+    Circular bores are supported when disjoint from the tool footprint.
+    Unknown curved footprint intersections fail closed.
+    """
+    bx0, bx1, by0, by1 = _rect_bounds(base_profile, 'base')
+    cx0, cx1, cy0, cy1 = _rect_bounds(cutter_profile, 'cut tool')
+    require(not cutter_profile['holes'], 'notch cutter islands unsupported')
+    width = max(0.0, min(bx1, cx1) - max(bx0, cx0))
+    depth = max(0.0, min(by1, cy1) - max(by0, cy0))
+    overlap = width * depth
+    tool_area = (cx1-cx0) * (cy1-cy0)
+    require(overlap > 1e-6 and overlap < tool_area - 1e-6,
+            'notch must partially cross plate perimeter and remove material')
+    for hole in base_profile['holes']:
+        x, y, r = hole['x'], hole['y'], hole['radiusMm']
+        dx = max(cx0-x, 0, x-cx1)
+        dy = max(cy0-y, 0, y-cy1)
+        require(dx*dx + dy*dy > (r+1e-6)**2,
+                'notch intersects an existing bore; unsupported by v4 oracle')
+    return overlap
 
 
 def _face(parsed):
@@ -78,10 +123,10 @@ def execute(request, step_path=None):
     require(OCP.__version__ == '7.9.3.1', 'requires pinned experimental OCP 7.9.3.1')
     require(isinstance(request, dict), 'body cut request must be an object')
     schema = request.get('protocol')
-    require(schema in (SCHEMA, POCKET_SCHEMA), 'unsupported body cut protocol')
+    require(schema in (SCHEMA, POCKET_SCHEMA, NOTCH_SCHEMA), 'unsupported body cut protocol')
     keys = {'protocol', 'requestId', 'cutFeatureId', 'targetBodyId',
             'revision', 'units', 'baseExtrude', 'cutTool', 'exportStep'}
-    if schema == POCKET_SCHEMA:
+    if schema in (POCKET_SCHEMA, NOTCH_SCHEMA):
         keys.add('cutDepthMm')
     require(set(request) == keys and request['units'] == 'mm',
             'invalid body cut request fields or units')
@@ -103,7 +148,7 @@ def execute(request, step_path=None):
     base_parsed, cut_parsed = parse_request(base), parse_request(cutter)
     thickness = base_parsed[1]
     cut_depth = thickness
-    if schema == POCKET_SCHEMA:
+    if schema in (POCKET_SCHEMA, NOTCH_SCHEMA):
         depth = request['cutDepthMm']
         require(type(depth) in (int, float) and math.isfinite(depth) and
                 1e-6 <= depth <= thickness, 'pocket depth must be positive and within base thickness')
@@ -133,7 +178,9 @@ def execute(request, step_path=None):
             'explicit body cut failed')
     shape = boolean.Shape()
     source = _measure(shape)
-    expected = base_area * thickness - cut_area * cut_depth
+    overlap_area = _notch_overlap(base['profile'], cutter['profile']) if schema == NOTCH_SCHEMA else cut_area
+    removed_volume = overlap_area * cut_depth
+    expected = base_area * thickness - removed_volume
     require(nearby(source['volumeMm3'], expected, expected),
             'cut did not remove the full intended area of the target body')
     step_readback = None
@@ -169,12 +216,14 @@ def execute(request, step_path=None):
             'backend': 'OCP-python-prototype', 'occtVersion': '7.9.3.1',
             'status': 'experimental_body_cut_brep', 'exactAuthority': False,
             'independentInteroperability': False, 'baseVolumeMm3': before['volumeMm3'],
-            'removedVolumeMm3': cut_area * cut_depth,
+            'removedVolumeMm3': removed_volume,
             'analyticResultVolumeMm3': expected,
             'source': source, 'stepReadback': step_readback, 'artifact': artifact,
             **({'cutDepthMm': cut_depth,
                 'cutKind': 'blind_pocket' if cut_depth < thickness else 'through'}
-               if schema == POCKET_SCHEMA else {})}
+               if schema in (POCKET_SCHEMA, NOTCH_SCHEMA) else {}),
+            **({'footprintIntersectionAreaMm2': overlap_area}
+               if schema == NOTCH_SCHEMA else {})}
 
 
 def execute_chain(request, step_path=None):
