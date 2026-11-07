@@ -92,12 +92,17 @@ export function requestFromRuntimeOcct8LProfile(history,targetBodyId,{
     featureId:c.cutFeatureId,...cutRectangle(c.cutTool.profile,c.cutFeatureId),
     cutDepthMm:c.cutDepthMm,
   }));
+  const sourceFeatures=model.featuresOf(history.document).filter(f=>
+    f.kind==='extrude'&&f.writeTargets?.length===1&&
+    f.writeTargets[0]===targetBodyId);
+  demand(sourceFeatures.length===1&&
+    typeof sourceFeatures[0].payload?.sourceSketchId==='string',
+    'selected sketch identity missing from authored body');
   return parseOcct8LProfileRequest({
     protocol:'intuit3d/kernel/l-profile-cut-chain-v3',
     requestId:authored.requestId,featureId:authored.targetBodyId,
     revision:authored.revision,units:'mm',exportStep:authored.exportStep,
-    profile:{profileId:authored.baseExtrude.profile.sourceSignature ? 
-      authored.baseExtrude.profile.id : authored.baseExtrude.featureId,
+    profile:{profileId:sourceFeatures[0].payload.sourceSketchId,
       ...base,thickness:authored.baseExtrude.thicknessMm},
     cuts,
   });
