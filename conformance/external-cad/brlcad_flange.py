@@ -217,19 +217,30 @@ def sample_rays(c: dict):
         probes.append(('central.material',0,0,'solid'))
     return [(name,px,py,t+5,ex) for name,px,py,ex in probes]
 
+def step_g_argv(executable: str, database: Path, source: Path) -> list[str]:
+    """BRL-CAD 7.44.0 actual installed importer CLI (Actions run 42383946537).
+
+    This release accepts 'step-g [-v] -o outfile.g infile.stp', not the
+    previously assumed --strict/--exact/--repair/--report interface.
+    A zero exit status and a populated database are necessary but *not*
+    sufficient: execute() subsequently requires real geometry/ray acceptance.
+    """
+    return [executable, '-o', str(database), str(source)]
+
+
 def execute(case: dict, root: Path, args, exe: dict) -> dict:
     name = case['filename']
     target = root / name
     output = root / ('external-' + name)
     output.mkdir()
     database = output / 'imported.g'
-    imp = output / 'step-g-report.json'
-    # Strict, source-faithful import. Exit 1 means partial and MUST NOT pass.
-    run([exe['step-g'][0], '--strict','--exact','--repair','none','--report',str(imp),
-         '-o',str(database),str(target)],output/'step-g.log',args.timeout)
-    if not database.is_file() or not database.stat().st_size or not imp.is_file():
-        raise NotQualified(f'Strict import did not produce database and report: {name}')
-    imp_json = json.loads(imp.read_text())  # retained for independent coverage review
+    # Official 7.44.0 importer provides neither strict/repair modes nor JSON
+    # import reports. Exit status, populated .g, tops, gqa and coordinate-anchored
+    # nirt rays must ALL pass; a command-only success cannot admit geometry.
+    run(step_g_argv(exe['step-g'][0], database, target),
+        output/'step-g.log', args.timeout)
+    if not database.is_file() or not database.stat().st_size:
+        raise NotQualified(f'BRL-CAD importer did not produce a nonempty geometry database: {name}')
     roots = run([exe['mged'][0],'-c',str(database),'tops'],output/'mged-tops.log',args.timeout)
     selected_root = selected_top_object(roots, args.object)
     expected_vol = (case['widthMm']*case['depthMm'] - sum(math.pi*h['radius']**2 for h in case['holes']))*case['thicknessMm']
@@ -244,7 +255,7 @@ def execute(case: dict, root: Path, args, exe: dict) -> dict:
                                  expected_origin=(px,py,pz),expected_top_z=case['thicknessMm'])})
     return {'filename':name,'selectedRoot':selected_root,'topLevelObjects':list(top_objects(roots)),
             'sha256':digest(target),'importDatabaseSha256':digest(database),
-            'importReportSha256':digest(imp),'importReport':imp_json,
+            'importLogSha256':digest(output/'step-g.log'),
             'expectedVolumeMm3':expected_vol,'measuredRayVolumeMm3':measured,
             'volumeRelativeError':abs(measured-expected_vol)/expected_vol,
             'rayProbes':rays,'classification':'non-OCCT-BRL-CAD-import-and-ray-sampling'}
