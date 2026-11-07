@@ -86,3 +86,37 @@ for evaluating current revisions, native provider compatibility and status.
 The browser UI and real Chromium interaction are WORKBENCH/INTEGRATION-owned
 and are not qualified by these package tests. Additional generalized B-rep
 operations require KERNEL support and explicit Integration acceptance.
+
+## Explicit cut-body reassignment / sketch replacement v1
+
+`@intuit3d/feature-ops/cut-reassignment/v1` adds
+`reassignProfileCut(history, request, services)` to **edit an existing cut**
+instead of deleting it and manufacturing another one. Its request is
+revision-fenced and explicitly identifies both the current and replacement
+extrusion/body/sketch. The replacement `cycle:...` candidate is re-admitted
+through genuine SKETCH discovery and checked against RUNTIME's current solved
+profile. One `feature.edit` event atomically updates the cut's body writer,
+dependency edges and source sketch, while retaining its durable cut ID.
+
+This makes multi-body assemblies materially more editable: a user can
+correct the body selected for a clearance cut, or replace an unusable cut
+sketch with a newly solved one, then undo/redo or save/reopen the operation.
+Conflicting body writers, unexpected old lineage, unchanged selections,
+stale revisions and ambiguous profiles refuse without modifying history.
+The command does not silently commute multiple cuts or imply that a Boolean
+exists. Its result remains `pending_exact_provider`.
+
+Runnable actual-consumer fixture:
+
+```sh
+node --experimental-strip-types packages/feature-ops/examples/cut-reassignment.mjs
+npm test --workspace @intuit3d/feature-ops
+```
+
+**RUNTIME/WORKBENCH handoff:** provide explicit **Cut → Target Body** and
+**Cut → Source Sketch / Profile** selectors. Supply both the original selected
+extrusion/body/sketch identities and the replacement identities, so a stale
+selection is rejected rather than editing a different solid. Display the
+returned `pending_exact_provider` status, revision and invalidation; do not
+render a committed exact cut. General profile Booleans, real B-rep evidence and
+STEP acceptance are still owned by KERNEL/RUNTIME/PLATFORM/INTEGRATION.
