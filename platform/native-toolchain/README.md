@@ -174,3 +174,55 @@ python3 -m unittest discover -s platform/native-toolchain \
 python3 -m unittest discover -s platform/native-toolchain \
   -p 'test_install_offline.py' -v
 \`\`\`
+
+
+## Source-matched Linux archive to real RUNTIME product qualification
+
+PLATFORM can now exercise the **real RUNTIME local-bridge demo** on the
+installed genuine OCCT 8.0.1 bundle, not merely the standalone 8/12 mm C++
+worker. The platform/native-toolchain/qualify_runtime_delivery.py gate is
+Linux-only and network-free. Provision a trusted native archive SHA-256 and
+clean immutable 40-digit Platform and Runtime source checkouts. Install Node
+22.6+ and run npm ci in the separate Runtime checkout before executing it.
+
+The gate installs the archive into a temporary directory, enforces the
+existing pinned KERNEL source, ELF ABI and actual four-case C++/STEP replay,
+then runs the already accepted RUNTIME Node local-bridge demo with
+INTUIT3D_OCCT8_WORKER pointing to that **installed, SHA-verified** worker.
+It checks seven physical STEP receipts: initial 8 mm, retrospective 12 mm,
+bore locations/radii resize, undo bore edit, undo thickness, edited archive
+reopen, and original archive reopen. STEP SHA, measured material volume and
+hole geometry must change and restore as specified. Only after all seven
+cases pass does the gate publish the destination; failures clean staging.
+
+Example on the GitHub-hosted builder using three separate exact-SHA checkouts:
+
+~~~bash
+set -euo pipefail
+python3 platform-repo/platform/native-toolchain/qualify_runtime_delivery.py \
+  --archive "$RUNNER_TEMP/intuit3d-native-work/offline-occt801.tar.gz" \
+  --archive-sha256 "$(sha256sum "$RUNNER_TEMP/intuit3d-native-work/offline-occt801.tar.gz" | cut -d' ' -f1)" \
+  --kernel-sha "$(git -C kernel-repo rev-parse HEAD)" \
+  --platform-sha "$(git -C platform-repo rev-parse HEAD)" \
+  --runtime-tree "$GITHUB_WORKSPACE/runtime-repo" \
+  --runtime-sha "$(git -C runtime-repo rev-parse HEAD)" \
+  --destination "$RUNNER_TEMP/intuit3d-native-work/occt801-runtime-installed" \
+  | tee "$RUNNER_TEMP/intuit3d-native-evidence/runtime-delivery.json"
+~~~
+
+The SHA calculated on the *same trusted native builder* is usable for this
+in-job gate. For downloaded archives use the SHA from a separately trusted
+build receipt instead, not the untrusted download itself. Run local contract
+tests with:
+
+~~~bash
+python3 -m unittest discover -s platform/native-toolchain \
+  -p test_qualify_runtime_delivery.py -v
+~~~
+
+These tests genuinely execute Node.js and a compiled toy ELF but provide
+**synthetic native/STEP receipts** to exercise admission and atomicity.
+They are not physical OCCT qualification. Hosted execution using the
+real installed OCCT worker remains the required product gate. Independent
+AnvilCAD import, browser graphical acceptance, Windows-native compilation
+and cross-distribution ABI are separate.
