@@ -271,6 +271,9 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // The authoritative model editor owns its own shortcuts. The hidden
+      // preview sandbox must never save/undo/open a second document.
+      if (modelBacked) return;
       // Recovery decision is modal: shortcuts must not mutate the hidden demo.
       if (recovery.kind === 'available' || recovery.kind === 'corrupt') return;
       if (pendingReplacement) { if (event.key === 'Escape') dismissReplacement(); return; }
@@ -287,7 +290,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [recovery.kind, pendingReplacement, save, stepRedo, stepUndo]);
+  }, [modelBacked, recovery.kind, pendingReplacement, save, stepRedo, stepUndo]);
 
   if (modelBacked) return <RuntimeWorkbench onClose={() => setModelBacked(false)} />;
 
