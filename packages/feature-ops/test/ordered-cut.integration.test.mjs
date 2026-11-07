@@ -125,3 +125,20 @@ test('required INTENT chain service cannot be replaced by inferred body order',(
   const {history,request}=setup();
   assert.throws(()=>appendOrderedProfileCut(history,request,{...services,cutChain:null}),/accepted INTENT/);
 });
+
+test('standalone Node consumer runs with actual accepted packages and archive',async()=>{
+  const {spawnSync}=await import('node:child_process');
+  const {fileURLToPath}=await import('node:url');
+  const script=fileURLToPath(new URL('../examples/ordered-pocket-bracket.mjs',import.meta.url));
+  const run=spawnSync(process.execPath,['--experimental-strip-types',script],{
+    encoding:'utf8',timeout:20000,maxBuffer:1024*1024
+  });
+  assert.equal(run.status,0,run.stderr||String(run.error));
+  const result=JSON.parse(run.stdout);
+  assert.equal(result.semanticBodyTerminal,'cut.pocket');
+  assert.equal(result.pocketDepthMm,3);
+  assert.equal(result.afterEditThicknessMm,12);
+  assert.equal(result.independentSpacerThicknessMm,5);
+  assert.equal(result.pocketRuntimeStatus,'blocked_dependency');
+  assert.equal(result.exactAuthority,false);
+});
