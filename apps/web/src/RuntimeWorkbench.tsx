@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
-  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelHoleValues, moveModelFeature, moveModelHoleCenter, removeModelHole,
+  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelHoleValues, moveModelFeature, moveModelHoleCenter, patternModelHoles, removeModelHole,
   MODEL_DIMENSIONS, newModelPlateSession, previewModelProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
@@ -76,6 +76,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [history,setHistory]=useState<ModelSession>(()=>newModelPlateSession());
   const [sketchMode,setSketchMode]=useState(false);
   const [holeDraft,setHoleDraft]=useState({x:'60',y:'20',diameter:'10'});
+  const [arrayDraft,setArrayDraft]=useState({sourceHoleId:'holeA',rows:'2',columns:'2',pitchXmm:'20',pitchYmm:'20'});
   const [selected,setSelected]=useState('plate');
   const [timeline,setTimeline]=useState<'authored'|'evaluated'>('authored');
   const [message,setMessage]=useState<string|null>(null);
@@ -141,6 +142,26 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       acceptHistory(result.history);setSketchMode(true);
       setMessage(`Added ${id} in one undoable sketch transaction; invalidated ${result.invalidation.invalidatedFeatureIds.join(' → ')}. Rebuild STEP.`);
     }catch(e){setMessage('Add hole refused: '+String(e));}
+  };
+  const patternHoles=()=>{
+    const {rows,columns,pitchXmm,pitchYmm}=arrayDraft;
+    if([rows,columns,pitchXmm,pitchYmm].some(value=>!value.trim())){
+      setMessage('Array refused: enter rows, columns and X/Y pitches.');return;
+    }
+    try {
+      const previous=liveHistory.current;
+      const sourceHoleId=Object.hasOwn(holes,arrayDraft.sourceHoleId)
+        ?arrayDraft.sourceHoleId:Object.keys(holes)[0];
+      const result=patternModelHoles(previous,{
+        sourceHoleId,rows:Number(rows),columns:Number(columns),
+        pitchXmm:Number(pitchXmm),pitchYmm:Number(pitchYmm),
+      });
+      if(result.kind==='refused'){
+        setMessage('Array refused: '+(result.candidateFeature.diagnostics.join('; ')||result.reason));return;
+      }
+      acceptHistory(result.history);setSketchMode(true);
+      setMessage(`Array committed at revision ${result.history.document.revision}: ${Number(rows)*Number(columns)-1} independently editable circular cuts copied from solved ${sourceHoleId}; ${result.invalidation.invalidatedFeatureIds.join(' → ')} invalidated. Rebuild STEP.`);
+    }catch(e){setMessage('Array refused: '+String(e));}
   };
   const removeHole=(id:ModelHole)=>{
     try{
@@ -390,6 +411,36 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             <button type="button" className="ribbon-button runtime-native-export"
               data-testid="runtime-add-hole" disabled={!!pendingImport}
               onClick={addHole}>Add circular cut</button>
+          </div>
+          <div className="runtime-hole-add" data-testid="runtime-hole-pattern">
+            <strong>Rectangular circular-hole array · one-shot</strong>
+            <label className="runtime-scalar">
+              <span>Copy solved hole</span>
+              <span className="runtime-scalar-control">
+                <select data-testid="runtime-pattern-source" aria-label="Array source hole"
+                  value={Object.hasOwn(holes,arrayDraft.sourceHoleId)?arrayDraft.sourceHoleId:Object.keys(holes)[0]}
+                  onChange={e=>setArrayDraft(prev=>({...prev,sourceHoleId:e.target.value}))}>
+                  {Object.keys(holes).map(id=><option key={id} value={id}>{id}</option>)}
+                </select>
+              </span>
+            </label>
+            {(['rows','columns','pitchXmm','pitchYmm'] as const).map(field=><label className="runtime-scalar" key={field}>
+              <span>{field==='pitchXmm'?'X pitch':field==='pitchYmm'?'Y pitch':field==='rows'?'Rows':'Columns'}</span>
+              <span className="runtime-scalar-control">
+                <input data-testid={`runtime-pattern-${field}`} type="number"
+                  aria-label={field==='pitchXmm'?'Array X pitch':field==='pitchYmm'?'Array Y pitch':field}
+                  min={field==='rows'||field==='columns'?1:undefined}
+                  max={field==='rows'||field==='columns'?8:undefined}
+                  step={field==='rows'||field==='columns'?1:'any'}
+                  value={arrayDraft[field]}
+                  onChange={e=>setArrayDraft(prev=>({...prev,[field]:e.target.value}))}/>
+                {(field==='pitchXmm'||field==='pitchYmm')&&<small>mm</small>}
+              </span>
+            </label>)}
+            <button type="button" className="ribbon-button runtime-native-export"
+              data-testid="runtime-pattern-holes" disabled={!!pendingImport}
+              onClick={patternHoles}>Create one-shot hole array</button>
+            <p className="microcopy">Copies the currently solved source hole, including its radius. Each new circle is an independent SKETCH constraint, not an associative pattern; undo removes the entire array in one step. Invalid overlaps and outside cuts are refused.</p>
           </div>
           {Object.keys(holes).map(hole=><div key={hole} className="runtime-hole-editor" data-testid={`runtime-hole-editor-${hole}`}>
             <strong>{hole==='holeA'?'Hole A':hole==='holeB'?'Hole B':'Added hole'} · {hole}</strong>
