@@ -243,7 +243,7 @@ def execute(case: dict, root: Path, args, exe: dict) -> dict:
     # "Error: ::LoadONBrep(...) not implemented for Curve" followed by
     # several failed Edge_Curve/Closed_Shell/Manifold_Solid_Brep conversions.
     # A nonempty .g is not solid geometry. Reject even on exit zero.
-    if re.search(r'(?mi)^\\s*Error:\\s*', importer_output):
+    if re.search(r'(?mi)^\s*Error:\s*', importer_output):
         raise NotQualified(
             f'BRL-CAD reported STEP B-rep conversion errors despite exit 0: {name}; '
             f'see {output / "step-g.log"}')
