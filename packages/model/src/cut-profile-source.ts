@@ -107,7 +107,8 @@ function isRequest(value: unknown): value is CutProfileSourceEditRequest {
       !FIELDS.every((field) => Object.hasOwn(value, field))) return false;
   return value.format === CUT_PROFILE_SOURCE_FORMAT &&
     value.version === CUT_PROFILE_SOURCE_VERSION &&
-    isId(value.expectedProjectId) && Number.isSafeInteger(value.expectedRevision) &&
+    isId(value.expectedProjectId) && typeof value.expectedRevision === 'number' &&
+    Number.isSafeInteger(value.expectedRevision) && value.expectedRevision >= 0 &&
     isId(value.eventId) && isId(value.cutFeatureId) && isId(value.targetBodyId) &&
     isId(value.expectedSourceSketchId) && isId(value.sourceSketchId) &&
     isCandidate(value.expectedProfileCandidateId) && isCandidate(value.profileCandidateId) &&
