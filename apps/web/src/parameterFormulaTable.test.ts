@@ -34,8 +34,9 @@ test('real plate parameter spreadsheet previews final semantic dependencies and 
   const next=rows.map(x=>({
     featureId:x.featureId,
     name:x.featureId==='parameter.t'?'plateThickness':
-      x.featureId==='parameter.pitch'?'holePitch':x.name,
-    formula:x.featureId==='parameter.t'?'holePitch - margin':x.formula,
+      x.featureId==='parameter.pitch'?'holePitch':
+      x.featureId==='parameter.margin'?'holeMargin':x.name,
+    formula:x.featureId==='parameter.t'?'holePitch - holeMargin':x.formula,
   }));
   const preview=previewModelParameterFormulaTable(h,next,h.document.revision);
   assert.equal(preview.events.length,3);
@@ -55,14 +56,14 @@ test('real plate parameter spreadsheet previews final semantic dependencies and 
     .find(f=>f.featureId==='cut')?.status,'pending_exact_provider');
   const summary=modelParameterFormulaRows(applied);
   assert.equal(summary[0]?.name,'plateThickness');
-  assert.equal(summary[0]?.formula,'(holePitch - margin)');
+  assert.equal(summary[0]?.formula,'(holePitch - holeMargin)');
   assert.equal(summary[0]?.value,12);
   assert.equal(summary[1]?.value,20);
   assert.equal(summary[2]?.value,8);
   const reopened=reopenModelSession(serializeModelSession(applied));
   assert.equal(reopened.document.projectId,applied.document.projectId);
   assert.equal(modelDimensionValues(reopened).thickness,12);
-  assert.equal(modelParameterFormulaRows(reopened)[0]?.formula,'(holePitch - margin)');
+  assert.equal(modelParameterFormulaRows(reopened)[0]?.formula,'(holePitch - holeMargin)');
   const undo=undoModelSession(reopened);
   assert.equal(modelDimensionValues(undo).thickness,10);
   assert.equal(modelParameterFormulaRows(undo)[0]?.name,'thickness');
