@@ -1,5 +1,5 @@
 # INTEGRATION acceptance: execute genuine unmerged KERNEL/PLATFORM candidates on hosted Linux.
-# Trigger once on workflow introduction, then manual dispatch for subsequent heads.
+# KERNEL-001 source-matched hosted qualification. Optional KERNEL-002 operators remain a separate gate.
 name: Pinned OCCT 8.0.1 C++ execution qualification
 on:
   pull_request:
@@ -8,15 +8,15 @@ on:
   workflow_dispatch:
     inputs:
       platform_ref:
-        description: "Platform source ref (default current PR #122, or exact 40-char SHA)"
+        description: "Platform ref; pinned accepted build source unless explicitly supplied"
         type: string
         required: true
-        default: refs/pull/122/head
+        default: d5c2c3f54466479bf5bec3b04c3b66ed00549ec4
       kernel_ref:
-        description: "Kernel source ref (default current PR #67, or exact 40-char SHA)"
+        description: "Kernel source ref, immutable KERNEL-001 extraction #158 by default"
         type: string
         required: true
-        default: refs/pull/67/head
+        default: c46d02847468b69a106fbfa6fad715c10399ff2c
 
 permissions:
   contents: read
@@ -31,18 +31,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 115
     steps:
-      - name: Checkout scoped Platform candidate (PR #122 by default)
+      - name: Checkout pinned accepted Platform source
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ inputs.platform_ref || 'refs/pull/122/head' }}
+          ref: ${{ inputs.platform_ref || 'd5c2c3f54466479bf5bec3b04c3b66ed00549ec4' }}
           path: platform-repo
           persist-credentials: false
-      - name: Checkout current KERNEL #67 candidate (or supplied immutable SHA)
+      - name: Checkout KERNEL-001 #158 immutable source (or explicit KERNEL-002 ref)
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ inputs.kernel_ref || 'refs/pull/67/head' }}
+          ref: ${{ inputs.kernel_ref || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
           path: kernel-repo
           persist-credentials: false
       - name: Install native build dependencies
@@ -98,6 +98,18 @@ jobs:
             "$RUNNER_TEMP/intuit3d-native-evidence/qualification/plate-8mm.step" \
             "$RUNNER_TEMP/intuit3d-native-evidence/qualification/plate-12mm.step" \
             > "$RUNNER_TEMP/intuit3d-native-evidence/native-files.sha256"
+      - name: Check optional KERNEL-002 cuts availability, without weakening KERNEL-001 gate
+        id: advanced
+        shell: bash
+        run: |
+          if test -f kernel-repo/packages/kernel-contract/examples/pinned-occt8-cuts.mjs && \
+             test -f kernel-repo/packages/kernel-contract/examples/pinned-occt8-mixed-cuts.mjs; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+            echo 'KERNEL-002 operators present: running physical ordered/mixed cut gates'
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'KERNEL-001 extraction does not include KERNEL-002; its separate gates are out of this admission'
+          fi
       # Newest KERNEL #67 adds ordered rectangular and mixed circular/rectangular
       # cuts. Exercise the ACTUAL compiled OCCT8 executable; source-only checks
       # cannot qualify new Boolean/STEP behaviour.
@@ -106,6 +118,7 @@ jobs:
         with:
           node-version: '22'
       - name: Execute compiled C++ ordered and mixed cut chains with changed STEP bytes
+        if: steps.advanced.outputs.available == 'true'
         shell: bash
         run: |
           set -euo pipefail
