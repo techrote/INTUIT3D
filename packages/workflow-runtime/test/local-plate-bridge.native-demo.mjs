@@ -97,15 +97,27 @@ try {
     .find(f=>f.featureId==='plate').profile.holes.map(h=>h.radius),[5,5]);
   // Real third-hole creation: one model transaction, full SKETCH admission,
   // then a fresh OCP Boolean and STEP over authenticated localhost HTTP.
-  const added=session.applyEdit(h=>runtime.editPlateHoles(h,{
+  // Browser-consumable one-call path: commit this real SKETCH/INTENT edit,
+  // then evaluate the new revision via the actual OCP/HTTP provider.
+  const addedAndBuilt=await session.applyEditAndEvaluate(h=>runtime.editPlateHoles(h,{
     sketchFeatureId:'sketch.plate',eventId:'author.bridge.third.hole',
     expectedRevision:current.document.revision,admission:'require_admissible',
     operations:[{kind:'add',id:'holeC',x:60,y:20,radius:4}],
-  }));
+  }),{url:host.url,token:host.token,requestId:'bridge.native.three.holes',
+    exportStep:true});
+  assert.equal(addedAndBuilt.kind,'submitted');
+  const added=addedAndBuilt.edit;
   assert.equal(added.kind,'committed',JSON.stringify(added));
   assert.deepEqual(added.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  const nativeThird=addedAndBuilt.evaluation;
+  assert.equal(nativeThird.kind,'experimental_plate_evaluated',JSON.stringify(nativeThird));
+  assert.equal(session.currentStep()?.sha256,nativeThird.step.sha256);
   current=runtime.reopen(runtime.save(added.history));
-  const withThirdHole=await evaluate('bridge.native.three.holes');
+  const withThirdHole={
+    plate:nativeThird.result.intendedPlate,
+    volumeMm3:nativeThird.result.observed.source.volumeMm3,
+    sha256:nativeThird.step.sha256,
+  };
   assert.deepEqual(withThirdHole.plate.holes.map(h=>h.radius),[5,5,4]);
   assert.ok(withThirdHole.volumeMm3<changedHoles.volumeMm3);
   assert.notEqual(withThirdHole.sha256,changedHoles.sha256);

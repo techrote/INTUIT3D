@@ -103,6 +103,59 @@ test('live model-backed plate: add hole, thickness edit, undo/reopen and local S
   } finally {session.cancel();await host.close();}
 });
 
+test('one-command edit + localhost evaluation sends only admitted revisions and fences STEP',async()=>{
+  let history=initialProject();
+  const host=await startLocalPlateBridge({runtime,model,plateContract,runExperimentalPlate:fakeProvider});
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>history,publishHistory:h=>{history=h;}});
+  const native=(requestId)=>({url:host.url,token:host.token,requestId,exportStep:true});
+  try {
+    const original=await session.evaluate(native('composed.initial'));
+    assert.equal(original.kind,'experimental_plate_evaluated');
+    assert.ok(session.currentStep());
+    const baseline=session.save();
+    const refused=await session.applyEditAndEvaluate(h=>runtime.editPlateHoles(h,{
+      sketchFeatureId:'sketch.plate',eventId:'composed.invalid',
+      expectedRevision:h.document.revision,admission:'require_admissible',
+      operations:[{kind:'add',id:'hole.invalid',x:35,y:40,radius:4}],
+    }),native('composed.invalid.never.sent'));
+    assert.equal(refused.kind,'refused');
+    assert.equal(refused.evaluation,null);
+    assert.equal(session.save(),baseline);
+    assert.ok(session.currentStep(),'refused authoring retains already-verified receipt');
+    const committed=await session.applyEditAndEvaluate(h=>runtime.editPlateHoles(h,{
+      sketchFeatureId:'sketch.plate',eventId:'composed.third',
+      expectedRevision:h.document.revision,admission:'require_admissible',
+      operations:[{kind:'add',id:'holeC',x:60,y:20,radius:4}],
+    }),native('composed.third'));
+    assert.equal(committed.kind,'submitted',JSON.stringify(committed));
+    assert.equal(committed.edit.kind,'committed');
+    assert.equal(committed.evaluation.kind,'experimental_plate_evaluated',
+      JSON.stringify(committed.evaluation));
+    assert.equal(committed.evaluation.result.intendedPlate.holes.length,3);
+    assert.deepEqual(committed.edit.invalidation.invalidatedFeatureIds,
+      ['sketch.plate','plate','cut']);
+    assert.ok(session.currentStep(),'latest revision has a verified experimental receipt');
+    const revision=history.document.revision;
+    const saved=session.save();
+    const undone=await session.applyEditAndEvaluate(h=>runtime.undo(h,['composed.undo']),
+      native('composed.undo'));
+    assert.equal(undone.kind,'submitted');
+    assert.equal(undone.edit.history.document.revision,revision+1);
+    assert.equal(undone.evaluation.kind,'experimental_plate_evaluated');
+    assert.equal(undone.evaluation.result.intendedPlate.holes.length,2);
+    assert.equal(session.currentStep()?.sha256,undone.evaluation.step.sha256);
+    assert.equal(session.reopen(saved).kind,'refused');
+    assert.equal(session.reopen(saved,{confirmReplacement:true}).kind,'opened');
+    assert.equal(session.currentStep(),null,'restoring a different revision fences native bytes');
+    const reopened=await session.evaluate(native('composed.reopened'));
+    assert.equal(reopened.kind,'experimental_plate_evaluated');
+    assert.equal(reopened.result.intendedPlate.holes.length,3);
+    assert.equal(reopened.exactAuthority,false);
+    assert.equal(reopened.independentInteroperability,false);
+  } finally {session.cancel();await host.close();}
+});
+
 test('superseded noncooperative native reply never becomes downloadable',async()=>{
   let history=initialProject(),start,finish;
   const begun=new Promise(r=>start=r);

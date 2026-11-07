@@ -24,6 +24,19 @@ export type SessionReopenResult =
   | Readonly<{kind:'opened';history:UndoHistory;report:RuntimeReport;
       exactReuseAllowed:false}>
   | Readonly<{kind:'refused';reason:string;notCommitted:true}>;
+export type SessionEditAndEvaluateResult =
+  | Readonly<{kind:'refused';edit:Extract<SessionEditResult,{kind:'refused'}>;evaluation:null}>
+  | Readonly<{kind:'submitted';edit:Extract<SessionEditResult,{kind:'committed'}>;
+      /** Always check this for unresolved/stale/provider failure; not proof of exactness. */
+      evaluation:LocalPlateClientResult}>;
+export interface LivePlateEvaluationOptions {
+  url?:string;
+  token?:string;
+  requestId?:string;
+  exportStep?:boolean;
+  signal?:AbortSignal;
+  fetchImpl?:typeof fetch;
+}
 export interface LivePlateSession {
   refresh():LivePlateSessionState;
   /** Genuine synchronous INTENT/ SKETCH transaction; never a private journal. */
@@ -34,14 +47,12 @@ export interface LivePlateSession {
   cancel():void;
   /** Revalidate live archive immediately before using already-verified STEP. */
   currentStep():VerifiedLocalStep|null;
-  evaluate(options?:Readonly<{
-    url?:string;
-    token?:string;
-    requestId?:string;
-    exportStep?:boolean;
-    signal?:AbortSignal;
-    fetchImpl?:typeof fetch;
-  }>):Promise<LocalPlateClientResult>;
+  evaluate(options?:Readonly<LivePlateEvaluationOptions>):Promise<LocalPlateClientResult>;
+  /** One consumer operation: model edit, then latest-revision experimental evaluation. */
+  applyEditAndEvaluate(
+    edit:(history:UndoHistory)=>SessionEdit,
+    options?:Readonly<LivePlateEvaluationOptions>,
+  ):Promise<SessionEditAndEvaluateResult>;
 }
 export declare function createLivePlateSession(options:Readonly<{
   runtime:Pick<WorkflowRuntime,'save'|'reopen'|'inspect'|'diff'>;
