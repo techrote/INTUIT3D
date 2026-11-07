@@ -195,13 +195,81 @@ async function main(){
   check(await evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent.includes('not independent STEP')"),
     'edited native STEP lacks honest provenance');
   await screenshot('native-real-04-edited-step.png');
+
+  // End-to-end PRODUCT path, not a synthetic responder: physically drag an
+  // admitted SKETCH hole, edit its diameter, undo/redo, save/reopen the actual
+  // authoritative archive, and demand a THIRD distinct physical OCP STEP.
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-mode-sketch]').click();return true})()"),
+    'cannot open sketch handles with actual provider paired');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch-hole-holeA]'))"),
+    'live hole A handle missing');
+  const drag=await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-sketch-hole-holeA]');const r=e.getBoundingClientRect();const m=e.ownerSVGElement.getScreenCTM();const o=new DOMPoint(0,0).matrixTransform(m);const p=new DOMPoint(8,0).matrixTransform(m);return {x:r.left+r.width/2,y:r.top+r.height/2,dx:p.x-o.x}})()");
+  check(Number.isFinite(drag.dx)&&Math.abs(drag.dx)>4,'real-native sketch handle has no usable CTM');
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:drag.x,y:drag.y});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:drag.x,y:drag.y,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:drag.x+drag.dx,y:drag.y,button:'left',buttons:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:drag.x+drag.dx,y:drag.y,button:'left',clickCount:1});
+  await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)-43)<0.6"),
+    'real-native hole center drag did not commit the intended semantic coordinate');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-hole-holeA-diameter]');e.focus();e.select();return document.activeElement===e})()"),
+    'cannot focus hole A diameter control');
+  await send('Input.insertText',{text:'16'});await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-diameter]')?.value==='16'"),
+    'independent hole A diameter did not commit');
+  check(await evaluate("document.querySelector('[data-testid=runtime-hole-holeB-diameter]')?.value==='12'"),
+    'hole A diameter incorrectly mutated hole B');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'edited hole dimensions reused exact cut evidence');
+  await screenshot('native-real-05-hole-sketch.png');
+
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell .toolstrip button')].find(x=>x.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'cannot undo hole diameter');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-diameter]')?.value==='12'"),
+    'hole undo did not restore previous diameter');
+  check(await evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)-43)<0.6"),
+    'undo diameter incorrectly undid preceding hole center drag');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell .toolstrip button')].find(x=>x.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    'cannot redo hole diameter');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-diameter]')?.value==='16'"),
+    'hole redo did not reapply diameter');
+
+  // Exercise real browser save/reopen, not merely an in-memory runtime replay.
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell .title-actions button')].find(x=>x.textContent?.trim()==='Save model archive');b?.click();return !!b})()"),
+    'cannot save edited model archive');
+  await eventually(()=>evaluate("window.__nativeStepBlobs.length===3"),'browser model archive Blob');
+  check(await evaluate("(async()=>{const s=await window.__nativeStepBlobs[2].text();const j=JSON.parse(s);return !!j&&s.includes('sketch.plate')&&s.includes('holeA')})()"),
+    'saved archive lost authored sketch constraints');
+  check(await evaluate("(async()=>{const s=await window.__nativeStepBlobs[2].text();const input=document.querySelector('input[aria-label=\"Open INTUIT model archive\"]');const transfer=new DataTransfer();transfer.items.add(new File([s],'replay.i3d-model.json',{type:'application/json'}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
+    'cannot re-import real saved browser archive');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'archive reopen confirmation did not appear');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(x=>x.textContent?.trim()==='Replace with model archive');b?.click();return !!b})()"),
+    'cannot confirm saved archive reopening');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]') && document.querySelector('[data-testid=runtime-hole-holeA-diameter]')?.value==='16'"),
+    'reopened browser archive did not restore revised hole diameter');
+  check(await evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)-43)<0.6"),
+    'reopened archive lost dragged hole position');
+  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent.includes('NO EXACT KERNEL')"),
+    'archive replay falsely claimed exactness');
+
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-mode-solid]').click();return true})()"),
+    'cannot return to solid workbench for hole rebuild');
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-native-export]').click();return true})()"),
+    'cannot rebuild STEP after browser hole edit and archive reopen');
+  await eventually(()=>evaluate('window.__nativeStepBlobs.length===4'),
+    'physical OCP STEP from edited, reopened hole geometry',240);
+  check(await evaluate("(async()=>{const a=await window.__nativeStepBlobs[1].text();const b=await window.__nativeStepBlobs[3].text();return b.length>1000 && a!==b && b.includes('ISO-10303-21;') && b.includes('END-ISO-10303-21;')})()"),
+    'hole edits did not produce a distinct genuine STEP file');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent.includes('not independent STEP')"),
+    'hole-rebuilt STEP lost experimental provenance');
+  await screenshot('native-real-06-hole-reopened-step.png');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'actual pinned OCP 7.9.3.1 Python through trusted RUNTIME HTTP host',
-    downloadedFiles:2,staleDownloadRefused:'covered by separate synthetic Chromium gate',realPhysicalGeometry:true,
+    downloadedFiles:3,holeDrag:true,independentHoleDimension:true,undoRedo:true,archiveReplay:true,staleDownloadRefused:'covered by separate synthetic Chromium gate',realPhysicalGeometry:true,
     independentStep:false,humanAcceptance:false,screenshots:[
-      'native-01-paired.png','native-02-download.png','native-real-03-edit-invalidates.png','native-real-04-edited-step.png'
+      'native-real-01-paired.png','native-real-02-download.png','native-real-03-edit-invalidates.png','native-real-04-edited-step.png','native-real-05-hole-sketch.png','native-real-06-hole-reopened-step.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_REAL_OCP_NATIVE_UI_BROWSER_PASS same_engine_step_only');
 }
