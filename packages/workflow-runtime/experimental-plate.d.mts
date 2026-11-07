@@ -65,6 +65,8 @@ export declare function createExperimentalPlateWorkflow<Request extends {
     EXPERIMENTAL_OCCT_VERSION:string;
     parsePlateRequest(raw:unknown):Request;
   };
+  /** Fixed provider contract; not chosen from an authored project. */
+  providerKind?:'ocp'|'occt8';
   runExperimentalPlate:(request:Request,options:{
     readCurrentRevision:()=>number;
     stepOutput?:string;
