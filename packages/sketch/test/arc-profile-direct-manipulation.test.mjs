@@ -29,8 +29,8 @@ test('dragging actual hole centre and diameter commits solver-backed analytic pr
   assert.deepEqual(center.gesture.appliedPoint,{x:30,y:48});
   assert.equal(center.sketch.constraints.find(c=>c.id==='holeA:fixed').x,30);
   const diameter=mustAccept(commit(center.sketch,center.selection,{
-    kind:'drag-handle',handleId:'hole-diameter:holeB',xMm:91,yMm:40}));
-  close(diameter.profile.holes.find(h=>h.id==='holeB').radiusMm,6);
+    kind:'drag-handle',handleId:'hole-diameter:holeB',xMm:93,yMm:40}));
+  close(diameter.profile.holes.find(h=>h.id==='holeB').radiusMm,8);
   assert.equal(diameter.profile.stepQualified,false);
   assert.equal(diameter.profile.exactBrepAvailable,false);
   assert.equal(serializeArcSketch(source),before);

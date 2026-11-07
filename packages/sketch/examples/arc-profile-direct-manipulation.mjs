@@ -35,7 +35,7 @@ log('original');
 apply('drag-hole-a',{kind:'drag-handle',handleId:'hole-center:holeA',
   xMm:30,yMm:48});
 apply('resize-hole-b',{kind:'drag-handle',handleId:'hole-diameter:holeB',
-  xMm:91,yMm:40});
+  xMm:93,yMm:40});
 apply('move-both',{kind:'translate-holes',circleIds:['holeA','holeB'],
   deltaXMm:5,deltaYMm:-3});
 apply('retrospective-width',{kind:'drag-handle',
