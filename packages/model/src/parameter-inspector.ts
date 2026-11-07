@@ -135,7 +135,7 @@ export function previewParameterInspectorEdit(
   };
   const event: JournalEvent = {
     eventId: request.eventId, type: 'feature.edit', featureId: target.id,
-    patch: { dependsOn: checked.event.patch.dependsOn, payload },
+    patch: { dependsOn: checked.event.patch.dependsOn ?? target.dependsOn, payload },
   };
   const staged = previewTransaction(document, [event], request.expectedRevision);
   const evaluation = evaluateDimensionBindingPlan(staged.plan);
