@@ -51,6 +51,10 @@
     "./semantic-selection": {
       "types": "./src/semantic-selection.ts",
       "default": "./src/semantic-selection.ts"
+    },
+    "./history-move": {
+      "types": "./src/history-move.ts",
+      "default": "./src/history-move.ts"
     }
   },
   "scripts": {
