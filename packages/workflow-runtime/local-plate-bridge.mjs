@@ -12,6 +12,16 @@ import {createExperimentalPlateWorkflow} from './experimental-plate.mjs';
 
 export const LOCAL_PLATE_BRIDGE_FORMAT = 'intuit3d.local-plate-bridge';
 export const LOCAL_PLATE_BRIDGE_VERSION = 1;
+/** Authenticated, browser-consumable provider identity. This is configuration,
+ * NOT a native execution/self-test or a production/exactness certificate. */
+export const LOCAL_PLATE_CAPABILITY_FORMAT = 'intuit3d.local-plate-bridge-capability';
+export const LOCAL_PLATE_CAPABILITY_VERSION = 1;
+const IDENTITIES=Object.freeze({
+  ocp:Object.freeze({backend:'OCP-python-prototype',occtVersion:'7.9.3.1',
+    stepVerification:'same_engine_step_readback'}),
+  occt8:Object.freeze({backend:'OCCT-cxx-8.0.1',occtVersion:'8.0.1',
+    stepVerification:'occt8_part21_plate_subset'}),
+});
 const MAX_ARCHIVE_BYTES = 2 * 1024 * 1024;
 const MAX_STEP_BYTES = 8 * 1024 * 1024;
 const ID = /^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
@@ -45,6 +55,8 @@ export async function startLocalPlateBridge({
   runtime, model, plateContract, runExperimentalPlate, providerKind='ocp',
   origin = 'http://127.0.0.1:5173', port = 0, timeoutMs = 25000,
 } = {}) {
+  if (!Object.hasOwn(IDENTITIES,providerKind))
+    throw new TypeError('bridge: pinned provider kind must be ocp or occt8');
   if (typeof runtime?.reopen !== 'function' || typeof runtime?.save !== 'function' ||
       typeof runtime?.inspect !== 'function')
     throw new TypeError('bridge: real model-backed runtime required');
@@ -80,13 +92,30 @@ export async function startLocalPlateBridge({
         (req.headers.origin !== undefined && !sameOrigin)) {
       safeWrite(403,unresolved('forbidden','non-loopback host or origin')); return;
     }
-    if (req.method==='OPTIONS' && req.url==='/v1/plate/evaluate' && sameOrigin) {
+    const capabilityRoute=req.url==='/v1/plate/capabilities';
+    if (req.method==='OPTIONS' &&
+        (capabilityRoute||req.url==='/v1/plate/evaluate') && sameOrigin) {
       res.writeHead(204,{'Access-Control-Allow-Origin':origin,
-        'Access-Control-Allow-Methods':'POST, OPTIONS',
+        'Access-Control-Allow-Methods':'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers':'content-type, x-intuit3d-token',
         'Access-Control-Max-Age':'300','Vary':'Origin',
         'Cache-Control':'no-store'});
       res.end(); return;
+    }
+    if (capabilityRoute && req.method==='GET') {
+      if (req.headers['x-intuit3d-token']!==token) {
+        safeWrite(403,unresolved('forbidden','invalid bridge token'),sameOrigin);
+        return;
+      }
+      safeWrite(200,{
+        format:LOCAL_PLATE_CAPABILITY_FORMAT,
+        version:LOCAL_PLATE_CAPABILITY_VERSION,
+        ...IDENTITIES[providerKind],
+        exactAuthority:false,
+        independentInteroperability:false,
+        note:'Configured local provider identity only; native binary availability, execution and STEP accuracy are not proven by this handshake.',
+      },sameOrigin);
+      return;
     }
     if (req.method!=='POST' || req.url!=='/v1/plate/evaluate') {
       safeWrite(404,unresolved('unknown_route','unsupported route'),sameOrigin); return;
