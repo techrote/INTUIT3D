@@ -1,0 +1,94 @@
+# INTEGRATION acceptance: real BRL-CAD, not a Part 21 text scan or OCCT self-readback.
+# Candidate remains unmerged; preserve immutable input provenance and failure logs.
+name: Independent BRL-CAD STEP geometry qualification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/external-cad.yml'
+  workflow_dispatch:
+    inputs:
+      cad_ref:
+        description: "External CAD candidate ref (default current PR #121)"
+        type: string
+        required: true
+        default: refs/pull/121/head
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: intuit3d-external-step-qualification
+  cancel-in-progress: false
+
+jobs:
+  external:
+    name: Ubuntu / pinned non-OCCT CAD import and geometry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Checkout external CAD candidate
+        uses: actions/checkout@v4
+        with:
+          repository: techrote/INTUIT3D
+          ref: ${{ inputs.cad_ref || 'refs/pull/121/head' }}
+          path: cad-source
+          persist-credentials: false
+      - name: Download original actual OCP STEP evidence (not generated mock files)
+        uses: actions/download-artifact@v4
+        with:
+          name: model-native-experimental-ocp-step
+          run-id: 42345301755
+          repository: techrote/INTUIT3D
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: original-artifact
+      - name: Prepare immutable input and pin checkout SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          mkdir -p "$root/original"
+          git -C cad-source rev-parse HEAD > "$root/checked-out-cad-source.txt"
+          echo "Original GitHub Actions run: 42345301755" >> "$root/checked-out-cad-source.txt"
+          echo "Original Actions artifact: 13563062028" >> "$root/checked-out-cad-source.txt"
+          required=(flange.four.step flange.thick.step flange.five.step flange.undo.step)
+          for file in "${required[@]}"; do
+            mapfile -t found < <(find original-artifact -type f -name "$file")
+            if [ "${#found[@]}" -ne 1 ]; then
+              echo "::error::original artifact must contain exactly one $file, found ${#found[@]}"
+              exit 1
+            fi
+            cp -- "${found[0]}" "$root/original/$file"
+          done
+          (cd "$root/original" && zip -q "$root/original-flange.zip" "${required[@]}")
+          sha256sum "$root/original/"*.step > "$root/step-inputs.sha256"
+          sha256sum "$root/original-flange.zip" >> "$root/step-inputs.sha256"
+      - name: Run external-CAD harness regression (not geometry admission)
+        run: |
+          python3 -m unittest discover -s cad-source/conformance/external-cad -p 'test_*.py' -v
+          bash -n cad-source/conformance/external-cad/run-pinned-brlcad.sh
+      - name: Execute real pinned BRL-CAD 7.44.0 STEP import, volume and ray probes
+        working-directory: cad-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash conformance/external-cad/run-pinned-brlcad.sh \
+            --bundle "$RUNNER_TEMP/intuit3d-external-evidence/original-flange.zip" \
+            --evidence-dir "$RUNNER_TEMP/intuit3d-external-evidence/brlcad" \
+            2>&1 | tee "$RUNNER_TEMP/intuit3d-external-evidence/execution.log"
+      - name: Exclude distributor binary and extraction tree from evidence upload
+        if: always()
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/intuit3d-external-evidence/brlcad/toolchain"
+          if test -d "$root"; then
+            rm -rf -- "$root/unpacked" "$root/brlcad_7.44.0-0_amd64.deb"
+          fi
+      - name: Preserve real original STEP and independent CAD evidence, even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brlcad-7440-independent-step-evidence
+          path: ${{ runner.temp }}/intuit3d-external-evidence/
+          if-no-files-found: warn
+          retention-days: 14
