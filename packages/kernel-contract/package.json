@@ -40,6 +40,10 @@
       "types": "./src/runtime-body-cut-chain-provider.d.mts",
       "node": "./src/runtime-body-cut-chain-provider.mjs"
     },
+    "./runtime-occt8-l-profile-provider": {
+      "types": "./src/runtime-occt8-l-profile-provider.d.mts",
+      "node": "./src/runtime-occt8-l-profile-provider.mjs"
+    },
     "./occt8-l-profile-v3": {
       "types": "./src/occt8-l-profile-v3.d.mts",
       "default": "./src/occt8-l-profile-v3.mjs"
