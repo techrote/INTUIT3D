@@ -335,5 +335,5 @@ test('explicit cancellation settles immediately even if the adapter ignores Abor
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(session.currentStep(),null);
   assert.equal(session.refresh().lastResultKind,null);
-  assert.throws(()=>session.evaluate({deadlineMs:Infinity}),/deadlineMs/);
+  await assert.rejects(session.evaluate({deadlineMs:Infinity}),/deadlineMs/);
 });
