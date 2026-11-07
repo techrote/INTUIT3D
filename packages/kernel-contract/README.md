@@ -140,3 +140,38 @@ independent external CAD STEP reconstruction, or a browser/RUNTIME slot
 editing workflow. A distinct consumer integration is needed for SKETCH's
 obround tool and FEATUREOPS pocket authoring. No claim of semantic
 authoritative exactness is made.
+
+## Versioned cut-chain v3: one real body, multiple distinct feature cuts
+
+`intuit3d/kernel/profile-body-cut-chain-v3` extends the existing Node-only
+`local-body-cut-provider` without modifying the v1 through-cut or v2 blind
+pocket envelopes. The caller supplies one independently authored extrusion,
+one **explicit target body ID**, a revision and an ordered `cuts` array.
+Every entry has a unique cut feature ID, a solved independent analytic
+line/arc cutting profile and its own downward pocket depth (through when
+equal to extrusion thickness). A single isolated OCP process applies these
+Booleans sequentially to **the same physical solid** and produces one STEP,
+not separate disconnected cut results or a display-mesh preview.
+
+Each operation reports its measured remaining volume. The native worker
+requires the full analytic area × depth removal **at every step**; escaping
+or overlapping tools that would not remove the claimed material fail
+without publication. It retains one solid and shell, then reimports the
+final STEP with the same OCP engine. Node independently validates per-cut
+identities, revision, volumes, SHA-256 and exclusive file publication.
+
+```sh
+node packages/kernel-contract/examples/multi-pocket-cut-native.mjs /tmp/new-intuit3d-two-cuts
+node --test packages/kernel-contract/test/multi-pocket-cut.test.mjs
+python3 -m unittest discover -s native/tests -p test_multi_pocket_cut_chain.py -v
+```
+
+The demo constructs an L-bracket containing a bore, a 3/5 mm **blind
+obround mounting slot** and a separate 8/12 mm **through window**.
+It serializes/reopens both provider requests, edits extrusion/pocket depth,
+generates two actual STEP files and a physical-volume/digest manifest.
+This is **experimental OCP 7.9.3.1 B-rep and same-engine STEP**; it does
+not claim execution of pinned C++ OCCT 8.0.1, independent external STEP,
+live browser multi-cut authoring or persisted semantic topology.
+RUNTIME/FEATUREOPS should consume v3 only with explicit authored per-cut
+dependencies and native receipts fenced against the current model revision.
