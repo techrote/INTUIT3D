@@ -271,6 +271,62 @@ async function main() {
   await key('ArrowUp', 'ArrowUp', 38);
   await eventually(async () => (await numberValue('Thickness')) === '12', '3D thickness keyboard nudge');
   await screenshot('07-solid-thickness-keyboard.png');
+
+  // Real INTENT/SKETCH/RUNTIME consumer acceptance. This mode is separately
+  // model-backed; only its display mesh remains a disposable tessellation.
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=enter-model-runtime]');b?.click();return !!b})()"),
+    'Cannot open model-backed CAD workspace');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),'model-backed plate evaluated');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'Unimplemented native cut was incorrectly reported exact');
+  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent?.includes('NO EXACT KERNEL')"),
+    'Model-backed exactness warning absent');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-3d-viewport] canvas'))"),'real profile 3D preview');
+  await screenshot('10-model-runtime-solid.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Sketch');b?.click();return !!b})()"),
+    'Model-backed sketch toggle unavailable');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch]')?.querySelectorAll('circle').length===2"),
+    'SKETCH solver profile did not display two holes');
+  await screenshot('11-model-runtime-sketch.png');
+  const modelRevision = await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-dimension-width]');e.focus();e.select();return document.activeElement===e})()"),
+    'Model-backed historical width editor unavailable');
+  await send('Input.insertText', {text:'90'});
+  await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
+    'Crossing hole profile not blocked by real solver/discovery');
+  check(await evaluate("Boolean(document.querySelector('[data-testid=runtime-empty]'))"),
+    'Model-backed invalid sketch retained fabricated current mesh');
+  check((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))!==modelRevision,
+    'Model-backed edit did not append an INTENT revision');
+  await screenshot('12-model-runtime-blocked.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'Model-backed undo missing');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),
+    'Model-backed undo failed to recover accepted sketch');
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent?.includes('2 circular holes')"),
+    'Undo did not restore the admitted profile');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    'Model-backed redo missing');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
+    'Model-backed redo did not restore invalid authored intent');
+  // Save and open an actual browser Blob through File.text(), with explicit
+  // destructive replacement review, rather than pretending preview JSON is CAD.
+  check(await evaluate("(() => {window.__modelArchiveBlobs=[];const prior=URL.createObjectURL.bind(URL);URL.createObjectURL=(blob)=>{window.__modelArchiveBlobs.push(blob);return prior(blob)};const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Save model archive');b?.click();return !!b})()"),
+    'Model archive Save missing');
+  await eventually(()=>evaluate("window.__modelArchiveBlobs?.length>0"),'browser model archive Blob');
+  check(await evaluate("(async()=>{const content=await window.__modelArchiveBlobs[0].text();const f=JSON.parse(content);return f.format==='intuit3d.model-archive' || content.includes('intuit3d.model-archive')})()"),
+    'Downloaded archive is not model history');
+  check(await evaluate("(async()=>{const data=await window.__modelArchiveBlobs[0].text();const dt=new DataTransfer();dt.items.add(new File([data],'plate.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
+    'Cannot reinject saved model archive into real browser file input');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),'model archive import review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'Model archive replacement confirmation missing');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]')"),'model archive reopened');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
+    'Save/reopen changed authored unsolved status');
+  await screenshot('13-model-runtime-reopened.png');
+
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -283,7 +339,7 @@ async function main() {
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
     screenshots: ['01-solid.png', '02-sketch.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png'],
-    limits: 'Preview only; no SKETCH solver, exact B-rep/OCCT, independent STEP or human acceptance.'
+    limits: 'Model-backed mode executes real INTENT + SKETCH + RUNTIME; native B-rep/OCCT, independent STEP and human acceptance remain unavailable.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log('WORKBENCH_HANDLE_BROWSER_PASS ' + JSON.stringify(report));
