@@ -449,3 +449,42 @@ provides an immediately consumable WORKBENCH edit/rebuild action, while
 Consumers must label existing OCP 7.9.3.1 STEP experimental, not validated
 production exactness. Real native demonstration:
 `npm run demo:bridge --workspace @intuit3d/workflow-runtime`.
+
+## Recoverable native refresh and one-command project reopen (RUNTIME-002)
+
+The **existing** `createLivePlateSession()` now keeps a successfully verified
+current-revision experimental STEP available when a *new evaluation of the
+same canonical INTENT archive* is cancelled, returns unavailable, or runs with
+`exportStep:false`. The current download accessor still checks the full
+authoritative serialized archive. Any actual edit, external history mutation,
+undo, or replacement archive revokes the old receipt immediately. This is
+not an offline cache of a stale solid: the old bytes remain accessible only
+while their exact authored inputs remain current. `refresh().lastResultKind`
+reports the most recent provider outcome separately from
+`refresh().hasVerifiedStep`.
+
+WORKBENCH can restore a saved archive and physically rebuild with a single
+typed consumer call:
+
+```js
+const result = await session.reopenAndEvaluate(savedArchive, {
+  confirmReplacement: true,  // required if replacing a different document
+  url: pairedHost.url, token: pairedHost.token,
+  requestId: 'workbench.reopen.1', exportStep: true,
+});
+if (result.kind === 'submitted' &&
+    result.evaluation.kind === 'experimental_plate_evaluated') {
+  const current = session.currentStep(); // recheck at download-click time
+}
+```
+
+Without explicit replacement confirmation, `kind:'refused'` returns without
+altering the document **or submitting a native job**. With confirmation, the
+previous revision's STEP is synchronously invalidated; the new current archive
+must earn a fresh experimental native receipt. The demonstration
+`npm run demo:bridge --workspace @intuit3d/workflow-runtime` exercises a
+real OCP save → extra-hole edit → confirmed reopen → physical STEP rebuild
+sequence. `npm test --workspace @intuit3d/workflow-runtime` also covers
+the trusted localhost path and deterministic provider failure/retry behaviour.
+These are **experimental** OCP/same-engine checks, not OCCT 8 production or
+independent external STEP evidence.
