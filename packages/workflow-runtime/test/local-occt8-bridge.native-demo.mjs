@@ -52,6 +52,9 @@ function record(out,stage){
   assert.equal(out.result.occtVersion,'8.0.1');
   assert.equal(out.result.artifact?.verification,'occt8_part21_plate_subset');
   assert.equal(out.step?.verification,'occt8_part21_plate_subset');
+  assert.deepEqual(out.result.part21Audit,{
+    kind:'part21-plate-structural-v1',sha256:out.step.sha256,
+  });
   assert.equal(out.exactAuthority,false);
   assert.equal(out.independentInteroperability,false);
   assert.equal(session.currentStep()?.sha256,out.step.sha256);
