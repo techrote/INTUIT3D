@@ -27,6 +27,10 @@
     "./ordered-cut/v1": {
       "types": "./ordered-cut.d.mts",
       "default": "./src/ordered-cut.mjs"
+    },
+    "./ordered-cut-extent-edit/v1": {
+      "types": "./ordered-cut-extent-edit.d.mts",
+      "default": "./src/ordered-cut-extent-edit.mjs"
     }
   },
   "peerDependencies": {
