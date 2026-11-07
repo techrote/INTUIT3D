@@ -370,7 +370,7 @@ async function main() {
   await screenshot('10-model-runtime-solid.png');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Sketch');b?.click();return !!b})()"),
     'Model-backed sketch toggle unavailable');
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch]')?.querySelectorAll('circle:not([data-testid^=runtime-sketch-hole-])').length===2"),
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch]')?.querySelectorAll('[data-testid^=runtime-sketch-outline-hole-]').length===2"),
     'SKETCH solver profile did not display two holes');
   await screenshot('11-model-runtime-sketch.png');
   const modelRevision = await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
