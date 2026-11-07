@@ -89,3 +89,18 @@ const cutResult: Promise<BodyCutResult> = runExperimentalBodyCut(bodyCut,{
 void cutResult;
 // @ts-expect-error body-cut provider requires an authoritative revision fence
 runExperimentalBodyCut(bodyCut,{});
+
+
+import {requestFromRuntimeBodyCut,runExperimentalRuntimeBodyCut,
+  type RuntimeBodyCutServices} from '../src/runtime-body-cut-provider.mjs';
+import type {UndoHistory} from '@intuit3d/model/transactions';
+declare const journal: UndoHistory;
+declare const liveServices: RuntimeBodyCutServices;
+const mappedCut: ProfileBodyCutRequest = requestFromRuntimeBodyCut(journal,'cut.window',{
+  ...liveServices,requestId:'cut.native.1'});
+const executedCut:Promise<BodyCutResult> = runExperimentalRuntimeBodyCut(journal,'cut.window',{
+  ...liveServices,requestId:'cut.native.1',
+  readCurrentRevision:()=>journal.document.revision});
+void mappedCut; void executedCut;
+// @ts-expect-error revision callback is compulsory for physical cut publication
+runExperimentalRuntimeBodyCut(journal,'cut.window',{...liveServices,requestId:'cut.native'});
