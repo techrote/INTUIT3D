@@ -80,7 +80,7 @@ def cut_metrics(request: dict) -> tuple[float, float]:
     return volume, area
 
 
-def validate_cut_result(request: dict, report: object) -> dict:
+def validate_cut_result(request: dict, report: object, *, expected_metrics: tuple[float, float] | None = None) -> dict:
     if not isinstance(report, dict) or set(report) != {
         "protocol", "requestId", "featureId", "revision", "backend",
         "occtVersion", "status", "units", "source", "stepReadback", "stepWritten"
@@ -95,7 +95,7 @@ def validate_cut_result(request: dict, report: object) -> dict:
         raise ValueError("unsupported or unvalidated OCCT8 cut result")
     if type(report["stepWritten"]) is not bool or report["stepWritten"] != request["exportStep"]:
         raise ValueError("STEP status disagrees with authored request")
-    expected_volume, expected_area = cut_metrics(request)
+    expected_volume, expected_area = expected_metrics if expected_metrics is not None else cut_metrics(request)
     holes = sorted([*request["plate"]["holes"],
                     *({"x": c["x"], "y": c["y"], "radius": c["radius"]}
                       for c in request["cuts"] if c.get("kind") == "circle")],

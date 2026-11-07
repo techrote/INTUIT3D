@@ -16,6 +16,8 @@ import time
 from plate_envelope import require_plate_vertex_envelope_mm
 from protocol import validate_request, validate_result, analytic_invariants, close
 from process_supervision import run_isolated_worker
+from occt8_profile_contract import (SCHEMA as PROFILE_SCHEMA, canonical_profile_request,
+                                   validate_profile_request, validate_profile_result)
 from occt8_cut_contract import (SCHEMA as CUT_SCHEMA, MIXED_SCHEMA,
                                 canonical_cut_request, canonical_mixed_cut_request,
                                 validate_cut_request, validate_mixed_cut_request,
@@ -27,6 +29,8 @@ MAX_RESPONSE_BYTES = 128 * 1024
 MAX_STEP_BYTES = 32 * 1024 * 1024
 
 def canonical_request(request: dict) -> str:
+    if request["protocol"] == PROFILE_SCHEMA:
+        return canonical_profile_request(request)
     if request["protocol"] == CUT_SCHEMA:
         return canonical_cut_request(request)
     if request["protocol"] == MIXED_SCHEMA:
@@ -111,10 +115,11 @@ def execute(request_input: object, *, worker: Path, step_output: Path | None = N
             timeout: float = 30.0, cross_version_audit: bool = False,
             part21_audit: bool = False) -> dict:
     schema = request_input.get("protocol") if isinstance(request_input, dict) else None
-    request = (validate_cut_request(request_input) if schema == CUT_SCHEMA else
+    request = (validate_profile_request(request_input) if schema == PROFILE_SCHEMA else
+               validate_cut_request(request_input) if schema == CUT_SCHEMA else
                validate_mixed_cut_request(request_input) if schema == MIXED_SCHEMA else
                validate_request(request_input))
-    if request["protocol"] in (CUT_SCHEMA, MIXED_SCHEMA) and (cross_version_audit or part21_audit):
+    if request["protocol"] in (CUT_SCHEMA, MIXED_SCHEMA, PROFILE_SCHEMA) and (cross_version_audit or part21_audit):
         raise ValueError("plate-subset STEP readers do not support cut-chain STEP")
     # Normalize relative output paths before changing the subprocess cwd.
     if step_output is not None:
@@ -152,7 +157,9 @@ def execute(request_input: object, *, worker: Path, step_output: Path | None = N
             if not report.is_file() or report.stat().st_size > MAX_RESPONSE_BYTES:
                 raise ValueError("absent or oversized worker report")
             response = json.loads(report.read_text(encoding="utf-8"))
-            if request["protocol"] in (CUT_SCHEMA, MIXED_SCHEMA):
+            if request["protocol"] == PROFILE_SCHEMA:
+                validate_profile_result(request, response)
+            elif request["protocol"] in (CUT_SCHEMA, MIXED_SCHEMA):
                 validate_cut_result(request, response)
             else:
                 validate_result(request, response,

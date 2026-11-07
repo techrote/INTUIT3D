@@ -2,6 +2,9 @@
 // Invoked only through the isolated, validated native/occt8_bridge.py host.
 #include <BRepAdaptor_Surface.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
@@ -23,6 +26,7 @@
 #include <gp_Ax2.hxx>
 #include <gp_Dir.hxx>
 #include <gp_Pnt.hxx>
+#include <gp_Vec.hxx>
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -41,8 +45,9 @@ struct RectCut { std::string id; bool circular=false; double x,y,width,depth,cut
 struct Request {
   std::string request_id,feature_id;
   long long revision=0;
-  bool export_step=false,cut_chain=false,mixed_chain=false;
-  double width=0,depth=0,thickness=0;
+  bool export_step=false,cut_chain=false,mixed_chain=false,l_profile_chain=false;
+  double width=0,depth=0,thickness=0,leg_width=0,foot_height=0;
+  std::string profile_id;
   std::vector<Hole> holes;
   std::vector<RectCut> cuts;
 };
@@ -66,13 +71,20 @@ Request read_request(const std::filesystem::path& path) {
   std::string magic;Request q;int export_flag=-1,count=-1,cut_count=0;
   if(!(file>>magic)||(magic!="INTUIT3D_OCCT8_PLATE_V1"&&
                       magic!="INTUIT3D_OCCT8_CUT_CHAIN_V1"&&
-                      magic!="INTUIT3D_OCCT8_MIXED_CUT_CHAIN_V2"))
+                      magic!="INTUIT3D_OCCT8_MIXED_CUT_CHAIN_V2"&&
+                      magic!="INTUIT3D_OCCT8_L_PROFILE_CHAIN_V3"))
     throw std::runtime_error("invalid canonical request protocol");
   q.mixed_chain=(magic=="INTUIT3D_OCCT8_MIXED_CUT_CHAIN_V2");
+  q.l_profile_chain=(magic=="INTUIT3D_OCCT8_L_PROFILE_CHAIN_V3");
   q.cut_chain=(magic!="INTUIT3D_OCCT8_PLATE_V1");
-  if(!(file>>q.request_id>>q.feature_id>>q.revision>>export_flag>>
-       q.width>>q.depth>>q.thickness>>count)||
-     (q.cut_chain && !(file>>cut_count)))
+  if(q.l_profile_chain) {
+    if(!(file>>q.request_id>>q.feature_id>>q.revision>>export_flag>>
+         q.profile_id>>q.width>>q.depth>>q.thickness>>
+         q.leg_width>>q.foot_height>>count>>cut_count))
+      throw std::runtime_error("invalid L-profile chain request");
+  } else if(!(file>>q.request_id>>q.feature_id>>q.revision>>export_flag>>
+                  q.width>>q.depth>>q.thickness>>count)||
+            (q.cut_chain && !(file>>cut_count)))
     throw std::runtime_error("invalid canonical request");
   if(!id_ok(q.request_id)||!id_ok(q.feature_id)||q.revision<0||
      export_flag<0||export_flag>1||count<0||count>64||cut_count<0||cut_count>16)
@@ -81,6 +93,10 @@ Request read_request(const std::filesystem::path& path) {
   const auto dimension=[](double v) {return std::isfinite(v)&&v>=1e-6&&v<=1e6;};
   if(!dimension(q.width)||!dimension(q.depth)||!dimension(q.thickness))
     throw std::runtime_error("invalid plate dimensions");
+  if(q.l_profile_chain &&
+     (!id_ok(q.profile_id)||!dimension(q.leg_width)||!dimension(q.foot_height)||
+      q.leg_width>=q.width||q.foot_height>=q.depth||count!=0||cut_count<2))
+    throw std::runtime_error("invalid six-edge solved L-profile dimensions or cuts");
   for(int i=0;i<count;++i) {
     Hole h{};
     if(!(file>>h.x>>h.y>>h.r)||!std::isfinite(h.x)||!std::isfinite(h.y)||
@@ -92,6 +108,16 @@ Request read_request(const std::filesystem::path& path) {
         throw std::runtime_error("overlapping holes");
     q.holes.push_back(h);
   }
+  // A convex cutter is admitted only if wholly within the vertical leg or
+  // the horizontal foot of the L. This conservative v3 profile admission
+  // is exact and does not permit a tool to bridge the missing corner.
+  const auto inside_l=[&](double x,double y,double rx,double ry) {
+    const bool leg=(std::abs(x+q.width/2-q.leg_width/2)+rx<q.leg_width/2 &&
+                    std::abs(y)+ry<q.depth/2);
+    const bool foot=(std::abs(x)+rx<q.width/2 &&
+                     std::abs(y+q.depth/2-q.foot_height/2)+ry<q.foot_height/2);
+    return leg||foot;
+  };
   // Versioned, explicitly authored rectangular cuts, in execution order.
   // This conservative first C++ slice supports distinct interior blind and
   // through pockets; arbitrary sketch profiles stay in the experimental path.
@@ -108,11 +134,14 @@ Request read_request(const std::filesystem::path& path) {
        !dimension(c.width)||!dimension(c.cut_depth)||
        (c.circular ? c.depth!=0 : !dimension(c.depth))||
        c.cut_depth>q.thickness||
-       (c.circular ?
-         !(std::abs(c.x)+c.width<q.width/2 &&
-           std::abs(c.y)+c.width<q.depth/2) :
-         !(std::abs(c.x)+c.width/2<q.width/2 &&
-           std::abs(c.y)+c.depth/2<q.depth/2)))
+       (q.l_profile_chain ?
+         !inside_l(c.x,c.y,c.circular?c.width:c.width/2,
+                           c.circular?c.width:c.depth/2) :
+         (c.circular ?
+           !(std::abs(c.x)+c.width<q.width/2 &&
+             std::abs(c.y)+c.width<q.depth/2) :
+           !(std::abs(c.x)+c.width/2<q.width/2 &&
+             std::abs(c.y)+c.depth/2<q.depth/2))))
       throw std::runtime_error("invalid ordered cut extent");
     for(const auto& h:q.holes) {
       const bool touched=c.circular ?
@@ -182,10 +211,13 @@ void require_shape(const Request& q,const Metrics& m) {
     removed_area+=std::acos(-1.0)*h.r*h.r;
     bore_wall+=2*std::acos(-1.0)*h.r;
   }
-  double v=(q.width*q.depth-removed_area)*q.thickness;
-  double a=2*(q.width*q.depth-removed_area)+
+  const double stock_area=q.l_profile_chain ?
+    q.width*q.foot_height+q.leg_width*(q.depth-q.foot_height) :
+    q.width*q.depth;
+  double v=(stock_area-removed_area)*q.thickness;
+  double a=2*(stock_area-removed_area)+
        (2*(q.width+q.depth)+bore_wall)*q.thickness;
-  int expected_faces=6+static_cast<int>(q.holes.size());
+  int expected_faces=(q.l_profile_chain?8:6)+static_cast<int>(q.holes.size());
   for(const auto& c:q.cuts) {
     const bool through=(c.cut_depth==q.thickness);
     if(c.circular) {
@@ -222,8 +254,28 @@ void require_shape(const Request& q,const Metrics& m) {
   }
 }
 TopoDS_Shape construct(const Request& q) {
-  TopoDS_Shape shape=BRepPrimAPI_MakeBox(
-     gp_Pnt(-q.width/2,-q.depth/2,0),q.width,q.depth,q.thickness).Shape();
+  TopoDS_Shape shape;
+  if(q.l_profile_chain) {
+    // These are the six stable vertices of the solved, axis-aligned L sketch.
+    // Build a single face and extrude it: no fused-box seam faces.
+    BRepBuilderAPI_MakePolygon poly;
+    poly.Add(gp_Pnt(-q.width/2,-q.depth/2,0));
+    poly.Add(gp_Pnt( q.width/2,-q.depth/2,0));
+    poly.Add(gp_Pnt( q.width/2,-q.depth/2+q.foot_height,0));
+    poly.Add(gp_Pnt(-q.width/2+q.leg_width,-q.depth/2+q.foot_height,0));
+    poly.Add(gp_Pnt(-q.width/2+q.leg_width,q.depth/2,0));
+    poly.Add(gp_Pnt(-q.width/2,q.depth/2,0));
+    poly.Close();
+    if(!poly.IsDone())throw std::runtime_error("L-profile wire construction failed");
+    BRepBuilderAPI_MakeFace face(poly.Wire());
+    if(!face.IsDone())throw std::runtime_error("L-profile face construction failed");
+    BRepPrimAPI_MakePrism prism(face.Face(),gp_Vec(0,0,q.thickness));
+    if(!prism.IsDone())throw std::runtime_error("L-profile solid extrusion failed");
+    shape=prism.Shape();
+  }else{
+    shape=BRepPrimAPI_MakeBox(
+      gp_Pnt(-q.width/2,-q.depth/2,0),q.width,q.depth,q.thickness).Shape();
+  }
   for(const auto& h:q.holes){
     const auto tool=BRepPrimAPI_MakeCylinder(
       gp_Ax2(gp_Pnt(h.x,h.y,-q.thickness),gp_Dir(0,0,1)),
@@ -274,7 +326,8 @@ void write_report(const Request& q,const Metrics& source,
                   const Metrics* step,const std::filesystem::path& output) {
   // IDs have already been restricted to JSON-safe alphanumeric characters.
   std::ostringstream s;
-  s<<"{\"protocol\":\""<<(q.mixed_chain?"intuit3d/kernel/plate-mixed-cut-chain-v2":
+  s<<"{\"protocol\":\""<<(q.l_profile_chain?"intuit3d/kernel/l-profile-cut-chain-v3":
+     q.mixed_chain?"intuit3d/kernel/plate-mixed-cut-chain-v2":
      q.cut_chain?"intuit3d/kernel/plate-cut-chain-v1":"intuit3d/kernel/plate-v1")<<"\",\"requestId\":\""
    <<q.request_id<<"\",\"featureId\":\""<<q.feature_id
    <<"\",\"revision\":"<<q.revision
