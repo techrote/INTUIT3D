@@ -22,3 +22,30 @@ export function createDimensionedPlateSheet(request:PlateDrawingRequest):{
   format:'intuit3d.engineering.plate-sheet';version:1;mimeType:'image/svg+xml';
   filename:string;measurement:PlateDrawingMeasurement;svg:string;
 };
+
+/** A source-authored constructive SKETCH fillet (not exact native geometry). */
+export type RoundedPlateDrawingMeasurement=PlateDrawingMeasurement & {
+  outlineKind:'rounded_plate';
+  cornerRadiusMm:number;
+  boundaryCurves:Array<
+    | {kind:'line';id:string;sourceEdgeId:string;
+      start:{x:number;y:number};end:{x:number;y:number}}
+    | {kind:'arc';id:string;sourceVertexId:string;
+      center:{x:number;y:number};start:{x:number;y:number};
+      end:{x:number;y:number};radiusMm:number;
+      startAngleRad:number;sweepRad:number}
+  >;
+  provenance:PlateDrawingMeasurement['provenance'] & {
+    roundedIntentId:string;roundedIntentSignature:string
+  };
+};
+export function measureRoundedPlateFromProject(source:Pick<PlateDrawingRequest,
+  'projectJson'|'sketchFeatureId'|'profileId'>):RoundedPlateDrawingMeasurement;
+/**
+ * Requires the real project sketch feature to carry an authoritative
+ * payload.roundedPlateIntent serialized by SKETCH's v1 fillet-intent API.
+ */
+export function createRoundedPlateSheet(request:PlateDrawingRequest):{
+  format:'intuit3d.engineering.plate-sheet';version:1;mimeType:'image/svg+xml';
+  filename:string;measurement:RoundedPlateDrawingMeasurement;svg:string;
+};
