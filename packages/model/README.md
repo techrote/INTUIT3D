@@ -525,3 +525,45 @@ the extrusion, changes the upstream thickness 8→12 mm, verifies that only
 parameter/extrude/cut need structural reevaluation, undoes/redoes and
 serializes/reopens the full model archive. It does **not** run SKETCH/OCCT,
 show a browser interaction or certify STEP interoperability.
+
+
+## Model-owned semantic selection inventory (v1; INTENT-002 #62)
+
+Import `inspectSelectionInventory` and `SELECTION_EVIDENCE_FORMAT` from
+`@intuit3d/model/selection-inventory`. This is a **derived, browser-safe**
+project-wide summary of the existing authored `semantic-selection/v1` fields;
+it does not add an authoritative document type or persist provider results.
+
+`inspectSelectionInventory(document)` lists every live feature's versioned
+top-level face/body/edge selection, with `await_provider`, `repair_model`,
+`choose_successor` and `replace_deleted_reference` actions. A runtime or
+trusted native adapter may optionally provide `intuit3d.selection-evidence`
+v1 receipts bound to the **exact** project, revision, consumer feature, field
+and stored source reference. Each receipt carries the existing
+`TopologySnapshot` and ordered `TopologyStep[]` plus an honest provider label
+(`deterministic_fixture`, `experimental_native`, or `native`). Stale,
+duplicate, foreign, replaced or unowned body references fail closed.
+
+One-to-one provider-observed continuations are `candidate`, not exact B-rep
+admission. Split/merge targets expose all semantic successor candidates for
+explicit `commitUndoableSemanticSelectionRecovery`, never a guessed face.
+Missing/partial provider reports remain `pending_evidence`; unresolved model
+features remain `pending_model`. `allReferencesObserved` is only a semantic
+observation summary, **not permission to export STEP**.
+`exactGeometryAuthority` is hard-coded `false`. The actual experimental
+plate-v1 provider currently does **not** report physical face provenance, so
+only deterministic fixtures demonstrate split/merge recovery until native
+contract adoption is separately qualified by KERNEL/RUNTIME/INTEGRATION.
+
+Run the compact two-hole plate → retrospective 8→12 mm thickness edit →
+branch invalidation → reported face split → explicit repair → undo/redo →
+archive/reopen demonstration:
+
+```bash
+node --experimental-strip-types packages/model/examples/selection-inventory.mjs
+```
+
+The fixture is model-only and its lineage receipts are explicitly synthetic.
+The consumers should use the inventory for **repair UI and selection readiness**,
+and independently use RUNTIME/KERNEL's actual provider-validation gates for
+geometric truth, STEP bytes and any exact/independent claims.

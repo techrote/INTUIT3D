@@ -55,6 +55,10 @@
     "./history-move": {
       "types": "./src/history-move.ts",
       "default": "./src/history-move.ts"
+    },
+    "./selection-inventory": {
+      "types": "./src/selection-inventory.ts",
+      "default": "./src/selection-inventory.ts"
     }
   },
   "scripts": {
