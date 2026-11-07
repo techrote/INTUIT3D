@@ -51,3 +51,19 @@ STEP until KERNEL/RUNTIME actually qualify the solid.
 consumer; only Integration may merge. Existing root workspace registration
 already exposes this package, so only an additive package subpath export is
 required here. No shared CI/lockfile edits are requested.
+
+## Retrospective rectangular-grid count changes
+
+`reshapeRectangularHoleGrid(history, request, services)` now expands/shrinks
+a selected existing solved grid (for example 4×3 → 5×3 → 3×2) in ONE
+revision-fenced, undoable RUNTIME hole-edit batch per operation. Supply the
+original row/column counts, signed X/Y pitch and desired new counts, plus the
+existing project/revision, sketch/extrude/cut/body identities. Only cells
+outside/inside the new extent are removed/created; all common stable IDs remain
+unchanged. A solved-coordinate provenance check refuses independently moved
+copies; SKETCH admits or refuses all resulting holes and RUNTIME supplies
+dependency invalidation. The edit does not synthesize a constraint-driven,
+associative CAD pattern or independently qualified native STEP.
+Run `node --experimental-strip-types packages/feature-ops/examples/fixture-grid-count-edit.mjs`
+for the two-body fixture demonstration. Current native status is
+`pending_exact_provider`.

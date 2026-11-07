@@ -30,15 +30,16 @@ function gridIds(grid){
   return result;
 }
 function validateGridShape(grid,mode){
-  exact(grid,mode==='create'?['sourceHoleId','idPrefix','columns','rows','pitchXmm','pitchYmm']:
-    ['sourceHoleId','idPrefix','columns','rows','scaleX','scaleY','radiusScale'],'grid');
+  exact(grid,mode==='resize'?['sourceHoleId','idPrefix','columns','rows','scaleX','scaleY','radiusScale']:
+    mode==='reshape'?['sourceHoleId','idPrefix','columns','rows','pitchXmm','pitchYmm','nextColumns','nextRows']:
+    ['sourceHoleId','idPrefix','columns','rows','pitchXmm','pitchYmm'],'grid');
   ident(grid.sourceHoleId,'sourceHoleId');
   if(typeof grid.idPrefix!=='string'||!PREFIX.test(grid.idPrefix)||
       !Number.isSafeInteger(grid.columns)||grid.columns<1||grid.columns>8||
       !Number.isSafeInteger(grid.rows)||grid.rows<1||grid.rows>8||
       grid.columns*grid.rows<2||grid.columns*grid.rows>32)
     fail('grid must have 2–32 cells, at most 8 per axis and a stable prefix');
-  if(mode==='create'){
+  if(mode==='create'||mode==='reshape'){
     if(!finite(grid.pitchXmm)||!finite(grid.pitchYmm)||
         (grid.columns>1&&grid.pitchXmm===0)||
         (grid.rows>1&&grid.pitchYmm===0))
@@ -46,6 +47,15 @@ function validateGridShape(grid,mode){
   }else if(![grid.scaleX,grid.scaleY,grid.radiusScale].every(x=>finite(x)&&x>0)||
       (grid.scaleX===1&&grid.scaleY===1&&grid.radiusScale===1)){
     fail('positive resize factors with an actual change required');
+  }
+  if(mode==='reshape'){
+    if(!Number.isSafeInteger(grid.nextColumns)||grid.nextColumns<1||grid.nextColumns>8||
+       !Number.isSafeInteger(grid.nextRows)||grid.nextRows<1||grid.nextRows>8||
+       grid.nextColumns*grid.nextRows<2||grid.nextColumns*grid.nextRows>32||
+       (grid.nextColumns===grid.columns&&grid.nextRows===grid.rows)||
+       (grid.nextColumns>1&&grid.pitchXmm===0)||
+       (grid.nextRows>1&&grid.pitchYmm===0))
+      fail('next grid must have 2–32 cells and different bounded row/column counts');
   }
   const ids=gridIds(grid);
   if(ids.some(id=>!IDENT.test(id)||[id+':center',id+':fixed',id+':diameter']
@@ -75,7 +85,8 @@ function context(history,request,services,kind){
   const ids=validateGridShape(request.grid,kind);
   const {model,runtime}=services??{};
   if(typeof model?.featuresOf!=='function'||typeof runtime?.inspect!=='function'||
-      typeof runtime?.[kind==='create'?'patternPlateHoles':'resizePlateHoleLayout']!=='function')
+      typeof runtime?.[kind==='create'?'patternPlateHoles':
+        kind==='resize'?'resizePlateHoleLayout':'editPlateHoles']!=='function')
     fail('accepted INTENT and RUNTIME services required');
   const features=model.featuresOf(history.document);
   const sketch=features.find(f=>f.id===sketchId);
@@ -181,4 +192,122 @@ export function resizeRectangularHoleGrid(history,request,services){
     radiusScale:request.grid.radiusScale
   });
   return finish(result,history,request,ctx,'resize');
+}
+
+
+/**
+ * Change the row/column COUNT of an admitted, regular rectangular hole grid.
+ * Unlike deleting/rebuilding the sketch, retained cells keep their semantic
+ * circle/point/constraint identities. Growth and shrinkage are one undoable
+ * RUNTIME editPlateHoles() transaction. Existing cells must STILL match the
+ * caller's original signed pitch and source; displaced copies fail closed.
+ *
+ * This is not an associative pattern feature. The selected solved SKETCH is
+ * the coordinate authority; actual profile/overlap admission belongs solely
+ * to SKETCH/RUNTIME, and physical Boolean execution remains pending.
+ */
+export function reshapeRectangularHoleGrid(history,request,services){
+  const ctx=context(history,request,services,'reshape');
+  const grid=request.grid;
+  if(typeof services?.sketch?.validateSketch!=='function'||
+     typeof services?.sketch?.solveSketch!=='function')
+    fail('accepted SKETCH solver required for grid reconfiguration');
+  const checked=services.sketch.validateSketch(ctx.doc);
+  const solution=services.sketch.solveSketch(checked);
+  const source=checked.circles?.find(c=>c.id===grid.sourceHoleId);
+  const origin=solution?.geometry?.points?.find(p=>p.id===source?.center);
+  const solvedSource=solution?.geometry?.circles?.find(c=>c.id===grid.sourceHoleId);
+  if(solution?.status!=='solved'||!origin||!solvedSource||
+     ![origin.x,origin.y,solvedSource.radius].every(finite)||
+     solvedSource.radius<=0)
+    fail('source circle has no admissible solved centre/radius');
+
+  // A semantic provenance check (1e-6 mm), never a Boolean or export
+  // tolerance. Missing/independently moved cells cannot be silently rebuilt.
+  const tolerance=1e-6;
+  for(let row=0;row<grid.rows;row++)for(let col=0;col<grid.columns;col++){
+    const holeId=row===0&&col===0?grid.sourceHoleId:
+      grid.idPrefix+':r'+row+'c'+col;
+    const circle=checked.circles.find(c=>c.id===holeId);
+    const point=solution.geometry.points?.find(p=>p.id===circle?.center);
+    const solvedCircle=solution.geometry.circles?.find(c=>c.id===holeId);
+    const expectedX=origin.x+col*grid.pitchXmm;
+    const expectedY=origin.y+row*grid.pitchYmm;
+    if(!circle||!point||!solvedCircle||
+       ![point.x,point.y,solvedCircle.radius,expectedX,expectedY].every(finite)||
+       solvedCircle.radius<=0||
+       Math.abs(solvedCircle.radius-solvedSource.radius)>tolerance||
+       Math.abs(point.x-expectedX)>tolerance||
+       Math.abs(point.y-expectedY)>tolerance)
+      fail('existing grid layout does not match selected solved provenance');
+  }
+  const nextIds=gridIds({idPrefix:grid.idPrefix,
+    columns:grid.nextColumns,rows:grid.nextRows});
+  const before=new Set(ctx.ids),after=new Set(nextIds);
+  const removed=ctx.ids.filter(holeId=>!after.has(holeId));
+  const retained=ctx.ids.filter(holeId=>after.has(holeId));
+  const added=nextIds.filter(holeId=>!before.has(holeId));
+  const occupied=new Set([...checked.points,...checked.lines,...checked.circles,
+    ...checked.constraints].map(entity=>entity.id));
+  for(const holeId of added){
+    if(!IDENT.test(holeId)||
+      [holeId,holeId+':center',holeId+':fixed',holeId+':diameter']
+        .some(entityId=>occupied.has(entityId)))
+      fail('new grid cell or dependent entity ID already occupied');
+  }
+  if(checked.circles.length-removed.length+added.length>64)
+    fail('SKETCH hole capacity exceeded');
+  const operations=removed.map(id=>({kind:'remove',id}));
+  for(let row=0;row<grid.nextRows;row++)for(let col=0;col<grid.nextColumns;col++){
+    if(row===0&&col===0)continue;
+    const holeId=grid.idPrefix+':r'+row+'c'+col;
+    if(!before.has(holeId)){
+      const x=origin.x+col*grid.pitchXmm,y=origin.y+row*grid.pitchYmm;
+      if(!finite(x)||!finite(y))fail('new grid coordinates are non-finite');
+      operations.push({kind:'add',id:holeId,x,y,radius:solvedSource.radius});
+    }
+  }
+  if(operations.length<1||operations.length>32)
+    fail('grid reconfiguration exceeds atomic RUNTIME hole edit batch');
+  const result=ctx.runtime.editPlateHoles(history,{
+    sketchFeatureId:ctx.sketchId,eventId:ctx.eventId,
+    expectedRevision:request.expectedRevision,admission:'require_admissible',
+    operations
+  });
+  const changes={added,removed,retained};
+  if(result?.kind==='refused')
+    return {...result,changes,gridHoleIds:nextIds,
+      exactAuthority:false,independentInteroperability:false};
+  if(result?.kind!=='committed'||!result.history?.document||
+     result.history.document.projectId!==request.expectedProjectId||
+     result.history.document.revision!==request.expectedRevision+1||
+     result.report?.projectId!==request.expectedProjectId||
+     result.report?.revision!==result.history.document.revision||
+     reportState(result.report,ctx.sketchId)?.status!=='analytic_profile_only'||
+     reportState(result.report,ctx.cutId)?.status!=='pending_exact_provider')
+    throw new Error('feature-ops grid: runtime did not retain admitted count edit');
+  const next=ctx.model.featuresOf(result.history.document)
+    .find(feature=>feature.id===ctx.sketchId)?.payload?.sketch;
+  const actualIds=next?.circles?.map(circle=>circle.id);
+  const oldOtherIds=ctx.doc.circles.map(circle=>circle.id)
+    .filter(id=>id!==grid.sourceHoleId&&!before.has(id));
+  if(!actualIds||new Set(actualIds).size!==actualIds.length||
+     actualIds.length!==ctx.doc.circles.length-removed.length+added.length||
+     !actualIds.includes(grid.sourceHoleId)||
+     !nextIds.every(id=>actualIds.includes(id))||
+     !oldOtherIds.every(id=>actualIds.includes(id))||
+     !removed.every(id=>!actualIds.includes(id))||
+     ![ctx.sketchId,ctx.extrudeId,ctx.cutId].every(id=>
+       result.invalidation?.invalidatedFeatureIds?.includes(id)))
+    throw new Error('feature-ops grid: reconfiguration lost semantic identities or invalidation');
+  return {kind:'committed',history:result.history,report:result.report,
+    invalidation:result.invalidation,changes,gridHoleIds:nextIds,
+    semanticIds:{sketchId:ctx.sketchId,extrudeId:ctx.extrudeId,
+      cutId:ctx.cutId,bodyId:ctx.bodyId},
+    status:'pending_exact_provider',
+    nativeHandoff:{kind:'runtime_evaluation_required',cutFeatureId:ctx.cutId,
+      bodyId:ctx.bodyId,sourceRevision:result.history.document.revision,
+      compatibility:'not_claimed_ask_RUNTIME_provider',
+      exactAuthority:false,independentInteroperability:false},
+    exactAuthority:false,independentInteroperability:false};
 }
