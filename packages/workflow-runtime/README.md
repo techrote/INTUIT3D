@@ -816,3 +816,52 @@ not cross-tab compare-and-swap. Run
 for real INTENT/SKETCH + loopback HTTP testing with a clearly synthetic
 native provider. Physical pinned OCCT8 and external STEP geometry still
 require their separate executable acceptance.
+
+
+### Source-matched disk archive + genuinely pinned C++ batch acceptance
+
+`test/atomic-command-batch.integration.test.mjs` now exercises a real
+single-file, rename-atomic archive on both hosted Node platforms. It commits
+two INTENT/SKETCH changes with **one** durable write, reopens the exact
+archive in a new session, simulates a crash after staging but before archive
+rename, and proves that a subsequent fresh session can recover and rebuild
+the uncorrupted 12 mm / three-hole project. The rebuild transport uses an
+explicitly **synthetic** native provider. It is NOT a real OCCT run.
+
+The existing native integration executable,
+`test/local-occt8-bridge.native-demo.mjs`, also tests a final two-command
+batch through the **actual configured OCCT 8.0.1 C++ provider**. It
+retrospectively changes extrusion thickness and independently resizes both
+SKETCH hole constraints, verifies one file-backed model publication, tests
+analytic volume and physical STEP receipts, then reconstructs the identical
+model in a new disk-backed live session without persisting/reusing STEP bytes.
+It retains the existing native seven-state undo/reopen run and optionally
+checks every current STEP through the independently pinned external probe.
+No synthetic provider is installed in this executable.
+
+```sh
+npm ci
+npm test --workspace @intuit3d/workflow-runtime
+npm run typecheck --workspace @intuit3d/workflow-runtime
+
+# Physically run the source-matched C++ worker (fails if absent):
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+  npm run demo:occt8:bridge --workspace @intuit3d/workflow-runtime
+
+# For real independent imported STEP samples, also provide both:
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+INTUIT3D_ANVIL_STEP_PROBE=/absolute/path/to/intuit_step_probe \
+INTUIT3D_ANVIL_PROBE_SHA256=<actual-64-character-binary-sha256> \
+  npm run demo:occt8:independent --workspace @intuit3d/workflow-runtime
+```
+
+The demonstration prints SHA-256, source revision, actual provider/geometry
+and STEP outputs, and a digest of the canonical disk archive; it deletes
+its temporary working directory on normal exit. This adds a runnable
+**acceptance path**, not evidence that the worker or external probe was
+executed on ordinary Node CI. The host still requires provisioned,
+source-matched actual native binaries (#154/#159), and #74 governs
+cross-package browser and independent product acceptance. Only Integration
+may merge and close the original #73 lifecycle gate. Both ordinary and
+native demonstrations retain `exactAuthority:false` and
+`independentInteroperability:false` at the application boundary.
