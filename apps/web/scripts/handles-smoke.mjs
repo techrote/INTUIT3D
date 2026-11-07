@@ -608,8 +608,8 @@ async function main() {
     'Cannot confirm fresh sketch-only project');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-create-extrusion]')?.disabled===false && !document.querySelector('[data-testid=runtime-feature-plate]')"),
     'Confirmed Ctrl+N did not create an editable solved sketch without a solid');
-  check(await evaluate("document.querySelector('.project-title')?.textContent?.includes('Sketch project') &&
-      document.querySelector('[data-testid=runtime-status-cut]')===null"),
+  check((await evaluate("document.querySelector('.project-title')?.textContent?.includes('Sketch project')")) &&
+      (await evaluate("document.querySelector('[data-testid=runtime-status-cut]')===null")),
     'New sketch project inherited a former native cut or incorrect title');
   await screenshot('22-ctrl-n-new-sketch.png');
 
