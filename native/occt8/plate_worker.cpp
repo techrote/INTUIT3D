@@ -37,11 +37,11 @@
 #include <vector>
 namespace {
 struct Hole { double x,y,r; };
-struct RectCut { std::string id; double x,y,width,depth,cut_depth; };
+struct RectCut { std::string id; bool circular=false; double x,y,width,depth,cut_depth; };
 struct Request {
   std::string request_id,feature_id;
   long long revision=0;
-  bool export_step=false,cut_chain=false;
+  bool export_step=false,cut_chain=false,mixed_chain=false;
   double width=0,depth=0,thickness=0;
   std::vector<Hole> holes;
   std::vector<RectCut> cuts;
@@ -65,9 +65,11 @@ Request read_request(const std::filesystem::path& path) {
   std::ifstream file(path);
   std::string magic;Request q;int export_flag=-1,count=-1,cut_count=0;
   if(!(file>>magic)||(magic!="INTUIT3D_OCCT8_PLATE_V1"&&
-                      magic!="INTUIT3D_OCCT8_CUT_CHAIN_V1"))
+                      magic!="INTUIT3D_OCCT8_CUT_CHAIN_V1"&&
+                      magic!="INTUIT3D_OCCT8_MIXED_CUT_CHAIN_V2"))
     throw std::runtime_error("invalid canonical request protocol");
-  q.cut_chain=(magic=="INTUIT3D_OCCT8_CUT_CHAIN_V1");
+  q.mixed_chain=(magic=="INTUIT3D_OCCT8_MIXED_CUT_CHAIN_V2");
+  q.cut_chain=(magic!="INTUIT3D_OCCT8_PLATE_V1");
   if(!(file>>q.request_id>>q.feature_id>>q.revision>>export_flag>>
        q.width>>q.depth>>q.thickness>>count)||
      (q.cut_chain && !(file>>cut_count)))
@@ -95,25 +97,48 @@ Request read_request(const std::filesystem::path& path) {
   // through pockets; arbitrary sketch profiles stay in the experimental path.
   for(int i=0;i<cut_count;++i) {
     RectCut c{};
-    if(!(file>>c.id>>c.x>>c.y>>c.width>>c.depth>>c.cut_depth)||
-       !id_ok(c.id)||!std::isfinite(c.x)||!std::isfinite(c.y)||
-       !dimension(c.width)||!dimension(c.depth)||!dimension(c.cut_depth)||
+    std::string kind="R";
+    if(!(file>>c.id) || (q.mixed_chain && !(file>>kind)) ||
+       !(file>>c.x>>c.y>>c.width>>c.depth>>c.cut_depth))
+      throw std::runtime_error("truncated ordered cut");
+    if(kind!="R" && kind!="C")
+      throw std::runtime_error("unsupported cut profile kind");
+    c.circular=(kind=="C");
+    if(!id_ok(c.id)||!std::isfinite(c.x)||!std::isfinite(c.y)||
+       !dimension(c.width)||!dimension(c.cut_depth)||
+       (c.circular ? c.depth!=0 : !dimension(c.depth))||
        c.cut_depth>q.thickness||
-       !(std::abs(c.x)+c.width/2<q.width/2)||
-       !(std::abs(c.y)+c.depth/2<q.depth/2))
-      throw std::runtime_error("invalid rectangular cut extent");
+       (c.circular ?
+         !(std::abs(c.x)+c.width<q.width/2 &&
+           std::abs(c.y)+c.width<q.depth/2) :
+         !(std::abs(c.x)+c.width/2<q.width/2 &&
+           std::abs(c.y)+c.depth/2<q.depth/2)))
+      throw std::runtime_error("invalid ordered cut extent");
     for(const auto& h:q.holes) {
-      const auto dx=std::max(0.0,std::abs(h.x-c.x)-c.width/2);
-      const auto dy=std::max(0.0,std::abs(h.y-c.y)-c.depth/2);
-      if(std::hypot(dx,dy)<=h.r)
+      const bool touched=c.circular ?
+        std::hypot(h.x-c.x,h.y-c.y)<=h.r+c.width :
+        std::hypot(std::max(0.0,std::abs(h.x-c.x)-c.width/2),
+                   std::max(0.0,std::abs(h.y-c.y)-c.depth/2))<=h.r;
+      if(touched)
         throw std::runtime_error("cut touches or intersects an authored bore");
     }
     for(const auto& earlier:q.cuts) {
       if(c.id==earlier.id)
         throw std::runtime_error("duplicate cut feature identity");
-      if(std::abs(c.x-earlier.x)<=(c.width+earlier.width)/2 &&
-         std::abs(c.y-earlier.y)<=(c.depth+earlier.depth)/2)
-        throw std::runtime_error("cut footprints overlap or touch");
+      bool touched=false;
+      if(c.circular && earlier.circular) {
+        touched=std::hypot(c.x-earlier.x,c.y-earlier.y)<=c.width+earlier.width;
+      }else if(!c.circular && !earlier.circular) {
+        touched=std::abs(c.x-earlier.x)<=(c.width+earlier.width)/2 &&
+                std::abs(c.y-earlier.y)<=(c.depth+earlier.depth)/2;
+      }else {
+        const auto& circle=c.circular?c:earlier;
+        const auto& rect=c.circular?earlier:c;
+        touched=std::hypot(
+          std::max(0.0,std::abs(circle.x-rect.x)-rect.width/2),
+          std::max(0.0,std::abs(circle.y-rect.y)-rect.depth/2))<=circle.width;
+      }
+      if(touched)throw std::runtime_error("cut footprints overlap or touch");
     }
     q.cuts.push_back(c);
   }
@@ -163,17 +188,27 @@ void require_shape(const Request& q,const Metrics& m) {
   int expected_faces=6+static_cast<int>(q.holes.size());
   for(const auto& c:q.cuts) {
     const bool through=(c.cut_depth==q.thickness);
-    v-=c.width*c.depth*c.cut_depth;
-    a+=2*(c.width+c.depth)*c.cut_depth;
-    if(through)a-=2*c.width*c.depth;
-    expected_faces+=through?4:5;
+    if(c.circular) {
+      const double disk=std::acos(-1.0)*c.width*c.width;
+      v-=disk*c.cut_depth;
+      a+=2*std::acos(-1.0)*c.width*c.cut_depth;
+      if(through)a-=2*disk;
+      expected_faces+=through?1:2;
+    } else {
+      v-=c.width*c.depth*c.cut_depth;
+      a+=2*(c.width+c.depth)*c.cut_depth;
+      if(through)a-=2*c.width*c.depth;
+      expected_faces+=through?4:5;
+    }
   }
+  auto expected=q.holes;
+  for(const auto& c:q.cuts)
+    if(c.circular)expected.push_back({c.x,c.y,c.width});
   if(!m.valid||m.solids!=1||m.shells!=1||
      m.faces!=expected_faces||
-     m.holes.size()!=q.holes.size()||
+     m.holes.size()!=expected.size()||
      !near(m.volume,v)||!near(m.area,a))
     throw std::runtime_error("B-rep topology or mass does not match plate intent");
-  auto expected=q.holes;
   std::sort(expected.begin(),expected.end(),[](const Hole& a,const Hole& b) {
     return std::tie(a.x,a.y,a.r)<std::tie(b.x,b.y,b.r);
   });
@@ -204,9 +239,13 @@ TopoDS_Shape construct(const Request& q) {
   for(const auto& c:q.cuts) {
     // Start at the bottom of the authored top-down pocket. An exact through
     // cut has the same bottom plane as the stock; no fuzzy overcut is hidden.
-    const auto tool=BRepPrimAPI_MakeBox(
-      gp_Pnt(c.x-c.width/2,c.y-c.depth/2,q.thickness-c.cut_depth),
-      c.width,c.depth,c.cut_depth).Shape();
+    const auto tool=c.circular ?
+      BRepPrimAPI_MakeCylinder(
+        gp_Ax2(gp_Pnt(c.x,c.y,q.thickness-c.cut_depth),gp_Dir(0,0,1)),
+        c.width,c.cut_depth).Shape() :
+      BRepPrimAPI_MakeBox(
+        gp_Pnt(c.x-c.width/2,c.y-c.depth/2,q.thickness-c.cut_depth),
+        c.width,c.depth,c.cut_depth).Shape();
     BRepAlgoAPI_Cut cut(shape,tool);
     cut.SetFuzzyValue(0.0);
     cut.SetRunParallel(false);
@@ -235,7 +274,8 @@ void write_report(const Request& q,const Metrics& source,
                   const Metrics* step,const std::filesystem::path& output) {
   // IDs have already been restricted to JSON-safe alphanumeric characters.
   std::ostringstream s;
-  s<<"{\"protocol\":\""<<(q.cut_chain?"intuit3d/kernel/plate-cut-chain-v1":"intuit3d/kernel/plate-v1")<<"\",\"requestId\":\""
+  s<<"{\"protocol\":\""<<(q.mixed_chain?"intuit3d/kernel/plate-mixed-cut-chain-v2":
+     q.cut_chain?"intuit3d/kernel/plate-cut-chain-v1":"intuit3d/kernel/plate-v1")<<"\",\"requestId\":\""
    <<q.request_id<<"\",\"featureId\":\""<<q.feature_id
    <<"\",\"revision\":"<<q.revision
    <<",\"backend\":\"OCCT-cxx-8.0.1\",\"occtVersion\":\"8.0.1\""

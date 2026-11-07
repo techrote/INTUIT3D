@@ -16,8 +16,10 @@ import time
 from plate_envelope import require_plate_vertex_envelope_mm
 from protocol import validate_request, validate_result, analytic_invariants, close
 from process_supervision import run_isolated_worker
-from occt8_cut_contract import (SCHEMA as CUT_SCHEMA, canonical_cut_request,
-                                validate_cut_request, validate_cut_result)
+from occt8_cut_contract import (SCHEMA as CUT_SCHEMA, MIXED_SCHEMA,
+                                canonical_cut_request, canonical_mixed_cut_request,
+                                validate_cut_request, validate_mixed_cut_request,
+                                validate_cut_result)
 
 BACKEND = "OCCT-cxx-8.0.1"
 VERSION = "8.0.1"
@@ -27,6 +29,8 @@ MAX_STEP_BYTES = 32 * 1024 * 1024
 def canonical_request(request: dict) -> str:
     if request["protocol"] == CUT_SCHEMA:
         return canonical_cut_request(request)
+    if request["protocol"] == MIXED_SCHEMA:
+        return canonical_mixed_cut_request(request)
     p = request["plate"]
     lines = [
         "INTUIT3D_OCCT8_PLATE_V1",
@@ -106,10 +110,12 @@ def _part21_step_audit(request: dict, stage: Path, directory: Path, deadline: fl
 def execute(request_input: object, *, worker: Path, step_output: Path | None = None,
             timeout: float = 30.0, cross_version_audit: bool = False,
             part21_audit: bool = False) -> dict:
-    request = (validate_cut_request(request_input) if isinstance(request_input, dict)
-               and request_input.get("protocol") == CUT_SCHEMA else validate_request(request_input))
-    if request["protocol"] == CUT_SCHEMA and (cross_version_audit or part21_audit):
-        raise ValueError("plate-subset STEP readers do not support rectangular cut-chain STEP")
+    schema = request_input.get("protocol") if isinstance(request_input, dict) else None
+    request = (validate_cut_request(request_input) if schema == CUT_SCHEMA else
+               validate_mixed_cut_request(request_input) if schema == MIXED_SCHEMA else
+               validate_request(request_input))
+    if request["protocol"] in (CUT_SCHEMA, MIXED_SCHEMA) and (cross_version_audit or part21_audit):
+        raise ValueError("plate-subset STEP readers do not support cut-chain STEP")
     # Normalize relative output paths before changing the subprocess cwd.
     if step_output is not None:
         step_output = step_output.resolve()
@@ -146,7 +152,7 @@ def execute(request_input: object, *, worker: Path, step_output: Path | None = N
             if not report.is_file() or report.stat().st_size > MAX_RESPONSE_BYTES:
                 raise ValueError("absent or oversized worker report")
             response = json.loads(report.read_text(encoding="utf-8"))
-            if request["protocol"] == CUT_SCHEMA:
+            if request["protocol"] in (CUT_SCHEMA, MIXED_SCHEMA):
                 validate_cut_result(request, response)
             else:
                 validate_result(request, response,
