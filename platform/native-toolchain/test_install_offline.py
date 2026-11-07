@@ -15,6 +15,7 @@ import tempfile
 import unittest
 
 import install_offline as target
+import abi_compat as abi
 
 
 @unittest.skipUnless(sys.platform == "linux" and shutil.which("cc"),
@@ -28,13 +29,20 @@ class InstallerTests(unittest.TestCase):
         self.bundle = self.root / "source-bundle"
         (self.bundle / "bin").mkdir(parents=True)
         (self.bundle / "lib").mkdir()
+        (self.root / "math.c").write_text("int answer(void) {return 42;}\n")
         (self.root / "main.c").write_text(
-            '#include <stdio.h>\nint main(void) {puts("42"); return 0;}\n')
-        worker = self.bundle / "bin/intuit3d_occt8_plate"
-        subprocess.run(["cc", str(self.root / "main.c"), "-o", str(worker)],
+            '#include <stdio.h>\nextern int answer(void);\n'
+            'int main(void) {printf("%d\\n",answer()); return 0;}\n')
+        real_lib = self.bundle / "lib/libTKMath.so.8.0"
+        subprocess.run(["cc", "-shared", "-fPIC", str(self.root / "math.c"),
+                        "-Wl,-soname,libTKMath.so.8.0", "-o", str(real_lib)],
                        check=True, capture_output=True)
-        (self.bundle / "lib/libTKMath.so").symlink_to("libTKMath.so.8.0")
-        (self.bundle / "lib/libTKMath.so.8.0").write_bytes(b"synthetic lib")
+        worker = self.bundle / "bin/intuit3d_occt8_plate"
+        subprocess.run(["cc", str(self.root / "main.c"), "-o", str(worker),
+                        "-L" + str(self.bundle / "lib"), "-l:libTKMath.so.8.0",
+                        "-Wl,--disable-new-dtags", "-Wl,-rpath,$ORIGIN/../lib"],
+                       check=True, capture_output=True)
+        (self.bundle / "lib/libTKMath.so").symlink_to(real_lib.name)
         worker_sha = target.sha256(worker)
         self.manifest = {
             "schema": target.BUNDLE_SCHEMA, "occtVersion": "8.0.1",
@@ -42,6 +50,7 @@ class InstallerTests(unittest.TestCase):
             "kernelSourceCommit": self.kernel_sha,
             "nativeCppExecuted": True, "independentCadInteroperability": False,
             "workerSha256": worker_sha,
+            "elfAbiProfile": abi.symbol_profile(worker, self.bundle / "lib"),
         }
         (self.bundle / "manifest.json").write_text(json.dumps(self.manifest))
         (self.bundle / "verify.py").write_text(
@@ -106,6 +115,15 @@ class InstallerTests(unittest.TestCase):
         with self.assertRaisesRegex(target.InstallError, "unsafe archive path"):
             target.install(self.archive, self.destination,
                            target.sha256(self.archive), self.kernel_sha)
+        self.assertFalse(self.destination.exists())
+
+    def test_rejects_false_abi_profile_even_with_correct_archive_sha(self):
+        self.manifest["elfAbiProfile"]["requiredVersions"]["GLIBC"] = "9.99"
+        (self.bundle / "manifest.json").write_text(json.dumps(self.manifest))
+        self.write_archive()
+        with self.assertRaisesRegex(abi.ABIError, "differs from attested"):
+            target.install(self.archive, self.destination,
+                           self.digest, self.kernel_sha)
         self.assertFalse(self.destination.exists())
 
     def test_refuses_destination_overwrite(self):
