@@ -312,3 +312,79 @@ creates the five-hole array via the live loopback/OCP STEP path, undoes the
 array and produces a fresh two-hole STEP on Linux with pinned experimental
 OCP. This is **not** OCCT 8.0.1 production or independent STEP import.
 WORKBENCH owns the browser array interaction; INTEGRATION owns CI and merges.
+
+
+## Persistent revision-fenced browser CAD session (v1)
+
+The browser-safe `@intuit3d/workflow-runtime/live-plate-session` entry
+point binds the **one existing** authoritative INTENT history ref to the
+accepted RUNTIME command APIs and localhost native bridge. It introduces
+no second journal, geometry engine, sketch authority or server.
+
+```js
+import {createLivePlateSession} from '@intuit3d/workflow-runtime/live-plate-session';
+// historyRef.current must be updated synchronously (before React setState).
+const session=createLivePlateSession({
+  runtime,
+  readCurrentHistory:()=>historyRef.current,
+  publishHistory:next=>{historyRef.current=next;setHistory(next);},
+});
+const edit=session.applyEdit(h=>runtime.editPlateHoles(h,{
+  sketchFeatureId:'sketch.plate',eventId:'user.add.hole.'+h.document.revision,
+  expectedRevision:h.document.revision,admission:'require_admissible',
+  operations:[{kind:'add',id:'holeC',x:60,y:20,radius:4}],
+}));
+if (edit.kind==='committed') {
+  // edit.invalidation describes affected authored SKETCH / extrude / cut.
+  // No STEP bytes from the previous revision remain available.
+}
+const result=await session.evaluate({url:hostUrl,token:pairedToken,
+  requestId:'user.native.edit.1',exportStep:true});
+if (result.kind==='experimental_plate_evaluated') {
+  // Fetch AGAIN, synchronously and immediately before the download click:
+  const currentStep=session.currentStep();
+  if (currentStep) offerDownload(currentStep.bytes,currentStep.filename);
+}
+```
+
+`session.applyEdit` accepts the actual RUNTIME/INTENT command or a
+SKETCH-backed edit result and publishes its new `UndoHistory` synchronously,
+only after checking project/revision fences, model inspection and dependency
+invalidation. Refused edits leave the history and any still-current native
+result intact. `session.reopen(saved)` requires
+`{confirmReplacement:true}` to replace a different archive. `save()`
+returns the canonical authoritative archive, never B-rep or STEP bytes.
+
+`evaluate` cancels the previous in-flight client request, fences old
+results even if a provider ignores cancellation, and retries a transient
+host `busy` response at most three times with bounded backoff. Native
+timeouts and crashes remain explicit unresolved results; they never
+modify the authored project. External direct history updates are detected by
+`refresh()`, `evaluate()` or `currentStep()`, which discards stale
+receipts. The local host remains the existing authenticated Node bridge
+and continues to own filesystem access, subprocess supervision and STEP
+byte verification. The UI MUST call `currentStep()` immediately before
+using the returned bytes; retaining its own STEP reference across edits
+bypasses that protection.
+
+**One-command real experimental OCP + localhost demonstration:**
+
+```sh
+npm run demo:bridge --workspace @intuit3d/workflow-runtime
+```
+
+The existing native demo now uses the live session, including authenticated
+STEP fetch, atomic SKETCH hole-radius edits, add/remove hole, rectangular
+hole array, archive reopen and undo-based native rebuild. It requires the
+pinned OCP provider and is a genuine experimental physical run *only when
+executed on that provider*. `npm test` includes a separate real INTENT/
+SKETCH/localhost test using a clearly labelled synthetic native double;
+neither test substitutes for independent non-OCCT STEP import, production
+OCCT 8.0.1 qualification or human browser acceptance.
+
+**WORKBENCH handoff:** its current `runtimeSession.ts` already owns a
+synchronous history ref and the pairing/download UI. It can adopt this
+single controller to wrap its existing `runtime.editPlateHoles`,
+`runtime.editSketchConstraints`, `runtime.undo`, `runtime.redo` and
+local STEP actions. WORKBENCH owns that UI change; INTEGRATION owns
+cross-package admission and guarded merges.
