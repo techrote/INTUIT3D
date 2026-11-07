@@ -1,10 +1,10 @@
 # INTUIT3D — Owner Steering & Programme Assessment
 
-**Status:** Live project authority and intake protocol. **Maintainer:** INTEGRATION & QA. **Readers:** all eight owner-approved permanent hourly lanes at the start of every run.
+**Status:** Live project authority and intake protocol. **Maintainer:** INTEGRATION & QA. **Readers:** all ten owner-approved permanent hourly lanes at the start of every run.
 
 ## Purpose
 
-Provide one durable, project-wide interface between the repository owner and a continuously operating eight-lane engineering workforce. The owner may discuss progress, feature direction, UX, architecture and priorities with Integration & QA. The integration worker captures decisions in this document and/or linked GitHub issues/ADRs, ensures they are discoverable and assesses whether the real product meets the owner's intent.
+Provide one durable, project-wide interface between the repository owner and a continuously operating ten-lane engineering workforce. The owner may discuss progress, feature direction, UX, architecture and priorities with Integration & QA. The integration worker captures decisions in this document and/or linked GitHub issues/ADRs, ensures they are discoverable and assesses whether the real product meets the owner's intent.
 
 This is **not** a central work planner. INTENT, SKETCH, KERNEL, WORKBENCH, RUNTIME, FEATUREOPS and PLATFORM continue to choose, prototype, implement and qualify independent dependency-ready tasks inside their scopes. INTEGRATION keeps code/CI coherent, qualifies/merges admissible PRs and records owner guidance. It must not spawn, pause or redirect other scheduled tasks.
 
@@ -40,6 +40,8 @@ Owner input can be committed here by a repository maintainer acting on explicit 
 | ST-006 | **Accepted owner delivery priority, 2026-11-07** | Favour connected runnable CAD features and verified user workflows over speculative defect chains, micro-regression PRs and document-only review cycles. Integrate mature RUNTIME/KERNEL and deliver an honest sketch→extrude→cut→retrospective edit→rebuild→undo/archive/STEP workflow; preserve all exactness/independent/human evidence gates. | [Integration deliverable #5](https://github.com/techrote/INTUIT3D/issues/5), [model/native execution PR #60](https://github.com/techrote/INTUIT3D/pull/60), six existing lane scopes; observable commands, passing native + graphical qualification, precise gaps to production acceptance |
 | ST-007 | **Accepted owner decision, 2026-11-07** | Add independent seventh FEATUREOPS lane for new real mechanical part authoring and generalized parametric operations, not a parallel model/solver/kernel. | [#80](https://github.com/techrote/INTUIT3D/issues/80); exclusive `packages/feature-ops/**`; CI/lockfile and guarded merge remain Integration-owned |
 | ST-008 | **Accepted owner decision, 2026-11-07** | Add independent eighth PLATFORM lane for reproducible pinned OCCT 8.0.1 C++ and truly independent non-OCCT STEP readback. | [#81](https://github.com/techrote/INTUIT3D/issues/81); exclusive `platform/native-toolchain/**` and `conformance/external-cad/**` |
+| ST-009 | **Accepted owner decision, 2026-11-07** | Add independent ninth SKETCH INTERCHANGE lane for tested DXF import/export of analytic sketches with units and no parallel solver. | [#134](https://github.com/techrote/INTUIT3D/issues/134); exclusive `packages/interchange/**`, accepted SKETCH consumer/round-trip and typed API |
+| ST-010 | **Accepted owner decision, 2026-11-07** | Add independent tenth ENGINEERING lane for model-derived measurements and deterministic dimensioned SVG drawings, without false physical-mass/STEP authority. | [#135](https://github.com/techrote/INTUIT3D/issues/135); exclusive `packages/engineering/**`, editable project/reopen/drawing fixture and accepted-main evidence |
 
 These entries record the owner's already stated project objectives; they do **not** claim any feature is implemented, tested or released. Newly accepted decisions receive a new stable ID, date and issue/ADR reference when available.
 
@@ -69,6 +71,14 @@ These entries record the owner's already stated project objectives; they do **no
 - **Ownership:** FEATUREOPS writes only `packages/feature-ops/**`; PLATFORM writes only `platform/native-toolchain/**` and `conformance/external-cad/**`. No other lane's write set changes. INTEGRATION alone owns shared manifests, checks, status, admission and merges.
 - **Observable acceptance:** a new part authored/rebuilt/undoable through accepted semantic contracts; real pinned C++ executable/STEP and independently reconstructed external CAD geometry with preserved artifacts. Experimental OCP and a custom STEP text checker do not constitute production or independent external CAD qualification.
 - **Prior authority:** expands only the historical six-lane count of ST-005, retaining no-dispatch, explicit exactness gates and immutable existing source ownership. These edits neither create nor alter schedules.
+
+### ST-009 and ST-010 — Newly approved sketch exchange and engineering output
+
+- **Recorded/classified:** 7 November 2026; accepted owner decisions, evidenced by [#134](https://github.com/techrote/INTUIT3D/issues/134) (DXF exchange) and [#135](https://github.com/techrote/INTUIT3D/issues/135) (engineering drawings).
+- **Exact scope:** two *additional* independent permanent lanes: `packages/interchange/**` and `packages/engineering/**`. Existing eight ownership boundaries remain intact. INTEGRATION exclusively changes shared npm lock/workspace checks and admits PRs with current-main qualification.
+- **First acceptance:** interchange reads real bounded ASCII DXF shapes with units/layers/analytic circles/arcs, edits via accepted SKETCH, exports/reimports with verified physical dimensions; engineering derives a dimensioned A3 top-view SVG and measured hole table from accepted INTENT/SKETCH, including saved-archive edit/reopen, deterministic revisions, safety/provenance and truthful analytic-only status.
+- **Integration outcome:** `tooling/check-workspace.mjs` recognizes both exact package paths; lock reservation for the current ENGINEERING #137 package is a tested integration prerequisite, not qualification of the still-unmerged drawing code. Advance candidate artifacts only after source-matched hosted checks. No schedule/dispatcher changes by Integration.
+- **Qualification boundary:** SVG sketch measurements are not OCCT physical mass; DXF syntax/round-trip alone is not STEP conformance. Production native, independent external STEP and human UX continue separately under #74.
 
 ## Intake entry template
 
