@@ -67,6 +67,10 @@
     "./parameter-authoring": {
       "types": "./src/parameter-authoring.ts",
       "default": "./src/parameter-authoring.ts"
+    },
+    "./selection-repair": {
+      "types": "./src/selection-repair.ts",
+      "default": "./src/selection-repair.ts"
     }
   },
   "scripts": {
