@@ -195,7 +195,7 @@ async function main(){
   const beforeAdd=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
   check(await evaluate("(() => {document.querySelector('[data-testid=runtime-add-hole]').click();return true})()"),'cannot add a real sketch hole');
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===3"),'added hole did not reach React inspector');
-  const addedId=await evaluate("document.querySelector('[data-testid^=runtime-hole-editor-hole.user.]')?.getAttribute('data-testid')?.slice(20)");
+  const addedId=await evaluate("Array.from(document.querySelectorAll('[data-testid^=runtime-hole-editor-]')).map(x=>x.getAttribute('data-testid')?.slice(20)).find(x=>x?.startsWith('hole.user.'))");
   check(typeof addedId==='string'&&addedId.startsWith('hole.user.'),'new hole identity missing');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('3 circular holes')"),'added circle not shown in solved profile');
   check(await evaluate(`Boolean(document.querySelector('[data-testid="runtime-sketch-hole-${addedId}"]'))`),'added circle has no drag affordance');
