@@ -34,3 +34,55 @@ export function editRoundedPlateRadius(source:RoundedPlateIntent,radiusMm:number
 export function serializeRoundedPlateIntent(source:RoundedPlateIntent):string;
 export function parseRoundedPlateIntent(json:string):RoundedPlateIntent;
 export function solveRoundedPlate(sketch:SketchDocument,intent:RoundedPlateIntent):RoundedPlateResult;
+
+/** Independent corner radii, each bound to a persistent authored vertex ID. */
+export const VARIABLE_ROUNDED_PLATE_VERSION:2;
+export interface VariableRoundedPlateIntent {
+  version:2;id:string;
+  edgeIds:[string,string,string,string];holeIds:string[];
+  cornerRadii:Array<{vertexId:string;radiusMm:number}>;
+}
+export type VariableRoundedPlateProfile=Omit<RoundedPlateProfile,'radiusMm'> & {
+  cornerRadiiMm:Record<string,number>;
+};
+export type VariableRoundedPlateResult=Omit<RoundedPlateResult,
+  'version'|'solverKind'|'geometry'> & {
+  version:2;solverKind:'constructive_independent_right_angle_fillets_only';
+  geometry:VariableRoundedPlateProfile|null;
+};
+export type VariableRoundedPlateHandle={
+  kind:'corner_radius';id:string;sourceVertexId:string;
+  position:CurvePoint;valueMm:number;
+};
+export interface VariableRoundedPlateInspection {
+  version:2;sketchSignature:string;intentSignature:string;
+  status:VariableRoundedPlateResult['status'];
+  diagnostics:VariableRoundedPlateResult['diagnostics'];
+  previewOnly:true;geometry:VariableRoundedPlateProfile|null;
+  handles:VariableRoundedPlateHandle[];
+}
+export interface VariableRoundedPlateDrag {
+  version:2;handleId:string;target:CurvePoint;
+  expectedSketchSignature:string;expectedIntentSignature:string;
+}
+export interface VariableRoundedPlateEdit {
+  version:2;
+  status:VariableRoundedPlateResult['status']|'rejected';
+  sketch:SketchDocument|null;intent:VariableRoundedPlateIntent|null;
+  geometry:VariableRoundedPlateProfile|null;
+  diagnostics:VariableRoundedPlateResult['diagnostics'];
+  sourceSketchSignature:string;sourceIntentSignature:string;
+  previewOnly:true;
+  projection:{target:CurvePoint;appliedPoint:CurvePoint;deviationMm:number}|null;
+}
+export function createVariableRoundedPlateIntent(source:unknown):VariableRoundedPlateIntent;
+export function serializeVariableRoundedPlateIntent(source:VariableRoundedPlateIntent):string;
+export function parseVariableRoundedPlateIntent(json:string):VariableRoundedPlateIntent;
+export function editVariableRoundedPlateRadius(source:VariableRoundedPlateIntent,
+  vertexId:string,radiusMm:number):VariableRoundedPlateIntent;
+export function solveVariableRoundedPlate(sketch:SketchDocument,
+  intent:VariableRoundedPlateIntent):VariableRoundedPlateResult;
+export function inspectVariableRoundedPlateHandles(sketch:SketchDocument,
+  intent:VariableRoundedPlateIntent):VariableRoundedPlateInspection;
+export function dragVariableRoundedPlateCorner(sketch:SketchDocument,
+  intent:VariableRoundedPlateIntent,request:VariableRoundedPlateDrag):VariableRoundedPlateEdit;
