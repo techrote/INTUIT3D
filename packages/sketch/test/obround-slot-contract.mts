@@ -12,5 +12,5 @@ if(result.kind==='accepted'){
   void profileId;void exact;
 }
 // @ts-expect-error a slot does not claim production native geometry
-const bad:true=state.previewOnly;
+const bad:false=state.previewOnly;
 void bad;
