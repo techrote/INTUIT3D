@@ -47,6 +47,25 @@ class PerimeterNotchNativeTest(unittest.TestCase):
                 self.assertEqual(len(data),r['stepBytes'])
                 self.assertEqual(hashlib.sha256(data).hexdigest(),r['stepSha256'])
             self.assertTrue((root/'120mm-8mm.request.json').exists())
+            # Material old-provider failure: the whole cutter exceeds the
+            # plate, so v2 incorrectly expects its entire volume removed.
+            sys.path.insert(0,str(ROOT/'native'))
+            from analytic_profile_cut import execute
+            original=json.loads((root/'120mm-8mm.request.json').read_text())
+            original['protocol']='intuit3d/kernel/profile-body-cut-v2'
+            rejected=root/'legacy-incorrect.step'
+            with self.assertRaisesRegex(ValueError,'full intended area'):
+                execute(original,rejected)
+            self.assertFalse(rejected.exists())
+            # A tool completely outside the body must never publish STEP.
+            outside=json.loads((root/'120mm-8mm.request.json').read_text())
+            for edge in outside['cutTool']['profile']['boundary']:
+                edge['start']['x']+=100
+                edge['end']['x']+=100
+            rejected=root/'outside.step'
+            with self.assertRaisesRegex(ValueError,'partially cross plate perimeter'):
+                execute(outside,rejected)
+            self.assertFalse(rejected.exists())
 
 
 if __name__=='__main__':
