@@ -19,6 +19,10 @@
     "./local-occt8-provider": {
       "types": "./src/local-occt8-provider.d.mts",
       "node": "./src/local-occt8-provider.mjs"
+    },
+    "./local-arc-profile-provider": {
+      "types": "./src/local-arc-profile-provider.d.mts",
+      "node": "./src/local-arc-profile-provider.mjs"
     }
   },
   "scripts": {
