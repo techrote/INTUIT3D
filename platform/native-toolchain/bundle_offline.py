@@ -22,7 +22,7 @@ import tempfile
 from qualify import COMMIT, VERSION, TOOLKITS, compare_geometry, verify_prefix
 
 BRIDGE_FILES = ("occt8_bridge.py", "plate_envelope.py", "protocol.py",
-                "process_supervision.py", "occt8_cut_contract.py")
+                "process_supervision.py")
 
 
 class BundleError(RuntimeError):
@@ -76,6 +76,14 @@ def copy_bridge(kernel: Path, target: Path) -> None:
         source = kernel / "native" / name
         require(source.is_file(), f"missing Kernel bridge dependency: {source}")
         shutil.copy2(source, target / name)
+    # The bounded #158 first-foundation source predates the generalized
+    # occt8_cut_contract module. Newer #67 imports it for mixed-cut requests.
+    # Bundle it only when the exact checked-out bridge actually requires it.
+    cut_contract = kernel / "native/occt8_cut_contract.py"
+    bridge_source = (kernel / "native/occt8_bridge.py").read_text()
+    if "from occt8_cut_contract import" in bridge_source:
+        require(cut_contract.is_file(), "missing required newer Kernel cut contract")
+        shutil.copy2(cut_contract, target / cut_contract.name)
     oracle = kernel / "native/occt8/part21_oracle.py"
     require(oracle.is_file(), "missing Kernel Part 21 plate-subset reader")
     (target / "occt8").mkdir()
