@@ -67,6 +67,16 @@ if(polarHoles.kind==='committed') {
   void invalidated;
 }
 
+const resizedLayout=runtime.resizePlateHoleLayout(session,{
+  sketchFeatureId:'sketch.plate',eventId:'layout.contract.resize',
+  expectedRevision:session.document.revision,admission:'require_admissible',
+  holeIds:['holeA','holeB'],pivotXmm:60,pivotYmm:40,
+  scaleX:0.8,scaleY:1,radiusScale:0.75,
+});
+if(resizedLayout.kind==='committed'){
+  const stableIds:readonly string[]=resizedLayout.invalidation.invalidatedFeatureIds;
+  void stableIds;
+}
 const delta:WorkflowInvalidation=runtime.diff(session,session);
 const direct:WorkflowInvalidation=diffWorkflowPlans(model.planProject(session.document),model.planProject(session.document));
 const exact:false=delta.exactReuseAllowed;

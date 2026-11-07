@@ -4,7 +4,7 @@
  * Services MUST be accepted public package modules; no parallel CAD policy here.
  */
 import {diffWorkflowPlans} from './invalidation.mjs';
-import {applyPlateHoleOperations,planRectangularHoleArray,planCircularHolePattern,planRigidHoleTransform} from './hole-edit.mjs';
+import {applyPlateHoleOperations,planRectangularHoleArray,planCircularHolePattern,planRigidHoleTransform,planHoleLayoutResize} from './hole-edit.mjs';
 export {WORKFLOW_INVALIDATION_FORMAT, WORKFLOW_INVALIDATION_VERSION, diffWorkflowPlans} from './invalidation.mjs';
 
 export const WORKFLOW_RUNTIME_FORMAT = 'intuit3d.workflow-runtime-evaluation';
@@ -346,6 +346,28 @@ export function createWorkflowRuntime(services) {
     return editSketchConstraints(previous,{sketchFeatureId,eventId,expectedRevision,admission,edits});
   }
 
+  /**
+   * Resize a selected hole layout about an explicit datum, optionally changing
+   * every selected bore radius in the same one-event INTENT transaction.
+   * Uses solved SKETCH values and standard profile admission; invalid edits
+   * remain uncommitted unless the caller explicitly preserves unresolved intent.
+   */
+  function resizePlateHoleLayout(history,request){
+    const {sketchFeatureId,eventId,expectedRevision,admission='require_admissible'}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if(!Number.isSafeInteger(expectedRevision)||expectedRevision!==previous.document.revision)
+      throw new Error('runtime layout resize: stale or missing expectedRevision');
+    if(typeof sketchFeatureId!=='string'||!sketchFeatureId)
+      throw new TypeError('runtime layout resize: authoritative sketch feature required');
+    const entry=model.planProject(previous.document).features.find(x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      throw new TypeError('runtime layout resize: authoritative sketch feature required');
+    const doc=sketch.validateSketch(entry.feature.payload.sketch);
+    const solution=sketch.solveSketch(doc);
+    const edits=planHoleLayoutResize(doc,solution,request);
+    return editSketchConstraints(previous,{sketchFeatureId,eventId,expectedRevision,admission,edits});
+  }
+
   /** Explicitly delegated, revision-fenced authoritative commands. */
   function commit(history, events, expectedRevision = history.document.revision) {
     return transactions.commitUndoableTransaction(history, events, expectedRevision);
@@ -366,5 +388,5 @@ export function createWorkflowRuntime(services) {
   function reopen(serialized) {
     return archive.deserializeModelArchive(serialized).history;
   }
-  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, undo, redo, save, reopen});
+  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, undo, redo, save, reopen});
 }
