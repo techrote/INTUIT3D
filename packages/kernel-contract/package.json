@@ -11,11 +11,61 @@
     "./local-plate-provider": {
       "types": "./src/local-plate-provider.d.mts",
       "node": "./src/local-plate-provider.mjs"
+    },
+    "./occt8-v1": {
+      "types": "./src/occt8-v1.d.mts",
+      "default": "./src/occt8-v1.mjs"
+    },
+    "./local-occt8-provider": {
+      "types": "./src/local-occt8-provider.d.mts",
+      "node": "./src/local-occt8-provider.mjs"
+    },
+    "./local-arc-profile-provider": {
+      "types": "./src/local-arc-profile-provider.d.mts",
+      "node": "./src/local-arc-profile-provider.mjs"
+    },
+    "./runtime-profile-provider": {
+      "types": "./src/runtime-profile-provider.d.mts",
+      "node": "./src/runtime-profile-provider.mjs"
+    },
+    "./local-body-cut-provider": {
+      "types": "./src/local-body-cut-provider.d.mts",
+      "node": "./src/local-body-cut-provider.mjs"
+    },
+    "./runtime-body-cut-provider": {
+      "types": "./src/runtime-body-cut-provider.d.mts",
+      "node": "./src/runtime-body-cut-provider.mjs"
+    },
+    "./runtime-body-cut-chain-provider": {
+      "types": "./src/runtime-body-cut-chain-provider.d.mts",
+      "node": "./src/runtime-body-cut-chain-provider.mjs"
+    },
+    "./occt8-mixed-cut-v2": {
+      "types": "./src/occt8-mixed-cut-v2.d.mts",
+      "default": "./src/occt8-mixed-cut-v2.mjs"
+    },
+    "./local-occt8-mixed-cut-provider": {
+      "types": "./src/local-occt8-mixed-cut-provider.d.mts",
+      "node": "./src/local-occt8-mixed-cut-provider.mjs"
+    },
+    "./occt8-cut-v1": {
+      "types": "./src/occt8-cut-v1.d.mts",
+      "default": "./src/occt8-cut-v1.mjs"
+    },
+    "./local-occt8-cut-provider": {
+      "types": "./src/local-occt8-cut-provider.d.mts",
+      "node": "./src/local-occt8-cut-provider.mjs"
+    },
+    "./runtime-occt8-cut-provider": {
+      "types": "./src/runtime-occt8-cut-provider.d.mts",
+      "node": "./src/runtime-occt8-cut-provider.mjs"
     }
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 --types node test/type-contract.mts"
+    "typecheck": "tsc --noEmit --allowImportingTsExtensions --strict --module nodenext --moduleResolution nodenext --target es2022 --types node test/type-contract.mts"
   },
-  "engines": {"node": ">=22"}
+  "engines": {
+    "node": ">=22"
+  }
 }

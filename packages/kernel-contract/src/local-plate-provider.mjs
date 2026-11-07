@@ -7,8 +7,13 @@ import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {assessPlateResponse, KernelContractError, parsePlateRequest} from './plate-v1.mjs';
+import {assessOcct8PlateResponse} from './occt8-v1.mjs';
+import {parseOcct8CutRequest, assessOcct8CutResponse} from './occt8-cut-v1.mjs';
+import {parseOcct8MixedCutRequest, assessOcct8MixedCutResponse}
+  from './occt8-mixed-cut-v2.mjs';
 
 const DEFAULT_SUPERVISOR = fileURLToPath(new URL('../../../native/run_plate.py', import.meta.url));
+const DEFAULT_OCCT8_SUPERVISOR = fileURLToPath(new URL('../../../native/occt8_bridge.py', import.meta.url));
 const MAX_REPLY_BYTES = 65536;
 const MAX_STEP_BYTES = 32 * 1024 * 1024;
 
@@ -26,15 +31,65 @@ function revisionOf(readCurrentRevision) {
 // Server/desktop Node only. Local trusted files; NOT a hostile-process security sandbox.
 // Native supervisor performs real OCP Boolean construction and separate same-engine STEP
 // readback. This layer fences semantic revision and alone publishes the export destination.
-export async function runExperimentalPlate(requestInput, {
+// Both backends share one revision-fenced publication path. The pinned 8.0.1
+// path remains experimental until its actual C++ binary and STEP consumer are qualified.
+export async function runExperimentalPlate(requestInput, options = {}) {
+  return runLocalPlate(requestInput, {...options, backendKind:'ocp'});
+}
+
+export async function runPinnedOcct8Plate(requestInput, {
+  workerExecutable, part21StepAudit = true, crossVersionStepAudit = false,
+  nativeSupervisor = DEFAULT_OCCT8_SUPERVISOR, ...options
+} = {}) {
+  if (typeof workerExecutable !== 'string' || !workerExecutable.trim())
+    throw new KernelContractError('pinned OCCT 8.0.1 workerExecutable path is required');
+  if (typeof part21StepAudit !== 'boolean' || typeof crossVersionStepAudit !== 'boolean')
+    throw new KernelContractError('OCCT8 STEP audit options must be boolean');
+  return runLocalPlate(requestInput, {...options, nativeSupervisor, backendKind:'occt8',
+    workerExecutable:resolve(workerExecutable), part21StepAudit, crossVersionStepAudit});
+}
+
+// Explicitly ordered rectangular C++ cuts, with no fallback to OCP or a mesh.
+// This shares cancellation, publication and revision fences with the plate API.
+export async function runPinnedOcct8CutChain(requestInput, {
+  workerExecutable, nativeSupervisor = DEFAULT_OCCT8_SUPERVISOR, ...options
+} = {}) {
+  if (typeof workerExecutable !== 'string' || !workerExecutable.trim())
+    throw new KernelContractError('pinned C++ workerExecutable path is required');
+  return runLocalPlate(requestInput, {...options, nativeSupervisor, backendKind:'occt8',
+    requestKind:'cut-chain', workerExecutable:resolve(workerExecutable),
+    part21StepAudit:false, crossVersionStepAudit:false});
+}
+
+// Additive mixed-profile C++ operation: round/rectangular blind and through
+// pockets remain experimental until the exact C++ binary and STEP are tested.
+export async function runPinnedOcct8MixedCutChain(requestInput, {
+  workerExecutable, nativeSupervisor = DEFAULT_OCCT8_SUPERVISOR, ...options
+} = {}) {
+  if (typeof workerExecutable !== 'string' || !workerExecutable.trim())
+    throw new KernelContractError('pinned C++ workerExecutable path is required');
+  return runLocalPlate(requestInput, {...options, nativeSupervisor, backendKind:'occt8',
+    requestKind:'mixed-cut-chain', workerExecutable:resolve(workerExecutable),
+    part21StepAudit:false, crossVersionStepAudit:false});
+}
+
+async function runLocalPlate(requestInput, {
   readCurrentRevision,
   pythonExecutable = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3'),
   nativeSupervisor = DEFAULT_SUPERVISOR,
   stepOutput,
   timeoutMs = 25000,
   signal,
+  backendKind = 'ocp',
+  requestKind = 'plate',
+  workerExecutable,
+  part21StepAudit = true,
+  crossVersionStepAudit = false,
 } = {}) {
-  const request = parsePlateRequest(requestInput);
+  const request = requestKind === 'cut-chain' ?
+    parseOcct8CutRequest(requestInput) :
+    requestKind === 'mixed-cut-chain' ?
+      parseOcct8MixedCutRequest(requestInput) : parsePlateRequest(requestInput);
   if (typeof readCurrentRevision !== 'function')
     throw new KernelContractError('readCurrentRevision callback is mandatory');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 600000)
@@ -79,8 +134,16 @@ export async function runExperimentalPlate(requestInput, {
   };
   const onAbort = () => { aborted = true; stop(); };
   try {
-    const args = [nativeSupervisor, '--timeout-seconds', String(timeoutMs / 1000)];
-    if (request.exportStep) args.push('--step-output', privateStep);
+    const args = backendKind === 'occt8'
+      ? [nativeSupervisor, '--worker', workerExecutable, '--timeout', String(timeoutMs / 1000)]
+      : [nativeSupervisor, '--timeout-seconds', String(timeoutMs / 1000)];
+    if (request.exportStep) {
+      args.push('--step-output', privateStep);
+      if (backendKind === 'occt8' && part21StepAudit)
+        args.push('--part21-step-audit');
+      if (backendKind === 'occt8' && crossVersionStepAudit)
+        args.push('--cross-version-step-audit');
+    }
     const result = await new Promise((finish) => {
       let stdoutBytes = 0;
       const chunks = [];
@@ -125,9 +188,16 @@ export async function runExperimentalPlate(requestInput, {
       return unresolved(request, 'requires_reconciliation');
     let assessment;
     try {
-      assessment = assessPlateResponse(request, raw, {
-        currentRevision:revisionOf(readCurrentRevision),
-      });
+      assessment = (requestKind === 'cut-chain' ? assessOcct8CutResponse :
+        requestKind === 'mixed-cut-chain' ? assessOcct8MixedCutResponse :
+        backendKind === 'occt8' ? assessOcct8PlateResponse : assessPlateResponse)(
+        request, raw, {currentRevision:revisionOf(readCurrentRevision)});
+      if (backendKind === 'occt8' && assessment.kind === 'experimental_report' &&
+          request.exportStep &&
+          (raw.stepVerification !== (crossVersionStepAudit
+            ? 'occt-7.9.3.1-separate-process' : 'occt-8.0.1-same-engine') ||
+           (part21StepAudit && raw.part21Audit?.kind !== 'part21-plate-structural-v1')))
+        throw new KernelContractError('requested OCCT8 STEP verification evidence absent');
     } catch { return unresolved(request, 'requires_reconciliation'); }
     if (assessment.kind !== 'experimental_report')
       return {...assessment, artifact:null};
@@ -151,6 +221,10 @@ export async function runExperimentalPlate(requestInput, {
       publishOperation = 'read-private-step';
       const bytes = await fs.readFile(privateStep);
       const sha256 = createHash('sha256').update(bytes).digest('hex');
+      // The C++ bridge reports the digest of its independently checked staged
+      // bytes. Refuse a substituted transport artifact before any publication.
+      if (backendKind === 'occt8' && raw.stepSha256 !== sha256)
+        return unresolved(request, 'requires_reconciliation', 'native_step_digest_mismatch');
       publishOperation = 'mkdir-output-parent';
       await fs.mkdir(dirname(destination), {recursive:true});
       stage = join(dirname(destination), `.intuit3d-${randomUUID()}.tmp`);
@@ -176,7 +250,9 @@ export async function runExperimentalPlate(requestInput, {
       }
       return {...assessment, observed, artifact:{
         path:destination, bytes:bytes.length, sha256,
-        verification:'same_engine_step_readback',
+        verification:backendKind === 'occt8' ?
+          (part21StepAudit ? 'occt8_part21_plate_subset' : 'occt8_same_engine_step_readback') :
+          'same_engine_step_readback',
       }};
     } catch (error) {
       return unresolved(request, 'requires_reconciliation', 'publication_' + publishOperation + '_' + (error?.code || error?.name || 'unknown'));
