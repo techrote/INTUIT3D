@@ -120,6 +120,77 @@ async function main(){
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=enter-model-runtime]'))"),'model editor launch');
   check(await evaluate("(() => {document.querySelector('[data-testid=enter-model-runtime]').click();return true})()"),'cannot enter model editor');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-export]'))"),'native panel');
+  // Real Chromium click/keyboard + archive roundtrip of authoritative
+  // INTENT feature tombstones. No retired solid may remain on screen as current.
+  const pointerClick=async(testid)=>{
+    const pos=await evaluate(`(() => {
+      const el=document.querySelector('[data-testid="${testid}"]');
+      if(!el||el.disabled)return null;
+      el.scrollIntoView({block:'center',behavior:'instant'});
+      const rect=el.getBoundingClientRect();
+      return {x:rect.left+rect.width/2,y:rect.top+rect.height/2};
+    })()`);
+    check(pos&&pos.y>0&&pos.y<900,'cannot target pointer control '+testid);
+    await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:pos.x,y:pos.y});
+    await send('Input.dispatchMouseEvent',{type:'mousePressed',x:pos.x,y:pos.y,button:'left',clickCount:1});
+    await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:pos.x,y:pos.y,button:'left',clickCount:1});
+  };
+  await pointerClick('runtime-feature-plate');
+  await pointerClick('runtime-feature-remove');
+  await eventually(()=>evaluate(
+    "Boolean(document.querySelector('[data-testid=runtime-removed-extrusion]')) && "+
+    "Boolean(document.querySelector('[data-testid=runtime-empty]')) &&
+    "document.querySelector('[data-testid=runtime-feature-plate]')?.textContent?.includes('tombstone')"
+  ),'retired extrusion must not display cached geometry');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-export]')?.disabled"),
+    'removed extrusion left native STEP action available');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent!=='pending_exact_provider'"),
+    'orphaned cut was falsely shown as physically evaluated');
+  await screenshot('native-00-lifecycle-pending-cut.png');
+  check(await evaluate("(() => {window.__featureArchiveBlobs=[];const prior=URL.createObjectURL.bind(URL);URL.createObjectURL=(blob)=>{window.__featureArchiveBlobs.push(blob);return prior(blob)};return true})()"),
+    'cannot intercept real tombstone archive download');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Save model archive');b?.click();return !!b})()"),
+    'cannot save deleted extrusion from browser');
+  await eventually(()=>evaluate("window.__featureArchiveBlobs.length===1"),'tombstone archive download');
+  const removedArchive=await evaluate("(async()=>await window.__featureArchiveBlobs[0].text())()");
+  const removedPath=resolve(artifacts,'native-browser-removed-extrusion.i3d-model.json');
+  writeFileSync(removedPath,removedArchive);
+  const tree=await send('DOM.getDocument',{depth:1});
+  const uploader=await send('DOM.querySelector',{
+    nodeId:tree.root.nodeId,selector:'input[aria-label="Open INTUIT model archive"]'
+  });
+  check(uploader.nodeId>0,'model archive upload field absent');
+  await send('DOM.setFileInputFiles',{nodeId:uploader.nodeId,files:[removedPath]});
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'deleted extrusion archive not offered for review');
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-import-review] button:last-child').click();return true})()"),
+    'cannot reopen deleted extrusion');
+  await eventually(()=>evaluate(
+    "Boolean(document.querySelector('[data-testid=runtime-removed-extrusion]')) && "+
+    "Boolean(document.querySelector('[data-testid=runtime-feature-restore]'))"
+  ),'tombstone lost on save/reopen');
+  await screenshot('native-00-lifecycle-reopened.png');
+  await pointerClick('runtime-feature-restore');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-boundary]')) &&
+    document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'restoring exact original extrusion ID did not restore valid preview');
+  await pointerClick('runtime-feature-cascade-start');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-feature-cascade-confirmation]'))"),
+    'cascade lacks explicit confirmation');
+  await pointerClick('runtime-feature-cascade-confirm');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid=runtime-feature-restore]').length===1 && "+
+    "document.querySelector('[data-testid=runtime-feature-cut]')?.textContent?.includes('tombstone')"),
+    'cascade did not retire both linked features');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-boundary]')"),
+    'cascaded cut retained visible current plate geometry');
+  // Actual browser keyboard undo reverses the entire multi-event deletion.
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-plate]')?.textContent?.includes('preview_only') &&
+    document.querySelector('[data-testid=runtime-feature-cut]')?.textContent?.includes('pending_exact_provider')"),
+    'keyboard undo did not restore extrusion and cut together');
+  await screenshot('native-00-lifecycle-undo-cascade.png');
+
   // Real clicks/keyboard edit admitted RUNTIME constraints, then a physical
   // Chromium pointer drag commits one semantic hole-center transaction.
   check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-hole-holeA-diameter]');e.focus();e.select();return document.activeElement===e})()"),
