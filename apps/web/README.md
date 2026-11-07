@@ -261,3 +261,51 @@ Tests: `src/importReview.test.ts` checks comparisons, signed zero, reference/
 chronology changes and stale read tickets. The Chromium handle smoke test
 exercises a real File-input replacement, cancel, invalid imported preview and
 no-undo acceptance. Neither test confers precision CAD or human acceptance.
+
+## Model-backed experimental native STEP (WORKBENCH #64)
+
+Model mode (not the legacy preview sandbox) offers an **opt-in** local-only
+native STEP action. It consumes the versioned browser client from RUNTIME
+PR #69, the authoritative INTENT model archive and the SKETCH-admitted profile.
+It does not install a second browser-side CAD/Boolean engine.
+
+On a host with the pinned experimental OCP Python environment:
+
+```sh
+npm ci
+python3 -m pip install -r native/requirements-prototype.txt
+npm run dev:experimental-native-host --workspace @intuit3d/web
+# second terminal
+npm run dev --workspace @intuit3d/web
+```
+
+Open `http://127.0.0.1:5173`, enter **Model-backed CAD**, and copy the
+`LOCAL_PROVIDER_URL` and `LOCAL_PAIRING_TOKEN` displayed in the first
+terminal into the native section of the inspector. The session token is held
+in React memory only, is not saved to the model archive or localStorage, and
+is invalid after the host restarts. Click **Build and download experimental
+STEP**. The provider runs outside Vite; do not import native Node modules in
+browser source. The server binds loopback and permits only the configured
+local Origin. `INTUIT3D_WEB_ORIGIN` can specify a different Vite origin.
+
+The UI shows progress, cancellation and explicit unresolved error states.
+Editing the model, undo/redo, opening or replacing an archive, or changing the
+pairing aborts the pending request. The current canonical model archive is
+compared again immediately before verified bytes are published by the browser.
+No historical STEP is shown as current. Unsupported sketches cannot request
+a native build. STEP bytes are emitted only after RUNTIME's browser-client
+SHA-256/length verification.
+
+**Evidence boundary:** the actual provider is experimental OCP 7.9.3.1,
+with same-engine STEP readback only. No production OCCT 8.0.1, independent
+STEP external consumer, authoritative in-viewport B-rep, or human usability
+acceptance is implied. The 3D viewport remains clearly labelled tessellated
+preview even after a physical STEP download.
+
+`npm run test:browser:handles --workspace @intuit3d/web` also runs the
+new Chromium `model-native-smoke.mjs` regression: a real React click and
+binary browser download against an **explicit synthetic HTTP responder**,
+plus cancellation after a model edit, fresh revised export and three
+screenshots. It does **not** qualify actual OCCT geometry. Actual OCP evidence
+requires running the above local host and independently checking STEP in a
+separate CAD implementation.
