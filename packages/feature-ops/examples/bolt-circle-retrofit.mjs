@@ -84,7 +84,7 @@ if(originalSolution.status!=='solved'||
  throw Error('undo did not restore original hole radius');
 const redoneResize=runtime.redo(undoneResize,['redo.resize']);
 const modified=editExtrudeThickness(redoneResize,{
- eventId:'bracket.depth.12',expectedRevision:redo.document.revision,featureId:'extrude.bracket',thicknessMm:12
+ eventId:'bracket.depth.12',expectedRevision:redoneResize.document.revision,featureId:'extrude.bracket',thicknessMm:12
 },{runtime,model});
 const reopened=runtime.reopen(runtime.save(modified.history));
 const features=model.featuresOf(reopened.document);
