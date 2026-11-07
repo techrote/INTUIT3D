@@ -13,6 +13,8 @@ import {parseOcct8MixedCutRequest, assessOcct8MixedCutResponse}
   from './occt8-mixed-cut-v2.mjs';
 import {parseOcct8LProfileRequest, assessOcct8LProfileResponse}
   from './occt8-l-profile-v3.mjs';
+import {parseOcct8OrthogonalProfileRequest, assessOcct8OrthogonalResponse}
+  from './occt8-orthogonal-profile-v4.mjs';
 
 const DEFAULT_SUPERVISOR = fileURLToPath(new URL('../../../native/run_plate.py', import.meta.url));
 const DEFAULT_OCCT8_SUPERVISOR = fileURLToPath(new URL('../../../native/occt8_bridge.py', import.meta.url));
@@ -87,6 +89,18 @@ export async function runPinnedOcct8LProfileChain(requestInput, {
     part21StepAudit:false, crossVersionStepAudit:false});
 }
 
+// A selected, arbitrarily stepped rectilinear SKETCH contour with ordered
+// Boolean cuts, never translated into a synthetic plate or an inferred L.
+export async function runPinnedOcct8OrthogonalProfileChain(requestInput, {
+  workerExecutable, nativeSupervisor = DEFAULT_OCCT8_SUPERVISOR, ...options
+} = {}) {
+  if (typeof workerExecutable !== 'string' || !workerExecutable.trim())
+    throw new KernelContractError('pinned C++ workerExecutable path is required');
+  return runLocalPlate(requestInput, {...options, nativeSupervisor, backendKind:'occt8',
+    requestKind:'orthogonal-profile-chain', workerExecutable:resolve(workerExecutable),
+    part21StepAudit:false, crossVersionStepAudit:false});
+}
+
 async function runLocalPlate(requestInput, {
   readCurrentRevision,
   pythonExecutable = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3'),
@@ -105,7 +119,9 @@ async function runLocalPlate(requestInput, {
     requestKind === 'mixed-cut-chain' ?
       parseOcct8MixedCutRequest(requestInput) :
     requestKind === 'l-profile-chain' ?
-      parseOcct8LProfileRequest(requestInput) : parsePlateRequest(requestInput);
+      parseOcct8LProfileRequest(requestInput) :
+    requestKind === 'orthogonal-profile-chain' ?
+      parseOcct8OrthogonalProfileRequest(requestInput) : parsePlateRequest(requestInput);
   if (typeof readCurrentRevision !== 'function')
     throw new KernelContractError('readCurrentRevision callback is mandatory');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 600000)
@@ -207,6 +223,7 @@ async function runLocalPlate(requestInput, {
       assessment = (requestKind === 'cut-chain' ? assessOcct8CutResponse :
         requestKind === 'mixed-cut-chain' ? assessOcct8MixedCutResponse :
         requestKind === 'l-profile-chain' ? assessOcct8LProfileResponse :
+        requestKind === 'orthogonal-profile-chain' ? assessOcct8OrthogonalResponse :
         backendKind === 'occt8' ? assessOcct8PlateResponse : assessPlateResponse)(
         request, raw, {currentRevision:revisionOf(readCurrentRevision)});
       if (backendKind === 'occt8' && assessment.kind === 'experimental_report' &&
