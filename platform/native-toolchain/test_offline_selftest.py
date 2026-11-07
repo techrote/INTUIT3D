@@ -55,6 +55,39 @@ class OfflineReplayTests(unittest.TestCase):
         with self.assertRaisesRegex(replay.ReplayError, "validated solid"):
             replay.validate_response(self.request, altered, self.step, self.volume)
 
+    def test_real_plate_edit_request_changes_mechanical_dimensions(self):
+        # The actual pinned KERNEL-001 plate-v1 fixture has centred holes.
+        original = {
+            "protocol": "intuit3d/kernel/plate-v1", "units": "mm",
+            "requestId": "platform.plate.8mm", "featureId": "plate.fixture",
+            "revision": 8, "exportStep": True,
+            "plate": {"width": 120, "depth": 80, "thickness": 8,
+                      "holes": [{"x": -30, "y": 0, "radius": 6},
+                                {"x": 30, "y": 0, "radius": 6}]},
+        }
+        snapshot = json.dumps(original, sort_keys=True)
+        edited = replay.dimension_edit_request(original)
+        self.assertEqual(json.dumps(original, sort_keys=True), snapshot)
+        self.assertEqual(edited["plate"]["width"], 150)
+        self.assertEqual(edited["plate"]["holes"][0]["radius"], 7)
+        self.assertEqual(edited["plate"]["holes"][1]["x"], 35)
+        self.assertEqual(edited["revision"], 9)
+        self.assertEqual(edited["featureId"], original["featureId"])
+        self.assertNotEqual(replay.analytic_volume(original),
+                            replay.analytic_volume(edited))
+        restored = json.loads(snapshot)
+        self.assertEqual(replay.analytic_volume(original),
+                         replay.analytic_volume(restored))
+
+    def test_real_plate_edit_refuses_non_pinned_profile(self):
+        unknown = {"protocol": "intuit3d/kernel/plate-v1", "units": "mm",
+                   "revision": 8, "requestId": "plate",
+                   "plate": {"width": 120, "depth": 80, "thickness": 8,
+                             "holes": [{"x": -29, "y": 0, "radius": 6},
+                                       {"x": 30, "y": 0, "radius": 6}]}}
+        with self.assertRaisesRegex(replay.ReplayError, "pinned KERNEL-001"):
+            replay.dimension_edit_request(unknown)
+
     def test_no_mock_can_claim_full_offline_replay(self):
         root = Path(self.work.name)
         (root / "verify.py").write_text("raise SystemExit(2)\n")
