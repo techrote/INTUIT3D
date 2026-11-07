@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  editModelDimension, editModelHole, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelFeature,
+  editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelFeature,
   newModelPlateSession, previewModelProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
 } from './runtimeSession.ts';
@@ -155,4 +155,32 @@ test('authored timeline controls move stable features without rewiring dependenc
   assert.deepEqual(inspectModelSession(undoModelSession(moved.history)).authoredOrder,original.authoredOrder);
   assert.deepEqual(inspectModelSession(reopenModelSession(serializeModelSession(moved.history))).authoredOrder,after.authoredOrder);
   assert.throws(()=>moveModelFeature(h,'sketch.plate','earlier'),/No adjacent/);
+});
+
+test('direct sketch edge/diameter edits commit via accepted model contracts, refuse invalid drags and replay',()=>{
+  const initial=newModelPlateSession('workbench.direct.dimension');
+  const width=editModelSketchHandle(initial,'width',132);
+  assert.equal(width.kind,'committed');
+  if(width.kind!=='committed')return;
+  assert.equal(width.history.document.revision,initial.document.revision+1);
+  assert.deepEqual(width.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  assert.equal(modelDimensionValues(width.history).width,132);
+  const depth=editModelSketchHandle(width.history,'depth',85);
+  assert.equal(depth.kind,'committed');
+  if(depth.kind!=='committed')return;
+  const circle=editModelSketchHandle(depth.history,'holeB.diameter',16);
+  assert.equal(circle.kind,'committed');
+  if(circle.kind!=='committed')return;
+  assert.equal(modelHoleValues(circle.history).holeB.diameter,16);
+  assert.equal(modelHoleValues(circle.history).holeA.diameter,12);
+  assert.equal(inspectModelSession(circle.history).features.find(f=>f.featureId==='cut')?.status,'pending_exact_provider');
+  const reopened=reopenModelSession(serializeModelSession(circle.history));
+  assert.equal(modelDimensionValues(reopened).width,132);
+  assert.equal(modelDimensionValues(reopened).depth,85);
+  assert.equal(modelHoleValues(reopened).holeB.diameter,16);
+  assert.equal(modelHoleValues(undoModelSession(reopened)).holeB.diameter,12);
+  const refused=editModelSketchHandle(initial,'width',90);
+  assert.equal(refused.kind,'refused');
+  assert.equal(serializeModelSession(initial),serializeModelSession(newModelPlateSession('workbench.direct.dimension')));
+  assert.equal(editModelSketchHandle(initial,'holeA.diameter',100).kind,'refused');
 });
