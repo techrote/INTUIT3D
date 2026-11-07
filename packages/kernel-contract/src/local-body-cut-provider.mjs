@@ -11,6 +11,7 @@ import {validateArcExtrudeRequest} from './local-arc-profile-provider.mjs';
 const WORKER=resolve(dirname(fileURLToPath(import.meta.url)),'../../../native/analytic_profile_cut.py');
 const FORMAT='intuit3d/kernel/profile-body-cut-v1';
 const POCKET_FORMAT='intuit3d/kernel/profile-body-cut-v2';
+const CHAIN_FORMAT='intuit3d/kernel/profile-body-cut-chain-v3';
 const ID=/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
 const MAX_STEP=32*1024*1024,MAX_IPC=128*1024;
 const ensure=(ok,reason)=>{if(!ok)throw new TypeError('body-cut provider: '+reason)};
@@ -18,11 +19,55 @@ const near=(a,b)=>typeof a==='number'&&Number.isFinite(a)&&
   Math.abs(a-b)<=Math.max(1e-7,Math.abs(b)*1e-10);
 const failure=(request,code,reason)=>Object.freeze({kind:'unresolved',code,reason,
   requestId:request.requestId,cutFeatureId:request.cutFeatureId,
-  targetBodyId:request.targetBodyId,revision:request.revision,artifact:null});
+  targetBodyId:request.targetBodyId,revision:request.revision,
+  ...(request.protocol===CHAIN_FORMAT?{cutFeatureIds:request.cuts.map(c=>c.cutFeatureId)}:{}),
+  artifact:null});
+
+/** An ordered, independently authored set of physical cuts on one semantic body.
+ * Full analytic mass must be removed by every cut; the native provider rejects
+ * overlapping/escaping tools rather than approving a false cumulative volume.
+ */
+function validateCutChainRequest(q){
+  const fields=['protocol','requestId','targetBodyId','revision','units',
+    'baseExtrude','cuts','exportStep'];
+  ensure(Object.keys(q).sort().join(',')===fields.sort().join(','),
+    'invalid cut-chain schema');
+  ensure(q.units==='mm'&&ID.test(q.requestId)&&ID.test(q.targetBodyId)&&
+    Number.isSafeInteger(q.revision)&&q.revision>=0&&
+    typeof q.exportStep==='boolean','invalid cut-chain identity, units or revision');
+  validateArcExtrudeRequest(q.baseExtrude);
+  ensure(q.baseExtrude.revision===q.revision&&!q.baseExtrude.exportStep,
+    'stale or separately exported base extrusion');
+  ensure(Array.isArray(q.cuts)&&q.cuts.length>=1&&q.cuts.length<=16,
+    'one to sixteen authored cutting features required');
+  const ids=new Set([q.requestId,q.baseExtrude.requestId,q.baseExtrude.featureId]);
+  for(const [i,cut] of q.cuts.entries()){
+    ensure(cut!==null&&typeof cut==='object'&&!Array.isArray(cut)&&
+      Object.keys(cut).sort().join(',')==='cutDepthMm,cutFeatureId,cutTool',
+      'invalid chain cut '+i);
+    validateArcExtrudeRequest(cut.cutTool);
+    const names=[cut.cutFeatureId,cut.cutTool.featureId,cut.cutTool.requestId];
+    ensure(names.every(id=>typeof id==='string'&&ID.test(id)&&!ids.has(id))&&
+      new Set(names).size===3,'aliased or repeated cut feature/request ID');
+    for(const id of names)ids.add(id);
+    ensure(cut.cutTool.revision===q.revision&&!cut.cutTool.exportStep&&
+      near(cut.cutTool.thicknessMm,q.baseExtrude.thicknessMm)&&
+      cut.cutTool.profile.holes.length===0,
+      'stale, independently exporting or unsupported cut tool');
+    ensure(typeof cut.cutDepthMm==='number'&&Number.isFinite(cut.cutDepthMm)&&
+      cut.cutDepthMm>=1e-6&&cut.cutDepthMm<=q.baseExtrude.thicknessMm,
+      'cut depth out of base thickness');
+    ensure(cut.cutTool.profile.materialAreaMm2>1e-6&&
+      cut.cutTool.profile.materialAreaMm2<q.baseExtrude.profile.materialAreaMm2,
+      'cut area must be smaller than base material');
+  }
+  return q;
+}
 
 export function validateBodyCutRequest(request){
   ensure(request!==null&&typeof request==='object'&&!Array.isArray(request),
     'body cut request must be an object');
+  if(request.protocol===CHAIN_FORMAT)return validateCutChainRequest(request);
   const pocket=request.protocol===POCKET_FORMAT;
   ensure(pocket||request.protocol===FORMAT,'unknown cut protocol');
   const fields=['protocol','requestId','cutFeatureId','targetBodyId','revision','units',
@@ -100,29 +145,57 @@ export async function runExperimentalBodyCut(request,{
     if(overflow||result.code!==0)return failure(q,'requires_reconciliation','physical_worker_failed');
     let report;try{report=JSON.parse(result.output)}
     catch{return failure(q,'requires_reconciliation','malformed_native_report')}
-    const cutDepth=q.protocol===POCKET_FORMAT?q.cutDepthMm:q.baseExtrude.thicknessMm;
-    const expected=q.baseExtrude.profile.materialAreaMm2*q.baseExtrude.thicknessMm-
-      q.cutTool.profile.materialAreaMm2*cutDepth;
-    if(report.protocol!==q.protocol||report.status!=='experimental_body_cut_brep'||
-      report.requestId!==q.requestId||report.cutFeatureId!==q.cutFeatureId||
-      report.targetBodyId!==q.targetBodyId||report.baseFeatureId!==q.baseExtrude.featureId||
-      report.cutToolFeatureId!==q.cutTool.featureId||report.revision!==q.revision||
-      report.units!=='mm'||report.backend!=='OCP-python-prototype'||
-      report.occtVersion!=='7.9.3.1'||report.exactAuthority!==false||
-      report.independentInteroperability!==false||report.source?.valid!==true||
-      report.source?.solidCount!==1||report.source?.shellCount!==1||
+    const chain=q.protocol===CHAIN_FORMAT;
+    let expected=q.baseExtrude.profile.materialAreaMm2*q.baseExtrude.thicknessMm;
+    if(chain){
+      if(report.protocol!==CHAIN_FORMAT||report.status!=='experimental_body_cut_chain_brep'||
+        report.requestId!==q.requestId||report.targetBodyId!==q.targetBodyId||
+        report.baseFeatureId!==q.baseExtrude.featureId||
+        report.revision!==q.revision||report.units!=='mm'||
+        report.backend!=='OCP-python-prototype'||report.occtVersion!=='7.9.3.1'||
+        report.exactAuthority!==false||report.independentInteroperability!==false||
+        !Array.isArray(report.cutResults)||report.cutResults.length!==q.cuts.length)
+        return failure(q,'requires_reconciliation','native_chain_identity_mismatch');
+      for(let i=0;i<q.cuts.length;i++){
+        const cut=q.cuts[i],actual=report.cutResults[i];
+        const removed=cut.cutTool.profile.materialAreaMm2*cut.cutDepthMm;
+        expected-=removed;
+        if(actual?.cutFeatureId!==cut.cutFeatureId||
+          actual.cutToolFeatureId!==cut.cutTool.featureId||
+          !near(actual.cutDepthMm,cut.cutDepthMm)||
+          actual.cutKind!==(cut.cutDepthMm<q.baseExtrude.thicknessMm?'blind_pocket':'through')||
+          !near(actual.removedVolumeMm3,removed)||
+          !near(actual.postCutVolumeMm3,expected))
+          return failure(q,'requires_reconciliation','native_cut_step_mismatch');
+      }
+    }else{
+      const cutDepth=q.protocol===POCKET_FORMAT?q.cutDepthMm:q.baseExtrude.thicknessMm;
+      expected-=q.cutTool.profile.materialAreaMm2*cutDepth;
+      if(report.protocol!==q.protocol||report.status!=='experimental_body_cut_brep'||
+        report.requestId!==q.requestId||report.cutFeatureId!==q.cutFeatureId||
+        report.targetBodyId!==q.targetBodyId||report.baseFeatureId!==q.baseExtrude.featureId||
+        report.cutToolFeatureId!==q.cutTool.featureId||report.revision!==q.revision||
+        report.units!=='mm'||report.backend!=='OCP-python-prototype'||
+        report.occtVersion!=='7.9.3.1'||report.exactAuthority!==false||
+        report.independentInteroperability!==false||
+        (q.protocol===POCKET_FORMAT&&
+          (!near(report.cutDepthMm,cutDepth)||
+           report.cutKind!==(cutDepth<q.baseExtrude.thicknessMm?
+             'blind_pocket':'through'))))
+        return failure(q,'requires_reconciliation','native_geometry_or_identity_mismatch');
+    }
+    if(report.source?.valid!==true||report.source?.solidCount!==1||
+      report.source?.shellCount!==1||
       !near(report.source.volumeMm3,expected)||
       !near(report.analyticResultVolumeMm3,expected)||
-      (q.protocol===POCKET_FORMAT&&
-        (!near(report.cutDepthMm,cutDepth)||
-         report.cutKind!==(cutDepth<q.baseExtrude.thicknessMm?
-           'blind_pocket':'through'))))
-      return failure(q,'requires_reconciliation','native_geometry_or_identity_mismatch');
+      !near(report.removedVolumeMm3,
+        q.baseExtrude.profile.materialAreaMm2*q.baseExtrude.thicknessMm-expected))
+      return failure(q,'requires_reconciliation','native_geometry_or_mass_mismatch');
     if(revision()!==q.revision)return failure(q,'stale_revision');
     if(!q.exportStep){
       if(report.artifact!==null||report.stepReadback!==null)
         return failure(q,'requires_reconciliation','unexpected_step');
-      return Object.freeze({kind:'experimental_body_cut_brep',...report,artifact:null});
+      return Object.freeze({kind:chain?'experimental_body_cut_chain_brep':'experimental_body_cut_brep',...report,artifact:null});
     }
     if(report.stepReadback?.solidCount!==1||!near(report.stepReadback?.volumeMm3,expected)||
       report.artifact?.verification!=='OCP-7.9.3.1-same-engine-only'||
@@ -148,7 +221,7 @@ export async function runExperimentalBodyCut(request,{
       await fs.unlink(dest);
       return failure(q,signal?.aborted?'cancelled':'stale_revision');
     }
-    return Object.freeze({kind:'experimental_body_cut_brep',...report,
+    return Object.freeze({kind:chain?'experimental_body_cut_chain_brep':'experimental_body_cut_brep',...report,
       artifact:{path:dest,bytes:bytes.length,sha256:digest,verification:'same_engine_only'}});
   }catch(error){
     return failure(q,'requires_reconciliation','publication_or_spawn_'+
