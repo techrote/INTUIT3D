@@ -488,3 +488,40 @@ This package never attests OCCT topology equivalence, solid validity or STEP
 interoperability. RUNTIME and WORKBENCH should consume the selection gate
 rather than treating model `ready` as an exact shape signal.
 
+## Journal-backed authored timeline moves (additive v1 event)
+
+Import `moveHistoryFeature` from `@intuit3d/model/history-move`. This
+versioned consumer operation moves an **active feature** after another active
+feature (or to timeline start), checks project + revision, and appends one
+`feature.move` event in one undoable transaction. `featureTimelineOf`
+exposes positional tombstones for removed features so an undo or subsequent
+restore does not silently change the authored location. The core
+`planProject().authoredOrder` now reflects deliberate moves; the separate
+`executableOrder` remains topologically sorted by declared dependencies and
+does not infer dependencies from timeline positions.
+
+The request result returns updated `UndoHistory`, both timeline indices,
+changed UI rows, and the existing structural incremental invalidation hint.
+Moving independent operations requires no native recalculation: **zero
+invalidation does not mean cached B-rep geometry is verified**. Two writers
+to the same body remain conflicted without an explicit dependency edge.
+Invalid, removed, self-target or stale moves are rejected without modifying
+the original document. The journal and undo/archive round-trip the result.
+
+The v1 file format can now contain a new `feature.move` event. Earlier
+INTUIT3D builds whose strict v1 parser does not know that event will reject
+such a document; they must be upgraded, not silently downgraded. Existing
+v1 documents without moves remain readable. Integration must assess and
+admit this cross-consumer compatibility change before exposing drag-to-reorder.
+
+Run the representative no-native-intent fixture:
+
+```bash
+node --experimental-strip-types packages/model/examples/plate-history-move.mjs
+```
+
+The example authors a two-hole sketch, extrude and cut, moves the cut after
+the extrusion, changes the upstream thickness 8→12 mm, verifies that only
+parameter/extrude/cut need structural reevaluation, undoes/redoes and
+serializes/reopens the full model archive. It does **not** run SKETCH/OCCT,
+show a browser interaction or certify STEP interoperability.

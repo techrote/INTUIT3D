@@ -36,7 +36,13 @@ export type JournalEvent =
   | { readonly eventId: SemanticId; readonly type: 'feature.create'; readonly feature: Feature }
   | { readonly eventId: SemanticId; readonly type: 'feature.edit'; readonly featureId: SemanticId; readonly patch: FeaturePatch }
   | { readonly eventId: SemanticId; readonly type: 'feature.remove'; readonly featureId: SemanticId }
-  | { readonly eventId: SemanticId; readonly type: 'feature.restore'; readonly featureId: SemanticId };
+  | { readonly eventId: SemanticId; readonly type: 'feature.restore'; readonly featureId: SemanticId }
+  /**
+   * Reposition authored timeline intent without changing dependency edges.
+   * A null predecessor means timeline start. A removed predecessor remains a
+   * durable tombstone anchor so undo/restore cannot erase positional intent.
+   */
+  | { readonly eventId: SemanticId; readonly type: 'feature.move'; readonly featureId: SemanticId; readonly afterFeatureId: SemanticId | null };
 
 export interface ProjectDocument {
   readonly format: typeof PROJECT_FORMAT;
@@ -206,22 +212,43 @@ function parseEvent(value: unknown, where: string): JournalEvent {
     case 'feature.restore':
       strictKeys(e, ['eventId', 'type', 'featureId'], where);
       return { eventId, type: e.type, featureId: semanticId(e.featureId, where + '.featureId') };
+    case 'feature.move':
+      strictKeys(e, ['eventId', 'type', 'featureId', 'afterFeatureId'], where);
+      return {
+        eventId, type: e.type,
+        featureId: semanticId(e.featureId, where + '.featureId'),
+        afterFeatureId: e.afterFeatureId === null ? null :
+          semanticId(e.afterFeatureId, where + '.afterFeatureId'),
+      };
     default:
       return fail(where + '.type is unsupported');
   }
 }
 
-type FeatureSlot = { feature: Feature; ordinal: number; active: boolean };
+type FeatureSlot = { feature: Feature; active: boolean };
 
-function materialize(events: readonly JournalEvent[]): Feature[] {
+interface ReplayState {
+  readonly slots: Map<SemanticId, FeatureSlot>;
+  /** Includes removed feature tombstones to preserve position through restore. */
+  readonly order: SemanticId[];
+}
+
+/**
+ * Replay creation chronology plus explicit timeline moves. This presentation
+ * order never creates semantic dependencies or makes two body writes commute.
+ * Deleted entries remain positional tombstones until explicitly restored.
+ */
+function replayState(events: readonly JournalEvent[]): ReplayState {
   const slots = new Map<SemanticId, FeatureSlot>();
+  const order: SemanticId[] = [];
   const eventIds = new Set<string>();
   for (const [i, event] of events.entries()) {
     if (eventIds.has(event.eventId)) fail('journal[' + i + '] repeats eventId ' + event.eventId);
     eventIds.add(event.eventId);
     if (event.type === 'feature.create') {
       if (slots.has(event.feature.id)) fail('journal[' + i + '] reuses semantic feature ID ' + event.feature.id);
-      slots.set(event.feature.id, { feature: event.feature, ordinal: i, active: true });
+      slots.set(event.feature.id, { feature: event.feature, active: true });
+      order.push(event.feature.id);
       continue;
     }
     const slot = slots.get(event.featureId);
@@ -232,15 +259,44 @@ function materialize(events: readonly JournalEvent[]): Feature[] {
     } else if (event.type === 'feature.remove') {
       if (!slot.active) fail('journal[' + i + '] cannot remove already-removed feature ' + event.featureId);
       slot.active = false;
-    } else {
+    } else if (event.type === 'feature.restore') {
       if (slot.active) fail('journal[' + i + '] cannot restore active feature ' + event.featureId);
       slot.active = true;
+    } else {
+      if (!slot.active) fail('journal[' + i + '] cannot move removed feature ' + event.featureId);
+      if (event.afterFeatureId === event.featureId) {
+        fail('journal[' + i + '] cannot move feature after itself');
+      }
+      if (event.afterFeatureId !== null && !slots.has(event.afterFeatureId)) {
+        fail('journal[' + i + '] has never-created timeline anchor ' + event.afterFeatureId);
+      }
+      const index = order.indexOf(event.featureId);
+      order.splice(index, 1);
+      const predecessor = event.afterFeatureId === null ? -1 :
+        order.indexOf(event.afterFeatureId);
+      order.splice(predecessor + 1, 0, event.featureId);
     }
   }
-  return [...slots.values()]
-    .filter((s) => s.active)
-    .sort((a, b) => a.ordinal - b.ordinal)
-    .map((s) => s.feature);
+  return { slots, order };
+}
+
+function materialize(events: readonly JournalEvent[]): Feature[] {
+  const { slots, order } = replayState(events);
+  return order.flatMap((id) => {
+    const slot = slots.get(id)!;
+    return slot.active ? [slot.feature] : [];
+  });
+}
+
+/** Full authored timeline including removed positional tombstones, for exact undo. */
+export function featureTimelineOf(input: ProjectDocument): readonly {
+  readonly featureId: SemanticId;
+  readonly active: boolean;
+}[] {
+  const { slots, order } = replayState(parseProject(input).journal);
+  return order.map((featureId) => ({
+    featureId, active: slots.get(featureId)!.active,
+  }));
 }
 
 /** Build an empty v1 authoritative document. */
