@@ -15,6 +15,7 @@ import {
   moveHistoryFeature, HISTORY_MOVE_FORMAT, HISTORY_MOVE_VERSION,
 } from '../src/history-move.ts';
 import { planIncrementalEvaluation } from '../src/incremental.ts';
+import { evaluateParameterPlan } from '../src/parameters.ts';
 
 const feature = (id, kind = 'sketch', deps = [], writes = [], payload = {}) =>
   ({ id, kind, dependsOn: deps, writeTargets: writes, payload });
@@ -29,7 +30,9 @@ const request = (history, eventId, featureId, afterFeatureId) => ({
 });
 function plate() {
   let doc = newProject('project.history.move');
-  doc = commitEvent(doc, create('parameter.depth', 'parameter', [], [], { mm: 8 }));
+  doc = commitEvent(doc, create('parameter.depth', 'parameter', [], [], { parameter: {
+    name: 'depth', unit: 'mm', expression: { op: 'literal', value: 8, unit: 'mm' },
+  } }));
   doc = commitEvent(doc, create('feature.sketch', 'sketch', [], ['sketch.plate'], { holes: 2 }));
   // The cut is deliberately authored before the extrude: intent remains valid.
   doc = commitEvent(doc, create('feature.cut', 'cut', ['feature.extrude'], ['body.plate']));
@@ -41,6 +44,8 @@ function plate() {
 
 test('moving authored cut after extrude preserves dependency evaluation and requires no geometry rebuild', () => {
   const before = plate();
+  assert.equal(evaluateParameterPlan(planProject(before)).featureGates.find(
+    gate => gate.featureId === 'parameter.depth').status,'admissible');
   const session = startUndoHistory(before);
   const moved = moveHistoryFeature(session,
     request(session, 'event.move.cut', 'feature.cut', 'feature.extrude'));
@@ -109,7 +114,8 @@ test('undo/redo and model archive restore preserve move events, stable IDs and f
   h = { ...h }; // undo history stays an immutable, parsed JSON-compatible object.
   const edited = commitEvent(h.document, {
     eventId: 'event.edit.depth', type: 'feature.edit',
-    featureId: 'parameter.depth', patch: { payload: { mm: 12 } },
+    featureId: 'parameter.depth', patch: { payload: { parameter: { name: 'depth', unit: 'mm',
+      expression: { op: 'literal', value: 12, unit: 'mm' } } } },
   });
   const delta = planIncrementalEvaluation(beforeEdit, edited);
   assert.deepEqual(delta.readyToEvaluate,
@@ -117,7 +123,7 @@ test('undo/redo and model archive restore preserve move events, stable IDs and f
   assert.deepEqual(delta.unchangedReady, ['feature.sketch','feature.label']);
   assert.deepEqual(order(deserializeProject(serializeProject(edited))),
     order(edited));
-  assert.equal(featuresOf(edited).find(f => f.id === 'parameter.depth').payload.mm, 12);
+  assert.equal(featuresOf(edited).find(f => f.id === 'parameter.depth').payload.parameter.expression.value, 12);
 });
 
 test('removed feature remains a tombstone anchor for invertible move/restore', () => {
@@ -177,4 +183,8 @@ test('revisions, malformed moves, missing anchors and inactive targets refuse at
     ProjectFormatError);
   assert.equal(serializeProject(doc),before);
   assert.deepEqual(order(doc), order(deserializeProject(before)));
+});
+
+test('published plate-history move example executes with the same model contracts', async () => {
+  await import('../examples/plate-history-move.mjs');
 });
