@@ -216,7 +216,11 @@ export function createLivePlateSession({
       const current=synchronize();
       if(!latest || latestArchive!==current.archive || latest.kind!=='experimental_plate_evaluated')
         return null;
-      return latest.step??null;
+      // Return independent bytes per download. A transferred/detached or
+      // accidentally edited UI buffer cannot corrupt the retained receipt.
+      return latest.step?{
+        ...latest.step,bytes:Uint8Array.from(latest.step.bytes),
+      }:null;
     },
     /** Latest request wins, even if a cancelled provider ignores AbortSignal. */
     async evaluate({url,token,requestId,exportStep=true,signal,fetchImpl,
@@ -278,7 +282,12 @@ export function createLivePlateSession({
         lastOutcomeKind=result.kind;
         if(result.kind==='experimental_plate_evaluated' && result.step ||
            !latest || latestArchive!==before.archive) {
-          latest=result;
+          // The public evaluation result belongs to the caller. Never cache
+          // its mutable Uint8Array for later downloads: a consumer may reuse,
+          // transfer or overwrite those bytes after the promise resolves.
+          latest=result.step?{
+            ...result,step:{...result.step,bytes:Uint8Array.from(result.step.bytes)},
+          }:result;
           latestArchive=before.archive;
         }
         return result;
