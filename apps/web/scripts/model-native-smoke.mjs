@@ -191,6 +191,22 @@ async function main(){
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'direct sketch edit incorrectly asserted exact geometry');
   await screenshot('native-00b-direct-dimensions.png');
+  // Actual Chromium clicks, keyboard-model transactions and rendered circle.
+  const beforeAdd=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-add-hole]').click();return true})()"),'cannot add a real sketch hole');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===3"),'added hole did not reach React inspector');
+  const addedId=await evaluate("Array.from(document.querySelectorAll('[data-testid^=runtime-hole-editor-]')).map(x=>x.getAttribute('data-testid')?.slice(20)).find(x=>x?.startsWith('hole.user.'))");
+  check(typeof addedId==='string'&&addedId.startsWith('hole.user.'),'new hole identity missing');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('3 circular holes')"),'added circle not shown in solved profile');
+  check(await evaluate(`Boolean(document.querySelector('[data-testid="runtime-sketch-hole-${addedId}"]'))`),'added circle has no drag affordance');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),'new cut falsely labelled exact');
+  await screenshot('native-00c-added-hole.png');
+  check(await evaluate(`(() => {document.querySelector('[data-testid="runtime-remove-hole-${addedId}"]').click();return true})()`),'cannot remove added hole');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===2"),'removed hole still in authoritative inspector');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Undo');b.click();return true})()"),'cannot undo hole removal');
+  await eventually(()=>evaluate(`Boolean(document.querySelector('[data-testid="runtime-hole-editor-${addedId}"]'))`),'undo lost new circle identity');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent!=="+JSON.stringify(beforeAdd)),'add/remove did not author journal revisions');
+
   check(await evaluate("(() => {document.querySelector('[data-testid=runtime-mode-solid]').click();return true})()"),'cannot return to solid viewport');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-3d-viewport]'))"),'3D preview after sketch drag');
 

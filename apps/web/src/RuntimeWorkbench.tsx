@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
-  editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelHoleValues, moveModelFeature, moveModelHoleCenter,
+  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelHoleValues, moveModelFeature, moveModelHoleCenter, removeModelHole,
   MODEL_DIMENSIONS, newModelPlateSession, previewModelProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
@@ -40,7 +40,6 @@ function ScalarInput({ field, value, onCommit }: {
   </label>;
 }
 
-const HOLES: readonly ModelHole[] = ['holeA','holeB'];
 const HOLE_FIELDS: readonly ModelHoleField[] = ['x','y','diameter'];
 
 function HoleScalarInput({hole,field,value,onCommit}:{
@@ -76,6 +75,7 @@ function HoleScalarInput({hole,field,value,onCommit}:{
 export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [history,setHistory]=useState<ModelSession>(()=>newModelPlateSession());
   const [sketchMode,setSketchMode]=useState(false);
+  const [holeDraft,setHoleDraft]=useState({x:'60',y:'20',diameter:'10'});
   const [selected,setSelected]=useState('plate');
   const [timeline,setTimeline]=useState<'authored'|'evaluated'>('authored');
   const [message,setMessage]=useState<string|null>(null);
@@ -126,6 +126,29 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       acceptHistory(result.history);
       setMessage(`Revision ${result.history.document.revision}: ${hole} ${field} edited; ${result.invalidation.invalidatedFeatureIds.join(' → ') || 'no structural invalidation'}. ${result.sketchStatus}; no exact geometry reused.`);
     }catch(e){setMessage('Hole edit refused: '+String(e));}
+  };
+  const addHole=()=>{
+    const x=Number(holeDraft.x),y=Number(holeDraft.y),diameter=Number(holeDraft.diameter);
+    if(Object.values(holeDraft).some(v=>!v.trim())||![x,y,diameter].every(Number.isFinite)){
+      setMessage('Add hole refused: enter finite X, Y and diameter.');return;
+    }
+    try{
+      const id='hole.user.'+crypto.randomUUID().replaceAll('-','');
+      const result=addModelHole(liveHistory.current,id,x,y,diameter);
+      if(result.kind==='refused'){
+        setMessage('Add hole refused: '+result.candidateFeature.diagnostics.join('; '));return;
+      }
+      acceptHistory(result.history);setSketchMode(true);
+      setMessage(`Added ${id} in one undoable sketch transaction; invalidated ${result.invalidation.invalidatedFeatureIds.join(' → ')}. Rebuild STEP.`);
+    }catch(e){setMessage('Add hole refused: '+String(e));}
+  };
+  const removeHole=(id:ModelHole)=>{
+    try{
+      const result=removeModelHole(liveHistory.current,id);
+      if(result.kind==='refused'){setMessage('Remove refused: '+result.reason);return;}
+      acceptHistory(result.history);
+      setMessage(`Removed ${id}; undo restores the same semantic identity; native STEP requires rebuild.`);
+    }catch(e){setMessage('Remove refused: '+String(e));}
   };
   const dragHole=(hole:ModelHole,x:number,y:number)=>{
     try{
@@ -352,14 +375,31 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <p className="microcopy">Values edit actual SKETCH constraints or the retrospective INTENT thickness parameter. Every edit is a revision-fenced undoable journal transaction.</p>
         </div>
         <div className="inspector-section" data-testid="runtime-hole-inspector">
-          <div className="section-head">INDIVIDUAL CIRCULAR HOLES</div>
-          {HOLES.map(hole=><div key={hole} className="runtime-hole-editor" data-testid={`runtime-hole-editor-${hole}`}>
-            <strong>{hole==='holeA'?'Hole A':'Hole B'} · {hole}</strong>
+          <div className="section-head">CIRCULAR HOLES · {Object.keys(holes).length}</div>
+          <div className="runtime-hole-add" data-testid="runtime-hole-authoring">
+            <strong>Add a through-hole</strong>
+            {(['x','y','diameter'] as const).map(field=><label key={field} className="runtime-scalar">
+              <span>{field==='diameter'?'Diameter':field.toUpperCase()+' centre'}</span>
+              <span className="runtime-scalar-control">
+                <input type="number" step="any" data-testid={`runtime-new-hole-${field}`}
+                  aria-label={`New hole ${field}`} value={holeDraft[field]}
+                  onChange={e=>setHoleDraft(prev=>({...prev,[field]:e.target.value}))}/>
+                <small>mm</small>
+              </span>
+            </label>)}
+            <button type="button" className="ribbon-button runtime-native-export"
+              data-testid="runtime-add-hole" disabled={!!pendingImport}
+              onClick={addHole}>Add circular cut</button>
+          </div>
+          {Object.keys(holes).map(hole=><div key={hole} className="runtime-hole-editor" data-testid={`runtime-hole-editor-${hole}`}>
+            <strong>{hole==='holeA'?'Hole A':hole==='holeB'?'Hole B':'Added hole'} · {hole}</strong>
+            {hole!=='holeA'&&hole!=='holeB'&&<button type="button" className="ribbon-button"
+              data-testid={`runtime-remove-hole-${hole}`} onClick={()=>removeHole(hole)}>Remove hole</button>}
             {HOLE_FIELDS.map(field=><HoleScalarInput
               key={`${hole}.${field}.${history.document.revision}`}
               hole={hole} field={field} value={holes[hole][field]} onCommit={editHole}/>)}
           </div>)}
-          <p className="microcopy">Each hole is a stable SKETCH entity. Drag its center or diameter handle in Sketch mode; plate width/depth edges also drag directly. Direct edits require an admissible profile; numeric edits preserve unresolved intent for repair. Undo/redo and archive include the constraint edits.</p>
+          <p className="microcopy">Every added circle has a stable authored ID and fixed-centre/radius constraints. Drag its centre, edit its diameter here, undo/redo, or save and reopen the authoritative model. The base A/B diameter handles also drag. Add/remove requires SKETCH admission; preview and native STEP must rebuild after edits.</p>
         </div>
         <div className="inspector-section runtime-native" data-testid="runtime-native-panel">
           <div className="section-head">LOCAL NATIVE STEP · EXPERIMENTAL</div>

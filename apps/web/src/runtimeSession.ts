@@ -21,12 +21,13 @@ export const runtime = createWorkflowRuntime({ model, transactions, bindings, di
 export type ModelSession = UndoHistory;
 export type ModelDimension = 'width' | 'depth' | 'holeDiameter' | 'holePitch' | 'thickness';
 export const MODEL_DIMENSIONS: readonly ModelDimension[] = ['width', 'depth', 'holeDiameter', 'holePitch', 'thickness'];
-export type ModelHole = 'holeA' | 'holeB';
+export type ModelHole = string;
 export type ModelHoleField = 'x' | 'y' | 'diameter';
 export type ModelHoleDimensions = Readonly<{x:number;y:number;diameter:number}>;
 
-function requireHole(hole: ModelHole): void {
-  if (hole !== 'holeA' && hole !== 'holeB') throw Error('Unknown semantic hole ID');
+function requireHole(h:ModelSession,hole:ModelHole):void {
+  if(!sketchSource(h).circles.some(c=>c.id===hole))
+    throw Error('Unknown authoritative sketch hole: '+hole);
 }
 
 /** Read authored constraints, never cached preview circles or tessellation. */
@@ -40,7 +41,33 @@ export function modelHoleValues(h: ModelSession): Record<ModelHole, ModelHoleDim
     }
     return {x:center.x,y:center.y,diameter:radius.value * 2};
   };
-  return {holeA:read('holeA'),holeB:read('holeB')};
+  return Object.fromEntries(sketchSource(h).circles.map(c=>[c.id,read(c.id)]));
+}
+
+/** Create a durable SKETCH circle/centre/radius through RUNTIME as ONE undoable
+ * INTENT transaction. Never edits preview triangles or a parallel document. */
+export function addModelHole(h:ModelSession,hole:ModelHole,x:number,y:number,diameter:number):SketchConstraintBatchResult {
+  if(![x,y,diameter].every(Number.isFinite) ||
+      Math.max(Math.abs(x),Math.abs(y),diameter)>10000 || diameter<=0)
+    throw Error('New hole requires finite X/Y and positive diameter within 10,000 mm.');
+  return runtime.editPlateHoles(h,{
+    sketchFeatureId:'sketch.plate',eventId:`workbench.hole.add.${h.document.revision}`,
+    expectedRevision:h.document.revision,admission:'require_admissible',
+    operations:[{kind:'add',id:hole,x,y,radius:diameter/2}],
+  });
+}
+
+/** Legacy plate pitch/diameter controls depend on both seed circles. Extra
+ * circles can be removed; their authored IDs are restored by undo. */
+export function removeModelHole(h:ModelSession,hole:ModelHole):SketchConstraintBatchResult {
+  requireHole(h,hole);
+  if(hole==='holeA'||hole==='holeB')
+    throw Error('Base hole is referenced by plate dimension controls.');
+  return runtime.editPlateHoles(h,{
+    sketchFeatureId:'sketch.plate',eventId:`workbench.hole.remove.${h.document.revision}`,
+    expectedRevision:h.document.revision,admission:'require_admissible',
+    operations:[{kind:'remove',id:hole}],
+  });
 }
 
 /** Atomic, revision-fenced individual hole edit via admitted RUNTIME/SKETCH. */
@@ -48,7 +75,7 @@ export function editModelHole(
   h:ModelSession, hole:ModelHole, field:ModelHoleField, value:number,
   admission:'require_admissible' | 'preserve_unresolved'='require_admissible',
 ):SketchConstraintBatchResult {
-  requireHole(hole);
+  requireHole(h,hole);
   if (!['x','y','diameter'].includes(field) || !Number.isFinite(value) ||
       Math.abs(value)>10000 || (field==='diameter' && value<=0)) {
     throw Error('Hole coordinates must be finite within ±10,000 mm; diameter must be positive.');
@@ -65,7 +92,7 @@ export function editModelHole(
 export function moveModelHoleCenter(
   h:ModelSession, hole:ModelHole, x:number,y:number,
 ):SketchConstraintBatchResult {
-  requireHole(hole);
+  requireHole(h,hole);
   if (![x,y].every(v=>Number.isFinite(v)&&Math.abs(v)<=10000)) {
     throw Error('Hole drag coordinates are out of supported range');
   }
