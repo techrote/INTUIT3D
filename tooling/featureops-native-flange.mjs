@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Actual FEATUREOPS→INTENT/SKETCH/RUNTIME→experimental OCP 7.9.3.1 STEP.
- * Four-hole mounting flange, thickness edit, fifth hole, undo and save/reopen.
+ * Four-hole flange, named thickness binding/edit, fifth hole, rectangular array,
+ * independent undo steps, archive replay and actual OCP STEP.
  * Real same-engine STEP readback only. No OCCT8 C++ or independent CAD claim. */
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -17,7 +18,9 @@ import * as plateContract from '@intuit3d/kernel-contract/plate-v1';
 import {runExperimentalPlate} from '@intuit3d/kernel-contract/local-plate-provider';
 import {createWorkflowRuntime} from '@intuit3d/workflow-runtime';
 import {createExperimentalPlateWorkflow} from '@intuit3d/workflow-runtime/experimental-plate';
-import {authorMountingFlange,editExtrudeThickness,FEATURE_OPS_FORMAT,FEATURE_OPS_VERSION} from '@intuit3d/feature-ops';
+import {authorMountingFlange,FEATURE_OPS_FORMAT,FEATURE_OPS_VERSION} from '@intuit3d/feature-ops';
+import {commitUndoableParameterAuthoring,PARAMETER_AUTHORING_FORMAT} from '@intuit3d/model/parameter-authoring';
+import {commitUndoableParameterEdit} from '@intuit3d/model/parameter-edit';
 
 if(!process.argv[2]?.trim()) throw Error('Usage: node tooling/featureops-native-flange.mjs <new-output-basename>');
 const output=resolve(process.argv[2]);
@@ -67,14 +70,34 @@ async function evaluate(tag,thickness,holes){
     bytes:actual.length,sha256,stepPath};
 }
 const first=await evaluate('four',10,4);
-const edited=editExtrudeThickness(history,{
-  eventId:'edit.mount.thickness',featureId:'extrude.mount',
-  expectedRevision:history.document.revision,thicknessMm:16,
-},services);
-assert.equal(edited.kind,'committed');
-assert.ok(edited.invalidation.invalidatedFeatureIds.includes('cut.mount'));
-assert.ok(!edited.invalidation.invalidatedFeatureIds.includes('sketch.mount'));
-history=runtime.reopen(runtime.save(edited.history));
+// The actual INTENT parameter authoring contract binds this existing extrude
+// retrospectively. RUNTIME owns the derived scalar and downstream invalidation:
+// no mesh value, alternate journal or synthetic STEP is introduced.
+const bound=commitUndoableParameterAuthoring(history,{
+  format:PARAMETER_AUTHORING_FORMAT,version:1,
+  expectedRevision:history.document.revision,admission:'require_admissible',
+  parameter:{
+    eventId:'create.parameter.mount.thickness',
+    featureId:'parameter.mount.thickness',name:'mountThickness',
+    unit:'mm',expression:{op:'literal',value:10,unit:'mm'}
+  },
+  bindings:[{eventId:'bind.mount.thickness',featureId:'extrude.mount',field:'thicknessMm'}]
+});
+assert.equal(runtime.inspect(bound).features.find(f=>f.featureId==='extrude.mount').thicknessMm,10);
+history=runtime.reopen(runtime.save(bound));
+const edited=commitUndoableParameterEdit(history,{
+  format:'intuit3d.parameter-edit',version:1,
+  eventId:'edit.parameter.mount.thickness',
+  featureId:'parameter.mount.thickness',
+  expectedRevision:history.document.revision,
+  expression:{op:'literal',value:16,unit:'mm'},
+  admission:'require_admissible',
+});
+const parameterInvalidation=runtime.diff(history,edited);
+assert.ok(parameterInvalidation.invalidatedFeatureIds.includes('extrude.mount'));
+assert.ok(parameterInvalidation.invalidatedFeatureIds.includes('cut.mount'));
+assert.ok(!parameterInvalidation.invalidatedFeatureIds.includes('sketch.mount'));
+history=runtime.reopen(runtime.save(edited));
 const thicker=await evaluate('thick',16,4);
 assert.ok(thicker.volumeMm3>first.volumeMm3);
 const added=runtime.editPlateHoles(history,{
@@ -93,8 +116,30 @@ assert.ok(fifth.volumeMm3<thicker.volumeMm3);
 history=runtime.reopen(runtime.save(runtime.undo(history,['undo.fifth'])));
 const undone=await evaluate('undo',16,4);
 assert.ok(Math.abs(undone.volumeMm3-thicker.volumeMm3)<=Math.max(1e-6,thicker.volumeMm3*1e-9));
+// Consume the new RUNTIME one-shot 2x2 array from SOLVED source geometry.
+// Three independent bores join the four-hole flange with ONE undo frame.
+const patterned=runtime.patternPlateHoles(history,{
+  sketchFeatureId:'sketch.mount',eventId:'author.mount.array',
+  expectedRevision:history.document.revision,admission:'require_admissible',
+  sourceHoleId:'hole.nw',idPrefix:'pattern.mount',
+  rows:2,columns:2,pitchXmm:18,pitchYmm:-18,
+});
+assert.equal(patterned.kind,'committed',JSON.stringify(patterned));
+assert.ok(patterned.invalidation.invalidatedFeatureIds.includes('cut.mount'));
+history=runtime.reopen(runtime.save(patterned.history));
+const patternArchive=runtime.save(history);
+await writeFile(output+'.pattern.intuit3d.json',patternArchive,{flag:'wx',mode:0o600});
+assert.equal(runtime.save(runtime.reopen(await readFile(output+'.pattern.intuit3d.json','utf8'))),patternArchive);
+const patternedStep=await evaluate('pattern',16,7);
+assert.ok(patternedStep.volumeMm3<undone.volumeMm3);
+history=runtime.reopen(runtime.save(runtime.undo(history,['undo.mount.array'])));
+const patternUndone=await evaluate('undo-pattern',16,4);
+assert.ok(Math.abs(patternUndone.volumeMm3-undone.volumeMm3)<=
+  Math.max(1e-6,undone.volumeMm3*1e-9));
 assert.equal(runtime.inspect(history).exactGeometryAvailable,false);
-console.log(JSON.stringify({status:'FEATUREOPS_REAL_EXPERIMENTAL_OCP_FOUR_FIVE_HOLE_STEP_PASS',
-  initial:first,retrospectiveThickness:thicker,fifthHole:fifth,undo:undone,
-  archive:output+'.intuit3d.json',exactAuthority:false,independentInteroperability:false,
+console.log(JSON.stringify({status:'FEATUREOPS_PARAMETER_PATTERN_REAL_EXPERIMENTAL_OCP_PASS',
+  initial:first,retrospectiveParameterThickness:thicker,fifthHole:fifth,
+  undoFifth:undone,sevenHolePattern:patternedStep,undoPattern:patternUndone,
+  archives:[output+'.intuit3d.json',output+'.pattern.intuit3d.json'],
+  exactAuthority:false,independentInteroperability:false,
   productionOcct801CppExecuted:false,externalCADReadback:false},null,2));
