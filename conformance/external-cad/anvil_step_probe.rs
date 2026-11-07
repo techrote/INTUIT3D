@@ -56,6 +56,12 @@ fn main() {
     let solids:Vec<_>=cad.bodies.iter().filter(|b|b.solid).collect();
     if solids.len()!=1 || cad.bodies.len()!=1 { fail("import did not reconstruct precisely one solid body"); }
     let body=solids[0]; let mesh=&body.mesh;
+    // A triangulated fallback is insufficient: this gate requires independently
+    // reconstructed analytic topology, with no suppressed STEP import warnings.
+    if body.exact.is_none() { fail("STEP did not reconstruct an exact B-rep"); }
+    if !cad.warnings.is_empty() {
+        fail(&format!("STEP import emitted {} warnings", cad.warnings.len()));
+    }
     if mesh.vertices.is_empty() || mesh.faces.is_empty() { fail("empty reconstructed mesh"); }
     let mut oriented:HashMap<(u32,u32),usize>=HashMap::new();
     let mut signed_volume=0.0f64;
