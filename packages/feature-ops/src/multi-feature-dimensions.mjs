@@ -83,6 +83,10 @@ export function editMultipleBodyDimensions(history,request,services){
     throw new Error('feature-ops multi-dimensions: stale project/revision');
   if(!Array.isArray(request.edits)||request.edits.length<2||
      request.edits.length>16)fail('2–16 edits required');
+  // Reject malformed entries before consulting the model or RUNTIME services.
+  for(const edit of request.edits)
+    if(!plain(edit)||!['extrusion_depth','cut_extent'].includes(edit.kind))
+      fail('invalid dimension edit entry');
   const {runtime,model,sketch,discovery,cutChain}=services??{};
   if(typeof runtime?.commit!=='function'||typeof runtime?.inspect!=='function'||
      typeof runtime?.diff!=='function'||typeof model?.featuresOf!=='function'||
