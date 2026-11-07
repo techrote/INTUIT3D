@@ -70,6 +70,37 @@ export function removeModelHole(h:ModelSession,hole:ModelHole):SketchConstraintB
   });
 }
 
+/** A one-shot array copies the source's SOLVED sketch circle, not seed JSON.
+ * Cells become independently editable circles (not associative history).
+ * One authoritative RUNTIME/INTENT transaction, with strict SKETCH admission. */
+export interface ModelHoleArray {
+  readonly sourceHoleId: ModelHole;
+  readonly rows: number;
+  readonly columns: number;
+  readonly pitchXmm: number;
+  readonly pitchYmm: number;
+}
+export function patternModelHoles(h:ModelSession, request:ModelHoleArray):SketchConstraintBatchResult {
+  requireHole(h,request.sourceHoleId);
+  if(!Number.isSafeInteger(request.rows) || !Number.isSafeInteger(request.columns) ||
+      request.rows<1 || request.rows>8 || request.columns<1 || request.columns>8 ||
+      request.rows*request.columns<2 || request.rows*request.columns>32 ||
+      ![request.pitchXmm,request.pitchYmm].every(v=>Number.isFinite(v)&&Math.abs(v)<=10000) ||
+      (request.columns>1&&request.pitchXmm===0) ||
+      (request.rows>1&&request.pitchYmm===0))
+    throw Error('Array requires 2–32 cells, 1–8 rows/columns and finite nonzero active pitches.');
+  return runtime.patternPlateHoles(h,{
+    sketchFeatureId:'sketch.plate',
+    eventId:`workbench.hole.pattern.${h.document.revision}`,
+    expectedRevision:h.document.revision,
+    admission:'require_admissible',
+    sourceHoleId:request.sourceHoleId,
+    idPrefix:`array.${h.document.revision}`,
+    rows:request.rows,columns:request.columns,
+    pitchXmm:request.pitchXmm,pitchYmm:request.pitchYmm,
+  });
+}
+
 /** Atomic, revision-fenced individual hole edit via admitted RUNTIME/SKETCH. */
 export function editModelHole(
   h:ModelSession, hole:ModelHole, field:ModelHoleField, value:number,
