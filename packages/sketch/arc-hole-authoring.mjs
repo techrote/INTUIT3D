@@ -10,7 +10,7 @@ import {prepareArcProfileForProvider} from './arc-profile.mjs';
 export const ARC_HOLE_AUTHORING_VERSION = 1;
 export const ARC_HOLE_SELECTION_FORMAT = 'intuit3d.arc-hole-selection';
 const isFiniteNumber = value => typeof value === 'number' && Number.isFinite(value);
-const validId = value => typeof value === 'string' && /^[A-Za-z][\\w:.-]{0,127}$/.test(value);
+const validId = value => typeof value === 'string' && /^[A-Za-z][\w:.-]{0,127}$/.test(value);
 const hasExactKeys = (value,keys) => value && typeof value==='object' &&
   !Array.isArray(value) &&
   Object.keys(value).sort().join('|') === keys.slice().sort().join('|');
