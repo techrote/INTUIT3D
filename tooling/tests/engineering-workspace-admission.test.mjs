@@ -11,12 +11,25 @@ const root = resolve(fileURLToPath(new URL('../../', import.meta.url)));
 test('ENGINEERING is an explicitly reserved local workspace, never an unowned npm CI escape hatch', () => {
   const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
   const name = '@intuit3d/engineering', path = 'packages/engineering';
-  assert.deepEqual(lock.packages['node_modules/' + name], { resolved: path, link: true });
-  assert.deepEqual(lock.packages[path], {
-    name, version: '0.1.0', engines: { node: '>=22' }
-  });
   const manifestPath = join(root, path, 'package.json');
-  if (existsSync(manifestPath)) {
+  const hasSource = existsSync(manifestPath);
+  const link = lock.packages['node_modules/' + name];
+  const pkg = lock.packages[path];
+  // npm install --package-lock-only prunes the local symlink and marks
+  // a pre-admitted but not-yet-present workspace as extraneous. Both
+  // representations are valid before source admission; neither excuses
+  // a missing link after packages/engineering is actually introduced.
+  if (link === undefined) {
+    assert.equal(hasSource, false, 'source-backed engineering may not lack its npm link');
+    assert.equal(pkg?.extraneous, true, 'pre-admission lock must be explicitly extraneous');
+  } else {
+    assert.deepEqual(link, { resolved: path, link: true });
+    assert.equal(pkg?.extraneous, undefined);
+  }
+  assert.equal(pkg?.name, name);
+  assert.equal(pkg?.version, '0.1.0');
+  assert.deepEqual(pkg?.engines, { node: '>=22' });
+  if (hasSource) {
     const pkg = JSON.parse(readFileSync(manifestPath, 'utf8'));
     assert.equal(pkg.name, name);
     assert.equal(pkg.version, lock.packages[path].version);
