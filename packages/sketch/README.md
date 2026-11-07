@@ -77,3 +77,9 @@ future work.
 Tests: \`node --test test/profile-discovery.test.mjs\`; and
 \`npm run typecheck\` from this package, which now includes the typed
 consumer. No new dependency or shared lockfile modification is required.
+
+## Nonlinear line/arc sketch v1 — experimental, executable
+
+`@intuit3d/sketch/arc-constraints/v1` adds a **separate, versioned** authored sketch document with points, lines, circular arcs, circles and actual simultaneous Euclidean radius/tangency/dimension equations. Its bounded, dependency-free Levenberg–Marquardt solver reports degrees of freedom, redundant constraints, deterministic obvious dimension conflicts and numerical unresolved states. It is not just the previously admitted constructive rounded-plate fillet transformation. The typed contract supports immutable dimension changes, ephemeral drag suggestions, JSON save/reopen and an eight-segment line/arc preview with two semantic circular holes.
+
+Run `node packages/sketch/examples/nonlinear-rounded-plate.mjs` from the repository root or `npm test --workspace @intuit3d/sketch`. The example changes width 120→150 mm, one arc radius 8→14 mm, and hole A radius 6→7 mm, replays its document and refuses a reversed-traversal oversized-radius proposal. All profile outputs explicitly declare `previewOnly: true`, `nativeProfileAdmissible: false`, `globalSelfIntersectionChecked: false`: **not** an exact validated wire, native curved B-rep, STEP file or general PlaneGCS integration. Current nonlinear solver is a bounded exploratory implementation without comprehensive convergence/conditioning or independent solver benchmarking. The accepted SKETCH v1 and constructive rounded-plate v1/v2 contracts are unchanged. Exact curved profile admission requires a qualified global topology/contact oracle and KERNEL consumer, with browser drag integration separately pending.
