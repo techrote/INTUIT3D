@@ -60,6 +60,115 @@ export interface RuntimeReport {
   features: RuntimeFeature[];
   exactGeometryAvailable: false;
 }
+/** One journal event for an atomic batch of actual SKETCH constraint edits. */
+export interface SketchConstraintBatchRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  admission?:'require_admissible' | 'preserve_unresolved';
+  edits:ReadonlyArray<Readonly<{
+    constraintId:string;
+    patch:Partial<{value:number;x:number;y:number}>,
+  }>>;
+}
+export type SketchConstraintBatchResult =
+  | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
+      sketchStatus:RuntimeStatus;invalidation:WorkflowInvalidation}>
+  | Readonly<{kind:'refused';code:'inadmissible_sketch';
+      sourceRevision:number;candidateRevision:number;notCommitted:true;
+      candidateFeature:RuntimeFeature;reason:string}>;
+
+/**
+ * Atomic sketch-circle authoring. Radius is the actual SKETCH radius in mm.
+ * Adds allocate stable circle, centre-point, fixed and radius constraint IDs;
+ * removal refuses externally referenced geometry rather than dropping intent.
+ */
+export type PlateHoleOperation =
+  | Readonly<{kind:'add';id:string;x:number;y:number;radius:number}>
+  | Readonly<{kind:'remove';id:string}>;
+export interface PlateHoleBatchRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  admission?:'require_admissible'|'preserve_unresolved';
+  operations:ReadonlyArray<PlateHoleOperation>;
+}
+export type PlateHoleBatchResult=SketchConstraintBatchResult;
+/** One-shot, NON-associative rectangular copies of a real solved source hole.
+ * The source occupies row 0/column 0; new IDs are `idPrefix:r<Row>c<Col>`.
+ * Pitches are signed millimetres; all added holes are independently authored.
+ */
+export interface RectangularHoleArrayRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  admission?:'require_admissible'|'preserve_unresolved';
+  sourceHoleId:string;
+  idPrefix:string;
+  columns:number;
+  rows:number;
+  pitchXmm:number;
+  pitchYmm:number;
+}
+
+
+/** One-shot NON-associative polar hole copies around a chosen pivot.
+ * The original solved source remains instance 0. Full +/-360 degree sweeps
+ * exclude the duplicate endpoint; partial sweeps include both endpoints.
+ * Each copy is an independent authored circle with stable ID `idPrefix:pN`.
+ */
+export interface CircularHolePatternRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  admission?:'require_admissible'|'preserve_unresolved';
+  sourceHoleId:string;
+  idPrefix:string;
+  instances:number;
+  pivotXmm:number;
+  pivotYmm:number;
+  sweepDegrees?:number;
+}
+
+
+/** One-shot rigid move/rotation of existing independently constrained holes.
+ * All positions are calculated from solved SKETCH coordinates. The requested
+ * holes keep their stable identities/radii; profile admission guards overlaps
+ * and containment. Not an associative transform feature or a native solid.
+ */
+export interface RigidHoleTransformRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  admission?:'require_admissible'|'preserve_unresolved';
+  holeIds:readonly string[];
+  translateXmm?:number;
+  translateYmm?:number;
+  rotateDegrees?:number;
+  /** Both pivot coordinates are required when rotateDegrees is nonzero. */
+  pivotXmm?:number;
+  pivotYmm?:number;
+}
+
+/** One-shot retrospective plate-hole pitch and bore re-dimensioning.
+ * ScaleX/scaleY move solved centres about a caller-chosen pivot; radiusScale
+ * independently resizes all selected circular bore radii. Changes commit as
+ * one journal event, keep stable hole IDs, and require physical profile admission.
+ * This is not an associative parameter constraint or an exact solid.
+ */
+export interface HoleLayoutResizeRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  admission?:'require_admissible'|'preserve_unresolved';
+  holeIds:readonly string[];
+  pivotXmm:number;
+  pivotYmm:number;
+  scaleX?:number;
+  scaleY?:number;
+  radiusScale?:number;
+}
+
 export interface RuntimeServices {
   model: { planProject(document: ProjectDocument): EvaluationPlan };
   transactions: {
@@ -75,7 +184,8 @@ export interface RuntimeServices {
     serializeModelArchive(archive: any): string;
     deserializeModelArchive(data: string): {history: UndoHistory};
   };
-  sketch: {validateSketch(source: unknown): SketchDocument;solveSketch(source: SketchDocument): SketchSolution};
+  sketch: {validateSketch(source: unknown): SketchDocument;solveSketch(source: SketchDocument): SketchSolution;
+    editConstraint?(source: SketchDocument, id: string, patch: Partial<{value:number;x:number;y:number}>): SketchDocument};
   discovery: {
     discoverPlateProfiles(source: SketchDocument): ProfileDiscoveryResponse;
     admitDiscoveredPlateProfile(source: SketchDocument, proposal: ProfileDiscoveryResponse, candidateId: string): PlateProfile;
@@ -87,6 +197,18 @@ export interface WorkflowRuntime {
   diff(previousHistory: UndoHistory, nextHistory: UndoHistory): WorkflowInvalidation;
   commit(history: UndoHistory, events: readonly JournalEvent[], expectedRevision?: number): UndoHistory;
   editDimensions(history: UndoHistory, request: DimensionBatchEditRequest): UndoHistory;
+  /** One revision-fenced, undoable model event; optional refusal before commit. */
+  editSketchConstraints(history: UndoHistory, request: SketchConstraintBatchRequest): SketchConstraintBatchResult;
+  /** One authoritative edit of the number, centres and radii of circular holes. */
+  editPlateHoles(history:UndoHistory,request:PlateHoleBatchRequest):PlateHoleBatchResult;
+  /** Copy solved hole geometry into a bounded 2–32-cell array in one model event. */
+  patternPlateHoles(history:UndoHistory,request:RectangularHoleArrayRequest):PlateHoleBatchResult;
+  /** One revision-fenced, undoable circular array using real solved SKETCH geometry. */
+  patternCircularHoles(history:UndoHistory,request:CircularHolePatternRequest):PlateHoleBatchResult;
+  /** Transform 1–32 existing solved hole centres as ONE undoable model event. */
+  transformPlateHoles(history:UndoHistory,request:RigidHoleTransformRequest):SketchConstraintBatchResult;
+  /** Resize solved hole spacing and radii in one undoable authoritative edit. */
+  resizePlateHoleLayout(history:UndoHistory,request:HoleLayoutResizeRequest):SketchConstraintBatchResult;
   undo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   redo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   save(history: UndoHistory): string;

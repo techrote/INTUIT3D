@@ -1,0 +1,165 @@
+# INTEGRATION acceptance: execute genuine unmerged KERNEL/PLATFORM candidates on hosted Linux.
+# KERNEL-001 source-matched hosted qualification. The accepted-main push gate
+# builds precisely github.sha; workflow_dispatch permits explicit candidate
+# qualification. Optional KERNEL-002 operators remain a separate gate.
+name: Pinned OCCT 8.0.1 C++ execution qualification
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'native/**'
+      - 'packages/kernel-contract/**'
+  workflow_dispatch:
+    inputs:
+      platform_ref:
+        description: "Platform ref; pinned accepted build source unless explicitly supplied"
+        type: string
+        required: true
+        default: d5c2c3f54466479bf5bec3b04c3b66ed00549ec4
+      kernel_ref:
+        description: "Kernel source ref, immutable KERNEL-001 extraction #158 by default"
+        type: string
+        required: true
+        default: c46d02847468b69a106fbfa6fad715c10399ff2c
+
+permissions:
+  contents: read
+
+concurrency:
+  group: intuit3d-occt8-native
+  cancel-in-progress: false
+
+jobs:
+  native:
+    name: Ubuntu / real pinned OCCT C++ and STEP
+    runs-on: ubuntu-24.04
+    timeout-minutes: 115
+    steps:
+      - name: Checkout pinned accepted Platform source
+        uses: actions/checkout@v4
+        with:
+          repository: techrote/INTUIT3D
+          ref: ${{ inputs.platform_ref || 'd5c2c3f54466479bf5bec3b04c3b66ed00549ec4' }}
+          path: platform-repo
+          persist-credentials: false
+      - name: Checkout KERNEL-001 #158 immutable source (or explicit KERNEL-002 ref)
+        uses: actions/checkout@v4
+        with:
+          repository: techrote/INTUIT3D
+          ref: ${{ (github.event_name == 'push' && github.sha) || inputs.kernel_ref || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
+          path: kernel-repo
+          persist-credentials: false
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends git cmake ninja-build g++ python3
+      - name: Run source and qualification contract regressions (not geometry acceptance)
+        run: |
+          python3 -m unittest discover -s platform-repo/platform/native-toolchain \
+            -p 'test_*.py' -v
+      - name: Record host/compiler/kernel provenance
+        run: |
+          mkdir -p "$RUNNER_TEMP/intuit3d-native-evidence"
+          {
+            echo "platform_ref_requested=${{ inputs.platform_ref }}"
+            echo "kernel_ref_requested=${{ inputs.kernel_ref }}"
+            echo "platform=$(git -C platform-repo rev-parse HEAD)"
+            echo "kernel=$(git -C kernel-repo rev-parse HEAD)"
+            echo "host=$(uname -a)"
+            g++ --version | head -n 1
+            cmake --version | head -n 1
+            ninja --version
+            python3 --version
+          } > "$RUNNER_TEMP/intuit3d-native-evidence/versions.txt"
+      - name: Fetch and verify official immutable OCCT 8.0.1 source
+        run: |
+          mkdir -p "$RUNNER_TEMP/intuit3d-native-work"
+          python3 platform-repo/platform/native-toolchain/fetch_pinned_occt.py \
+            --destination "$RUNNER_TEMP/intuit3d-native-work/occt-source" \
+            --evidence "$RUNNER_TEMP/intuit3d-native-evidence/source-fetch" --timeout 1200
+      - name: Compile genuine OCCT C++ worker and execute 8/12 mm Boolean + STEP
+        run: |
+          python3 platform-repo/platform/native-toolchain/qualify.py \
+            --kernel-tree "$GITHUB_WORKSPACE/kernel-repo" \
+            --source "$RUNNER_TEMP/intuit3d-native-work/occt-source" \
+            --prefix "$RUNNER_TEMP/intuit3d-native-work/occt-prefix" \
+            --output "$RUNNER_TEMP/intuit3d-native-evidence/qualification" \
+            --jobs 2 --timeout 5400 --native-timeout 60
+      - name: Verify genuine C++ result and exercise KERNEL native bridge tests
+        run: |
+          python3 - "$RUNNER_TEMP/intuit3d-native-evidence/qualification/qualification.json" <<'PY'
+          import json,sys
+          with open(sys.argv[1], encoding='utf-8') as f: report=json.load(f)
+          assert report.get('status')=='NATIVE_EXPERIMENTAL_PASS', report
+          assert report.get('nativeCppExecuted') is True, report
+          assert {case['thicknessMm'] for case in report['artifacts']}=={8,12}, report
+          PY
+          export INTUIT3D_OCCT8_WORKER="$RUNNER_TEMP/intuit3d-native-evidence/qualification/worker-build/intuit3d_occt8_plate"
+          test -x "$INTUIT3D_OCCT8_WORKER"
+          python3 -m unittest discover -s "$GITHUB_WORKSPACE/kernel-repo/native/tests" \
+            -p test_occt8_bridge.py -v 2>&1 | tee "$RUNNER_TEMP/intuit3d-native-evidence/native-tests.log"
+          sha256sum "$INTUIT3D_OCCT8_WORKER" \
+            "$RUNNER_TEMP/intuit3d-native-evidence/qualification/plate-8mm.step" \
+            "$RUNNER_TEMP/intuit3d-native-evidence/qualification/plate-12mm.step" \
+            > "$RUNNER_TEMP/intuit3d-native-evidence/native-files.sha256"
+      - name: Check optional KERNEL-002 cuts availability, without weakening KERNEL-001 gate
+        id: advanced
+        shell: bash
+        run: |
+          if test -f kernel-repo/packages/kernel-contract/examples/pinned-occt8-cuts.mjs && \
+             test -f kernel-repo/packages/kernel-contract/examples/pinned-occt8-mixed-cuts.mjs; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+            echo 'KERNEL-002 operators present: running physical ordered/mixed cut gates'
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'KERNEL-001 extraction does not include KERNEL-002; its separate gates are out of this admission'
+          fi
+      # Newest KERNEL #67 adds ordered rectangular and mixed circular/rectangular
+      # cuts. Exercise the ACTUAL compiled OCCT8 executable; source-only checks
+      # cannot qualify new Boolean/STEP behaviour.
+      - name: Install pinned Node 22 for real native cut-provider consumers
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Execute compiled C++ ordered and mixed cut chains with changed STEP bytes
+        if: steps.advanced.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          export INTUIT3D_OCCT8_WORKER="$RUNNER_TEMP/intuit3d-native-evidence/qualification/worker-build/intuit3d_occt8_plate"
+          test -x "$INTUIT3D_OCCT8_WORKER"
+          output="$RUNNER_TEMP/intuit3d-native-evidence/cut-chain-fixtures"
+          mkdir -p "$output/ordered" "$output/mixed"
+          node kernel-repo/packages/kernel-contract/examples/pinned-occt8-cuts.mjs \
+            "$INTUIT3D_OCCT8_WORKER" "$output/ordered" \
+            2>&1 | tee "$output/ordered-execution.log"
+          node kernel-repo/packages/kernel-contract/examples/pinned-occt8-mixed-cuts.mjs \
+            "$INTUIT3D_OCCT8_WORKER" "$output/mixed" \
+            2>&1 | tee "$output/mixed-execution.log"
+          test -s "$output/ordered/plate-cuts-8.step"
+          test -s "$output/ordered/plate-cuts-12.step"
+          test -s "$output/mixed/mixed-8.step"
+          test -s "$output/mixed/mixed-12.step"
+          test -s "$output/ordered/manifest.json"
+          test -s "$output/mixed/manifest.json"
+          sha256sum "$output/ordered/"*.step "$output/mixed/"*.step > "$output/native-cut-step.sha256"
+          printf 'kernel=%s\nworker_sha256=%s\n' \
+            "$(git -C kernel-repo rev-parse HEAD)" \
+            "$(sha256sum "$INTUIT3D_OCCT8_WORKER" | cut -d' ' -f1)" \
+            > "$output/source-and-worker.txt"
+      - name: Remove only huge intermediate build directory before artifact upload
+        if: always()
+        run: |
+          BUILD="$RUNNER_TEMP/intuit3d-native-evidence/qualification/occt-build"
+          if test -f "$BUILD/CMakeFiles/CMakeConfigureLog.yaml"; then
+            cp "$BUILD/CMakeFiles/CMakeConfigureLog.yaml" "$RUNNER_TEMP/intuit3d-native-evidence/occt-configure.yaml"
+          fi
+          rm -rf -- "$BUILD"
+      - name: Preserve native build, genuine worker and STEP evidence on failure too
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: occt801-cxx-and-step-evidence
+          path: ${{ runner.temp }}/intuit3d-native-evidence/
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,31 @@
+{
+  "name": "@intuit3d/interchange",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.mts",
+      "default": "./index.mjs"
+    },
+    "./dxf/v1": {
+      "types": "./dxf.d.mts",
+      "default": "./dxf.mjs"
+    },
+    "./sketch/v1": {
+      "types": "./sketch.d.mts",
+      "default": "./sketch.mjs"
+    },
+    "./svg/v1": {
+      "types": "./svg.d.mts",
+      "default": "./svg.mjs"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts --typeRoots ../../tooling/contract-type-roots"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

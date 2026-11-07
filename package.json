@@ -11,6 +11,7 @@
     "packages/*"
   ],
   "scripts": {
+    "dev:local": "node tooling/dev-local.mjs",
     "test": "node --experimental-strip-types --test tooling/tests/*.test.mjs",
     "check:workspace": "node tooling/check-workspace.mjs",
     "check:native": "node tooling/check-workspace.mjs --native",

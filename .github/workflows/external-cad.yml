@@ -1,0 +1,171 @@
+# INTEGRATION acceptance: real non-OCCT geometry, not a Part 21 text scan or OCCT self-readback.
+# Verify original OCP flange samples and original pinned-C++ 8/12 mm STEP bytes separately.
+name: Independent non-OCCT STEP geometry qualification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/external-cad.yml'
+      # Real conformance source changes must execute the independent CAD
+      # importer; ordinary Node CI is insufficient for physical STEP claims.
+      - 'conformance/external-cad/**'
+  workflow_dispatch:
+    inputs:
+      cad_ref:
+        description: "External CAD source ref; PR checks out its own immutable head"
+        type: string
+        required: true
+        default: main
+
+      native_artifact_id:
+        description: "Original successful pinned OCCT8 C++ Actions artifact ID"
+        type: string
+        required: true
+        default: '13581127658'
+      kernel_sha:
+        description: "Full immutable KERNEL producer commit recorded in the native artifact"
+        type: string
+        required: true
+        default: c46d02847468b69a106fbfa6fad715c10399ff2c
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: intuit3d-external-step-qualification
+  cancel-in-progress: false
+
+jobs:
+  external:
+    name: Ubuntu / pinned non-OCCT CAD import and geometry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Checkout external CAD candidate
+        uses: actions/checkout@v4
+        with:
+          repository: techrote/INTUIT3D
+          ref: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || inputs.cad_ref || github.sha }}
+          path: cad-source
+          persist-credentials: false
+      - name: Download original actual OCP STEP evidence (not generated mock files)
+        uses: actions/download-artifact@v4
+        with:
+          name: model-native-experimental-ocp-step
+          run-id: 42345301755
+          repository: techrote/INTUIT3D
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: original-artifact
+      - name: Prepare immutable input and pin checkout SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          mkdir -p "$root/original"
+          git -C cad-source rev-parse HEAD > "$root/checked-out-cad-source.txt"
+          echo "Original GitHub Actions run: 42345301755" >> "$root/checked-out-cad-source.txt"
+          echo "Original Actions artifact: 13563062028" >> "$root/checked-out-cad-source.txt"
+          required=(flange.four.step flange.thick.step flange.five.step flange.undo.step)
+          for file in "${required[@]}"; do
+            mapfile -t found < <(find original-artifact -type f -name "$file")
+            if [ "${#found[@]}" -ne 1 ]; then
+              echo "::error::original artifact must contain exactly one $file, found ${#found[@]}"
+              exit 1
+            fi
+            cp -- "${found[0]}" "$root/original/$file"
+          done
+          (cd "$root/original" && zip -q "$root/original-flange.zip" "${required[@]}")
+          sha256sum "$root/original/"*.step > "$root/step-inputs.sha256"
+          sha256sum "$root/original-flange.zip" >> "$root/step-inputs.sha256"
+      - name: Run external-CAD harness regression (not geometry admission)
+        run: |
+          python3 -m unittest discover -s cad-source/conformance/external-cad -p 'test_*.py' -v
+          bash -n cad-source/conformance/external-cad/run-pinned-brlcad.sh
+      - name: Execute real pinned BRL-CAD 7.44.0 STEP import, volume and ray probes
+        working-directory: cad-source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash conformance/external-cad/run-pinned-brlcad.sh \
+            --bundle "$RUNNER_TEMP/intuit3d-external-evidence/original-flange.zip" \
+            --evidence-dir "$RUNNER_TEMP/intuit3d-external-evidence/brlcad" \
+            2>&1 | tee "$RUNNER_TEMP/intuit3d-external-evidence/execution.log"
+      # Reuse the genuinely executed pinned C++ evidence instead of recompiling
+      # OCCT or substituting the older experimental OCP flange STEP output.
+      - name: Download original source-matched pinned C++ evidence ZIP
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NATIVE_ARTIFACT_ID: ${{ inputs.native_artifact_id || '13581127658' }}
+          KERNEL_EXPECTED_SHA: ${{ inputs.kernel_sha || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
+        run: |
+          set -euo pipefail
+          [[ "$NATIVE_ARTIFACT_ID" =~ ^[0-9]+$ ]] || { echo 'Invalid native artifact ID' >&2; exit 2; }
+          [[ "$KERNEL_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid immutable KERNEL SHA' >&2; exit 2; }
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          curl --fail --location --retry 3 --connect-timeout 20 --max-time 600 \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --output "$root/original-native-cxx.zip" \
+            "https://api.github.com/repos/techrote/INTUIT3D/actions/artifacts/$NATIVE_ARTIFACT_ID/zip"
+          sha256sum "$root/original-native-cxx.zip" > "$root/original-native-zip.sha256"
+          printf 'native_artifact_id=%s\nrequested_kernel_sha=%s\n' \
+            "$NATIVE_ARTIFACT_ID" "$KERNEL_EXPECTED_SHA" > "$root/native-producer-inputs.txt"
+
+      - name: Reuse source-pinned independent AnvilCAD executable
+        shell: bash
+        working-directory: cad-source
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          probe="$root/brlcad/anvilcad-independent/anvilcad/target/release/examples/intuit_step_probe"
+          if [[ ! -x "$probe" ]]; then
+            # BRL-CAD might learn to import these flanges in a future release;
+            # the native-pair still requires a non-OCCT physical importer.
+            bash conformance/external-cad/run-pinned-anvil.sh \
+              --bundle "$root/original-flange.zip" \
+              --evidence-dir "$root/native-pair-anvil"
+            probe="$root/native-pair-anvil/anvilcad/target/release/examples/intuit_step_probe"
+          fi
+          test -x "$probe"
+          printf '%s\n' "$probe" > "$root/independent-probe.path"
+          sha256sum "$probe" > "$root/native-pair-probe.sha256"
+
+      - name: Reconstruct original native 8/12mm STEP in independent non-OCCT CAD
+        shell: bash
+        working-directory: cad-source
+        env:
+          KERNEL_EXPECTED_SHA: ${{ inputs.kernel_sha || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          probe="$(cat "$root/independent-probe.path")"
+          python3 conformance/external-cad/native_pair.py \
+            --native-zip "$root/original-native-cxx.zip" \
+            --kernel-sha "$KERNEL_EXPECTED_SHA" \
+            --probe "$probe" \
+            --output-dir "$root/native-pair" \
+            2>&1 | tee "$root/native-pair-execution.log"
+          python3 - "$root/native-pair/qualification.json" <<'PY'
+          import json,sys
+          with open(sys.argv[1], encoding='utf-8') as f: data=json.load(f)
+          assert data['status']=='NON_OCCT_SOURCE_MATCHED_NATIVE_PAIR_ACCEPTED', data
+          assert data['kernelSha']==__import__('os').environ['KERNEL_EXPECTED_SHA'], data
+          assert len(data['cases'])==2 and all(c['importedExactBRep'] for c in data['cases']),data
+          PY
+      - name: Exclude distributor binary and extraction tree from evidence upload
+        if: always()
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/intuit3d-external-evidence/brlcad/toolchain"
+          if test -d "$root"; then
+            rm -rf -- "$root/unpacked" "$root/brlcad_7.44.0-0_amd64.deb"
+          fi
+      - name: Preserve real original STEP and independent CAD evidence, even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brlcad-7440-independent-step-evidence
+          path: ${{ runner.temp }}/intuit3d-external-evidence/
+          if-no-files-found: warn
+          retention-days: 14

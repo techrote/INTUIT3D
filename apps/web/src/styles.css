@@ -209,3 +209,116 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
 .replacement-comparison li { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #2b4759; padding: 6px 0; }
 .replacement-comparison li span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; color: #b5e5d9; }
 .replacement-comparison p { margin: 6px 0 0; }
+
+/* Authoritative INTENT + SKETCH + RUNTIME mode. Geometry is explicitly disposable. */
+.runtime-shell .identity { min-width: 185px; gap: 6px; flex-direction: column; align-items: flex-start; }
+.runtime-shell .identity strong { letter-spacing: 1.2px; }
+.runtime-shell .identity strong span { color: #6fd3d5; }
+.runtime-shell .identity small { letter-spacing: 1.3px; font-size: 9px; color: #85a7b8; }
+.runtime-shell .ribbon-button { white-space: nowrap; }
+.runtime-shell .runtime-file-input { display: none; }
+.runtime-entry { border-color: #326879; color: #a9e5e5; font-weight: 680; background: #1d3845; margin: 0; }
+.runtime-3d-canvas, .runtime-sketch-svg { display: block; height: 100%; width: 100%; }
+.runtime-3d-canvas { position:relative; }
+.runtime-3d-thickness-grip {
+  position:absolute;z-index:5;transform:translate(-50%,-50%);
+  min-width:79px;min-height:30px;padding:5px 8px;
+  border:1px solid #79f0d0;border-radius:6px;background:#163b46ee;
+  color:#d5fff2;font:600 11px ui-monospace,monospace;
+  cursor:ns-resize;touch-action:none;user-select:none;
+  box-shadow:0 0 0 2px #0d2a34b3,0 3px 15px #0008;
+}
+.runtime-3d-thickness-grip:focus-visible {outline:3px solid #ffe29c;outline-offset:3px;}
+.runtime-3d-thickness-grip[hidden] {display:none;}
+.runtime-3d-thickness-grip span {color:#6af0cd;}
+.runtime-3d-canvas canvas { display:block; width:100%; height:100%; }
+.runtime-sketch-svg { background: radial-gradient(ellipse at center, #273e51, #172434); }
+.runtime-mesh-caption { position:absolute;left:14px;top:18px;max-width:60%;
+  color:#c9e5ec;background:#1b3244ed;border:1px solid #375e72;border-radius:5px;padding:8px 11px;font-size:11px;pointer-events:none; }
+.runtime-scalar { display:flex; align-items:center;justify-content:space-between; gap:8px; padding:7px 0; color:#a9c5d4; font-size:11px; }
+.runtime-scalar-control { display:flex;gap:5px;align-items:center; }
+.runtime-scalar input { width:104px;height:30px;background:#101e2a;border:1px solid #395368;border-radius:4px;color:#e9f5fa;padding:5px 8px;text-align:right; }
+.runtime-scalar small { color:#7c9caf; }
+.runtime-diagnostic { display:flex;gap:5px;flex-wrap:wrap;border-bottom:1px solid #2d4150;padding:8px 0;font-size:10px; }
+.runtime-diagnostic strong { color:#c3d7e5;min-width:70px; }
+.runtime-diagnostic span { font:10px ui-monospace,monospace;color:#dfb375; }
+.runtime-diagnostic small { display:block;flex-basis:100%;color:#b6a2a0;line-height:1.5; }
+.runtime-message { margin:14px;padding:9px;border:1px solid #36576b;border-radius:5px;color:#b4dceb;font-size:11px;line-height:1.5; }
+.runtime-shell .inspector-section { flex-shrink:0; }
+
+/* Native provider is a distinct opt-in experimental action, not B-rep viewport authority. */
+.runtime-shell .runtime-native { border-top:1px solid #3e6172; background:#142b39; }
+.runtime-shell .runtime-native-field { display:grid;gap:5px;margin:9px 0;color:#bad4df;font-size:11px; }
+.runtime-shell .runtime-native-field input {
+  width:100%;min-width:0;box-sizing:border-box;height:32px;
+  padding:6px 9px;border-radius:5px;border:1px solid #45697b;
+  background:#0b1b29;color:#ecf9fd;font:11px ui-monospace,monospace;
+}
+.runtime-shell .runtime-native-field input:focus-visible {
+  outline:2px solid #68d4d0;outline-offset:2px;
+}
+.runtime-shell .runtime-native-export {
+  width:100%;height:auto;min-height:36px;padding:7px 10px;
+  white-space:normal;text-align:center;border:1px solid #4b9b9e;
+  background:#1f5058;color:#d3f4ee;
+}
+.runtime-shell .runtime-native-export:disabled { opacity:.48;cursor:not-allowed; }
+.runtime-shell .runtime-native [data-testid="runtime-native-result"] {
+  overflow-wrap:anywhere;max-height:150px;overflow:auto;
+  padding:8px;border:1px solid #567282;border-radius:5px;
+}
+
+/* Authoritative authored-order controls; dependency order is deliberately read-only. */
+.runtime-shell .timeline-event { position:relative;min-width:142px;height:93px;padding-bottom:22px; }
+.runtime-shell .timeline-move-actions {display:flex;gap:5px;position:absolute;right:7px;bottom:6px;}
+.runtime-shell .timeline-move-actions button {padding:1px 9px;background:#29495c;border:1px solid #53778d;border-radius:4px;font-size:10px;}
+.runtime-shell .timeline-move-actions button:hover:not(:disabled){background:#35677b;}
+.runtime-shell .runtime-hole-editor {border-top:1px solid #30485b;padding:10px 0 12px;}
+.runtime-shell .runtime-hole-editor > strong {color:#e4be81;font-size:11px;letter-spacing:.35px;}
+.runtime-shell .runtime-hole-editor .runtime-scalar {padding:3px 0;}
+.runtime-shell .runtime-hole-editor .runtime-scalar input {width:94px;}
+
+/* Removed CAD timeline rows remain selectable semantic tombstones, never geometry. */
+.runtime-shell .feature-item.removed {opacity:.78;border-left:3px solid #ba865d;}
+.runtime-shell .feature-item.removed .feature-main small {color:#e2b689;}
+.runtime-shell .runtime-lifecycle-confirm {margin-top:10px;padding:10px;border-radius:5px;
+  border:1px solid #ba865d;background:#2c292a;display:flex;flex-direction:column;gap:6px;}
+.runtime-shell .runtime-lifecycle-confirm strong {font-size:11px;color:#f1ceb0;}
+.runtime-shell [data-testid="runtime-feature-lifecycle"] .ribbon-button {
+  white-space:normal;min-height:30px;height:auto;text-align:left;margin-top:6px;
+}
+
+/* Sketch-first product authoring is a real feature command, not a preview tool. */
+.runtime-shell .runtime-extrusion-distance {
+  align-self: flex-end; margin: 0 3px 2px 0; display: flex;
+  gap: 4px; align-items: center; color: #a4b9c6;
+  font-size: 11px; white-space: nowrap;
+}
+.runtime-shell .runtime-extrusion-distance input {
+  width: 60px; height: 31px; box-sizing: border-box;
+  background: #0d202d; border: 1px solid #44667a;
+  border-radius: 4px; padding: 4px 6px; color: #e5f5f8;
+  font: 12px ui-monospace, Consolas, monospace; text-align: right;
+}
+.runtime-shell [data-testid="runtime-feature-authoring"] .ribbon-button {
+  max-width: 142px; white-space: normal; text-align: center; line-height: 1.2;
+  border: 1px solid #3a5b6d;
+}
+.runtime-shell [data-testid="runtime-feature-authoring"] .ribbon-button:disabled {
+  color: #637c8d; border-color: #283b49; cursor: not-allowed;
+}
+
+
+/* One keyboard-first E combo for the real sketch -> extrusion -> cut journal.
+   No feature is committed on opening this transient form. */
+.runtime-shell .runtime-feature-combo { width:min(500px,94vw); }
+.runtime-shell .runtime-combo-distance { display:flex; flex-direction:column; gap:9px; margin:15px 0; font-size:12px; color:#c8dfe8; }
+.runtime-shell .runtime-combo-distance input {
+  width:155px; height:38px; padding:6px 10px;
+  border-radius:4px; border:1px solid #4b8997;
+  color:#ebf7fb; background:#0e2735; font:14px ui-monospace,Consolas,monospace;
+}
+.runtime-shell .runtime-combo-distance input:focus-visible {
+  outline:2px solid #78d5d8;outline-offset:2px;
+}
+.runtime-shell .runtime-feature-combo .recovery-actions { margin-top:18px; }

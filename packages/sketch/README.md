@@ -77,3 +77,39 @@ future work.
 Tests: \`node --test test/profile-discovery.test.mjs\`; and
 \`npm run typecheck\` from this package, which now includes the typed
 consumer. No new dependency or shared lockfile modification is required.
+
+## Nonlinear line/arc sketch v1 — experimental, executable
+
+`@intuit3d/sketch/arc-constraints/v1` adds a **separate, versioned** authored sketch document with points, lines, circular arcs, circles and actual simultaneous Euclidean radius/tangency/dimension equations. Its bounded, dependency-free Levenberg–Marquardt solver reports degrees of freedom, redundant constraints, deterministic obvious dimension conflicts and numerical unresolved states. It is not just the previously admitted constructive rounded-plate fillet transformation. The typed contract supports immutable dimension changes, ephemeral drag suggestions, JSON save/reopen and an eight-segment line/arc preview with two semantic circular holes.
+
+Run `node packages/sketch/examples/nonlinear-rounded-plate.mjs` from the repository root or `npm test --workspace @intuit3d/sketch`. The example changes width 120→150 mm, one arc radius 8→14 mm, and hole A radius 6→7 mm, replays its document and refuses a reversed-traversal oversized-radius proposal. All profile outputs explicitly declare `previewOnly: true`, `nativeProfileAdmissible: false`, `globalSelfIntersectionChecked: false`: **not** an exact validated wire, native curved B-rep, STEP file or general PlaneGCS integration. Current nonlinear solver is a bounded exploratory implementation without comprehensive convergence/conditioning or independent solver benchmarking. The accepted SKETCH v1 and constructive rounded-plate v1/v2 contracts are unchanged. Exact curved profile admission requires a qualified global topology/contact oracle and KERNEL consumer, with browser drag integration separately pending.
+
+
+## Provider-ready analytic line/arc profile v1
+
+`@intuit3d/sketch/arc-profile/v1` extends the nonlinear line/arc solver with a
+**2D analytic profile handoff**. The public `prepareArcProfileForProvider`
+requires a fully constrained, replay-verified sketch, an explicitly ordered
+line/arc loop, semantic profile ID and selected circular holes. It checks
+nonadjacent line/arc/arc intersections analytically, positive hole-to-boundary
+clearance, strict hole inclusion, circle overlap and material area. Contradictory
+dimensions, open loops, displaced circles and contacts fail closed.
+
+The response preserves boundary curve and hole IDs and the source signature.
+`providerSubmissionReady: true` means the validated analytic data can be
+presented to a native geometry provider for **independent** wire/Boolean checks.
+`nativeProfileAdmissible: false`, `exactBrepAvailable: false` and
+`stepQualified: false` are mandatory until such a provider actually runs.
+The 1e-6 mm numerical-uncertainty band is a conservative **rejection** band,
+not tolerance enlargement, dimension healing, OCCT precision or a statement
+of independent exact-predicate correctness. Arbitrarily nearly coincident
+curve arrangements are not yet independently qualified.
+
+Run: `node packages/sketch/examples/analytic-arc-profile.mjs`;
+`node --test packages/sketch/test/arc-profile.test.mjs`; and
+`npm run typecheck --workspace @intuit3d/sketch`.
+A rounded 120x80 mm two-hole plate is widened to 150 mm, one solved corner
+radius is changed, a hole radius is changed, and save/reopen reproduces the
+same stable semantic profile. Negative examples refuse intersecting holes,
+boundary-piercing holes, outside holes, contradictory dimensions and forged
+solver geometry.

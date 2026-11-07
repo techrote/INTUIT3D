@@ -8,7 +8,7 @@
  * or rewind project revisions.
  */
 import {
-  commitEvent, featuresOf, newProject, parseProject, planProject,
+  commitEvent, featureTimelineOf, featuresOf, newProject, parseProject, planProject,
   ProjectFormatError, ProjectRevisionError, serializeProject,
 } from './index.ts';
 import type {
@@ -23,7 +23,8 @@ export const MAX_HISTORY_FRAMES = 256;
 export type IntentCommand =
   | { readonly type: 'feature.create'; readonly feature: Feature }
   | { readonly type: 'feature.edit'; readonly featureId: string; readonly patch: FeaturePatch }
-  | { readonly type: 'feature.remove' | 'feature.restore'; readonly featureId: string };
+  | { readonly type: 'feature.remove' | 'feature.restore'; readonly featureId: string }
+  | { readonly type: 'feature.move'; readonly featureId: string; readonly afterFeatureId: string | null };
 
 export interface TransactionPreview {
   /** A fully validated speculative revision, not committed by the caller. */
@@ -66,6 +67,10 @@ function commandFromEvent(event: JournalEvent): IntentCommand {
       return { type: event.type, featureId: event.featureId, patch: event.patch };
     case 'feature.remove':
     case 'feature.restore': return { type: event.type, featureId: event.featureId };
+    case 'feature.move': return {
+      type: event.type, featureId: event.featureId,
+      afterFeatureId: event.afterFeatureId,
+    };
   }
 }
 
@@ -97,6 +102,15 @@ function canonicalCommand(value: unknown): IntentCommand {
         featureId: id as string,
       });
     }
+    if (type === 'feature.move' && command.afterFeatureId !== null) {
+      scratch = commitEvent(scratch, {
+        eventId: 'validation.anchor', type: 'feature.create',
+        feature: {
+          id: command.afterFeatureId as string, kind: 'validation',
+          dependsOn: [], writeTargets: [], payload: {},
+        },
+      });
+    }
   }
   const accepted = commitEvent(scratch, {
     ...command, eventId: 'validation.command',
@@ -126,6 +140,15 @@ function inverseOf(doc: ProjectDocument, event: JournalEvent): IntentCommand {
   }
   if (event.type === 'feature.restore') {
     return { type: 'feature.remove', featureId: event.featureId };
+  }
+  if (event.type === 'feature.move') {
+    const order = featureTimelineOf(doc);
+    const index = order.findIndex((entry) => entry.featureId === event.featureId);
+    if (index < 0) {
+      throw new ProjectFormatError('cannot invert move of absent feature ' + event.featureId);
+    }
+    return { type: 'feature.move', featureId: event.featureId,
+      afterFeatureId: index === 0 ? null : order[index - 1]!.featureId };
   }
   const before = featuresOf(doc).find((f) => f.id === event.featureId);
   if (!before) {

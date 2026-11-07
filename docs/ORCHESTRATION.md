@@ -1,10 +1,10 @@
-# INTUIT3D — six permanent scheduled workers
+# INTUIT3D — ten owner-approved permanent scheduled workers
 
 ## Core policy
 
-**Six fixed recurring workers, one per lane, as explicitly approved in [issue #49](https://github.com/techrote/INTUIT3D/issues/49).** All are broad enough to sustain development for months but have unambiguous primary write ownership. Workers start on their fixed hourly schedule, fresh-audit GitHub, select work within scope, implement, validate and leave GitHub handoffs. **No central planner, no spawning scheduled successors, no Scheduswarm dispatcher queue, no chained tasks.**
+**Ten fixed recurring workers, one per lane, with owner-approved additions [#49](https://github.com/techrote/INTUIT3D/issues/49), [#80](https://github.com/techrote/INTUIT3D/issues/80), [#81](https://github.com/techrote/INTUIT3D/issues/81), [#134](https://github.com/techrote/INTUIT3D/issues/134) and [#135](https://github.com/techrote/INTUIT3D/issues/135).** All are broad enough to sustain development for months but have unambiguous primary write ownership. Workers start on their fixed hourly schedule, fresh-audit GitHub, select work within scope, implement, validate and leave GitHub handoffs. **No central planner, no spawning scheduled successors, no Scheduswarm dispatcher queue, no chained tasks.**
 
-Suggested stagger: INTENT at :00, SKETCH at :12, KERNEL at :24, WORKBENCH at :36, INTEGRATION at :48 (Europe/London); owner-approved RUNTIME at :54 UTC (issue #49). Actual runs may overlap; schedule staggering is a courtesy, not a transaction lock.
+Suggested stagger: INTENT at :00, SKETCH at :12, KERNEL at :24, WORKBENCH at :36, INTEGRATION at :48 (Europe/London); owner-approved RUNTIME at :54 UTC (#49), FEATUREOPS at :06 Europe/London (#80), PLATFORM at :42 Europe/London (#81). Actual runs may overlap; schedule staggering is a courtesy, not a transaction lock.
 
 ## Lane map
 
@@ -15,6 +15,10 @@ Suggested stagger: INTENT at :00, SKETCH at :12, KERNEL at :24, WORKBENCH at :36
 | KERNEL | `native/**`, `packages/kernel-contract/**` | OCCT bootstrap, native/WASM experiments, isolated worker, exact geometry, STEP, validation, numerical/Boolean robustness | Versioned provider API, fixtures and export evidence |
 | WORKBENCH | `apps/web/**` | Local 3D workbench, viewport, precision interaction, Fusion-inspired layout, timeline/graph, inspector, keyboard, usability | End-to-end user workflow referencing versioned model/kernel contracts |
 | RUNTIME | `packages/workflow-runtime/**` | Application command/evaluation bridge consuming versioned model, sketch and kernel interfaces; truthful pending/stale/preview/exact statuses without duplicating domain engines | Public workflow runtime contract and executable integrations, no root/CI writes |
+| FEATUREOPS | `packages/feature-ops/**` | Parametric feature operations over accepted INTENT/SKETCH/RUNTIME/KERNEL without duplicating domain authority | Runnable new mechanical part, typed consumer and native handoff, #80 |
+| PLATFORM | `platform/native-toolchain/**`, `conformance/external-cad/**` | Pinned OCCT C++ build/provisioning and non-OCCT external CAD STEP conformance | Real C++/STEP artifacts, portable toolchain and independent geometric readback, #81 |
+| ENGINEERING | `packages/engineering/**` | Derived sketch/document measurements, dimensioned A3 SVG, source/revision provenance; no native mass claims | Accepted SKETCH/INTENT document and exact-head drawing tests; #135 |
+| INTERCHANGE | `packages/interchange/**` | Bounded units-preserving DXF sketch import/export with analytic arcs and circles; no duplicate solver | Accepted SKETCH round-trip and CLI evidence; #134 |
 | INTEGRATION | `package.json`, workspace/lockfiles, `.github/**`, docs shared statuses and `docs/OWNER-STEERING.md`, cross-package wiring, CI/release | Exact-head qualification, reconcile and merge safe PRs, keep main runnable, ingest mature research prototypes, **receive owner guidance, maintain evidence-based programme assessment and publish durable steering decisions** | Publish accepted source SHA, conformance evidence, demo, unresolved risks and owner-steering decisions |
 
 Additional source trees may be created through PR discussion; write ownership must remain explicit. INTEGRATION does not own other lanes' feature development and must not become a central planner.
@@ -28,6 +32,14 @@ Integration & QA should assess current implementation against the intended produ
 ## Sixth permanent lane — owner approval
 
 [Issue #49](https://github.com/techrote/INTUIT3D/issues/49) records the owner's approved sixth independent RUNTIME worker. Only `packages/workflow-runtime/**` is its write set; existing five lanes and Integration-only control of shared CI, workspace, status and steering are preserved. These documentation changes do **not** create or change schedules. Scheduswarm remains disabled.
+
+## Seventh and eighth permanent lanes — owner approvals
+
+[Issue #80](https://github.com/techrote/INTUIT3D/issues/80) and [issue #81](https://github.com/techrote/INTUIT3D/issues/81) record the owner's explicit 7 November 2026 approval of two further fixed independent hourly workers. The historical sixth-lane section still documents RUNTIME's admission; the **current total is eight**. Existing ownership, Integration-only shared configuration/CI/merge authority and no-dispatch principle remain intact. This document **does not schedule or change any worker**.
+
+## Ninth and tenth permanent lanes — owner approvals
+
+[Issue #134](https://github.com/techrote/INTUIT3D/issues/134) and [issue #135](https://github.com/techrote/INTUIT3D/issues/135) record the owner's explicit 7 November 2026 approval of two additional independent hourly implementation lanes. INTERCHANGE exclusively owns `packages/interchange/**` and ENGINEERING exclusively owns `packages/engineering/**`; neither may modify shared lockfile, workspace/CI/STATUS, native or other worker sources. The current total is **ten**. The prior eight-lane count remains historical; Integration retains guarded merging and shared startup authority, not dispatcher/scheduling control. The explicit startup/lockfile test gate admits the two new packages without treating mere source presence as successful qualification.
 
 ## Concurrency and isolation
 

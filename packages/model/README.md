@@ -397,3 +397,391 @@ kernel geometry, browser UX, STEP exchange or operator authorship
 authentication is attested. Other kinds of dependency must be reconciled
 through explicit general-purpose semantic editing; this v1 adapter does not
 claim they are dimension-owned.
+
+
+## Retrospective parameter expression editing — v1 authoring API
+
+The additive `@intuit3d/model/parameter-edit` package export provides
+`previewParameterEdit(document, request)` and
+`commitUndoableParameterEdit(undoHistory, request)`. Both accept a
+`intuit3d.parameter-edit` version-1 request with fresh `eventId`, stable
+`featureId`, `expectedRevision`, replacement scalar `expression` and
+`admission` (`require_admissible` or `permit_unresolved`).
+
+A valid reauthoring operation changes the existing parameter feature's source
+expression as **one append-only journal event** and (on commit) one durable undo
+frame, without overwriting authored numeric geometry fields or changing IDs.
+References to a newly used parameter gain explicit dependency edges; previous
+edges are intentionally retained and require explicit reconciliation if they
+cease to be semantically necessary. The preview returns a revision-fenced
+dimension evaluation and old/new-DAG invalidation frontier. Strict admission
+also protects previously admitted dependent scalar bindings from becoming
+unready or invalid. Permissive edits retain pending/cyclic/invalid intent with
+null resolved payloads: **a previous numeric value must not be reused as a
+current solved dimension**. Scalar admission does not validate that an extrusion
+thickness is positive or that any solid is exact; those are RUNTIME/SKETCH/KERNEL
+responsibilities.
+
+Example:
+
+```ts
+import { commitUndoableParameterEdit, PARAMETER_EDIT_FORMAT } from
+  '@intuit3d/model/parameter-edit';
+
+const next = commitUndoableParameterEdit(history, {
+  format: PARAMETER_EDIT_FORMAT,
+  version: 1,
+  eventId: 'edit.thickness.2',
+  featureId: 'parameter.thickness',
+  expectedRevision: history.document.revision,
+  expression: { op: 'literal', value: 12, unit: 'mm' },
+  admission: 'require_admissible',
+});
+```
+
+To execute a representative real-public-package consumer workflow with an
+actual SKETCH solver and accepted WORKFLOW RUNTIME (sketch with two holes,
+extrude preview, retrospective 8→12 mm edit, dependent invalidation, undo/redo
+and archive save/reopen):
+
+```sh
+npm ci
+node --experimental-strip-types packages/model/examples/plate-parameter-lifecycle.mjs
+```
+
+The example explicitly reports `cutStatus: "pending_exact_provider"` and
+`exactGeometryAvailable: false`. It does not generate a native B-rep, export
+STEP or establish browser/human acceptance. These require independent
+qualification and must never be inferred from successful model replay.
+
+
+## Authored semantic target selection + explicit split/merge recovery (v1)
+
+`@intuit3d/model/semantic-selection` is an additive public API for cut/fillet
+consumers to **write actual selection intent into the journal**, not a saved
+kernel face number. `previewSemanticSelectionEdit` and
+`commitUndoableSemanticSelectionEdit` create a revision-fenced
+`feature.edit` with a `SemanticTopologyReference` in a named payload field,
+preserve unrelated payload and all existing dependency edges, and add the
+selected source-feature dependency. `require_ready` rejects unresolved model
+dependencies; `permit_pending` deliberately retains forward-reference intent.
+The preview exposes the dependency-aware invalidation frontier.
+
+`assessSemanticSelection` combines the persisted source with **fresh, explicit**
+provider snapshots and per-revision mappings. Missing evidence returns
+`pending_evidence`; incomplete model dependencies return `pending_model`.
+A one-to-one observation is only a `candidate`, **not exact geometry**.
+Splits/merges return `requires_reconciliation` and candidate roles without
+choosing one. An explicit user choice can be committed with
+`commitUndoableSemanticSelectionRecovery` only if that role is present in
+the ambiguous trace; this re-anchors authored intent in a new revision.
+Undo/redo and archive/reopen replay the original or newly authored anchor.
+Subsequent edits require new provider evidence even if the role names match.
+Old dependency edges are not silently dropped when selecting another source
+feature; release requires separate audited intent reconciliation.
+
+Run `node --experimental-strip-types packages/model/examples/face-recovery.mjs`
+from the repo root for an actual semantic plate + cut + split/recovery +
+undo/redo + thickness edit + archive demo. No provider is invoked; the
+explicit analytic split fixture represents **synthetic provider hints**.
+This package never attests OCCT topology equivalence, solid validity or STEP
+interoperability. RUNTIME and WORKBENCH should consume the selection gate
+rather than treating model `ready` as an exact shape signal.
+
+## Journal-backed authored timeline moves (additive v1 event)
+
+Import `moveHistoryFeature` from `@intuit3d/model/history-move`. This
+versioned consumer operation moves an **active feature** after another active
+feature (or to timeline start), checks project + revision, and appends one
+`feature.move` event in one undoable transaction. `featureTimelineOf`
+exposes positional tombstones for removed features so an undo or subsequent
+restore does not silently change the authored location. The core
+`planProject().authoredOrder` now reflects deliberate moves; the separate
+`executableOrder` remains topologically sorted by declared dependencies and
+does not infer dependencies from timeline positions.
+
+The request result returns updated `UndoHistory`, both timeline indices,
+changed UI rows, and the existing structural incremental invalidation hint.
+Moving independent operations requires no native recalculation: **zero
+invalidation does not mean cached B-rep geometry is verified**. Two writers
+to the same body remain conflicted without an explicit dependency edge.
+Invalid, removed, self-target or stale moves are rejected without modifying
+the original document. The journal and undo/archive round-trip the result.
+
+The v1 file format can now contain a new `feature.move` event. Earlier
+INTUIT3D builds whose strict v1 parser does not know that event will reject
+such a document; they must be upgraded, not silently downgraded. Existing
+v1 documents without moves remain readable. Integration must assess and
+admit this cross-consumer compatibility change before exposing drag-to-reorder.
+
+Run the representative no-native-intent fixture:
+
+```bash
+node --experimental-strip-types packages/model/examples/plate-history-move.mjs
+```
+
+The example authors a two-hole sketch, extrude and cut, moves the cut after
+the extrusion, changes the upstream thickness 8→12 mm, verifies that only
+parameter/extrude/cut need structural reevaluation, undoes/redoes and
+serializes/reopens the full model archive. It does **not** run SKETCH/OCCT,
+show a browser interaction or certify STEP interoperability.
+
+
+## Model-owned semantic selection inventory (v1; INTENT-002 #62)
+
+Import `inspectSelectionInventory` and `SELECTION_EVIDENCE_FORMAT` from
+`@intuit3d/model/selection-inventory`. This is a **derived, browser-safe**
+project-wide summary of the existing authored `semantic-selection/v1` fields;
+it does not add an authoritative document type or persist provider results.
+
+`inspectSelectionInventory(document)` lists every live feature's versioned
+top-level face/body/edge selection, with `await_provider`, `repair_model`,
+`choose_successor` and `replace_deleted_reference` actions. A runtime or
+trusted native adapter may optionally provide `intuit3d.selection-evidence`
+v1 receipts bound to the **exact** project, revision, consumer feature, field
+and stored source reference. Each receipt carries the existing
+`TopologySnapshot` and ordered `TopologyStep[]` plus an honest provider label
+(`deterministic_fixture`, `experimental_native`, or `native`). Stale,
+duplicate, foreign, replaced or unowned body references fail closed.
+
+One-to-one provider-observed continuations are `candidate`, not exact B-rep
+admission. Split/merge targets expose all semantic successor candidates for
+explicit `commitUndoableSemanticSelectionRecovery`, never a guessed face.
+Missing/partial provider reports remain `pending_evidence`; unresolved model
+features remain `pending_model`. `allReferencesObserved` is only a semantic
+observation summary, **not permission to export STEP**.
+`exactGeometryAuthority` is hard-coded `false`. The actual experimental
+plate-v1 provider currently does **not** report physical face provenance, so
+only deterministic fixtures demonstrate split/merge recovery until native
+contract adoption is separately qualified by KERNEL/RUNTIME/INTEGRATION.
+
+Run the compact two-hole plate → retrospective 8→12 mm thickness edit →
+branch invalidation → reported face split → explicit repair → undo/redo →
+archive/reopen demonstration:
+
+```bash
+node --experimental-strip-types packages/model/examples/selection-inventory.mjs
+```
+
+The fixture is model-only and its lineage receipts are explicitly synthetic.
+The consumers should use the inventory for **repair UI and selection readiness**,
+and independently use RUNTIME/KERNEL's actual provider-validation gates for
+geometric truth, STEP bytes and any exact/independent claims.
+
+
+## Atomic named parameter creation + retrospective binding (v1)
+
+Import `previewParameterAuthoring` and `commitUndoableParameterAuthoring` from
+`@intuit3d/model/parameter-authoring`. This is the supported user-command
+adapter for creating a named scalar parameter and connecting one or more
+existing numeric feature fields **in one undoable journal transaction**.
+It composes the existing audited expression and dimension-edit contracts;
+RUNTIME consumes the resultant document without a second authority.
+
+```js
+const request = {
+  format:'intuit3d.parameter-authoring',version:1,
+  expectedRevision:history.document.revision,
+  admission:'require_admissible',
+  parameter:{
+    eventId:'create.thickness',featureId:'parameter.thickness',
+    name:'thickness',unit:'mm',
+    expression:{op:'literal',value:8,unit:'mm'},
+  },
+  bindings:[{eventId:'bind.plate',featureId:'extrude.plate',field:'thicknessMm'}],
+};
+const preview = previewParameterAuthoring(history.document,request);
+const next = commitUndoableParameterAuthoring(history,request);
+```
+
+The command validates source IDs, expression references, target fields,
+uniqueness and the final graph/scalar gates before any commit. Strict
+`require_admissible` refuses unresolved or regressing changes. Explicit
+`permit_unresolved` retains future-parameter dependencies and null derived
+values for later repair. Existing independent dependencies are never erased.
+This is a **model/scalar admission API**, not a geometry or STEP certification.
+
+Consumer demonstration:
+`node --experimental-strip-types packages/model/examples/create-bind-replay.mjs`
+after workspace dependencies are linked. It exercises the accepted SKETCH and
+RUNTIME modules, 8→12 mm retrospective parameter editing, partial invalidation,
+undo/redo and archive roundtrip, with the cut kept `pending_exact_provider`.
+
+
+## Freeze resolved dimensions into independent authored values (v1)
+
+`@intuit3d/model/parameter-freeze` exports `previewParameterFreeze` and
+`commitUndoableParameterFreeze`. A user can unbind a dimension after
+retrospectively editing a parameter **without reverting to its stale fallback**.
+Only the current finite, model-admitted scalar is written to the journal; a
+pending or invalid binding refuses the operation. This is scalar-intent
+admission, not a 2D solver, native B-rep or STEP validation.
+
+The command is one optimistic-revision-fenced undo frame and can (a) bake
+several bound fields, (b) release explicitly user-reviewed edges only when
+`dimension-dependency-reconcile` proves their binding-introduction witnesses,
+and (c) retire a parameter **only after no living feature depends on it**.
+Unproven or independently meaningful edges remain authored and visible, not
+silently deleted. Omit `release` and `retire` to keep that conservative state.
+
+```js
+const proposal=previewParameterFreeze(history.document,{
+  format:'intuit3d.parameter-freeze',version:1,
+  expectedRevision:history.document.revision,admission:'require_admissible',
+  edits:[{eventId:'freeze.thickness',featureId:'extrude.plate',field:'thicknessMm'}],
+  release:[{eventId:'release.thickness.edge',featureId:'extrude.plate',
+    dependencies:['parameter.thickness']}],
+  confirmIndependentIntentReviewed:true,
+  retire:{eventId:'retire.thickness',parameterId:'parameter.thickness'},
+});
+const next=commitUndoableParameterFreeze(history,sameRequest);
+```
+
+`confirmIndependentIntentReviewed` is a deliberate author confirmation, not
+an inference from co-occurrence. Consumers should show which edges will be
+released and obtain explicit approval before commit.
+
+Executable public INTENT/SKETCH/RUNTIME plate demonstration:
+
+```sh
+node --experimental-strip-types packages/model/examples/freeze-parametric-plate.mjs
+```
+
+It builds a two-hole plate, retrospectively binds its extrusion thickness,
+edits 8→12 mm, freezes the current 12 mm value, releases the reviewed
+parameter-only dependency, retires the parameter and verifies undo/redo plus
+save/reopen. RUNTIME deliberately retains `preview_only` extrusion and
+`pending_exact_provider` cut; there is no STEP or production-exact claim.
+
+## User-operated feature removal and restoration (v1)
+
+The additive `@intuit3d/model/feature-lifecycle` contract lets a
+WORKBENCH/RUNTIME timeline delete a selected feature without silently deleting
+its dependents or treating stale solid geometry as current. Call
+`inspectFeatureRemoval(document, featureId)` first to show direct and
+transitive consequences. Then call `previewFeatureRemoval` and
+`commitUndoableFeatureRemoval` with fresh event IDs:
+
+- `reject_if_referenced` prevents deleting a feature with living dependents.
+- `keep_dependents_pending` retires only the selected feature; cut/fillet
+  descendants remain authored and visibly unresolved until restored or repaired.
+- `cascade_descendants` retires the entire dependent branch only after
+  explicit confirmation, as one undoable transaction (maximum 64 events).
+
+`previewFeatureRestoration` / `commitUndoableFeatureRestoration`
+restore explicitly selected tombstones, retaining their original stable feature
+IDs, dependencies and authored timeline positions. `require_ready` refuses
+a restoration that would introduce unresolved features or regress previously
+ready ones; `permit_unresolved` preserves forward/deferred intent explicitly.
+Both operations are revision/project-fenced, transactionally validated and return
+a dependency-aware invalidation plan. All values are **semantic model evidence,
+not exact B-rep or STEP authority**.
+
+Run the executable workflow with:
+
+```sh
+node packages/model/examples/recoverable-plate-cut.mjs
+node --experimental-strip-types --test packages/model/test/feature-lifecycle.test.mjs
+```
+
+A consuming timeline must generate a fresh event ID for each operation and
+must invalidate any formerly current geometry for deleted/upstream-dependent
+features; it must not reuse preview meshes or STEP receipts based on this model
+API alone.
+
+## Recover a cut after replacing its extrusion (v1)
+
+Use the additive public subpath **@intuit3d/model/cut-reattachment**:
+`inspectCutReattachment`, `previewCutReattachment` and
+`commitUndoableCutReattachment`. A designer can remove the original plate
+extrusion, create a replacement extrusion for the **same semantic body**,
+and explicitly reattach the original cut rather than deleting its work.
+The cut and downstream fillet keep their IDs, payloads and body targets.
+
+Inspect exposes deleted body producers and active replacements. Preview
+checks an explicit, versioned and revision-fenced request, retains the
+old producer's journal tombstone, and returns a real dependency plan plus
+partial-rebuild invalidation. Commit appends one `feature.edit` event as one
+undoable action. It refuses an active old producer, wrong body, stale
+revision, duplicate event ID, unsupported type, and any regression of
+a previously ready feature. `require_ready` refuses incomplete repairs;
+`permit_unresolved` retains authentic pending/blocked/conflicted intent.
+
+This bounded v1 operates on a cut with explicit `payload.targetBodyId`
+and same-body `writeTargets`, replacing one deleted `extrude` dependency
+with a live `extrude` writing the identical body ID. It never guesses
+face equivalence, remaps a different body, changes cut parameters or
+promotes an experimental geometry-provider result to exact authority.
+
+Run `node packages/model/examples/reattach-cut.mjs` from the repo root.
+The runnable demonstration covers a dimensioned plate with two holes,
+cut and fillet, original extrusion deletion and replacement, one-shot
+repair, undo/redo, archive reopen, a retrospective width edit and a
+dependency-aware partial rebuild preserving an unrelated body. Its
+geometry state is **semantic only**: fresh native B-rep reconstruction
+and independent STEP validation remain separate provider gates.
+
+## Sequential same-body cuts (v1 additive contract)
+
+Import `inspectBodyCutChain`, `previewBodyCutAppend`, and `commitUndoableBodyCutAppend` from `@intuit3d/model/body-cut-chain`. The caller explicitly chooses an existing semantic body, the last dependency-ordered extrusion/cut writer, a SKETCH source and a discovered profile candidate. An append creates one new `cut` feature that depends on **both** the preceding body writer and the sketch. A cut can therefore follow another cut without the planner incorrectly reporting unordered mutation. No authoring chronology or inferred target-body heuristic substitutes for dependency edges.
+
+A request declares `extent: {kind: 'through_all'}` or `{kind: 'blind', depthMm: 3}`, plus project/revision fences and an admission policy. `require_ready` refuses an absent sketch or an unresolved cut; `permit_unresolved` intentionally leaves a not-yet-created sketch pending. Ambiguous/parallel same-body writers, unsupported terminal operations, duplicate semantic IDs, stale revisions and invalid depths are rejected without modifying the source. The returned structural invalidation identifies affected upstream/downstream features; unrelated bodies stay unaffected. Undo/redo and archive reopening preserve the original feature/body IDs and authored cut selection.
+
+Run `node packages/model/examples/sequential-body-cuts.mjs` for a plate with an existing through-cut, a new blind pocket, retrospective plate-width edit, partial replay, undo/redo and save/reopen. **This contract is semantic only.** The SKETCH/RUNTIME consumer must re-admit the `profileCandidateId`; KERNEL must separately evaluate the actual B-rep and STEP under a current-revision receipt. A planner status of `ready` is not physical Boolean success, a certified volume or an independent STEP reader result. The established FEATUREOPS profile authoring restriction on second writers remains its own consumer change; this API provides the explicit safe dependency contract rather than bypassing it.
+
+
+### Retrospective cut-extent editing (body-cut-chain/v1)
+
+The public `@intuit3d/model/body-cut-chain` subpath now additionally exports
+`inspectBodyCutExtent`, `previewBodyCutExtentEdit` and
+`commitUndoableBodyCutExtentEdit`. A selected existing cut can switch between
+`through_all` and positive finite `blind.depthMm`, preserving semantic
+feature identity, explicit body target, source sketch/profile and dependency
+ordering. An earlier edited cut invalidates its dependent cuts while independent
+bodies remain structurally reusable. One revision-fenced journal edit is one
+undo/redo frame and survives model archive reopening.
+
+The request pins project/revision, selected cut, body and original authored
+extent. Stale/mismatched/ambiguous or invalid edits reject atomically. The
+preview always reports `exactGeometryAuthority: false` and
+`requiresNativeRebuild: true`; actual sketch admission, physical Boolean
+construction, native STEP receipts and external CAD import remain distinct
+RUNTIME/KERNEL/PLATFORM responsibilities.
+
+```bash
+node packages/model/examples/retrospective-pocket-depth.mjs
+node --experimental-strip-types --test packages/model/test/body-cut-extent-edit.test.mjs
+```
+
+
+## Retarget an existing cut to a new sketch/profile — v1
+
+Import `inspectCutProfileSource`, `previewCutProfileSourceEdit` and
+`commitUndoableCutProfileSourceEdit` from
+`@intuit3d/model/cut-profile-source`. This is a concrete user command:
+replace the selected hole-cut loop, or restore an earlier cut after its
+source sketch was removed by selecting a different authored sketch.
+
+The `intuit3d.cut-profile-source` v1 request fences project/revision,
+cut ID, target body ID, previous source sketch and previous profile candidate.
+It specifies the new source sketch and discovered `cycle:` profile ID.
+`releasePreviousSketchDependency: true` explicitly transfers the old sketch
+edge; `false` preserves any independent dependency and can leave the
+cut pending. No other dependency edge, body writer, downstream feature ID,
+cut extent or authored chronology changes. `require_ready` checks **model
+structural readiness only**, never SKETCH profile solution or native Boolean
+validity; `permit_unresolved` makes future/missing source selections pending
+and re-evaluable once authored. Preview exposes the exact invalidation frontier.
+
+Execute the representative plate + two cuts + revised Ø14 hole + retired
+old sketch + undo/redo + archive example:
+
+```bash
+node --experimental-strip-types packages/model/examples/retarget-cut-profile.mjs
+node --experimental-strip-types --test packages/model/test/cut-profile-source.test.mjs
+```
+
+**RUNTIME/WORKBENCH consumer requirement:** admit the selected `cycle:`
+against the current SKETCH solver, invalidate previous native/STEP receipts
+and run new native geometry before marking a result exact. MODEL preserves
+the cut/body semantics but cannot certify that the selected loop cuts material.

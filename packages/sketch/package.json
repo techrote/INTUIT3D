@@ -43,12 +43,76 @@
     "./dimension-fidelity/v1": {
       "types": "./dimension-fidelity.d.mts",
       "default": "./dimension-fidelity.mjs"
+    },
+    "./rounded-plate/v1": {
+      "types": "./rounded-plate.d.mts",
+      "default": "./rounded-plate.mjs"
+    },
+    "./rounded-plate/v2": {
+      "types": "./rounded-plate.d.mts",
+      "default": "./rounded-plate.mjs"
+    },
+    "./rounded-plate-handles/v1": {
+      "types": "./rounded-plate-handles.d.mts",
+      "default": "./rounded-plate-handles.mjs"
+    },
+    "./arc-constraints/v1": {
+      "types": "./arc-constraints.d.mts",
+      "default": "./arc-constraints.mjs"
+    },
+    "./arc-profile/v1": {
+      "types": "./arc-profile.d.mts",
+      "default": "./arc-profile.mjs"
+    },
+    "./arc-hole-authoring/v1": {
+      "types": "./arc-hole-authoring.d.mts",
+      "default": "./arc-hole-authoring.mjs"
+    },
+    "./arc-profile-tools/v1": {
+      "types": "./arc-profile-tools.d.mts",
+      "default": "./arc-profile-tools.mjs"
+    },
+    "./obround-slot/v1": {
+      "types": "./obround-slot.d.mts",
+      "default": "./obround-slot.mjs"
+    },
+    "./obround-slot-handles/v1": {
+      "types": "./obround-slot-handles.d.mts",
+      "default": "./obround-slot-handles.mjs"
+    },
+    "./centered-hole-plate/v1": {
+      "types": "./centered-hole-plate.d.mts",
+      "default": "./centered-hole-plate.mjs"
+    },
+    "./centered-hole-plate/v2": {
+      "types": "./centered-hole-plate-v2.d.mts",
+      "default": "./centered-hole-plate-v2.mjs"
+    },
+    "./arc-hole-pattern/v1": {
+      "types": "./arc-hole-pattern.d.mts",
+      "default": "./arc-hole-pattern.mjs"
+    },
+    "./arc-bolt-circle/v1": {
+      "types": "./arc-bolt-circle.d.mts",
+      "default": "./arc-bolt-circle.mjs"
+    },
+    "./arc-hole-anchors/v1": {
+      "types": "./arc-hole-anchors.d.mts",
+      "default": "./arc-hole-anchors.mjs"
+    },
+    "./selected-profile/v1": {
+      "types": "./selected-profile.d.mts",
+      "default": "./selected-profile.mjs"
+    },
+    "./selected-profile-handles/v1": {
+      "types": "./selected-profile-handles.d.mts",
+      "default": "./selected-profile-handles.mjs"
     }
   },
   "types": "./index.d.mts",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts test/conflict-explanation-contract.mts test/snap-contract.mts test/snap-admission-contract.mts test/profile-discovery-contract.mts test/boundary-guard-contract.mts test/circle-guard-contract.mts test/analytic-area-contract.mts test/dimension-fidelity-contract.mts"
+    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts test/conflict-explanation-contract.mts test/snap-contract.mts test/snap-admission-contract.mts test/profile-discovery-contract.mts test/boundary-guard-contract.mts test/circle-guard-contract.mts test/analytic-area-contract.mts test/dimension-fidelity-contract.mts test/rounded-plate-contract.mts test/rounded-plate-handles-contract.mts test/variable-rounded-plate-contract.mts test/arc-constraints-contract.mts test/arc-profile-contract.mts test/arc-hole-authoring-contract.mts test/arc-profile-tools-contract.mts test/obround-slot-contract.mts test/obround-slot-handles-contract.mts test/centered-hole-plate-contract.mts test/centered-hole-plate-v2-contract.mts test/arc-hole-pattern-contract.mts test/arc-bolt-circle-contract.mts test/arc-hole-anchors-contract.mts test/selected-profile-contract.mts test/selected-profile-handles-contract.mts"
   },
   "engines": {
     "node": ">=22"

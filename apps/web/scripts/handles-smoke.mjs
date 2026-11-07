@@ -103,7 +103,12 @@ async function main() {
   await send('Runtime.enable');
   await send('Page.enable');
   await send('Page.navigate', { url: origin });
-  await eventually(async () => evaluate("Boolean(document.querySelector('canvas') && document.querySelector('.ribbon-button'))"), 'hydrated 3D workbench');
+  await eventually(() => evaluate("Boolean(document.querySelector('[data-testid=runtime-panel]') && document.querySelector('[data-testid=runtime-exact-state]'))"), 'model-backed CAD is the default startup');
+  check(await evaluate("document.querySelector('[data-testid=enter-model-runtime]')===null"), 'Legacy preview mounted alongside the model authority');
+  await screenshot('00-model-first-start.png');
+  // Legacy preview regression remains available only by explicit opt-in.
+  await send('Page.navigate', { url: origin + '/?mode=preview' });
+  await eventually(async () => evaluate("Boolean(document.querySelector('canvas') && document.querySelector('[data-testid=enter-model-runtime]'))"), 'explicit preview mode');
   await screenshot('01-solid.png');
 
   check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(el=>el.textContent?.trim()==='Sketch');b?.click();return !!b})()"),
@@ -357,6 +362,257 @@ async function main() {
   check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(e=>e.textContent?.trim()==='Undo');return b?.disabled})()"),
     'Accepted file replacement retained another document undo history');
   await screenshot('09-imported-invalid-preview.png');
+  // Real INTENT/SKETCH/RUNTIME consumer acceptance. This mode is separately
+  // model-backed; only its display mesh remains a disposable tessellation.
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=enter-model-runtime]');b?.click();return !!b})()"),
+    'Cannot open model-backed CAD workspace');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),'model-backed plate evaluated');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'Unimplemented native cut was incorrectly reported exact');
+  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent?.includes('NO EXACT KERNEL')"),
+    'Model-backed exactness warning absent');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-3d-viewport] canvas'))"),'real profile 3D preview');
+  await screenshot('10-model-runtime-solid.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Sketch');b?.click();return !!b})()"),
+    'Model-backed sketch toggle unavailable');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch]')?.querySelectorAll('[data-testid^=runtime-sketch-outline-hole-]').length===2"),
+    'SKETCH solver profile did not display two holes');
+  await screenshot('11-model-runtime-sketch.png');
+  const modelRevision = await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-dimension-width]');e.focus();e.select();return document.activeElement===e})()"),
+    'Model-backed historical width editor unavailable');
+  await send('Input.insertText', {text:'90'});
+  await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
+    'Crossing hole profile not blocked by real solver/discovery');
+  check(await evaluate("Boolean(document.querySelector('[data-testid=runtime-empty]'))"),
+    'Model-backed invalid sketch retained fabricated current mesh');
+  check((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))!==modelRevision,
+    'Model-backed edit did not append an INTENT revision');
+  await screenshot('12-model-runtime-blocked.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'Model-backed undo missing');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),
+    'Model-backed undo failed to recover accepted sketch');
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent?.includes('2 displayed circular holes')"),
+    'Undo did not restore the admitted profile');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    'Model-backed redo missing');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
+    'Model-backed redo did not restore invalid authored intent');
+  // Save and open an actual browser Blob through File.text(), with explicit
+  // destructive replacement review, rather than pretending preview JSON is CAD.
+  check(await evaluate("(() => {window.__modelArchiveBlobs=[];const prior=URL.createObjectURL.bind(URL);URL.createObjectURL=(blob)=>{window.__modelArchiveBlobs.push(blob);return prior(blob)};return true})()"),
+    'Cannot instrument browser model archive download');
+  // Physical Ctrl+S in model-backed mode must download exactly ONE archive;
+  // the unmounted preview sandbox must never save its separate document.
+  await send('Input.dispatchKeyEvent',{type:'rawKeyDown',key:'Control',code:'ControlLeft',windowsVirtualKeyCode:17,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'s',code:'KeyS',windowsVirtualKeyCode:83,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'s',code:'KeyS',windowsVirtualKeyCode:83,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Control',code:'ControlLeft',windowsVirtualKeyCode:17});
+  await eventually(()=>evaluate("window.__modelArchiveBlobs?.length===1"),'single Ctrl+S model archive Blob');
+  check(await evaluate("window.__modelArchiveBlobs.length===1"),'Preview sandbox also handled model-only save shortcut');
+  check(await evaluate("(async()=>{const content=await window.__modelArchiveBlobs[0].text();const f=JSON.parse(content);return f.format==='intuit3d.model-archive' || content.includes('intuit3d.model-archive')})()"),
+    'Downloaded archive is not model history');
+  check(await evaluate("(async()=>{const data=await window.__modelArchiveBlobs[0].text();const dt=new DataTransfer();dt.items.add(new File([data],'plate.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
+    'Cannot reinject saved model archive into real browser file input');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),'model archive import review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'Model archive replacement confirmation missing');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]')"),'model archive reopened');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
+    'Save/reopen changed authored unsolved status');
+  await screenshot('13-model-runtime-reopened.png');
+
+  // Create a genuinely new semantic project. Cancel must preserve the
+  // unresolved prior project; accepting resets the journal and project ID.
+  const oldProjectLabel = await evaluate("document.querySelector('.runtime-shell .browser-project')?.textContent");
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-new-plate]');b?.click();return !!b})()"),
+    'New plate sketch command unavailable');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),'new project replacement review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Cancel');b?.click();return !!b})()"),
+    'New project cancellation unavailable');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
+    'Cancelled new project replaced the unresolved original');
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-new-plate]');b?.click();return !!b})()"),
+    'Cannot reopen new project review');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),'new project review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'New model project replacement cannot be confirmed');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),'new sketch and extrude rebuild');
+  check((await evaluate("document.querySelector('.runtime-shell .browser-project')?.textContent")) !== oldProjectLabel,
+    'New project silently reused existing project identity');
+  await screenshot('14-model-runtime-new-plate.png');
+
+  // Sketch-first authoring: actual browser click + keyboard control.
+  // No extrusion or cut exists in the project until its user command.
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-new-sketch]');b?.click();return !!b})()"),
+    'New sketch-first project command unavailable');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'sketch-first replacement review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'sketch-first replacement confirmation unavailable');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=\"runtime-status-sketch.plate\"]')?.textContent==='analytic_profile_only' && !document.querySelector('[data-testid=runtime-feature-plate]')"),
+    'new project fabricated an already-extruded plate');
+  check(await evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch]')) && document.querySelector('[data-testid=runtime-create-cut]')?.disabled"),
+    'sketch-first profile or cutting command state wrong');
+  await screenshot('15-sketch-first-solved.png');
+
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-dimension-width]');e.focus();e.select();return document.activeElement===e})()"),
+    'cannot dimension unextruded sketch');
+  await send('Input.insertText',{text:'140'});
+  await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-width]')?.value==='140'"),
+    'sketch-first retrospective width dimension not applied');
+  // E is a deliberate, keyboard-first two-stage authoring tool, never an
+  // immediate destructive command. Escape must leave the model unchanged.
+  await evaluate('document.activeElement?.blur()');
+  await key('e','KeyE',69);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-combo]')?.textContent.includes('Extrude admitted sketch')"),
+    'E combo did not propose extrusion for a sketch-only project');
+  check(await evaluate("document.querySelector('[data-testid=runtime-combo-distance]')?.value==='8' && !document.querySelector('[data-testid=runtime-feature-plate]')"),
+    'E combo silently authored extrusion before confirmation');
+  await screenshot('15a-e-combo-extrusion.png');
+  await key('Escape','Escape',27);
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-feature-combo]') && !document.querySelector('[data-testid=runtime-feature-plate]')"),
+    'Escape from E combo created a solid or left dialog open');
+  await key('e','KeyE',69);
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-combo-distance]'))"),
+    'E combo failed to reopen');
+  // The numeric distance is focused by the dialog and Enter commits the
+  // real semantic feature. Existing ribbon commands remain available too.
+  await eventually(()=>evaluate("document.activeElement?.matches('[data-testid=runtime-combo-distance]')"),
+    'E distance field did not receive keyboard focus');
+  await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only' && !document.querySelector('[data-testid=runtime-feature-combo]')"),
+    'E combo did not commit the authoritative extrusion');
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('0 displayed circular holes') && !document.querySelector('[data-testid=runtime-feature-cut]')"),
+    'uncut extrusion falsely visualized already-Boolean holes');
+  await screenshot('16-sketch-extruded-uncut.png');
+  await key('e','KeyE',69);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-combo]')?.textContent.includes('Cut circular holes through body.plate')"),
+    'E combo did not transition from extrusion to explicit target-body cut');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-feature-cut]') && document.querySelector('[data-testid=runtime-feature-combo]')?.textContent.includes('native provider')"),
+    'E cut combo claimed native geometry or authored before confirmation');
+  await screenshot('16a-e-combo-cut.png');
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-feature-combo-confirm]');b?.click();return !!b})()"),
+    'cannot confirm explicit cut in E combo');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider' && !document.querySelector('[data-testid=runtime-feature-combo]')"),
+    'E combo cut missing or erroneously exact');
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('2 displayed circular holes')"),
+    'cut-intent viewport failed to show intended hole locations');
+  await screenshot('17-sketch-through-cut-pending-native.png');
+
+  // Undo and redo the entire cut command; extrusion and sketch survive.
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'cut undo control missing');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-cut]')?.classList.contains('removed') && document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),
+    'undo did not remove only the through-cut');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    'cut redo control missing');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'redo did not restore the same target-body cut');
+
+  // Save and reopen the genuinely authored staged history through browser File.
+  const countBeforeSketchSave=await evaluate('window.__modelArchiveBlobs.length');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Save model archive');b?.click();return !!b})()"),
+    'cannot save sketch-first authored model');
+  await eventually(()=>evaluate('window.__modelArchiveBlobs.length==='+String(countBeforeSketchSave+1)),
+    'sketch-first model archive was not downloaded');
+  check(await evaluate("((async()=>{const data=await window.__modelArchiveBlobs.at(-1).text();const dt=new DataTransfer();dt.items.add(new File([data],'staged.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})())"),
+    'cannot reopen real staged model archive');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'staged project open review absent');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'staged archive replacement confirmation missing');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider' && document.querySelector('[data-testid=runtime-dimension-width]')?.value==='140'"),
+    'reopened staged project lost dimension or semantic cut');
+  await screenshot('18-sketch-cut-archive-reopened.png');
+
+
+  // Real Chromium Ctrl+click multi-selection and shared centre drag. Both
+  // semantic constraints must update in ONE revision; native remains pending.
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-mode-sketch]');b?.click();return !!b})()"),
+    'cannot enter sketch for group move');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch-hole-holeA]') && document.querySelector('[data-testid=runtime-sketch-hole-holeB]'))"),
+    'model-backed sketch handles absent for group move');
+  const groupBefore=await evaluate("(() => {const input=id=>Number(document.querySelector('[data-testid=runtime-hole-'+id+'-x]')?.value);return {a:input('holeA'),b:input('holeB'),revision:document.querySelector('[data-testid=runtime-revision]')?.textContent}})()");
+  const pointB=await evaluate("(() => {const r=document.querySelector('[data-testid=runtime-sketch-hole-holeB]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:pointB.x,y:pointB.y,modifiers:2});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:pointB.x,y:pointB.y,button:'left',buttons:1,clickCount:1,modifiers:2});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:pointB.x,y:pointB.y,button:'left',buttons:0,clickCount:1,modifiers:2});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-layout-select-holeA]')?.checked && document.querySelector('[data-testid=runtime-layout-select-holeB]')?.checked"),
+    'Ctrl+click did not additive-select both authored holes');
+  await screenshot('19-multi-hole-selected.png');
+  const pointA=await evaluate("(() => {const r=document.querySelector('[data-testid=runtime-sketch-hole-holeA]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
+  await mouse('mouseMoved',pointA.x,pointA.y);
+  await mouse('mousePressed',pointA.x,pointA.y,1);
+  await mouse('mouseMoved',pointA.x+24,pointA.y,1);
+  await mouse('mouseReleased',pointA.x+24,pointA.y);
+  const groupAfter=await eventually(async()=>{
+    const value=await evaluate("(() => {const input=id=>Number(document.querySelector('[data-testid=runtime-hole-'+id+'-x]')?.value);return {a:input('holeA'),b:input('holeB'),revision:document.querySelector('[data-testid=runtime-revision]')?.textContent}})()");
+    return value.a!==groupBefore.a&&value.b!==groupBefore.b?value:null;
+  },'real multi-hole group translation');
+  check(Math.abs((groupAfter.a-groupBefore.a)-(groupAfter.b-groupBefore.b))<1e-9,
+    'Ctrl-selected group changed relative hole spacing or did not move atomically');
+  check(groupAfter.revision!==groupBefore.revision,
+    'group drag made no authoritative journal revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'group move claimed an unexecuted native cut');
+  await screenshot('20-multi-hole-atomic-drag.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'group drag undo unavailable');
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)==="+groupBefore.a+" && Number(document.querySelector('[data-testid=runtime-hole-holeB-x]')?.value)==="+groupBefore.b),
+    'group drag undo did not restore both constraints');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    'group drag redo unavailable');
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)==="+groupAfter.a+" && Number(document.querySelector('[data-testid=runtime-hole-holeB-x]')?.value)==="+groupAfter.b),
+    'group drag redo did not reapply both constraints');
+  const priorGroupSave=await evaluate('window.__modelArchiveBlobs.length');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Save model archive');b?.click();return !!b})()"),
+    'cannot save multi-hole-edited model');
+  await eventually(()=>evaluate('window.__modelArchiveBlobs.length==='+String(priorGroupSave+1)),
+    'multi-hole archive absent');
+  check(await evaluate("((async()=>{const data=await window.__modelArchiveBlobs.at(-1).text();const dt=new DataTransfer();dt.items.add(new File([data],'moved-holes.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})())"),
+    'cannot reopen multi-hole archive');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'multi-hole archive review absent');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'multi-hole archive acceptance unavailable');
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)==="+groupAfter.a+" && Number(document.querySelector('[data-testid=runtime-hole-holeB-x]')?.value)==="+groupAfter.b),
+    'archive reopening lost selected group constraints');
+  await screenshot('21-multi-hole-archive-reopened.png');
+
+  // Actual model-first Ctrl+N keyboard regression on the CI-executed Chromium
+  // path. Cancellation must retain the existing journal and STEP state;
+  // confirmation must replace it with a solved sketch, not a fabricated solid.
+  const projectBeforeCtrlN=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  const sendCtrlN=async()=>{
+    const shortcut={key:'n',code:'KeyN',windowsVirtualKeyCode:78,modifiers:2};
+    await send('Input.dispatchKeyEvent',{type:'keyDown',...shortcut});
+    await send('Input.dispatchKeyEvent',{type:'keyUp',...shortcut});
+  };
+  await sendCtrlN();
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'Ctrl+N did not present a project replacement review');
+  await key('Escape','Escape',27);
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]')"),
+    'Escape failed to cancel Ctrl+N');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===projectBeforeCtrlN &&
+    await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'Cancel Ctrl+N changed the current model or its pending native state');
+  await sendCtrlN();
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'Ctrl+N could not reopen the project replacement review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'Cannot confirm fresh sketch-only project');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-create-extrusion]')?.disabled===false && !document.querySelector('[data-testid=runtime-feature-plate]')"),
+    'Confirmed Ctrl+N did not create an editable solved sketch without a solid');
+  check((await evaluate("document.querySelector('.project-title')?.textContent?.includes('Sketch project')")) &&
+      (await evaluate("document.querySelector('[data-testid=runtime-status-cut]')===null")),
+    'New sketch project inherited a former native cut or incorrect title');
+  await screenshot('22-ctrl-n-new-sketch.png');
+
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -373,8 +629,19 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png'],
-    limits: 'Preview only; no SKETCH solver, exact B-rep/OCCT, independent STEP or human acceptance.'
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png'],
+    modelBackedJournalSketchRuntimeBrowserEvidence: true,
+    modelBackedSaveOpenInvalidIntentPreserved: true,
+    ctrlSScopeIsolatedToModelArchive: true,
+    newModelProjectRequiresConsentAndFreshIdentity: true,
+    actualSketchFirstExtrudeCutInteraction: true,
+    uncutExtrusionHonestPreview: true,
+    stagedCutUndoRedoAndArchiveReopen: true,
+    keyboardEComboExtrusionAndCut: true,
+    physicalCtrlClickMultiHoleAtomicDragAndArchive: true,
+    actualChromiumCtrlNCancelAndSolvedNewSketch: true,
+    comboEscapeLeavesJournalUnchanged: true,
+    limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log('WORKBENCH_HANDLE_BROWSER_PASS ' + JSON.stringify(report));

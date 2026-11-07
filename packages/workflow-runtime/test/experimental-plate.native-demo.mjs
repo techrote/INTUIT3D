@@ -57,6 +57,29 @@ try {
   assert.equal(first.plate.thickness,8);
   assert.equal(second.plate.thickness,10);
   assert.notEqual(first.artifact.sha256,second.artifact.sha256);
+  const edited=runtime.editSketchConstraints(current,{
+    sketchFeatureId:'sketch.plate',eventId:'edit.native.holes',
+    expectedRevision:current.document.revision,
+    admission:'require_admissible',
+    edits:[
+      {constraintId:'holeA:diameter',patch:{value:5}},
+      {constraintId:'holeB:diameter',patch:{value:5}},
+    ],
+  });
+  assert.equal(edited.kind,'committed',JSON.stringify(edited));
+  current=runtime.reopen(runtime.save(edited.history));
+  const changedHoles=await evaluate('plate.native.changed.holes','changed-holes.step');
+  assert.deepEqual(changedHoles.plate.holes.map(h=>h.radius),[5,5]);
+  assert.notEqual(changedHoles.artifact.sha256,second.artifact.sha256);
+
+  current=runtime.reopen(runtime.save(runtime.undo(current,['undo.native.holes'])));
+  const undoneHoles=await evaluate('plate.native.undo.holes','undone-holes.step');
+  assert.deepEqual(undoneHoles.plate.holes.map(h=>h.radius),[6,6]);
+  assert.ok(changedHoles.artifact.sha256!==undoneHoles.artifact.sha256);
+  current=runtime.reopen(runtime.save(runtime.redo(current,['redo.native.holes'])));
+  assert.deepEqual(runtime.inspect(current).features
+    .find(f=>f.featureId==='plate').profile.holes.map(h=>h.radius),[5,5]);
   console.log(JSON.stringify({status:'experimental_native_pass',first,second,
+    changedHoles,undoneHoles,redoAdmitted:true,
     independentStep:false,productionExact:false},null,2));
 } finally {await rm(folder,{recursive:true,force:true});}

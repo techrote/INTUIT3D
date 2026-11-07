@@ -43,6 +43,66 @@
     "./dimension-dependency-reconcile": {
       "types": "./src/dimension-dependency-reconcile.ts",
       "default": "./src/dimension-dependency-reconcile.ts"
+    },
+    "./parameter-edit": {
+      "types": "./src/parameter-edit.ts",
+      "default": "./src/parameter-edit.ts"
+    },
+    "./semantic-selection": {
+      "types": "./src/semantic-selection.ts",
+      "default": "./src/semantic-selection.ts"
+    },
+    "./history-move": {
+      "types": "./src/history-move.ts",
+      "default": "./src/history-move.ts"
+    },
+    "./selection-inventory": {
+      "types": "./src/selection-inventory.ts",
+      "default": "./src/selection-inventory.ts"
+    },
+    "./parameter-freeze": {
+      "types": "./src/parameter-freeze.ts",
+      "default": "./src/parameter-freeze.ts"
+    },
+    "./parameter-authoring": {
+      "types": "./src/parameter-authoring.ts",
+      "default": "./src/parameter-authoring.ts"
+    },
+    "./selection-repair": {
+      "types": "./src/selection-repair.ts",
+      "default": "./src/selection-repair.ts"
+    },
+    "./feature-lifecycle": {
+      "types": "./src/feature-lifecycle.ts",
+      "default": "./src/feature-lifecycle.ts"
+    },
+    "./cut-reattachment": {
+      "types": "./src/cut-reattachment.ts",
+      "default": "./src/cut-reattachment.ts"
+    },
+    "./body-cut-chain": {
+      "types": "./src/body-cut-chain.ts",
+      "default": "./src/body-cut-chain.ts"
+    },
+    "./body-cut-order": {
+      "types": "./src/body-cut-order.ts",
+      "default": "./src/body-cut-order.ts"
+    },
+    "./cut-profile-source": {
+      "types": "./src/cut-profile-source.ts",
+      "default": "./src/cut-profile-source.ts"
+    },
+    "./dimension-value-edit": {
+      "types": "./src/dimension-value-edit.ts",
+      "default": "./src/dimension-value-edit.ts"
+    },
+    "./dimension-source-override": {
+      "types": "./src/dimension-source-override.ts",
+      "default": "./src/dimension-source-override.ts"
+    },
+    "./parameter-inspector": {
+      "types": "./src/parameter-inspector.ts",
+      "default": "./src/parameter-inspector.ts"
     }
   },
   "scripts": {

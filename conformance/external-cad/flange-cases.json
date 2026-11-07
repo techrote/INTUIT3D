@@ -1,0 +1,50 @@
+{
+  "schema": "intuit3d.external-cad-flange/v1",
+  "source": {
+    "repository": "techrote/INTUIT3D",
+    "acceptedMainSha": "1604afd9c7d1f8ae9c0dcb13fcdc2d68908c0244",
+    "ciRunId": 42345301755,
+    "ciArtifactId": 13563062028,
+    "producer": "OCP 7.9.3.1 experimental, not pinned OCCT 8.0.1 C++",
+    "fileProvenance": "ZIP from original accepted-main Actions artifact; SHA-256 for each actual STEP"
+  },
+  "cases": [
+    {
+      "filename": "flange.four.step", "bytes": 29991,
+      "sha256": "94687d7f6f64eef17589d0b44d831e3a60152b8a2c0026027b56fbe24d941b58",
+      "widthMm": 180, "depthMm": 100, "thicknessMm": 10,
+      "holes": [
+        {"x": -70, "y": -30, "radius": 5}, {"x": -70, "y": 30, "radius": 5},
+        {"x": 70, "y": -30, "radius": 5}, {"x": 70, "y": 30, "radius": 5}
+      ]
+    },
+    {
+      "filename": "flange.thick.step", "bytes": 29991,
+      "sha256": "e40cd44ca698357ec9f69a40633e3365856b0232915c2237cc6d930ce95aabb1",
+      "widthMm": 180, "depthMm": 100, "thicknessMm": 16,
+      "holes": [
+        {"x": -70, "y": -30, "radius": 5}, {"x": -70, "y": 30, "radius": 5},
+        {"x": 70, "y": -30, "radius": 5}, {"x": 70, "y": 30, "radius": 5}
+      ]
+    },
+    {
+      "filename": "flange.five.step", "bytes": 33649,
+      "sha256": "2bd16c7ba49fbda15d949ba0d0514c0e4e3324a8129dd10a64a69e8c5c217041",
+      "widthMm": 180, "depthMm": 100, "thicknessMm": 16,
+      "holes": [
+        {"x": -70, "y": -30, "radius": 5}, {"x": -70, "y": 30, "radius": 5},
+        {"x": 70, "y": -30, "radius": 5}, {"x": 70, "y": 30, "radius": 5},
+        {"x": 0, "y": 0, "radius": 4}
+      ]
+    },
+    {
+      "filename": "flange.undo.step", "bytes": 29991,
+      "sha256": "5d66ddc80b177097bee9c53534dcdffafbd99a6356de8b1514f3d779dedb06a0",
+      "widthMm": 180, "depthMm": 100, "thicknessMm": 16,
+      "holes": [
+        {"x": -70, "y": -30, "radius": 5}, {"x": -70, "y": 30, "radius": 5},
+        {"x": 70, "y": -30, "radius": 5}, {"x": 70, "y": 30, "radius": 5}
+      ]
+    }
+  ]
+}

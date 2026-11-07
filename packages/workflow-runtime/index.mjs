@@ -4,6 +4,7 @@
  * Services MUST be accepted public package modules; no parallel CAD policy here.
  */
 import {diffWorkflowPlans} from './invalidation.mjs';
+import {applyPlateHoleOperations,planRectangularHoleArray,planCircularHolePattern,planRigidHoleTransform,planHoleLayoutResize} from './hole-edit.mjs';
 export {WORKFLOW_INVALIDATION_FORMAT, WORKFLOW_INVALIDATION_VERSION, diffWorkflowPlans} from './invalidation.mjs';
 
 export const WORKFLOW_RUNTIME_FORMAT = 'intuit3d.workflow-runtime-evaluation';
@@ -187,6 +188,186 @@ export function createWorkflowRuntime(services) {
     return diffWorkflowPlans(model.planProject(previous.document), model.planProject(next.document));
   }
 
+  /**
+   * Apply a batch of authored sketch constraint edits as ONE INTENT transaction.
+   * SKETCH alone validates and updates constraint geometry; runtime owns only
+   * revision-fenced admission and the authoritative journal commit.
+   *
+   * require_admissible: preview a candidate and refuse without changing history
+   * unless SKETCH admits exactly one analytic plate profile.
+   * preserve_unresolved: retain validly authored but unsolved/invalid geometry
+   * for subsequent user repair, with no fabricated usable solid.
+   */
+  function editSketchConstraints(history, request) {
+    const {sketchFeatureId,eventId,expectedRevision,edits,
+      admission='require_admissible'}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision!==previous.document.revision)
+      throw new Error('runtime sketch edit: stale or missing expectedRevision');
+    if (typeof sketchFeatureId!=='string' || !sketchFeatureId ||
+        typeof eventId!=='string' || !eventId ||
+        !['require_admissible','preserve_unresolved'].includes(admission) ||
+        !Array.isArray(edits) || edits.length<1 || edits.length>64 ||
+        typeof sketch.editConstraint!=='function')
+      throw new TypeError('runtime sketch edit: valid feature/event, SKETCH adapter and 1–64 edits required');
+    const entry=model.planProject(previous.document).features.find(x=>x.feature.id===sketchFeatureId);
+    if (entry?.feature.kind!=='sketch' || !entry.feature.payload?.sketch)
+      throw new TypeError('runtime sketch edit: authoritative sketch feature required');
+    let nextSketch=sketch.validateSketch(entry.feature.payload.sketch);
+    const seen=new Set();
+    for (const edit of edits) {
+      if (!edit || typeof edit.constraintId!=='string' || !edit.constraintId ||
+          seen.has(edit.constraintId) || !edit.patch || typeof edit.patch!=='object' ||
+          Array.isArray(edit.patch))
+        throw new TypeError('runtime sketch edit: invalid or repeated constraint edit');
+      seen.add(edit.constraintId);
+      // Do not reproduce SKETCH's constraint-kind rules, tolerance or solver.
+      nextSketch=sketch.editConstraint(nextSketch,edit.constraintId,edit.patch);
+    }
+    const candidate=commit(previous,[{
+      eventId,type:'feature.edit',featureId:sketchFeatureId,
+      patch:{payload:{...entry.feature.payload,sketch:nextSketch}},
+    }],expectedRevision);
+    const report=inspect(candidate);
+    const state=report.features.find(x=>x.featureId===sketchFeatureId);
+    if (!state) throw new Error('runtime sketch edit: candidate feature disappeared');
+    if (admission==='require_admissible' && state.status!=='analytic_profile_only')
+      return {kind:'refused',code:'inadmissible_sketch',sourceRevision:expectedRevision,
+        candidateRevision:report.revision,notCommitted:true,candidateFeature:state,
+        reason:'SKETCH did not admit a single solved analytic profile; authoritative history is unchanged'};
+    return {kind:'committed',history:candidate,report,
+      sketchStatus:state.status,invalidation:diff(previous,candidate)};
+  }
+
+  /**
+   * Add or delete one or more circular through-holes as one undoable INTENT
+   * sketch edit. A real SKETCH solve/profile gate decides admission; no
+   * unqualified preview, alternative journal, or native Boolean is created.
+   */
+  function editPlateHoles(history,request) {
+    const {sketchFeatureId,eventId,expectedRevision,operations,
+      admission='require_admissible'}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if(!Number.isSafeInteger(expectedRevision)||
+        expectedRevision!==previous.document.revision)
+      throw new Error('runtime holes: stale or missing expectedRevision');
+    if(typeof sketchFeatureId!=='string'||!sketchFeatureId||
+        typeof eventId!=='string'||!eventId||
+        !['require_admissible','preserve_unresolved'].includes(admission))
+      throw new TypeError('runtime holes: sketch/event identity and admission required');
+    const entry=model.planProject(previous.document).features.find(
+      x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      throw new TypeError('runtime holes: authoritative sketch feature required');
+    const original=sketch.validateSketch(entry.feature.payload.sketch);
+    const authored=applyPlateHoleOperations(original,operations);
+    const nextSketch=sketch.validateSketch(authored);
+    const candidate=commit(previous,[{
+      eventId,type:'feature.edit',featureId:sketchFeatureId,
+      patch:{payload:{...entry.feature.payload,sketch:nextSketch}},
+    }],expectedRevision);
+    const report=inspect(candidate);
+    const state=report.features.find(f=>f.featureId===sketchFeatureId);
+    if(!state) throw new Error('runtime holes: edited sketch was not retained');
+    const hasAdmittedHoles=state.status==='analytic_profile_only' &&
+      state.profile?.holes?.length===nextSketch.circles.length;
+    if(admission==='require_admissible'&&!hasAdmittedHoles)
+      return {kind:'refused',code:'inadmissible_sketch',
+        sourceRevision:expectedRevision,candidateRevision:report.revision,
+        notCommitted:true,candidateFeature:state,
+        reason:'SKETCH did not admit every circular through-hole; authoritative history unchanged'};
+    return {kind:'committed',history:candidate,report,
+      sketchStatus:state.status,invalidation:diff(previous,candidate)};
+  }
+
+  /**
+   * One-shot two-dimensional array of an existing solved SKETCH hole. Source
+   * coordinates and radius come from the real solver (not seed geometry).
+   * Copies use independent stable IDs and pass through editPlateHoles' single
+   * authoritative event, profile admission, invalidation and undo contract.
+   */
+  function patternPlateHoles(history,request){
+    const {sketchFeatureId,eventId,expectedRevision,admission='require_admissible'}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if(!Number.isSafeInteger(expectedRevision)||expectedRevision!==previous.document.revision)
+      throw new Error('runtime hole array: stale or missing expectedRevision');
+    if(typeof sketchFeatureId!=='string'||!sketchFeatureId)
+      throw new TypeError('runtime hole array: sketch feature required');
+    const entry=model.planProject(previous.document).features.find(x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      throw new TypeError('runtime hole array: authoritative sketch feature required');
+    const doc=sketch.validateSketch(entry.feature.payload.sketch);
+    const solution=sketch.solveSketch(doc);
+    const operations=planRectangularHoleArray(doc,solution,request);
+    return editPlateHoles(previous,{sketchFeatureId,eventId,expectedRevision,admission,operations});
+  }
+
+  /**
+   * One-shot circular hole array. Copies the real solved source radius and
+   * centre around a chosen pivot, then delegates all admission, undo and
+   * invalidation to the exact same INTENT/SKETCH editPlateHoles contract.
+   * This is not an associative pattern or a kernel result.
+   */
+  function patternCircularHoles(history,request){
+    const {sketchFeatureId,eventId,expectedRevision,admission='require_admissible'}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if(!Number.isSafeInteger(expectedRevision)||expectedRevision!==previous.document.revision)
+      throw new Error('runtime circular array: stale or missing expectedRevision');
+    if(typeof sketchFeatureId!=='string'||!sketchFeatureId)
+      throw new TypeError('runtime circular array: sketch feature required');
+    const entry=model.planProject(previous.document).features.find(x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      throw new TypeError('runtime circular array: authoritative sketch feature required');
+    const doc=sketch.validateSketch(entry.feature.payload.sketch);
+    const solution=sketch.solveSketch(doc);
+    const operations=planCircularHolePattern(doc,solution,request);
+    return editPlateHoles(previous,{sketchFeatureId,eventId,expectedRevision,admission,operations});
+  }
+
+  /**
+   * One undoable rigid move/rotation of existing, independently constrained
+   * holes. Positions are read from the actual SKETCH solve, never seed points
+   * or a browser preview. Any inadmissible/overlapping resulting physical
+   * profile is refused by the existing atomic sketch-edit admission gate.
+   */
+  function transformPlateHoles(history,request){
+    const {sketchFeatureId,eventId,expectedRevision,admission='require_admissible'}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if(!Number.isSafeInteger(expectedRevision)||expectedRevision!==previous.document.revision)
+      throw new Error('runtime rigid holes: stale or missing expectedRevision');
+    if(typeof sketchFeatureId!=='string'||!sketchFeatureId)
+      throw new TypeError('runtime rigid holes: authoritative sketch feature required');
+    const entry=model.planProject(previous.document).features.find(x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      throw new TypeError('runtime rigid holes: authoritative sketch feature required');
+    const doc=sketch.validateSketch(entry.feature.payload.sketch);
+    const solution=sketch.solveSketch(doc);
+    const edits=planRigidHoleTransform(doc,solution,request);
+    return editSketchConstraints(previous,{sketchFeatureId,eventId,expectedRevision,admission,edits});
+  }
+
+  /**
+   * Resize a selected hole layout about an explicit datum, optionally changing
+   * every selected bore radius in the same one-event INTENT transaction.
+   * Uses solved SKETCH values and standard profile admission; invalid edits
+   * remain uncommitted unless the caller explicitly preserves unresolved intent.
+   */
+  function resizePlateHoleLayout(history,request){
+    const {sketchFeatureId,eventId,expectedRevision,admission='require_admissible'}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if(!Number.isSafeInteger(expectedRevision)||expectedRevision!==previous.document.revision)
+      throw new Error('runtime layout resize: stale or missing expectedRevision');
+    if(typeof sketchFeatureId!=='string'||!sketchFeatureId)
+      throw new TypeError('runtime layout resize: authoritative sketch feature required');
+    const entry=model.planProject(previous.document).features.find(x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      throw new TypeError('runtime layout resize: authoritative sketch feature required');
+    const doc=sketch.validateSketch(entry.feature.payload.sketch);
+    const solution=sketch.solveSketch(doc);
+    const edits=planHoleLayoutResize(doc,solution,request);
+    return editSketchConstraints(previous,{sketchFeatureId,eventId,expectedRevision,admission,edits});
+  }
+
   /** Explicitly delegated, revision-fenced authoritative commands. */
   function commit(history, events, expectedRevision = history.document.revision) {
     return transactions.commitUndoableTransaction(history, events, expectedRevision);
@@ -207,5 +388,5 @@ export function createWorkflowRuntime(services) {
   function reopen(serialized) {
     return archive.deserializeModelArchive(serialized).history;
   }
-  return Object.freeze({inspect, diff, commit, editDimensions, undo, redo, save, reopen});
+  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, undo, redo, save, reopen});
 }
