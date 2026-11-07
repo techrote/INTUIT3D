@@ -80,6 +80,43 @@ The response deliberately remains experimental_report with exactAuthority=false
 and independentInteroperability=false. Never take arbitrary backend versions
 from project files.
 
+
+## Node consumer: real C++ provider (experimental)
+
+Once the **actual pinned** binary exists, RUNTIME/WORKBENCH can invoke the
+provider using the shared revision-fenced artifact transaction instead of
+spawning the Python OCP prototype:
+
+```js
+import {runPinnedOcct8Plate} from '@intuit3d/kernel-contract/local-occt8-provider';
+const result = await runPinnedOcct8Plate(plateRequest, {
+  workerExecutable: '/absolute/path/to/intuit3d_occt8_plate',
+  readCurrentRevision: () => currentModelRevision,
+  stepOutput: '/path/to/new-export.step',
+  part21StepAudit: true,
+  crossVersionStepAudit: true, // requires pinned OCP 7.9.3.1 in this Python env
+  timeoutMs: 30000,
+  signal: abortController.signal,
+});
+```
+
+This Node API uses the *real* `native/occt8_bridge.py`, invokes the isolated
+C++ worker once per operation, validates both the versioned native report and
+the SHA-256 of the actual private STEP bytes, checks revision again before and
+after atomic exclusive publication, and cancels pending work on abort. The
+independent Part 21 plate-subset audit is required by default for exports.
+It deliberately returns `exactAuthority: false` and
+`independentInteroperability: false` even when that audit passes; the browser
+must not relabel the result production exact. Disabling the optional cross-
+version OCP audit does not change this authority boundary.
+
+`node --test packages/kernel-contract/test/local-occt8-provider.test.mjs`
+executes a cross-platform **synthetic bridge transport** regression with
+cancellation, digest substitution, malformed geometry and exclusive file
+publication. It is **not** proof of an 8.0.1 C++ build or valid STEP geometry.
+The actual geometry/STEP qualification remains the `INTUIT3D_OCCT8_WORKER`
+Python test and a separately implemented full CAD STEP consumer.
+
 ## Evidence and remaining qualifications
 
 The existing Python OCP 7.9.3.1 source executed two-hole B-rep/STEP on Linux
