@@ -3,7 +3,7 @@ import type { ChangeEvent } from 'react';
 import {
   addModelHole, createModelExtrusion, createModelThroughCut, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelSketchDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, moveModelFeature, moveModelHoleCenter, moveModelHoleGroup, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
   makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, newModelSketchSession, previewModelProfile, previewModelSketchProfile, redoModelSession,
-  reopenModelSession, runtime, serializeModelSession, undoModelSession,
+  runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
@@ -11,6 +11,7 @@ import type { SketchDimensionHandle } from './runtimeSketchHandles';
 import { nextCircleDrawing, type CircleDrawingState } from './circleDrawing';
 import { createLivePlateSession } from '@intuit3d/workflow-runtime/live-plate-session';
 import { experimentalStepFilename } from './localNativeStep';
+import { MAX_MODEL_ARCHIVE_BYTES, validateModelArchiveInWorker } from './modelArchiveImport';
 
 const LABEL: Record<ModelDimension,string> = {
   width:'Plate width', depth:'Plate depth', holeDiameter:'Hole diameter',
@@ -94,6 +95,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [pendingImport,setPendingImport]=useState<{file:string;history:ModelSession}|null>(null);
   const fileInput=useRef<HTMLInputElement>(null);
   const loadTicket=useRef(0);
+  const importAbort=useRef<AbortController|null>(null);
+  const [loadingFile,setLoadingFile]=useState<string|null>(null);
+  const cancelActiveImport=()=>{
+    ++loadTicket.current;
+    importAbort.current?.abort();
+    importAbort.current=null;
+    setLoadingFile(null);
+  };
   // RUNTIME's live session fences all native bytes to the ONE authoritative
   // INTENT journal. The browser owns only presentation and ephemeral UI state.
   const liveHistory=useRef(history);
@@ -142,7 +151,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       },250);
     }
   };
-  useEffect(()=>()=>{if(autoNativeTimer.current!==null)clearTimeout(autoNativeTimer.current);nativeSession.current?.cancel();},[]);
+  useEffect(()=>()=>{if(autoNativeTimer.current!==null)clearTimeout(autoNativeTimer.current);nativeSession.current?.cancel();importAbort.current?.abort();},[]);
   const report=useMemo(()=>inspectModelSession(history),[history]);
   const featureRows=useMemo(()=>modelFeatureTimeline(history),[history]);
   const plateActive=featureRows.some(row=>row.featureId==='plate'&&row.active);
@@ -406,24 +415,41 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     const file=event.target.files?.[0];
     event.target.value='';
     if(!file)return;
-    const ticket=++loadTicket.current;
+    cancelActiveImport();
+    const ticket=loadTicket.current;
+    const abort=new AbortController();
+    importAbort.current=abort;
+    // Never apply an archive until the user explicitly confirms replacement.
+    setPendingImport(null);
+    setLoadingFile(file.name);
+    setMessage(null);
     try{
-      if(file.size>4*1024*1024)throw Error('Archive exceeds 4 MiB');
+      if(file.size>MAX_MODEL_ARCHIVE_BYTES)throw Error('Archive exceeds 4 MiB');
       const source=await file.text();
-      const incoming=reopenModelSession(source);
-      if(ticket!==loadTicket.current)return;
+      if(ticket!==loadTicket.current||abort.signal.aborted)return;
+      // Full RUNTIME.reopen + undo validation + SKETCH inspection run in a
+      // bounded worker, not synchronously on Firefox's main/UI thread.
+      const incoming=await validateModelArchiveInWorker(source,{signal:abort.signal});
+      if(ticket!==loadTicket.current||abort.signal.aborted)return;
       setPendingImport({file:file.name,history:incoming});
-      setMessage(null);
-    }catch(e){if(ticket===loadTicket.current)setMessage('Open rejected: '+String(e));}
+    }catch(e){
+      if(ticket===loadTicket.current&&!abort.signal.aborted)
+        setMessage('Open rejected (current model retained): '+String(e));
+    }finally{
+      if(ticket===loadTicket.current){
+        importAbort.current=null;
+        setLoadingFile(null);
+      }
+    }
   };
   const prepareNewSketch=()=>{
-    ++loadTicket.current;
+    cancelActiveImport();
     setPendingImport({file:'New sketch-first CAD project',
       history:newModelSketchSession('workbench.sketch.'+crypto.randomUUID())});
   };
   const useIncoming=()=>{
     if(!pendingImport)return;
-    ++loadTicket.current;
+    cancelActiveImport();
     acceptHistory(pendingImport.history);
     const plateRows=modelFeatureTimeline(pendingImport.history).filter(row=>row.featureId==='plate');
     const hasPlate=plateRows.some(row=>row.active);
@@ -532,7 +558,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       <div className="project-title">{plateAuthored?'Mounting plate':'Sketch project'} · <span data-testid="runtime-revision">revision {report.revision}</span></div>
       <div className="title-actions">
         <button className="ribbon-button" data-testid="runtime-new-plate"
-          onClick={()=>{++loadTicket.current;setPendingImport({
+          onClick={()=>{cancelActiveImport();setPendingImport({
             file:'New mounting plate (fresh project)',history:newModelPlateSession('workbench.plate.'+crypto.randomUUID()),
           });}}>
           New plate sketch
@@ -901,13 +927,25 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           {featureCombo==='extrude'?'Create extrusion':'Create through-cut'}</button>
       </div>
     </form></div>}
+    {loadingFile&&<div className="recovery-backdrop"><section className="recovery-dialog"
+      role="dialog" aria-modal="true" aria-label="Validating incoming model archive"
+      data-testid="runtime-import-processing">
+      <h2>Validating model archive…</h2>
+      <p>Checking {loadingFile} and its undo history in an isolated worker.
+        Your current model remains unchanged.</p>
+      <div className="recovery-actions">
+        <button type="button" data-testid="runtime-import-processing-cancel"
+          onClick={()=>{cancelActiveImport();setMessage('Archive import cancelled; current model retained.');}}>
+          Cancel import</button>
+      </div>
+    </section></div>}
     {pendingImport&&<div className="recovery-backdrop"><section className="recovery-dialog" role="dialog"
       aria-modal="true" aria-label="Review incoming model archive" data-testid="runtime-import-review">
       <h2>Replace model session?</h2>
       <p>{pendingImport.file}: {pendingImport.history.document.revision} durable events.
         Accepting replaces the in-memory undo history. No native B-rep/STEP is imported.</p>
       <div className="recovery-actions">
-        <button onClick={()=>{++loadTicket.current;setPendingImport(null);}}>Cancel</button>
+        <button onClick={()=>{cancelActiveImport();setPendingImport(null);}}>Cancel</button>
         <button onClick={useIncoming}>Replace with model archive</button>
       </div>
     </section></div>}
