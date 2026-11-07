@@ -91,8 +91,12 @@ const newOriginal=model.featuresOf(afterResize.document).find(f=>f.id==='sketch.
  .payload.sketch;
 const oldFirst=oldOriginal.circles.find(c=>c.id==='fixture.grid:r0c1');
 const newFirst=newOriginal.circles.find(c=>c.id==='fixture.grid:r0c1');
-const oldX=oldOriginal.points.find(p=>p.id===oldFirst.center).x;
-const newX=newOriginal.points.find(p=>p.id===newFirst.center).x;
+// Authored point seeds are NOT solved coordinates after retrospective edits.
+// Read both configurations through the authoritative SKETCH solver.
+const oldX=sketch.solveSketch(sketch.validateSketch(oldOriginal)).geometry.points
+ .find(p=>p.id===oldFirst.center).x;
+const newX=sketch.solveSketch(sketch.validateSketch(newOriginal)).geometry.points
+ .find(p=>p.id===newFirst.center).x;
 const source=fixture.circles.find(c=>c.id==='fixture.hole');
 const result={
  gridHoleCount:fixture.circles.length,generatedHoleIds:created.gridHoleIds,
