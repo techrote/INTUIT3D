@@ -275,3 +275,23 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
 .runtime-shell [data-testid="runtime-feature-lifecycle"] .ribbon-button {
   white-space:normal;min-height:30px;height:auto;text-align:left;margin-top:6px;
 }
+
+/* Sketch-first product authoring is a real feature command, not a preview tool. */
+.runtime-shell .runtime-extrusion-distance {
+  align-self: flex-end; margin: 0 3px 2px 0; display: flex;
+  gap: 4px; align-items: center; color: #a4b9c6;
+  font-size: 11px; white-space: nowrap;
+}
+.runtime-shell .runtime-extrusion-distance input {
+  width: 60px; height: 31px; box-sizing: border-box;
+  background: #0d202d; border: 1px solid #44667a;
+  border-radius: 4px; padding: 4px 6px; color: #e5f5f8;
+  font: 12px ui-monospace, Consolas, monospace; text-align: right;
+}
+.runtime-shell [data-testid="runtime-feature-authoring"] .ribbon-button {
+  max-width: 142px; white-space: normal; text-align: center; line-height: 1.2;
+  border: 1px solid #3a5b6d;
+}
+.runtime-shell [data-testid="runtime-feature-authoring"] .ribbon-button:disabled {
+  color: #637c8d; border-color: #283b49; cursor: not-allowed;
+}
