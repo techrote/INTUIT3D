@@ -265,3 +265,13 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
 .runtime-shell .runtime-hole-editor > strong {color:#e4be81;font-size:11px;letter-spacing:.35px;}
 .runtime-shell .runtime-hole-editor .runtime-scalar {padding:3px 0;}
 .runtime-shell .runtime-hole-editor .runtime-scalar input {width:94px;}
+
+/* Removed CAD timeline rows remain selectable semantic tombstones, never geometry. */
+.runtime-shell .feature-item.removed {opacity:.78;border-left:3px solid #ba865d;}
+.runtime-shell .feature-item.removed .feature-main small {color:#e2b689;}
+.runtime-shell .runtime-lifecycle-confirm {margin-top:10px;padding:10px;border-radius:5px;
+  border:1px solid #ba865d;background:#2c292a;display:flex;flex-direction:column;gap:6px;}
+.runtime-shell .runtime-lifecycle-confirm strong {font-size:11px;color:#f1ceb0;}
+.runtime-shell [data-testid="runtime-feature-lifecycle"] .ribbon-button {
+  white-space:normal;min-height:30px;height:auto;text-align:left;margin-top:6px;
+}

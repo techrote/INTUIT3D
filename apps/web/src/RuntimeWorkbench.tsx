@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
-  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelHoleValues, moveModelFeature, moveModelHoleCenter, patternModelHoles, removeModelHole,
+  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, moveModelFeature, moveModelHoleCenter, patternModelHoles, removeModelFeature, removeModelHole, restoreModelFeature,
   MODEL_DIMENSIONS, makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, previewModelProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
@@ -78,6 +78,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [holeDraft,setHoleDraft]=useState({x:'60',y:'20',diameter:'10'});
   const [arrayDraft,setArrayDraft]=useState({sourceHoleId:'holeA',rows:'2',columns:'2',pitchXmm:'20',pitchYmm:'20'});
   const [selected,setSelected]=useState('plate');
+  const [cascadeConfirmation,setCascadeConfirmation]=useState<string|null>(null);
   const [timeline,setTimeline]=useState<'authored'|'evaluated'>('authored');
   const [message,setMessage]=useState<string|null>(null);
   const [pendingImport,setPendingImport]=useState<{file:string;history:ModelSession}|null>(null);
@@ -115,6 +116,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const acceptHistory=(next:ModelSession)=>{
     liveHistory.current=next;
     invalidateNative();
+    setCascadeConfirmation(null);
     setHistory(next);
     // An accepted journal change may trigger a new native evaluation, but a
     // burst of sketch drags coalesces and unsupported profiles stay pending.
@@ -129,8 +131,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   };
   useEffect(()=>()=>{if(autoNativeTimer.current!==null)clearTimeout(autoNativeTimer.current);nativeSession.current?.cancel();},[]);
   const report=useMemo(()=>inspectModelSession(history),[history]);
-  const values=useMemo(()=>modelDimensionValues(history),[history]);
-  const thicknessBinding=useMemo(()=>modelThicknessBinding(history),[history]);
+  const featureRows=useMemo(()=>modelFeatureTimeline(history),[history]);
+  const plateActive=featureRows.some(row=>row.featureId==='plate'&&row.active);
+  const selectedActive=featureRows.some(row=>row.featureId===selected&&row.active);
+  const editableLifecycle=selected==='plate'||selected==='cut';
+  const removalImpact=selectedActive&&editableLifecycle
+    ?modelFeatureRemovalImpact(history,selected):null;
+  const values=useMemo(()=>plateActive?modelDimensionValues(history):null,[history,plateActive]);
+  const thicknessBinding=useMemo(()=>plateActive?modelThicknessBinding(history):'independent',[history,plateActive]);
   const holes=useMemo(()=>modelHoleValues(history),[history]);
   const geom=useMemo(()=>previewModelProfile(report),[report]);
   const faults=useMemo(()=>modelDiagnostics(report),[report]);
@@ -219,6 +227,25 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       acceptHistory(result.history);
       setMessage(`Revision ${result.history.document.revision}: direct ${id} → ${value} mm; invalidated ${result.invalidatedFeatureIds.join(' → ')||'none'}. STEP must be rebuilt; preview is not exact.`);
     }catch(e){setMessage('Dimension gesture refused: '+String(e));}
+  };
+  const removeSelectedFeature=(cascade:boolean)=>{
+    try{
+      if(!editableLifecycle||!selectedActive)throw Error('Select an active extrusion or cut.');
+      const result=removeModelFeature(liveHistory.current,selected,cascade);
+      acceptHistory(result.history);
+      setMessage(cascade
+        ?`Retired ${result.impact.cascadeIds.join(' → ')} in one undoable transaction. Deleted solids and STEP receipts are not current; restore each semantic feature or undo.`
+        :`Removed ${selected}; retained ${result.impact.transitiveDependents.join(', ')||'no'} dependent features as editable pending intent. Undo or Restore retains the same feature IDs.`);
+    }catch(e){setMessage('Feature removal refused: '+String(e));}
+  };
+  const restoreSelectedFeature=()=>{
+    try{
+      if(!editableLifecycle||selectedActive)throw Error('Select a removed extrusion or cut.');
+      const next=restoreModelFeature(liveHistory.current,selected);
+      acceptHistory(next);
+      const state=inspectModelSession(next).features.find(f=>f.featureId===selected)?.status;
+      setMessage(`Restored ${selected} with its original semantic identity (${state??'unresolved'}). Native STEP requires a new rebuild.`);
+    }catch(e){setMessage('Feature restoration refused: '+String(e));}
   };
   const moveTimeline=(id:string,direction:'earlier'|'later')=>{
     try{
@@ -377,13 +404,17 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         <div className="browser-project">Plate · {report.projectId}</div>
         <div className="browser-subheading">Stable feature IDs</div>
         <div className="feature-list">
-          {report.features.map((f,i)=><button key={f.featureId} type="button"
-            data-testid={`runtime-feature-${f.featureId}`}
-            className={selected===f.featureId?'feature-item selected':'feature-item'}
-            onClick={()=>{setSelected(f.featureId);if(f.kind==='sketch')setSketchMode(true);}}>
-            <span className="feature-position">{i+1}</span>
-            <span className="feature-main"><span>{f.kind.toUpperCase()} · {f.featureId}</span><small>{f.status}</small></span>
-          </button>)}
+          {featureRows.map((row,i)=>{
+            const f=report.features.find(item=>item.featureId===row.featureId);
+            return <button key={row.featureId} type="button"
+              data-testid={`runtime-feature-${row.featureId}`}
+              className={`feature-item${selected===row.featureId?' selected':''}${row.active?'':' removed'}`}
+              onClick={()=>{setSelected(row.featureId);setCascadeConfirmation(null);if(f?.kind==='sketch')setSketchMode(true);}}>
+              <span className="feature-position">{i+1}</span>
+              <span className="feature-main"><span>{row.active?f?.kind.toUpperCase():'REMOVED'} · {row.featureId}</span>
+                <small>{row.active?f?.status:'tombstone · restorable'}</small></span>
+            </button>;
+          })}
         </div>
         <div className="browser-footnote">Semantic history is persisted by INTENT. The mesh is disposable; no topology IDs are taken from triangles.</div>
       </aside>
@@ -427,11 +458,40 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         <div className="panel-heading">PARAMETRIC INSPECTOR <span className="panel-count">mm</span></div>
         <div className="inspector-feature"><small>SELECTED SEMANTIC FEATURE</small><strong>{selected}</strong>
           <span>{report.features.find(f=>f.featureId===selected)?.status ?? 'Missing'}</span></div>
+        <div className="inspector-section" data-testid="runtime-feature-lifecycle">
+          <div className="section-head">FEATURE LIFECYCLE · INTENT JOURNAL</div>
+          {editableLifecycle?(selectedActive?<div className="runtime-hole-add">
+            <strong>{selected} · active</strong>
+            <p className="microcopy">{removalImpact?.transitiveDependents.length
+              ?`Dependent authoring: ${removalImpact.transitiveDependents.join(', ')}. Retain it as pending or explicitly retire it.`
+              :'No dependent features. Removing this feature preserves an undoable tombstone.'}</p>
+            <button type="button" className="ribbon-button" data-testid="runtime-feature-remove"
+              onClick={()=>removeSelectedFeature(false)}>Remove · keep dependents pending</button>
+            {!!removalImpact?.transitiveDependents.length&&<button type="button" className="ribbon-button"
+              data-testid="runtime-feature-cascade-start" onClick={()=>setCascadeConfirmation(selected)}>
+              Remove with dependent features…</button>}
+            {cascadeConfirmation===selected&&<div className="runtime-lifecycle-confirm" role="group"
+              aria-label="Confirm dependent feature deletion" data-testid="runtime-feature-cascade-confirmation">
+              <strong>Retire {removalImpact?.cascadeIds.join(', ')}?</strong>
+              <p className="microcopy">One undoable journal transaction. Dependents will not be silently discarded.</p>
+              <button type="button" className="ribbon-button" data-testid="runtime-feature-cascade-confirm"
+                onClick={()=>removeSelectedFeature(true)}>Confirm cascade removal</button>
+              <button type="button" className="ribbon-button" onClick={()=>setCascadeConfirmation(null)}>Cancel</button>
+            </div>}
+          </div>:<div className="runtime-hole-add">
+            <strong>{selected} · removed</strong>
+            <p className="microcopy">Original semantic feature identity is preserved in the journal. Restoration may leave unresolved dependencies pending; no stale mesh is exact.</p>
+            <button type="button" className="ribbon-button" data-testid="runtime-feature-restore"
+              onClick={restoreSelectedFeature}>Restore selected feature</button>
+          </div>):<p className="microcopy">Select the extrusion or cut in the feature browser to remove or restore it. Sketch constraints and parameter sources remain protected in this workbench.</p>}
+        </div>
         <div className="inspector-section">
           <div className="section-head">EDIT RETROSPECTIVE DIMENSIONS</div>
-          {MODEL_DIMENSIONS.map(field=><ScalarInput key={field+':'+history.document.revision} field={field}
-            value={values[field]} onCommit={update}/>)}
-          <div className="runtime-hole-add" data-testid="runtime-thickness-binding">
+          {values?MODEL_DIMENSIONS.map(field=><ScalarInput key={field+':'+history.document.revision} field={field}
+            value={values[field]} onCommit={update}/>):<p data-testid="runtime-removed-extrusion" className="microcopy">
+              Extrusion removed. Plate parameters remain authored in the journal; restore the original extrusion to edit or rebuild it.
+            </p>}
+          {plateActive&&<div className="runtime-hole-add" data-testid="runtime-thickness-binding">
             <strong>Extrusion thickness · {thicknessBinding==='named_parameter'?'linked parameter':'independent dimension'}</strong>
             <span data-testid="runtime-thickness-link-state">
               {thicknessBinding==='named_parameter'
@@ -443,7 +503,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               disabled={thicknessBinding!=='named_parameter' || !!pendingImport}
               onClick={makeIndependent}>Make thickness independent</button>
             <p className="microcopy">Freeze the current resolved value, release only the witnessed parameter dependency, and retire the unused parameter. One reversible INTENT transaction; later edits change the extrusion directly. This is not a native geometry operation.</p>
-          </div>
+          </div>}
           <p className="microcopy">Values edit actual SKETCH constraints or the authoritative INTENT extrusion dimension. The thickness link/independent state is read from the model's binding manifest, never a separate browser flag. Every edit is a revision-fenced undoable journal transaction.</p>
         </div>
         <div className="inspector-section" data-testid="runtime-hole-inspector">
@@ -557,7 +617,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             <strong>{f.featureId}</strong> <span data-testid={`runtime-status-${f.featureId}`}>{f.status}</span>
             {f.diagnostics.map((d,i)=><small key={i}>{d}</small>)}
           </div>)}
-          <p className="microcopy">Extrude: {plate?.status}. Cut: {cut?.status}. Real native B-rep and verified STEP are unavailable. This viewport never asserts exactness.</p>
+          <p className="microcopy">Extrude: {plate?.status??'removed'}. Cut: {cut?.status??'removed'}. The viewport is a tessellated preview only. Native STEP, when separately rebuilt, remains experimental with same-engine readback rather than production exactness.</p>
         </div>
         {message&&<div className="runtime-message" role="status">{message}</div>}
       </aside>

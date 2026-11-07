@@ -9,6 +9,7 @@ import * as bindings from '@intuit3d/model/dimension-bindings';
 import * as dimensions from '@intuit3d/model/dimension-batch-edit';
 import * as archive from '@intuit3d/model/archive';
 import { moveHistoryFeature } from '@intuit3d/model/history-move';
+import * as lifecycle from '@intuit3d/model/feature-lifecycle';
 import { commitUndoableParameterFreeze, previewParameterFreeze } from '@intuit3d/model/parameter-freeze';
 import * as sketch from '@intuit3d/sketch';
 import * as discovery from '@intuit3d/sketch/profile-discovery/v1';
@@ -20,6 +21,46 @@ import type { SketchDimensionHandle } from './runtimeSketchHandles';
 
 export const runtime = createWorkflowRuntime({ model, transactions, bindings, dimensions, archive, sketch, discovery });
 export type ModelSession = UndoHistory;
+
+/** Full authored feature inventory, including reversible tombstones. */
+export function modelFeatureTimeline(h:ModelSession) {
+  return model.featureTimelineOf(h.document);
+}
+
+/** UI can remove authored solids/cuts without destroying sketch input or
+ * parameter sources. Lifecycle impact is computed by INTENT, not the DOM. */
+export function modelFeatureRemovalImpact(h:ModelSession,featureId:string) {
+  if(featureId!=='plate' && featureId!=='cut')
+    throw Error('This workbench supports removing only extrusion and cut features.');
+  return lifecycle.inspectFeatureRemoval(h.document,featureId);
+}
+
+export function removeModelFeature(h:ModelSession,featureId:string,cascade=false) {
+  const impact=modelFeatureRemovalImpact(h,featureId);
+  const victims=cascade?impact.cascadeIds:[featureId];
+  const request:lifecycle.FeatureRemovalRequest={
+    format:lifecycle.FEATURE_LIFECYCLE_FORMAT,version:lifecycle.FEATURE_LIFECYCLE_VERSION,
+    action:'remove',expectedProjectId:h.document.projectId,expectedRevision:h.document.revision,
+    featureId,mode:cascade?'cascade_descendants':'keep_dependents_pending',
+    confirmCascade:cascade,
+    eventIds:victims.map((_,i)=>`workbench.remove.${h.document.revision}.${i}`),
+  };
+  return {history:lifecycle.commitUndoableFeatureRemoval(h,request),impact};
+}
+
+export function restoreModelFeature(h:ModelSession,featureId:string) {
+  if(featureId!=='plate' && featureId!=='cut')
+    throw Error('This workbench supports restoring only extrusion and cut features.');
+  if(!model.featureTimelineOf(h.document).some(t=>t.featureId===featureId&&!t.active))
+    throw Error('Selected feature has no inactive tombstone.');
+  const request:lifecycle.FeatureRestorationRequest={
+    format:lifecycle.FEATURE_LIFECYCLE_FORMAT,version:lifecycle.FEATURE_LIFECYCLE_VERSION,
+    action:'restore',expectedProjectId:h.document.projectId,expectedRevision:h.document.revision,
+    featureIds:[featureId],eventIds:[`workbench.restore.${h.document.revision}.${featureId}`],
+    admission:'permit_unresolved',
+  };
+  return lifecycle.commitUndoableFeatureRestoration(h,request);
+}
 export type ModelDimension = 'width' | 'depth' | 'holeDiameter' | 'holePitch' | 'thickness';
 export const MODEL_DIMENSIONS: readonly ModelDimension[] = ['width', 'depth', 'holeDiameter', 'holePitch', 'thickness'];
 export type ModelHole = string;
@@ -348,9 +389,14 @@ export function serializeModelSession(h: ModelSession): string { return runtime.
 export function reopenModelSession(text: string): ModelSession {
   if (text.length > 4*1024*1024) throw Error('Model archive exceeds 4 MiB workbench limit');
   const h = runtime.reopen(text);
-  // Strictly this first consumer supports only its own plate fixture topology.
-  // Unrecognized authoritative projects are never coerced into the preview.
-  modelDimensionValues(h);
+  // Accept a genuine authored plate/cut tombstone archive without
+  // resurrecting deleted geometry; unrelated document formats are refused.
+  const rows=model.featureTimelineOf(h.document);
+  if(!['sketch.plate','plate','cut'].every(id=>rows.some(t=>t.featureId===id)) ||
+      !rows.some(t=>t.featureId==='sketch.plate'&&t.active))
+    throw Error('Archive does not contain the supported plate/sketch/cut history.');
+  modelHoleValues(h);
+  if(rows.some(t=>t.featureId==='plate'&&t.active))modelDimensionValues(h);
   runtime.inspect(h);
   return h;
 }
