@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
-  editModelDimension, editModelHole, inspectModelSession, modelDiagnostics, modelDimensionValues, modelHoleValues, moveModelFeature, moveModelHoleCenter,
+  editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelHoleValues, moveModelFeature, moveModelHoleCenter,
   MODEL_DIMENSIONS, newModelPlateSession, previewModelProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
+import type { SketchDimensionHandle } from './runtimeSketchHandles';
 import { evaluateLocalPlate } from '@intuit3d/workflow-runtime/local-plate-client';
 import { verifyCurrentStepRevision, experimentalStepFilename } from './localNativeStep';
 
@@ -133,6 +134,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       acceptHistory(result.history);
       setMessage(`Moved ${hole} center to (${x}, ${y}) mm in one undoable sketch transaction; native STEP requires rebuild.`);
     }catch(e){setMessage('Hole drag refused: '+String(e));}
+  };
+  const dragDimension=(id:SketchDimensionHandle,value:number)=>{
+    try{
+      const result=editModelSketchHandle(liveHistory.current,id,value);
+      if(result.kind==='refused'){setMessage('Dimension gesture refused: '+result.reason);return;}
+      acceptHistory(result.history);
+      setMessage(`Revision ${result.history.document.revision}: direct ${id} → ${value} mm; invalidated ${result.invalidatedFeatureIds.join(' → ')||'none'}. STEP must be rebuilt; preview is not exact.`);
+    }catch(e){setMessage('Dimension gesture refused: '+String(e));}
   };
   const moveTimeline=(id:string,direction:'earlier'|'later')=>{
     try{
@@ -303,12 +312,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <span className={geom?'preview-tag':'preview-tag stale'}>{geom?'TESSELLATED PREVIEW · NOT EXACT':'NO CURRENT VALID MESH'}</span>
         </div>
         <div className="viewport-stage">
-          {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={sketchMode} onHoleMove={dragHole}/>:
+          {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={sketchMode} onHoleMove={dragHole} onDimensionEdit={dragDimension}/>:
             <div className="empty-overlay" data-testid="runtime-empty">Current dimensions cannot produce an admitted sketch profile. No previous mesh is represented as current.</div>}
           {geom&&<div className="runtime-mesh-caption" data-testid="runtime-boundary">
             Analytic profile {geom.profile.outer.length} vertices · {geom.profile.holes.length} circular holes · {geom.thickness} mm extrude · no Boolean proof
           </div>}
-          <div className="viewport-hint">{sketchMode?'Drag circular-hole center handles (0.5 mm snap) or edit independent hole dimensions in inspector':
+          <div className="viewport-hint">{sketchMode?'Drag edge/diameter handles or hole centers; arrow keys nudge focused dimensions (Shift = 0.1 mm)':
             'Drag to orbit · Wheel to zoom · Right-drag to pan · edit historical dimensions in inspector'}</div>
         </div>
         <section className="timeline" aria-label="Authoritative history versus dependency schedule">
@@ -350,7 +359,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               key={`${hole}.${field}.${history.document.revision}`}
               hole={hole} field={field} value={holes[hole][field]} onCommit={editHole}/>)}
           </div>)}
-          <p className="microcopy">Each hole is a stable SKETCH entity. Drag its center in Sketch mode for an atomic, admissible move; numeric edits preserve unresolved intent for repair. Undo/redo and archive include all constraint edits.</p>
+          <p className="microcopy">Each hole is a stable SKETCH entity. Drag its center or diameter handle in Sketch mode; plate width/depth edges also drag directly. Direct edits require an admissible profile; numeric edits preserve unresolved intent for repair. Undo/redo and archive include the constraint edits.</p>
         </div>
         <div className="inspector-section runtime-native" data-testid="runtime-native-panel">
           <div className="section-head">LOCAL NATIVE STEP · EXPERIMENTAL</div>
