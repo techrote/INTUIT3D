@@ -525,6 +525,15 @@ if (proposal.kind === 'preview') {
 }
 ```
 
+Each `previewEdit()` replaces the previous sampled pose, including when
+the latest pointer position fails SKETCH admission. Only the **latest**
+successful proposal can commit. Earlier release callbacks return
+`invalid_preview`, not silently commit an older geometry. On pointercancel /
+Escape call `session.cancelPreview(proposal)`, which discards only that matching
+gesture without changing history, STEP, or native evaluation. A delayed
+pointercancel cannot discard a more recent proposal.
+`session.refresh().hasActivePreview` is available to the UI.
+
 If another edit, undo, project reopen or replacement occurs before release, the
 preview commit returns `{kind:'refused',code:'stale_preview'}` without publishing
 its candidate or dispatching a provider. A consumed/foreign token returns
