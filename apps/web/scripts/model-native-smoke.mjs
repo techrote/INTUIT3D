@@ -159,7 +159,7 @@ async function main(){
   // Real physical Chromium pointer and keyboard operations, not DOM-dispatched input.
   const dragDimensionHandle=async(testid,millimetres)=>{
     const pos=await evaluate(`(() => {
-      const e=document.querySelector('[data-testid=${testid}]');
+      const e=document.querySelector('[data-testid="${testid}"]');
       if(!e)return null;
       const rect=e.getBoundingClientRect(),m=e.ownerSVGElement.getScreenCTM();
       const p0=new DOMPoint(0,0).matrixTransform(m);
