@@ -103,6 +103,10 @@
     "./parameter-inspector": {
       "types": "./src/parameter-inspector.ts",
       "default": "./src/parameter-inspector.ts"
+    },
+    "./parameter-table": {
+      "types": "./src/parameter-table.ts",
+      "default": "./src/parameter-table.ts"
     }
   },
   "scripts": {

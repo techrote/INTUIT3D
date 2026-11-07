@@ -52,10 +52,35 @@ export function inspectSelectedProfileHandles(source,selection) {
       position:{x:position.x,y:position.y}});
   }
   controls.sort((a,b)=>a.constraintId.localeCompare(b.constraintId,'en'));
+  // A circle centre with exactly one authored X and one Y relation to solved
+  // reference points can be dragged as a single *two-dimension* edit. Do not
+  // invent a mutable screen-space centre or relax unrelated constraints.
+  const holeCenters=[];
+  for(const holeId of selected.holeIds){
+    const centerPointId=circles.get(holeId)?.center;
+    const position=points.get(centerPointId);
+    if(!position)continue;
+    const x=doc.constraints.filter(c=>c.kind==='distanceX'&&
+      c.b===centerPointId&&points.has(c.a));
+    const y=doc.constraints.filter(c=>c.kind==='distanceY'&&
+      c.b===centerPointId&&points.has(c.a));
+    if(x.length!==1||y.length!==1)continue;
+    const xAnchor=points.get(x[0].a),yAnchor=points.get(y[0].a);
+    holeCenters.push({
+      id:'hole-center:'+holeId,holeId,centerPointId,
+      position:{x:position.x,y:position.y},
+      xConstraintId:x[0].id,yConstraintId:y[0].id,
+      xReferencePointId:x[0].a,yReferencePointId:y[0].a,
+      xAnchor:{x:xAnchor.x,y:xAnchor.y},
+      yAnchor:{x:yAnchor.x,y:yAnchor.y},
+      xOffsetMm:x[0].value,yOffsetMm:y[0].value
+    });
+  }
+  holeCenters.sort((a,b)=>a.id.localeCompare(b.id,'en'));
   return {kind:'selected_profile_handles',version:1,sourceSignature:stamp,
     selection:{candidateId:selected.candidateId,sourceSignature:stamp},
     semanticProfileId:selected.semanticProfileId,
-    controls,profile:selected,previewOnly:true,nativeExact:false};
+    controls,holeCenters,profile:selected,previewOnly:true,nativeExact:false};
 }
 
 /**
@@ -111,4 +136,67 @@ export function editSelectedProfileHandle(source,selection,command) {
     profile:admitted,handleId:handle.id,appliedValueMm:value,
     previewOnly:true,nativeExact:false,exactBrepAvailable:false,
     independentStepQualified:false};
+}
+
+
+// Move the selected L-profile hole centre using both authored solver dimensions
+// in one immutable revision. This cannot be implemented as two browser commits:
+// an intermediate X-only position may intersect the profile boundary.
+export function moveSelectedProfileHoleCenter(source,selection,command) {
+  const doc=createSketch(source),stamp=serializeSketch(doc);
+  const inspected=inspectSelectedProfileHandles(doc,selection);
+  if(inspected.kind!=='selected_profile_handles')return inspected;
+  if(!exact(command,['kind','sourceSignature','handleId','xMm','yMm'])||
+    command.kind!=='move-hole-center'||typeof command.sourceSignature!=='string'||
+    typeof command.handleId!=='string')
+    return refuse(stamp,'invalid_command');
+  if(command.sourceSignature!==stamp)return refuse(stamp,'stale_source');
+  if(!validNumber(command.xMm)||!validNumber(command.yMm))
+    return refuse(stamp,'invalid_pointer');
+  const handle=inspected.holeCenters.find(c=>c.id===command.handleId);
+  if(!handle)return refuse(stamp,'unknown_hole_center');
+  if(command.xMm===handle.position.x&&command.yMm===handle.position.y)
+    return refuse(stamp,'no_change');
+  const x=command.xMm-handle.xAnchor.x;
+  const y=command.yMm-handle.yAnchor.y;
+  if(!validNumber(x)||!validNumber(y))
+    return refuse(stamp,'unrepresentable_dimension');
+  let next;
+  try{
+    next=editConstraint(doc,handle.xConstraintId,{value:x});
+    next=editConstraint(next,handle.yConstraintId,{value:y});
+  }catch(error){
+    return refuse(stamp,'edit_rejected',null,[],String(error?.message||error));
+  }
+  const solved=solveSketch(next);
+  if(solved.status!=='solved'||!solved.geometry)
+    return refuse(stamp,'unsolved_after_edit',solved.status,solved.diagnostics);
+  const nextStamp=serializeSketch(next);
+  const proposed=proposeSelectedPlateProfile(next,{
+    candidateId:inspected.selection.candidateId,sourceSignature:nextStamp
+  });
+  if(proposed.kind!=='selected_analytic_profile')
+    return refuse(stamp,'profile_rejected_after_edit',solved.status,[],proposed.reason);
+  const admitted=admitSelectedPlateProfile(next,proposed);
+  if(admitted.semanticProfileId!==inspected.semanticProfileId)
+    return refuse(stamp,'semantic_profile_changed',solved.status);
+  const nextSelection={candidateId:admitted.candidateId,sourceSignature:nextStamp};
+  const updated=inspectSelectedProfileHandles(next,nextSelection);
+  if(updated.kind!=='selected_profile_handles')
+    return refuse(stamp,'updated_handles_unavailable');
+  const applied=updated.holeCenters.find(c=>c.id===handle.id)?.position;
+  if(!applied)return refuse(stamp,'updated_hole_center_unavailable');
+  return {
+    kind:'accepted',version:1,sourceSignature:stamp,
+    nextSourceSignature:nextStamp,sketch:next,selection:nextSelection,
+    profile:admitted,handleId:handle.id,holeId:handle.holeId,
+    editedConstraintIds:[handle.xConstraintId,handle.yConstraintId],
+    appliedOffsetsMm:{x,y},
+    gesture:{
+      target:{x:command.xMm,y:command.yMm},appliedPoint:applied,
+      deviationMm:Math.hypot(applied.x-command.xMm,applied.y-command.yMm)
+    },
+    previewOnly:true,nativeExact:false,exactBrepAvailable:false,
+    independentStepQualified:false
+  };
 }
