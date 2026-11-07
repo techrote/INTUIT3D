@@ -79,3 +79,35 @@ Windows workspace/type tests cannot be described as Windows-native OCP
 geometry qualification. Native test setup uses an OCP research wheel rather
 than a verified OCCT 8.0.1 C++ toolchain. Integration issue #5 owns workspace
 admission and guarded merge. KERNEL issue #3 owns the native implementation.
+
+## Experimental curved profile: real native OCP, not yet OCCT 8.0.1
+
+The additive Node-only `@intuit3d/kernel-contract/local-arc-profile-provider`
+contract accepts the exact **analytic line/arc profile v1 shape** returned by
+SKETCH's pending [#94](https://github.com/techrote/INTUIT3D/pull/94)
+`prepareArcProfileForProvider`. It forms real circular OCCT edges/wires,
+an exact 3D prism with analytic circular bores, verifies one valid connected
+solid, checks independent 2D analytic-area-derived volume, and writes actual
+ISO 10303-21 STEP with same-engine OCP readback. Its Python worker is
+`native/analytic_profile_extrude.py`. It uses pinned *experimental*
+OCP **7.9.3.1**, **not** the pinned OCCT **8.0.1 C++** worker. Neither
+preview polygonization nor a claimed independent STEP importer is substituted.
+
+Run on a machine with the existing experimental OCP environment:
+
+```sh
+python3 -m unittest discover -s native/tests -p test_analytic_profile_extrude.py -v
+node --test packages/kernel-contract/test/local-arc-profile-provider.test.mjs
+node packages/kernel-contract/examples/curved-plate-demo.mjs /tmp/new-curved-plate
+```
+
+The sample builds 8 and 12 mm rounded-corner plates with two real through
+bores, emits two distinct STEP files and a digest/volume manifest. The
+Node adapter runs the worker in a new process, fences model revisions, rejects
+bad B-rep/area/digest results, enforces deadlines and cancellation and publishes
+the verified STEP destination exclusively. Its result remains
+`kind: experimental_profile_brep`, `exactAuthority: false` and
+`independentInteroperability: false`. No app/browser consumer has been admitted
+yet. INTEGRATION should first admit #94, then authorize RUNTIME's typed
+profile-to-extrusion consumer. A separately provisioned C++ 8.0.1 execution
+and full **non-OCCT** CAD reader remain independent blockers under #3/#81/#74.
