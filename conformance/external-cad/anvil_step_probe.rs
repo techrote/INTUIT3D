@@ -94,6 +94,24 @@ fn main() {
     if !holes.iter().any(|h|h.0.abs()<1e-9 && h.1.abs()<1e-9) {
         probes.push(("central.material".into(),0.0,0.0,true));
     }
+    // The original centre/volume probes cannot identify a wrong individual
+    // bore radius when another radius compensates to preserve removed area.
+    // Require empty just inside and full material just outside EACH wall.
+    // Four orientations also expose asymmetric or displaced hole contours.
+    for (i, (hx, hy, radius)) in holes.iter().enumerate() {
+        let delta = (radius * 0.15).min(0.75);
+        for (direction, dx, dy) in [
+            ("east", 1.0, 0.0), ("west", -1.0, 0.0),
+            ("north", 0.0, -1.0), ("south", 0.0, 1.0),
+        ] {
+            let near = radius - delta;
+            let far = radius + delta;
+            probes.push((format!("hole.{i}.inner.{direction}"),
+                         hx + dx * near, hy + dy * near, false));
+            probes.push((format!("hole.{i}.outer.{direction}"),
+                         hx + dx * far, hy + dy * far, true));
+        }
+    }
     for (name,x,y,material) in probes {
         let zs=intersections(mesh,x,y);
         if material {
