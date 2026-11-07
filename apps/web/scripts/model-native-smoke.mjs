@@ -229,6 +229,41 @@ async function main(){
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Z',code:'KeyZ',modifiers:10,windowsVirtualKeyCode:90});
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
     'redo did not restore the named parameter edit');
+  // Real browser save -> OS file picker -> isolated #188 validation Worker ->
+  // explicit Replace -> same authoritative named source and undo journal.
+  // No private owner archive or browser-local model serializer is involved.
+  check(await evaluate("(() => {
+    window.__namedArchiveBlobs=[];
+    const prior=URL.createObjectURL.bind(URL);
+    URL.createObjectURL=blob=>{window.__namedArchiveBlobs.push(blob);return prior(blob)};
+    const save=[...document.querySelectorAll('button')].find(b=>b.textContent==='Save model archive');
+    save?.click();return !!save;
+  })()"),'named parameter archive cannot be saved by real browser');
+  await eventually(()=>evaluate('window.__namedArchiveBlobs.length===1'),
+    'named parameter browser Save did not create exactly one model archive');
+  const namedArchive=await evaluate("(async()=>await window.__namedArchiveBlobs[0].text())()");
+  check(namedArchive.includes('plateThickness'),
+    'browser Save omitted the authoritative renamed parameter');
+  const namedPath=resolve(artifacts,'native-browser-named-parameter.i3d-model.json');
+  writeFileSync(namedPath,namedArchive);
+  const namedDoc=await send('DOM.getDocument',{depth:1});
+  const namedInput=await send('DOM.querySelector',{
+    nodeId:namedDoc.root.nodeId,selector:'input[aria-label="Open INTUIT model archive"]'
+  });
+  check(namedInput.nodeId>0,'browser model file picker input missing');
+  await send('DOM.setFileInputFiles',{nodeId:namedInput.nodeId,files:[namedPath]});
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'isolated archive Worker did not reach import confirmation');
+  check(await evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness'"),
+    'import validation mutated the live model before confirmation');
+  check(await evaluate("(() => {
+    const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')]
+      .find(x=>x.textContent==='Replace with model archive');
+    b?.click();return !!b;
+  })()"),'browser refused to confirm named-parameter archive replacement');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]') && document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
+    'browser Worker reopen lost the renamed source or edited thickness');
+  await screenshot('native-00e-named-parameter-reopened.png');
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='thickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
@@ -753,9 +788,9 @@ async function main(){
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder with schema-compatible OCP identity, NOT OCP/native/STEP interoperability',
-    downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,wrongProviderRefused:true,badStepDigestRefused:true,realPhysicalGeometry:false,
+    downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,realPhysicalGeometry:false,
     retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00c-named-thickness-parameter.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png'
+      'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
