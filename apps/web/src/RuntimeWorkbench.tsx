@@ -846,7 +846,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     {featureCombo&&!pendingImport&&<div className="recovery-backdrop"><form
       className="recovery-dialog runtime-feature-combo" role="dialog" aria-modal="true"
       aria-label="Extrude or cut feature" data-testid="runtime-feature-combo"
-      onSubmit={event=>{event.preventDefault();commitFeatureCombo();}}>
+      onSubmit={event=>{event.preventDefault();commitFeatureCombo();}}
+      onKeyDown={event=>{
+        // CDP/keyboard accessibility: number inputs do not consistently
+        // synthesize a form submit from Enter. Commit explicitly, once.
+        if(event.key==='Enter' && !event.nativeEvent.isComposing){
+          event.preventDefault();commitFeatureCombo();
+        }
+      }}>
       <h2>{featureCombo==='extrude'?'Extrude admitted sketch':'Cut circular holes through body.plate'}</h2>
       {featureCombo==='extrude'?<label className="runtime-combo-distance">
         <span>Extrusion distance · mm</span>
