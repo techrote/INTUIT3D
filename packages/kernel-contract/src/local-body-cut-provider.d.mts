@@ -9,6 +9,13 @@ export interface ThroughProfileBodyCutRequest {
 export interface PocketBodyCutRequest extends Omit<ThroughProfileBodyCutRequest,'protocol'> {
   protocol:'intuit3d/kernel/profile-body-cut-v2';cutDepthMm:number;
 }
+/** v4: a genuine rectangular edge notch, whose cutting tool intentionally
+ * straddles the perimeter rather than needing full containment. Circular
+ * holes in the rectangular base must be disjoint from the tool footprint.
+ */
+export interface EdgeNotchBodyCutRequest extends Omit<PocketBodyCutRequest,'protocol'> {
+  protocol:'intuit3d/kernel/profile-body-notch-v4';
+}
 /** v3: ordered independent cuts of one explicit semantic body, not a mesh union. */
 export interface BodyCutChainStep {
   cutFeatureId:string;cutTool:ArcExtrudeRequest;cutDepthMm:number;
@@ -19,7 +26,7 @@ export interface BodyCutChainRequest {
   cuts:BodyCutChainStep[];exportStep:boolean;
 }
 export type ProfileBodyCutRequest=
-  ThroughProfileBodyCutRequest|PocketBodyCutRequest|BodyCutChainRequest;
+  ThroughProfileBodyCutRequest|PocketBodyCutRequest|EdgeNotchBodyCutRequest|BodyCutChainRequest;
 export type BodyCutChainResult = {
   kind:'experimental_body_cut_chain_brep';
   protocol:'intuit3d/kernel/profile-body-cut-chain-v3';
@@ -46,6 +53,7 @@ export type BodyCutResult = BodyCutChainResult | {
   exactAuthority:false;independentInteroperability:false;
   baseVolumeMm3:number;removedVolumeMm3:number;analyticResultVolumeMm3:number;
   cutDepthMm?:number;cutKind?:'blind_pocket'|'through';
+  footprintIntersectionAreaMm2?:number;
   source:{valid:true;solidCount:1;shellCount:1;faceCount:number;volumeMm3:number};
   stepReadback:null|{valid:true;solidCount:1;shellCount:1;faceCount:number;volumeMm3:number};
   artifact:null|{path:string;bytes:number;sha256:string;verification:'same_engine_only'};
