@@ -87,6 +87,10 @@
     "./body-cut-order": {
       "types": "./src/body-cut-order.ts",
       "default": "./src/body-cut-order.ts"
+    },
+    "./cut-profile-source": {
+      "types": "./src/cut-profile-source.ts",
+      "default": "./src/cut-profile-source.ts"
     }
   },
   "scripts": {
