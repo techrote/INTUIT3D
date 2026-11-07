@@ -93,3 +93,22 @@ test('model plan retains an unresolved future source and refuses fabricated extr
   assert.deepEqual(report.authoredOrder,['plate']);
   assert.deepEqual(report.executableOrder,[]);
 });
+
+test('actual INTENT revision diff invalidates edited sketch, extrude and cut transitively',()=>{
+  const before=start();
+  const bad=sketch.editConstraint(sketch.plateSketchFixture(),'width',{value:90});
+  const after=runtime.commit(before,[{eventId:'edit.sketch.for.invalidation',type:'feature.edit',
+    featureId:'sketch.plate',patch:{payload:{sketch:bad}}}]);
+  const d=runtime.diff(before,after);
+  assert.equal(d.projectId,'runtime.plate.holes');
+  assert.equal(d.previousRevision,before.document.revision);
+  assert.equal(d.revision,after.document.revision);
+  assert.deepEqual(d.changedFeatureIds,['sketch.plate']);
+  assert.deepEqual(d.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  assert.deepEqual(d.removedFeatureIds,[]);
+  assert.equal(d.exactReuseAllowed,false);
+  assert.deepEqual(runtime.diff(before,before).invalidatedFeatureIds,[]);
+  assert.throws(()=>runtime.diff(after,before),/reverse revision/);
+  const replayed=runtime.reopen(runtime.save(after));
+  assert.deepEqual(runtime.diff(before,replayed),d);
+});
