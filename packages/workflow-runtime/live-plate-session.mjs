@@ -124,19 +124,34 @@ export function createLivePlateSession({
       return latest.step??null;
     },
     /** Latest request wins, even if a cancelled provider ignores AbortSignal. */
-    async evaluate({url,token,requestId,exportStep=true,signal,fetchImpl}={}) {
+    async evaluate({url,token,requestId,exportStep=true,signal,fetchImpl,
+      deadlineMs=30000}={}) {
+      // A hung HTTP fetch or non-cooperative native adapter must not leave
+      // WORKBENCH awaiting a promise indefinitely. The deadline covers busy
+      // retries and their backoff, not just one provider attempt.
+      if(!Number.isSafeInteger(deadlineMs)||deadlineMs<25||deadlineMs>120000)
+        throw new RangeError('live plate session: deadlineMs must be an integer from 25 to 120000');
       const before=synchronize();
       discard({preserveCurrentStep:true});
       const operation=serial;
       const abort=new AbortController();
       controller=abort;
       const id=requestId??('session.'+operation);
-      if(!ID.test(id)) {discard();throw new TypeError('live plate session: invalid request identity');}
+      if(!ID.test(id)) {discard({preserveCurrentStep:true});throw new TypeError('live plate session: invalid request identity');}
       const onAbort=()=>abort.abort();
       if(signal?.aborted) abort.abort();
       signal?.addEventListener('abort',onAbort,{once:true});
-      let result;
-      try {
+      let timer,stopListener;
+      // This settles independently of evaluateImpl/fetch honouring AbortSignal.
+      // Late responses remain fenced by the worker's serial/archive/abort guards.
+      const lifecycle=new Promise(resolve=>{
+        stopListener=()=>resolve('aborted');
+        abort.signal.addEventListener('abort',stopListener,{once:true});
+        timer=setTimeout(()=>{resolve('timeout');abort.abort();},deadlineMs);
+        if(abort.signal.aborted) resolve('aborted');
+      });
+      const run=async()=>{
+        let result;
         for(let attempt=0;attempt<=busyRetries;attempt++) {
           if(abort.signal.aborted) return refuse('cancelled','native evaluation cancelled');
           if(synchronize().archive!==before.archive||serial!==operation)
@@ -164,9 +179,7 @@ export function createLivePlateSession({
              result.result?.requestId!==id||result.result?.cutFeatureId!==cutFeatureId||
              (exportStep&&!result.step)||(!exportStep&&result.step)))
           return refuse('invalid_provider_result','native result does not match current authored request');
-        // A failed same-revision refresh must not erase already-verified
-        // bytes. A successful new STEP supersedes them. A model edit always
-        // clears both via the ordinary discard() path.
+        // A failed same-revision refresh must not erase verified current bytes.
         lastOutcomeKind=result.kind;
         if(result.kind==='experimental_plate_evaluated' && result.step ||
            !latest || latestArchive!==before.archive) {
@@ -174,7 +187,24 @@ export function createLivePlateSession({
           latestArchive=before.archive;
         }
         return result;
+      };
+      try {
+        const settled=await Promise.race([run(),lifecycle]);
+        if(settled==='timeout') {
+          if(serial===operation&&synchronize().archive===before.archive)
+            lastOutcomeKind='unresolved';
+          return refuse('timeout','native evaluation exceeded '+deadlineMs+' ms deadline');
+        }
+        if(settled==='aborted') {
+          if(serial!==operation||synchronize().archive!==before.archive)
+            return refuse('stale_revision','a newer edit or request superseded native evaluation');
+          lastOutcomeKind='unresolved';
+          return refuse('cancelled','native evaluation cancelled');
+        }
+        return settled;
       } finally {
+        clearTimeout(timer);
+        abort.signal.removeEventListener('abort',stopListener);
         signal?.removeEventListener('abort',onAbort);
         if(controller===abort) controller=null;
       }

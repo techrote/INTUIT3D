@@ -49,6 +49,7 @@ async function editAndDownloadInOneCommand() {
 async function browserDownload() {
   const result:LocalPlateClientResult=await session.evaluate({
     url:'http://127.0.0.1:3000',token:'0'.repeat(64),exportStep:true,
+    deadlineMs:30000,
   });
   const step:VerifiedLocalStep|null=session.currentStep();
   if(result.kind==='experimental_plate_evaluated'&&step) {

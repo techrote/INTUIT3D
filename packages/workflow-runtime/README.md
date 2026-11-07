@@ -488,3 +488,8 @@ sequence. `npm test --workspace @intuit3d/workflow-runtime` also covers
 the trusted localhost path and deterministic provider failure/retry behaviour.
 These are **experimental** OCP/same-engine checks, not OCCT 8 production or
 independent external STEP evidence.
+
+### Bounded live native evaluation
+
+`createLivePlateSession(...).evaluate({url,token,exportStep:true,deadlineMs:30000})` has a **total** 30-second default deadline (adjustable from 25 to 120000 milliseconds), covering provider execution and bounded host-busy retries. A hung HTTP/native adapter that ignores `AbortSignal` now resolves as `{kind:'unresolved',code:'timeout'}` instead of leaving the browser awaiting forever. Explicit cancellation likewise settles promptly; old workers remain fenced and their late responses cannot publish. `refresh().lastResultKind` records the failed attempt while `currentStep()` retains prior same-archive SHA-verified experimental bytes. Any committed edit, external project mutation or confirmed archive replacement still revokes them. Native host timeouts and browser deadlines are separate controls; none establishes production exactness or independent STEP validation.
+
