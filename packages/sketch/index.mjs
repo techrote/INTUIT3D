@@ -6,6 +6,7 @@
 import { requireSimplePolygonBoundary } from './boundary-guard.mjs';
 import { assessCircularProfile } from './circle-guard.mjs';
 import { assessAnalyticProfileArea } from './analytic-area.mjs';
+import { assessSignedDistanceFidelity } from './dimension-fidelity.mjs';
 export const SKETCH_VERSION = 1;
 const DEFAULT_PIVOT_TOLERANCE = 1e-12;
 const DEFAULT_RESIDUAL_TOLERANCE_MM = 1e-9;
@@ -220,6 +221,17 @@ export function solveSketch(source, options = {}) {
     points: sketch.points.map((p) => ({ id: p.id, x: solved[ids.get(`${p.id}.x`)], y: solved[ids.get(`${p.id}.y`)] })),
     lines: structuredClone(sketch.lines),
     circles: sketch.circles.map((c) => ({ id: c.id, center: c.center, radius: solved[ids.get(`${c.id}.radius`)] }))
+  };
+  // Absolute solver residuals alone can accept a signed dimension rounded
+  // completely away at a large coordinate origin. Audit actual binary64
+  // output against each nonzero encoded signed dimension before returning
+  // ANY geometry (including underconstrained or drag previews).
+  const fidelity = assessSignedDistanceFidelity(sketch, geometry);
+  if (fidelity.status !== 'verified') return {
+    ...resultBase, status: 'numerical_failure', geometry: null,
+    diagnostics: [{ code: 'dimension_precision_lost',
+      candidates: fidelity.failedConstraintIds.length ? fidelity.failedConstraintIds : sketch.constraints.filter(c => c.kind === 'distanceX' || c.kind === 'distanceY').map(c => c.id),
+      magnitudeMm: null }]
   };
   const diagnostics = [];
   if (equations.length > rank) diagnostics.push({ code: 'redundant_constraints', count: equations.length - rank });
