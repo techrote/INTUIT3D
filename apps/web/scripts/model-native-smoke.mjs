@@ -180,6 +180,36 @@ async function main(){
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
     'undo of 3D pointer gesture did not restore original thickness');
+  // Real Chromium click + keyboard on the authoritative INTENT named-parameter
+  // editor: both changes must be one journal revision, undoable and not exact.
+  const parameterRevision=Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-parameter-name]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'named parameter field cannot receive keyboard input');
+  await send('Input.insertText',{text:'plateThickness'});
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-parameter-value]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'named parameter value field cannot receive keyboard input');
+  await send('Input.insertText',{text:'12'});
+  await pointerClick('runtime-parameter-apply');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
+    'parameter rename + 8-to-12 mm edit did not reach the authoritative model');
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===parameterRevision+1,
+    'named parameter edit did not produce exactly one authored revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'named parameter edit fabricated exact B-rep evidence');
+  await screenshot('native-00c-named-thickness-parameter.png');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='thickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
+    'undo did not restore both parameter fields');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Z',code:'KeyZ',modifiers:10,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Z',code:'KeyZ',modifiers:10,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
+    'redo did not restore the named parameter edit');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='thickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
+    'second undo failed to restore the 8 mm plate for downstream workflows');
   await pointerClick('runtime-feature-plate');
   await pointerClick('runtime-feature-remove');
   await eventually(()=>evaluate(
@@ -684,9 +714,9 @@ async function main(){
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder, NOT OCP/native/STEP interoperability',
-    downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,realPhysicalGeometry:false,
+    downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,realPhysicalGeometry:false,
     retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png'
+      'native-00c-named-thickness-parameter.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
