@@ -38,3 +38,7 @@ Each fixture undergoes strict, exact, no-repair import, a gqa independent approx
 Classification: INPUT_VERIFIED_NOT_EXTERNAL_CAD is source evidence only; BLOCKED_OR_REJECTED disallows a success claim; NON_OCCT_SAMPLE_ACCEPTED requires a real successful BRL-CAD import and physical sampling of all four fixed fixtures. This is bounded non-OCCT physical interchange evidence, NOT general STEP interoperability, independent exact analytic area, a native OCCT 8.0.1 C++ execution claim, or human usability acceptance. Production-native provisioning remains separately blocked in KERNEL Draft #67 and PLATFORM Draft #89.
 
 This repository does not bundle or install BRL-CAD, and the local host used for implementation had no BRL-CAD executables. Integration alone owns shared CI and guarded merges. Source ownership is limited to conformance/external-cad/**.
+
+## Model-space ray anchoring
+
+In addition to the original immutable STEP digests, strict importer exit code, volume and bore/material ray checks, the acceptance runner now validates the **actual NIRT origin and direction** for every probe, along with the solid-ray entry X/Y and the expected top-face Z coordinate (0→thickness mm). This detects translations or disconnected geometry that preserve the volume and measured thickness. Receipts contain the measured 3D entry points. Synthetic parser regressions are not independent CAD execution; only actual BRL-CAD CLI artifacts can qualify exchange.

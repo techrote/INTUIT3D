@@ -66,4 +66,49 @@ class ExternalCadHarness(unittest.TestCase):
     def test_missing_real_engine_is_not_a_pass(self):
         with self.assertRaises(mod.NotQualified): mod.tool('definitely-not-a-real-brlcad-engine-91827')
 
+
+    def _nirt_output(self, *, origin=(20, 5, 15), direction=(0, 0, -1),
+                     point=(20, 5, 10), los=10, miss=False):
+        head = (f'Origin (x y z) = ({origin[0]} {origin[1]} {origin[2]}) (h v d) = (0 0 0)\n'
+                f'Direction (x y z) = ({direction[0]} {direction[1]} {direction[2]}) (az el) = (0 90)\n')
+        if miss:
+            return head + 'You missed the target.\n'
+        return head + f'plate.r ( {point[0]} {point[1]} {point[2]}) {los} 0.000\n'
+
+    def test_real_ray_receipt_accepts_anchored_solid_and_bore(self):
+        kwargs = {'thickness':10, 'expected_origin':(20,5,15), 'expected_top_z':10}
+        solid = mod.parse_ray(self._nirt_output(), expected='solid', **kwargs)
+        self.assertEqual(solid['entryPointsMm'], [[20,5,10]])
+        bore = mod.parse_ray(self._nirt_output(miss=True), expected='empty', **kwargs)
+        self.assertEqual(bore['hitCount'],0)
+
+    def test_reject_translated_z_even_when_volume_and_los_match(self):
+        # A 3mm displaced plate still has the same volume and LOS.
+        with self.assertRaisesRegex(mod.NotQualified,'displaced in Z'):
+            mod.parse_ray(self._nirt_output(point=(20,5,13)),expected='solid',
+                          thickness=10,expected_origin=(20,5,15),expected_top_z=10)
+
+    def test_reject_wrong_xy_hit_and_wrong_origin(self):
+        with self.assertRaisesRegex(mod.NotQualified,'XY'):
+            mod.parse_ray(self._nirt_output(point=(21,5,10)),expected='solid',
+                          thickness=10,expected_origin=(20,5,15),expected_top_z=10)
+        with self.assertRaisesRegex(mod.NotQualified,'executed a ray at'):
+            mod.parse_ray(self._nirt_output(origin=(21,5,15)),expected='solid',
+                          thickness=10,expected_origin=(20,5,15),expected_top_z=10)
+
+    def test_reject_wrong_direction_or_missing_ray_header(self):
+        with self.assertRaisesRegex(mod.NotQualified,'direction'):
+            mod.parse_ray(self._nirt_output(direction=(0,0,1)),expected='solid',
+                          thickness=10,expected_origin=(20,5,15),expected_top_z=10)
+        with self.assertRaisesRegex(mod.NotQualified,'Origin'):
+            mod.parse_ray('You missed the target.',expected='empty',thickness=10,
+                          expected_origin=(20,5,15))
+
+    def test_ray_miss_in_stderr_is_not_physical_evidence(self):
+        with self.assertRaises(mod.NotQualified):
+            mod.parse_ray('no model hit\n[stderr]\nYou missed the target.',expected='empty',thickness=10)
+        with self.assertRaises(mod.NotQualified):
+            mod.parse_ray(self._nirt_output(los=-10),expected='solid',thickness=10)
+
+
 if __name__=='__main__': unittest.main()

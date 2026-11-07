@@ -19,7 +19,7 @@ import zipfile
 
 HERE = Path(__file__).resolve().parent
 FLOAT = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
-PARTITION = re.compile(rf"^\s*(?!Origin\b|Direction\b)(\S+)\s+\(\s*{FLOAT}\s+{FLOAT}\s+{FLOAT}\s*\)\s+({FLOAT})(?:\s|$)", re.M)
+PARTITION = re.compile(rf"^\s*(?!Origin\b|Direction\b)(\S+)\s+\(\s*({FLOAT})\s+({FLOAT})\s+({FLOAT})\s*\)\s+({FLOAT})(?:\s|$)", re.M)
 VOLUME = re.compile(rf"^\s*(\S+)\s+({FLOAT})\s+mm\^3\s*$", re.M | re.I)
 MISS = re.compile(r"\b(?:miss(?:ed)?(?: the target)?|no (?:hits?|intersections?|partitions?))\b", re.I)
 MAX_STEP = 2 * 1024 * 1024
@@ -108,18 +108,59 @@ def parse_volume(output: str, object_name: str, expected: float, rel_tolerance: 
         raise NotQualified(f'Independent ray volume {measured} differs from {expected} mm^3')
     return measured
 
-def parse_ray(output: str, *, expected: str, thickness: float, tolerance: float = 0.05) -> dict:
-    # A missed ray must carry an explicit BRL-CAD miss indication. Empty stdout is not a miss.
-    hits = [(name, float(los)) for name, los in PARTITION.findall(output)]
+def _nirt_vector(stdout: str, label: str) -> tuple[float, float, float]:
+    """Require actual NIRT Origin/Direction receipt before trusting a ray result."""
+    rx = re.compile(rf"^\s*{re.escape(label)}\s+\(x y z\)\s*=\s*\(\s*({FLOAT})\s+({FLOAT})\s+({FLOAT})\s*\)", re.M)
+    matches = rx.findall(stdout)
+    if len(matches) != 1:
+        raise NotQualified(f'NIRT did not provide one {label} (x y z) receipt')
+    values = tuple(float(n) for n in matches[0])
+    if not all(math.isfinite(n) for n in values):
+        raise NotQualified(f'NIRT {label} coordinate is not finite')
+    return values
+
+
+def parse_ray(output: str, *, expected: str, thickness: float, tolerance: float = 0.05,
+              expected_origin: tuple[float, float, float] | None = None,
+              expected_top_z: float | None = None) -> dict:
+    """Validate partition LOS and, for actual execution, its model-space location.
+
+    The optional expected_origin is required by execute() for *every* real ray.
+    A shifted/rotated plate can have the correct volume and ray LOS but still
+    be the wrong physical geometry; merely counting rays cannot detect it.
+    """
+    stdout = output.partition('[stderr]')[0]
+    rows = PARTITION.findall(stdout)
+    hits = [(name, float(x), float(y), float(z), float(los))
+            for name, x, y, z, los in rows]
+    if any(not all(math.isfinite(v) for v in row[1:]) or row[4] <= 0 for row in hits):
+        raise NotQualified('NIRT returned an invalid/non-positive physical partition')
+    if expected_origin is not None:
+        if len(expected_origin) != 3 or not all(math.isfinite(v) for v in expected_origin):
+            raise NotQualified('Invalid expected model-space ray origin')
+        actual_origin = _nirt_vector(stdout, 'Origin')
+        direction = _nirt_vector(stdout, 'Direction')
+        if any(abs(a-b) > .01 for a, b in zip(actual_origin, expected_origin)):
+            raise NotQualified(f'NIRT executed a ray at {actual_origin}, not {expected_origin}')
+        if any(abs(a-b) > .0001 for a, b in zip(direction, (0.0, 0.0, -1.0))):
+            raise NotQualified(f'NIRT executed a different ray direction: {direction}')
     if expected == 'empty':
-        if hits or not MISS.search(output):
+        if hits or not MISS.search(stdout):
             raise NotQualified(f'Expected through-hole/outside ray miss, got {hits or "unrecognized output"}')
     elif expected == 'solid':
-        if len(hits) != 1 or not math.isfinite(hits[0][1]) or abs(hits[0][1] - thickness) > tolerance:
+        if len(hits) != 1 or abs(hits[0][4]-thickness) > tolerance:
             raise NotQualified(f'Expected one {thickness}mm solid ray partition, got {hits}')
+        if expected_origin is not None:
+            if abs(hits[0][1]-expected_origin[0]) > tolerance or abs(hits[0][2]-expected_origin[1]) > tolerance:
+                raise NotQualified('NIRT material is not at the selected model-space XY position')
+            if expected_top_z is None or not math.isfinite(expected_top_z) or abs(hits[0][3]-expected_top_z) > tolerance:
+                raise NotQualified('NIRT material top face is displaced in Z')
     else:
         raise ValueError(expected)
-    return {'expected': expected, 'hitCount':len(hits), 'lineOfSightMm':[h[1] for h in hits]}
+    return {'expected': expected, 'hitCount': len(hits),
+            'lineOfSightMm': [h[4] for h in hits],
+            'entryPointsMm': [[h[1], h[2], h[3]] for h in hits]}
+
 
 ROOT_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_.:+-]*(?:/(?:R)?)?")
 
@@ -199,7 +240,8 @@ def execute(case: dict, root: Path, args, exe: dict) -> dict:
         script = f'xyz {px:.12g} {py:.12g} {pz:.12g}; dir 0 0 -1; s; q'
         report = run([exe['nirt'][0],'-b','-s','-e',script,str(database),selected_root],
                      output / ('nirt-'+probe+'.log'),args.timeout)
-        rays.append({'probe':probe,'xyzMm':[px,py,pz],**parse_ray(report,expected=expected,thickness=case['thicknessMm'])})
+        rays.append({'probe':probe,'xyzMm':[px,py,pz],**parse_ray(report,expected=expected,thickness=case['thicknessMm'],
+                                 expected_origin=(px,py,pz),expected_top_z=case['thicknessMm'])})
     return {'filename':name,'selectedRoot':selected_root,'topLevelObjects':list(top_objects(roots)),
             'sha256':digest(target),'importDatabaseSha256':digest(database),
             'importReportSha256':digest(imp),'importReport':imp_json,
