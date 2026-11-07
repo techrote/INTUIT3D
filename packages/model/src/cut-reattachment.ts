@@ -119,7 +119,7 @@ function removedFeatureOf(doc: ProjectDocument, featureId: string): Feature | nu
       active = true;
     } else if (event.type === 'feature.edit' && event.featureId === featureId &&
                feature !== null) {
-      feature = { ...feature, ...event.patch };
+      feature = Object.assign({}, feature as Feature, event.patch);
     } else if (event.type === 'feature.remove' && event.featureId === featureId) {
       active = false;
     } else if (event.type === 'feature.restore' && event.featureId === featureId) {
