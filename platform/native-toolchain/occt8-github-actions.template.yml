@@ -1,20 +1,27 @@
-# INTEGRATION ONLY: install as .github/workflows/occt8-native.yml after exact-source
-# review. This executable workflow is located in Platform's exclusive tree to
-# avoid cross-lane mutation; shared .github/** belongs to INTEGRATION.
+# INTEGRATION ONLY: install at .github/workflows/occt8-native.yml.
+# Its controlled dispatch checks out BOTH unmerged source PRs, not main.
+# CI is manual because the expensive OCCT build must not restart on rapid PR pushes.
 name: Pinned OCCT 8.0.1 C++ execution qualification
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - 'platform/native-toolchain/**'
-      - 'native/occt8/**'
+    inputs:
+      platform_ref:
+        description: "Platform source ref (default current PR #122, or exact 40-char SHA)"
+        type: string
+        required: true
+        default: refs/pull/122/head
+      kernel_ref:
+        description: "Kernel source ref (default current PR #67, or exact 40-char SHA)"
+        type: string
+        required: true
+        default: refs/pull/67/head
 
 permissions:
   contents: read
 
 concurrency:
-  group: intuit3d-occt8-native-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: intuit3d-occt8-native
+  cancel-in-progress: false
 
 jobs:
   native:
@@ -22,17 +29,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 115
     steps:
-      - name: Checkout proposed Platform source
-        uses: actions/checkout@v4
-        with:
-          path: platform-repo
-          persist-credentials: false
-      - name: Checkout audited KERNEL #67 source at immutable commit
+      - name: Checkout scoped Platform candidate (PR #122 by default)
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          # Refresh only after inspecting live KERNEL PR #67.
-          ref: 0ba2c1dce08c453563e7ce772d6807dd2f74fce2
+          ref: ${{ inputs.platform_ref }}
+          path: platform-repo
+          persist-credentials: false
+      - name: Checkout current KERNEL #67 candidate (or supplied immutable SHA)
+        uses: actions/checkout@v4
+        with:
+          repository: techrote/INTUIT3D
+          ref: ${{ inputs.kernel_ref }}
           path: kernel-repo
           persist-credentials: false
       - name: Install native build dependencies
@@ -47,6 +55,8 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/intuit3d-native-evidence"
           {
+            echo "platform_ref_requested=${{ inputs.platform_ref }}"
+            echo "kernel_ref_requested=${{ inputs.kernel_ref }}"
             echo "platform=$(git -C platform-repo rev-parse HEAD)"
             echo "kernel=$(git -C kernel-repo rev-parse HEAD)"
             echo "host=$(uname -a)"
