@@ -8,17 +8,87 @@ import * as transactions from '@intuit3d/model/transactions';
 import * as bindings from '@intuit3d/model/dimension-bindings';
 import * as dimensions from '@intuit3d/model/dimension-batch-edit';
 import * as archive from '@intuit3d/model/archive';
+import { moveHistoryFeature } from '@intuit3d/model/history-move';
 import * as sketch from '@intuit3d/sketch';
 import * as discovery from '@intuit3d/sketch/profile-discovery/v1';
 import { createWorkflowRuntime } from '@intuit3d/workflow-runtime';
 import type { UndoHistory } from '@intuit3d/model/transactions';
-import type { RuntimeReport, RuntimeFeature } from '@intuit3d/workflow-runtime';
+import type { RuntimeReport, RuntimeFeature, SketchConstraintBatchResult } from '@intuit3d/workflow-runtime';
 import type { SketchDocument, PlateProfile } from '@intuit3d/sketch';
 
 export const runtime = createWorkflowRuntime({ model, transactions, bindings, dimensions, archive, sketch, discovery });
 export type ModelSession = UndoHistory;
 export type ModelDimension = 'width' | 'depth' | 'holeDiameter' | 'holePitch' | 'thickness';
 export const MODEL_DIMENSIONS: readonly ModelDimension[] = ['width', 'depth', 'holeDiameter', 'holePitch', 'thickness'];
+export type ModelHole = 'holeA' | 'holeB';
+export type ModelHoleField = 'x' | 'y' | 'diameter';
+export type ModelHoleDimensions = Readonly<{x:number;y:number;diameter:number}>;
+
+function requireHole(hole: ModelHole): void {
+  if (hole !== 'holeA' && hole !== 'holeB') throw Error('Unknown semantic hole ID');
+}
+
+/** Read authored constraints, never cached preview circles or tessellation. */
+export function modelHoleValues(h: ModelSession): Record<ModelHole, ModelHoleDimensions> {
+  const constraints = sketchSource(h).constraints;
+  const read = (hole: ModelHole): ModelHoleDimensions => {
+    const center = constraints.find(c => c.id === hole + ':fixed');
+    const radius = constraints.find(c => c.id === hole + ':diameter');
+    if (center?.kind !== 'fixed' || radius?.kind !== 'radius') {
+      throw Error('Missing authoritative hole constraints: ' + hole);
+    }
+    return {x:center.x,y:center.y,diameter:radius.value * 2};
+  };
+  return {holeA:read('holeA'),holeB:read('holeB')};
+}
+
+/** Atomic, revision-fenced individual hole edit via admitted RUNTIME/SKETCH. */
+export function editModelHole(
+  h:ModelSession, hole:ModelHole, field:ModelHoleField, value:number,
+  admission:'require_admissible' | 'preserve_unresolved'='require_admissible',
+):SketchConstraintBatchResult {
+  requireHole(hole);
+  if (!['x','y','diameter'].includes(field) || !Number.isFinite(value) ||
+      Math.abs(value)>10000 || (field==='diameter' && value<=0)) {
+    throw Error('Hole coordinates must be finite within ±10,000 mm; diameter must be positive.');
+  }
+  return runtime.editSketchConstraints(h,{
+    sketchFeatureId:'sketch.plate',eventId:`workbench.hole.${hole}.${field}.${h.document.revision}`,
+    expectedRevision:h.document.revision,admission,
+    edits:[{constraintId:hole+(field==='diameter'?':diameter':':fixed'),
+      patch:field==='diameter'?{value:value/2}:field==='x'?{x:value}:{y:value}}],
+  });
+}
+
+/** A two-axis drag is one undoable constraint transaction, not two moves. */
+export function moveModelHoleCenter(
+  h:ModelSession, hole:ModelHole, x:number,y:number,
+):SketchConstraintBatchResult {
+  requireHole(hole);
+  if (![x,y].every(v=>Number.isFinite(v)&&Math.abs(v)<=10000)) {
+    throw Error('Hole drag coordinates are out of supported range');
+  }
+  return runtime.editSketchConstraints(h,{
+    sketchFeatureId:'sketch.plate',eventId:`workbench.drag.${hole}.${h.document.revision}`,
+    expectedRevision:h.document.revision,admission:'require_admissible',
+    edits:[{constraintId:hole+':fixed',patch:{x,y}}],
+  });
+}
+
+/** Presentation-only timeline move; INTENT preserves body and DAG authority. */
+export function moveModelFeature(h:ModelSession,id:string,direction:'earlier'|'later') {
+  const order=inspectModelSession(h).authoredOrder;
+  const index=order.indexOf(id);
+  if(index<0 || (direction==='earlier'&&index===0) ||
+     (direction==='later'&&index===order.length-1)) throw Error('No adjacent timeline position');
+  const afterFeatureId=direction==='earlier'?(index===1?null:order[index-2]):order[index+1];
+  return moveHistoryFeature(h,{
+    eventId:`workbench.move.${id}.${h.document.revision}`,
+    featureId:id,afterFeatureId,
+    expectedProjectId:h.document.projectId,expectedRevision:h.document.revision,
+  });
+}
+
 
 const feature = (id: string, kind: string, dependsOn: string[], writeTargets: string[], payload: model.JsonRecord): model.Feature =>
   ({ id, kind, dependsOn, writeTargets, payload });
