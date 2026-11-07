@@ -583,8 +583,15 @@ async function main(){
     return {a:val('holeA-x'),b:val('holeB-x'),
       da:val('holeA-diameter'),db:val('holeB-diameter')};
   })()`);
-  check(await evaluate("document.querySelector('[data-testid=runtime-layout-select-holeA]')?.checked && document.querySelector('[data-testid=runtime-layout-select-holeB]')?.checked"),
-    'seed holes were not selected for retrospective layout edit');
+  // A new project starts with one selected circle to prevent accidental
+  // whole-group drags. Explicitly Ctrl/checkbox-select both before committing
+  // a two-hole dimensional layout edit; do not rely on a hidden default.
+  for (const hole of ['holeA','holeB']) {
+    if (!await evaluate(`document.querySelector('[data-testid=runtime-layout-select-${hole}]')?.checked`))
+      await pointerClick(`runtime-layout-select-${hole}`);
+  }
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-layout-select-holeA]')?.checked && document.querySelector('[data-testid=runtime-layout-select-holeB]')?.checked"),
+    'explicit two-hole selection for retrospective layout edit');
   check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-layout-scaleX]');e.focus();e.select();return document.activeElement===e})()"),
     'cannot focus combined layout pitch dimension');
   await send('Input.insertText',{text:'120'});
