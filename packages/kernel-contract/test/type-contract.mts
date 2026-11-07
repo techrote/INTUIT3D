@@ -1,6 +1,7 @@
 import {PLATE_PROTOCOL, parsePlateRequest, assessPlateResponse, type PlateAssessment,
   type PlateRequest} from '../src/plate-v1.mjs';
 import {runExperimentalPlate, type LocalPlateResult} from '../src/local-plate-provider.mjs';
+import {runPinnedOcct8Plate, type LocalOcct8Result} from '../src/local-occt8-provider.mjs';
 
 const raw: PlateRequest = { protocol: PLATE_PROTOCOL, requestId: 'r.1', featureId: 'f.1',
   revision: 1, units: 'mm', plate: { width: 120, depth: 80, thickness: 8, holes: [] }, exportStep: false };
@@ -34,3 +35,24 @@ void invalid;
 assessPlateResponse(raw, {});
 // @ts-expect-error revision callback is mandatory for local process
 runExperimentalPlate(raw, {});
+
+const nativeExecution: Promise<LocalOcct8Result> = runPinnedOcct8Plate(raw, {
+  workerExecutable: '/trusted/occt8/bin/intuit3d_occt8_plate',
+  readCurrentRevision: () => 1,
+});
+async function consumeNative() {
+  const result = await nativeExecution;
+  if (result.kind === 'experimental_report') {
+    const authority: false = result.exactAuthority;
+    const independent: false = result.independentInteroperability;
+    if (result.artifact) {
+      const proof: 'occt8_part21_plate_subset' | 'occt8_same_engine_step_readback' =
+        result.artifact.verification;
+      void proof;
+    }
+    void authority; void independent;
+  }
+}
+void consumeNative;
+// @ts-expect-error pinned C++ executable is mandatory
+runPinnedOcct8Plate(raw, {readCurrentRevision: () => 1});
