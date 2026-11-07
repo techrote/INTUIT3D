@@ -61,7 +61,9 @@ test('real SKETCH multi-body transaction, selected cut, isolated rebuild, undo/r
   const {h,selected}=project();
   const operation=authorProfileBodySet(h,request(h,selected),services);
   assert.equal(operation.kind,'committed');
-  assert.equal(operation.history.document.revision,h.document.revision+1);
+  assert.equal(operation.history.document.revision,h.document.revision+3);
+  // Three journal events, but exactly one undoable frame, not three edits.
+  assert.equal(operation.history.undoStack.length,h.undoStack.length+1);
   assert.equal(operation.bodies.length,2);
   assert.equal(operation.bodies[0].status,'pending_exact_provider');
   assert.equal(operation.bodies[0].nativeHandoff.compatibility,'not_claimed_ask_RUNTIME_provider');
@@ -126,6 +128,6 @@ test('fail-closed transaction prevents stale/foreign profile, missing target and
   assert.throws(()=>authorProfileBodySet(operation.history,{
     ...valid,expectedRevision:operation.history.document.revision
   },services),/occupied/);
-  assert.equal(h.document.revision,1);
+  assert.equal(h.document.revision,3);
   assert.equal(model.featuresOf(h.document).filter(f=>f.kind==='extrude').length,0);
 });
