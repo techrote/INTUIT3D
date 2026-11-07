@@ -59,7 +59,7 @@ export function createLivePlateSession({
       throw new Error('live plate session: publishHistory must update readCurrentHistory synchronously');
     return actual;
   }
-  return Object.freeze({
+  const session = {
     /** Call after external model changes; refuses to retain stale native bytes. */
     refresh() {
       const state=synchronize();
@@ -163,5 +163,24 @@ export function createLivePlateSession({
         if(controller===abort) controller=null;
       }
     },
-  });
+    /**
+     * One browser command: commit an authoritative revision then request its
+     * experimental native evaluation. A refused SKETCH/INTENT edit sends no
+     * native request and retains the last still-current STEP receipt.
+     *
+     * A committed edit always invalidates the previous receipt before
+     * evaluation. The nested evaluation result (including stale_revision or
+     * provider_failure) is authoritative about provider progress; returning
+     * kind:'submitted' never asserts that a solid or STEP has been verified.
+     * A competing newer edit is handled by evaluate()'s revision/serial fence.
+     */
+    async applyEditAndEvaluate(edit,options={}) {
+      const outcome=session.applyEdit(edit);
+      if(outcome.kind==='refused')
+        return {kind:'refused',edit:outcome,evaluation:null};
+      const evaluation=await session.evaluate(options);
+      return {kind:'submitted',edit:outcome,evaluation};
+    },
+  };
+  return Object.freeze(session);
 }
