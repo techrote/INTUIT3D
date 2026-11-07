@@ -20,6 +20,7 @@ from occt8_orthogonal_contract import (
 from occt8_bridge import canonical_request,execute
 
 FIXTURE=json.loads((ROOT/"examples"/"occt8-u-bracket-orthogonal.request.json").read_text())
+PARTNER=json.loads((ROOT/"examples"/"occt8-partner-six-edge.request.json").read_text())
 WORKER=os.environ.get("INTUIT3D_OCCT8_WORKER")
 
 def modified(callback):
@@ -68,6 +69,39 @@ class OrthogonalProfileTests(unittest.TestCase):
             with self.subTest(case=case):
                 with self.assertRaises(ValueError):
                     validate_orthogonal_request(case)
+
+    def test_second_named_solid_has_its_own_solved_contour_and_cut_order(self):
+        q=validate_orthogonal_request(PARTNER)
+        self.assertEqual(q["featureId"],"body.partner")
+        self.assertEqual(q["profile"]["profileId"],"sketch.partner")
+        self.assertEqual(polygon_metrics(q["profile"]["vertices"]),(1750,180))
+        self.assertEqual([c["featureId"] for c in q["cuts"]],
+                         ["cut.partner.window","cut.partner.pocket"])
+        self.assertEqual([c["cutDepthMm"] for c in q["cuts"]],[6,2])
+        self.assertEqual(expected_orthogonal_metrics(q),(10156,4716))
+        self.assertIn("INTUIT3D_OCCT8_ORTHOGONAL_CHAIN_V4",
+                      canonical_orthogonal_request(q))
+
+    @unittest.skipUnless(WORKER,"PINNED_CXX_SKIPPED: INTUIT3D_OCCT8_WORKER not installed")
+    def test_real_pinned_cpp_second_named_body_has_physical_step(self):
+        worker=Path(WORKER)
+        self.assertTrue(worker.is_file(),WORKER)
+        with tempfile.TemporaryDirectory(prefix="intuit3d-partner-real-") as folder:
+            dest=Path(folder)/"body.partner.step"
+            result=execute(PARTNER,worker=worker,step_output=dest,timeout=120)
+            self.assertEqual(result["status"],"validated_exact",result)
+            self.assertEqual(result["featureId"],"body.partner")
+            for key in ("source","stepReadback"):
+                m=result[key]
+                self.assertEqual(m["solidCount"],1)
+                self.assertTrue(m["valid"])
+                self.assertAlmostEqual(m["volumeMm3"],10156,places=5)
+                self.assertAlmostEqual(m["surfaceAreaMm2"],4716,places=5)
+            digest=hashlib.sha256(dest.read_bytes()).hexdigest()
+            self.assertEqual(result["stepSha256"],digest)
+            rejected=execute(PARTNER,worker=worker,step_output=dest,timeout=120)
+            self.assertEqual(rejected["status"],"requires_reconciliation")
+            self.assertEqual(hashlib.sha256(dest.read_bytes()).hexdigest(),digest)
 
     def test_worker_not_claimed_when_not_installed(self):
         self.assertEqual(len(FIXTURE["profile"]["vertices"]),8)
