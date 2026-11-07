@@ -281,10 +281,14 @@ export function newModelPlateSession(projectId = 'workbench.plate.one'): ModelSe
  * cut separately. The profile contains two circular construction candidates;
  * neither is a solid cut until the user commits the cut feature. */
 export function newModelSketchSession(projectId = 'workbench.sketch.one'): ModelSession {
-  return runtime.commit(initial(projectId), [
+  const seeded=runtime.commit(initial(projectId), [
     created('create.sketch', feature('sketch.plate', 'sketch', [], [],
       { sketch: sketch.plateSketchFixture() as unknown as model.JsonValue })),
   ]);
+  // The new-project template is a baseline, not an undoable user edit:
+  // undoing it would remove the workbench's only source sketch and strand
+  // numeric tools that correctly require an active SKETCH feature.
+  return transactions.startUndoHistory(seeded.document);
 }
 
 /** Commit an actual body-producing extrusion to the INTENT journal.
