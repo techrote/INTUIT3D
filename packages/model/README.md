@@ -688,3 +688,35 @@ A consuming timeline must generate a fresh event ID for each operation and
 must invalidate any formerly current geometry for deleted/upstream-dependent
 features; it must not reuse preview meshes or STEP receipts based on this model
 API alone.
+
+## Recover a cut after replacing its extrusion (v1)
+
+Use the additive public subpath **@intuit3d/model/cut-reattachment**:
+`inspectCutReattachment`, `previewCutReattachment` and
+`commitUndoableCutReattachment`. A designer can remove the original plate
+extrusion, create a replacement extrusion for the **same semantic body**,
+and explicitly reattach the original cut rather than deleting its work.
+The cut and downstream fillet keep their IDs, payloads and body targets.
+
+Inspect exposes deleted body producers and active replacements. Preview
+checks an explicit, versioned and revision-fenced request, retains the
+old producer's journal tombstone, and returns a real dependency plan plus
+partial-rebuild invalidation. Commit appends one `feature.edit` event as one
+undoable action. It refuses an active old producer, wrong body, stale
+revision, duplicate event ID, unsupported type, and any regression of
+a previously ready feature. `require_ready` refuses incomplete repairs;
+`permit_unresolved` retains authentic pending/blocked/conflicted intent.
+
+This bounded v1 operates on a cut with explicit `payload.targetBodyId`
+and same-body `writeTargets`, replacing one deleted `extrude` dependency
+with a live `extrude` writing the identical body ID. It never guesses
+face equivalence, remaps a different body, changes cut parameters or
+promotes an experimental geometry-provider result to exact authority.
+
+Run `node packages/model/examples/reattach-cut.mjs` from the repo root.
+The runnable demonstration covers a dimensioned plate with two holes,
+cut and fillet, original extrusion deletion and replacement, one-shot
+repair, undo/redo, archive reopen, a retrospective width edit and a
+dependency-aware partial rebuild preserving an unrelated body. Its
+geometry state is **semantic only**: fresh native B-rep reconstruction
+and independent STEP validation remain separate provider gates.
