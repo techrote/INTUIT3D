@@ -166,8 +166,36 @@ try {
   assert.deepEqual(undonePolarArray.plate.holes.map(h=>h.radius),[5,5]);
   assert.ok(Math.abs(undonePolarArray.volumeMm3-undoneArray.volumeMm3)<1e-5);
 
+
+  // A single browser-consumable transaction rigidly repositions TWO existing
+  // holes using the actual SKETCH solved centres. Native OCP must physically
+  // rebuild a new B-rep/STEP, not reuse the prior STEP at a later revision.
+  const rigid=session.applyEdit(h=>runtime.transformPlateHoles(h,{
+    sketchFeatureId:'sketch.plate',eventId:'author.bridge.rigid.holes',
+    expectedRevision:current.document.revision,admission:'require_admissible',
+    holeIds:['holeA','holeB'],pivotXmm:60,pivotYmm:40,
+    rotateDegrees:90,translateXmm:5,translateYmm:0,
+  }));
+  assert.equal(rigid.kind,'committed',JSON.stringify(rigid));
+  assert.deepEqual(rigid.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  assert.equal(session.currentStep(),null,'authored transformation revokes previous STEP');
+  current=runtime.reopen(runtime.save(rigid.history));
+  const withRigidTransform=await evaluate('bridge.native.rigid.holes');
+  assert.deepEqual(withRigidTransform.plate.holes.map(h=>h.radius),[5,5]);
+  assert.ok(Math.abs(withRigidTransform.plate.holes[0].x-5)<1e-9);
+  assert.ok(Math.abs(withRigidTransform.plate.holes[0].y+25)<1e-9);
+  assert.ok(Math.abs(withRigidTransform.plate.holes[1].x-5)<1e-9);
+  assert.ok(Math.abs(withRigidTransform.plate.holes[1].y-25)<1e-9);
+  assert.ok(Math.abs(withRigidTransform.volumeMm3-undonePolarArray.volumeMm3)<1e-5);
+  assert.notEqual(withRigidTransform.sha256,undonePolarArray.sha256);
+  current=runtime.reopen(runtime.save(runtime.undo(current,['undo.bridge.rigid'])));
+  const undoneRigidTransform=await evaluate('bridge.native.undo.rigid');
+  assert.deepEqual(undoneRigidTransform.plate.holes.map(h=>[h.x,h.y]),[[-25,0],[25,0]]);
+  assert.ok(Math.abs(undoneRigidTransform.volumeMm3-undonePolarArray.volumeMm3)<1e-5);
+
   console.log(JSON.stringify({status:'real_experimental_native_bridge_pass',
     first,second,changedHoles,undoneHoles,withThirdHole,afterUndoThirdHole,
     withArray,undoneArray,withPolarArray,undonePolarArray,
+    withRigidTransform,undoneRigidTransform,
     redoAdmitted:true,independentStep:false,productionExact:false},null,2));
 } finally {session.cancel();await host.close();}
