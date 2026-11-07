@@ -524,6 +524,60 @@ async function main() {
     'reopened staged project lost dimension or semantic cut');
   await screenshot('18-sketch-cut-archive-reopened.png');
 
+
+  // Real Chromium Ctrl+click multi-selection and shared centre drag. Both
+  // semantic constraints must update in ONE revision; native remains pending.
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-mode-sketch]');b?.click();return !!b})()"),
+    'cannot enter sketch for group move');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch-hole-holeA]') && document.querySelector('[data-testid=runtime-sketch-hole-holeB]'))"),
+    'model-backed sketch handles absent for group move');
+  const groupBefore=await evaluate("(() => {const input=id=>Number(document.querySelector('[data-testid=runtime-hole-'+id+'-x]')?.value);return {a:input('holeA'),b:input('holeB'),revision:document.querySelector('[data-testid=runtime-revision]')?.textContent}})()");
+  const pointB=await evaluate("(() => {const r=document.querySelector('[data-testid=runtime-sketch-hole-holeB]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:pointB.x,y:pointB.y,modifiers:2});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:pointB.x,y:pointB.y,button:'left',buttons:1,clickCount:1,modifiers:2});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:pointB.x,y:pointB.y,button:'left',buttons:0,clickCount:1,modifiers:2});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-layout-select-holeA]')?.checked && document.querySelector('[data-testid=runtime-layout-select-holeB]')?.checked"),
+    'Ctrl+click did not additive-select both authored holes');
+  await screenshot('19-multi-hole-selected.png');
+  const pointA=await evaluate("(() => {const r=document.querySelector('[data-testid=runtime-sketch-hole-holeA]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
+  await mouse('mouseMoved',pointA.x,pointA.y);
+  await mouse('mousePressed',pointA.x,pointA.y,1);
+  await mouse('mouseMoved',pointA.x+24,pointA.y,1);
+  await mouse('mouseReleased',pointA.x+24,pointA.y);
+  const groupAfter=await eventually(async()=>{
+    const value=await evaluate("(() => {const input=id=>Number(document.querySelector('[data-testid=runtime-hole-'+id+'-x]')?.value);return {a:input('holeA'),b:input('holeB'),revision:document.querySelector('[data-testid=runtime-revision]')?.textContent}})()");
+    return value.a!==groupBefore.a&&value.b!==groupBefore.b?value:null;
+  },'real multi-hole group translation');
+  check(Math.abs((groupAfter.a-groupBefore.a)-(groupAfter.b-groupBefore.b))<1e-9,
+    'Ctrl-selected group changed relative hole spacing or did not move atomically');
+  check(groupAfter.revision!==groupBefore.revision,
+    'group drag made no authoritative journal revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'group move claimed an unexecuted native cut');
+  await screenshot('20-multi-hole-atomic-drag.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'group drag undo unavailable');
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)==="+groupBefore.a+" && Number(document.querySelector('[data-testid=runtime-hole-holeB-x]')?.value)==="+groupBefore.b),
+    'group drag undo did not restore both constraints');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    'group drag redo unavailable');
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)==="+groupAfter.a+" && Number(document.querySelector('[data-testid=runtime-hole-holeB-x]')?.value)==="+groupAfter.b),
+    'group drag redo did not reapply both constraints');
+  const priorGroupSave=await evaluate('window.__modelArchiveBlobs.length');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Save model archive');b?.click();return !!b})()"),
+    'cannot save multi-hole-edited model');
+  await eventually(()=>evaluate('window.__modelArchiveBlobs.length==='+String(priorGroupSave+1)),
+    'multi-hole archive absent');
+  check(await evaluate("((async()=>{const data=await window.__modelArchiveBlobs.at(-1).text();const dt=new DataTransfer();dt.items.add(new File([data],'moved-holes.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})())"),
+    'cannot reopen multi-hole archive');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'multi-hole archive review absent');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'multi-hole archive acceptance unavailable');
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)==="+groupAfter.a+" && Number(document.querySelector('[data-testid=runtime-hole-holeB-x]')?.value)==="+groupAfter.b),
+    'archive reopening lost selected group constraints');
+  await screenshot('21-multi-hole-archive-reopened.png');
+
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -540,7 +594,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png'],
+    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -549,6 +603,7 @@ async function main() {
     uncutExtrusionHonestPreview: true,
     stagedCutUndoRedoAndArchiveReopen: true,
     keyboardEComboExtrusionAndCut: true,
+    physicalCtrlClickMultiHoleAtomicDragAndArchive: true,
     comboEscapeLeavesJournalUnchanged: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };

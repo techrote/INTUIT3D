@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
-  addModelHole, createModelExtrusion, createModelThroughCut, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelSketchDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, moveModelFeature, moveModelHoleCenter, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
+  addModelHole, createModelExtrusion, createModelThroughCut, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelSketchDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, moveModelFeature, moveModelHoleCenter, moveModelHoleGroup, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
   makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, newModelSketchSession, previewModelProfile, previewModelSketchProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
@@ -86,7 +86,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [featureCombo,setFeatureCombo]=useState<'extrude'|'cut'|null>(null);
   const [selected,setSelected]=useState('plate');
   const [activeHole,setActiveHole]=useState<string|null>(null);
-  const [layoutSelected,setLayoutSelected]=useState<string[]>(['holeA','holeB']);
+  const [layoutSelected,setLayoutSelected]=useState<string[]>(['holeA']);
   const [layoutDraft,setLayoutDraft]=useState({scaleX:'120',scaleY:'100',radiusScale:'100'});
   const [cascadeConfirmation,setCascadeConfirmation]=useState<string|null>(null);
   const [timeline,setTimeline]=useState<'authored'|'evaluated'>('authored');
@@ -318,12 +318,24 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       setMessage(`Removed ${id}; undo restores the same semantic identity; native STEP requires rebuild.`);
     }catch(e){setMessage('Remove refused: '+String(e));}
   };
-  const dragHole=(hole:ModelHole,x:number,y:number)=>{
+  const dragHole=(hole:ModelHole,x:number,y:number,selectedIds:readonly ModelHole[]=[hole])=>{
     try{
-      const result=moveModelHoleCenter(liveHistory.current,hole,x,y);
-      if(result.kind==='refused'){setMessage(`Drag refused: ${result.candidateFeature.diagnostics.join('; ') || result.reason}`);return;}
+      const previous=liveHistory.current;
+      const isGroup=selectedIds.length>1&&selectedIds.includes(hole);
+      const source=isGroup?modelHoleValues(previous)[hole]:null;
+      if(isGroup&&!source)throw Error('Dragged hole no longer exists.');
+      const result=isGroup
+        ?moveModelHoleGroup(previous,selectedIds,x-source!.x,y-source!.y)
+        :moveModelHoleCenter(previous,hole,x,y);
+      if(result.kind==='refused'){
+        setMessage(`Drag refused: ${result.candidateFeature.diagnostics.join('; ') || result.reason}`);
+        return;
+      }
       acceptHistory(result.history);setActiveHole(hole);
-      setMessage(`Moved ${hole} center to (${x}, ${y}) mm in one undoable sketch transaction; native STEP requires rebuild.`);
+      setLayoutSelected(isGroup?[...selectedIds]:[hole]);
+      setMessage(isGroup
+        ?`Moved ${selectedIds.length} selected hole centres together by (${x-source!.x}, ${y-source!.y}) mm in ONE undoable SKETCH transaction. Native STEP requires rebuild.`
+        :`Moved ${hole} center to (${x}, ${y}) mm in one undoable sketch transaction; native STEP requires rebuild.`);
     }catch(e){setMessage('Hole drag refused: '+String(e));}
   };
   const dragHoleDiameter=(hole:ModelHole,diameterMm:number)=>{
@@ -591,7 +603,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={renderSketch}
               onHoleMove={circleDrawing.phase==='idle'?dragHole:undefined}
               onHoleDiameterEdit={circleDrawing.phase==='idle'?dragHoleDiameter:undefined}
-              onHoleSelect={setActiveHole} selectedHoleId={displayedActiveHole}
+              onHoleSelect={(id,additive=false)=>{
+                setActiveHole(id);
+                setLayoutSelected(previous=>additive
+                  ?previous.includes(id)?previous.filter(item=>item!==id):[...previous,id]
+                  :[id]);
+              }} selectedHoleId={displayedActiveHole} selectedHoleIds={layoutIds}
               onDimensionEdit={circleDrawing.phase==='idle'?dragDimension:undefined}
               circleDrawing={circleDrawing}
               onCirclePick={circleDrawing.phase!=='idle'?pickCirclePoint:undefined}/>:
@@ -743,7 +760,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           </div>
           <div className="runtime-hole-add" data-testid="runtime-hole-layout">
             <strong>Retrospective hole layout · one transaction</strong>
-            <p className="microcopy">Select authored holes, then scale their centre spacing and bore diameters about the selected bounding-box centre. This is a one-shot dimensional edit, not an associative pattern. Selected IDs survive undo and model reopening.</p>
+            <p className="microcopy">In Sketch, Ctrl+click (Cmd+click on macOS) hole outlines or centre handles to multi-select, then drag any selected centre to move the whole group in ONE undoable, solver-admitted edit. The checkboxes below select the same authored IDs. You can also scale selected spacing and bores about their bounding-box centre. The selected geometry IDs survive undo/reopen; selection itself is local UI state.</p>
             <fieldset className="runtime-layout-selection" aria-label="Hole layout selection">
               <legend>Selected hole IDs · {layoutIds.length}</legend>
               {Object.keys(holes).map(id=><label key={id}>

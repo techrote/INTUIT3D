@@ -198,6 +198,34 @@ export function editModelHole(
   });
 }
 
+/** Translate an explicitly selected set of authored circles in a single
+ * revision-fenced SKETCH edit.  A partial move is never published: the solver
+ * admits the entire translated group or retains the original journal. */
+export function moveModelHoleGroup(
+  h: ModelSession, holeIds: readonly ModelHole[], deltaX: number, deltaY: number,
+): SketchConstraintBatchResult {
+  if (holeIds.length < 2 || holeIds.length > 32 || new Set(holeIds).size !== holeIds.length)
+    throw Error('Group drag requires 2–32 distinct authored holes.');
+  if (![deltaX, deltaY].every(Number.isFinite) || (deltaX === 0 && deltaY === 0))
+    throw Error('Group drag requires a finite, nonzero translation.');
+  const holes = modelHoleValues(h);
+  const edits = holeIds.map(id => {
+    const origin = holes[id];
+    if (!origin) throw Error('Unknown authored hole in group drag: ' + id);
+    const x = origin.x + deltaX, y = origin.y + deltaY;
+    if (![x, y].every(value => Number.isFinite(value) && Math.abs(value) <= 10000))
+      throw Error('Group drag target lies outside the supported coordinate range.');
+    return {constraintId: id + ':fixed', patch: {x, y}};
+  });
+  return runtime.editSketchConstraints(h, {
+    sketchFeatureId: 'sketch.plate',
+    eventId: `workbench.drag.group.${h.document.revision}`,
+    expectedRevision: h.document.revision,
+    admission: 'require_admissible',
+    edits,
+  });
+}
+
 /** A two-axis drag is one undoable constraint transaction, not two moves. */
 export function moveModelHoleCenter(
   h:ModelSession, hole:ModelHole, x:number,y:number,
