@@ -131,3 +131,28 @@ export async function runExperimentalRuntimeBodyCut(history,cutFeatureId,{
   return Object.freeze({...result,runtimeBodyCutVersion:RUNTIME_BODY_CUT_VERSION,
     experimentalOnly:true,exactAuthority:false,independentInteroperability:false});
 }
+
+/** A journal-authored through-all cut whose *actual* rectangle overlaps the
+ * perimeter. Uses the same authoritative INTENT/RUNTIME/SKETCH evidence as
+ * v1; choosing a bounded native intersection oracle does not edit the journal.
+ * The through-all depth is taken from the actual authored base extrusion.
+ */
+export function requestFromRuntimePerimeterNotch(history,cutFeatureId,options={}){
+  const original=requestFromRuntimeBodyCut(history,cutFeatureId,options);
+  return validateBodyCutRequest({...original,
+    protocol:'intuit3d/kernel/profile-body-notch-v4',
+    cutDepthMm:original.baseExtrude.thicknessMm});
+}
+
+/** One isolated real OCP Boolean, never a second document authority. */
+export async function runExperimentalRuntimePerimeterNotch(history,cutFeatureId,{
+  runtime,model,requestId,readCurrentRevision,stepOutput,
+  pythonExecutable,workerScript,timeoutMs,signal
+}={}){
+  const request=requestFromRuntimePerimeterNotch(history,cutFeatureId,{
+    runtime,model,requestId,exportStep:stepOutput!==undefined});
+  const result=await runExperimentalBodyCut(request,{
+    readCurrentRevision,stepOutput,pythonExecutable,workerScript,timeoutMs,signal});
+  return Object.freeze({...result,runtimePerimeterNotchVersion:1,
+    experimentalOnly:true,exactAuthority:false,independentInteroperability:false});
+}
