@@ -20,19 +20,19 @@ test('new workspace reservations are exact local links with pinned package ident
     const hasSource = existsSync(manifestPath);
     const link = lock.packages['node_modules/' + name];
     const pkg = lock.packages[path];
-    // The generated-lock workflow intentionally recalculates npm's lock from
-    // the CHECKED-OUT source. Before the two feature PRs merge their package
-    // folders do not exist, so npm correctly omits preregistered stubs. The
-    // committed-lock CI retains reservations. Never allow a missing lock
-    // entry once real package source is present.
-    if (!link || !pkg) {
-      assert.equal(hasSource, false, name + ': source is present without a lock entry');
-      assert.equal(link, undefined, name + ': orphaned node_modules link');
-      assert.equal(pkg, undefined, name + ': orphaned package manifest');
-      continue;
+    // npm's generated lock preserves pre-registered package metadata as
+    // "extraneous" until the package directory is introduced, but removes
+    // its node_modules symlink. Both stages are valid only *before* source
+    // admission; once a package exists, missing link is a hard failure.
+    assert.ok(pkg, name + ': missing pinned workspace metadata');
+    if (link === undefined) {
+      assert.equal(hasSource, false, name + ': source present without local link');
+      assert.equal(pkg.extraneous, true, name + ': missing pre-admission marker');
+    } else {
+      assert.deepEqual(link, {resolved: path, link: true},
+        name + ' must be a local workspace');
+      assert.equal(pkg.extraneous, undefined, name + ': unexpected extraneous installed source');
     }
-    assert.deepEqual(link, { resolved: path, link: true },
-      name + ' must remain a local workspace');
     assert.equal(pkg.name, name);
     assert.equal(pkg.version, '0.1.0');
     assert.equal(pkg.engines.node, nodeVersion);
