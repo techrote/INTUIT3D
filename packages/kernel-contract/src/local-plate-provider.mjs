@@ -8,6 +8,7 @@ import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {assessPlateResponse, KernelContractError, parsePlateRequest} from './plate-v1.mjs';
 import {assessOcct8PlateResponse} from './occt8-v1.mjs';
+import {parseOcct8CutRequest, assessOcct8CutResponse} from './occt8-cut-v1.mjs';
 
 const DEFAULT_SUPERVISOR = fileURLToPath(new URL('../../../native/run_plate.py', import.meta.url));
 const DEFAULT_OCCT8_SUPERVISOR = fileURLToPath(new URL('../../../native/occt8_bridge.py', import.meta.url));
@@ -46,6 +47,18 @@ export async function runPinnedOcct8Plate(requestInput, {
     workerExecutable:resolve(workerExecutable), part21StepAudit, crossVersionStepAudit});
 }
 
+// Explicitly ordered rectangular C++ cuts, with no fallback to OCP or a mesh.
+// This shares cancellation, publication and revision fences with the plate API.
+export async function runPinnedOcct8CutChain(requestInput, {
+  workerExecutable, nativeSupervisor = DEFAULT_OCCT8_SUPERVISOR, ...options
+} = {}) {
+  if (typeof workerExecutable !== 'string' || !workerExecutable.trim())
+    throw new KernelContractError('pinned C++ workerExecutable path is required');
+  return runLocalPlate(requestInput, {...options, nativeSupervisor, backendKind:'occt8',
+    requestKind:'cut-chain', workerExecutable:resolve(workerExecutable),
+    part21StepAudit:false, crossVersionStepAudit:false});
+}
+
 async function runLocalPlate(requestInput, {
   readCurrentRevision,
   pythonExecutable = process.env.PYTHON || (process.platform === 'win32' ? 'python' : 'python3'),
@@ -54,11 +67,13 @@ async function runLocalPlate(requestInput, {
   timeoutMs = 25000,
   signal,
   backendKind = 'ocp',
+  requestKind = 'plate',
   workerExecutable,
   part21StepAudit = true,
   crossVersionStepAudit = false,
 } = {}) {
-  const request = parsePlateRequest(requestInput);
+  const request = requestKind === 'cut-chain'
+    ? parseOcct8CutRequest(requestInput) : parsePlateRequest(requestInput);
   if (typeof readCurrentRevision !== 'function')
     throw new KernelContractError('readCurrentRevision callback is mandatory');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 600000)
@@ -157,7 +172,8 @@ async function runLocalPlate(requestInput, {
       return unresolved(request, 'requires_reconciliation');
     let assessment;
     try {
-      assessment = (backendKind === 'occt8' ? assessOcct8PlateResponse : assessPlateResponse)(
+      assessment = (requestKind === 'cut-chain' ? assessOcct8CutResponse :
+        backendKind === 'occt8' ? assessOcct8PlateResponse : assessPlateResponse)(
         request, raw, {currentRevision:revisionOf(readCurrentRevision)});
       if (backendKind === 'occt8' && assessment.kind === 'experimental_report' &&
           request.exportStep &&
