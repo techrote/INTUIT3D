@@ -459,17 +459,41 @@ async function main() {
   await key('Enter','Enter',13);
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-width]')?.value==='140'"),
     'sketch-first retrospective width dimension not applied');
-  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-create-extrusion]');b?.click();return !!b})()"),
-    'cannot author extrusion from admitted sketch');
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),
-    'native-independent semantic extrusion missing');
+  // E is a deliberate, keyboard-first two-stage authoring tool, never an
+  // immediate destructive command. Escape must leave the model unchanged.
+  await evaluate('document.activeElement?.blur()');
+  await key('e','KeyE',69);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-combo]')?.textContent.includes('Extrude admitted sketch')"),
+    'E combo did not propose extrusion for a sketch-only project');
+  check(await evaluate("document.querySelector('[data-testid=runtime-combo-distance]')?.value==='8' && !document.querySelector('[data-testid=runtime-feature-plate]')"),
+    'E combo silently authored extrusion before confirmation');
+  await screenshot('15a-e-combo-extrusion.png');
+  await key('Escape','Escape',27);
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-feature-combo]') && !document.querySelector('[data-testid=runtime-feature-plate]')"),
+    'Escape from E combo created a solid or left dialog open');
+  await key('e','KeyE',69);
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-combo-distance]'))"),
+    'E combo failed to reopen');
+  // The numeric distance is focused by the dialog and Enter commits the
+  // real semantic feature. Existing ribbon commands remain available too.
+  await eventually(()=>evaluate("document.activeElement?.matches('[data-testid=runtime-combo-distance]')"),
+    'E distance field did not receive keyboard focus');
+  await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only' && !document.querySelector('[data-testid=runtime-feature-combo]')"),
+    'E combo did not commit the authoritative extrusion');
   check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('0 displayed circular holes') && !document.querySelector('[data-testid=runtime-feature-cut]')"),
     'uncut extrusion falsely visualized already-Boolean holes');
   await screenshot('16-sketch-extruded-uncut.png');
-  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-create-cut]');b?.click();return !!b})()"),
-    'cannot author explicitly target-body cut');
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
-    'user-created cut missing or erroneously exact');
+  await key('e','KeyE',69);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-combo]')?.textContent.includes('Cut circular holes through body.plate')"),
+    'E combo did not transition from extrusion to explicit target-body cut');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-feature-cut]') && document.querySelector('[data-testid=runtime-feature-combo]')?.textContent.includes('Native provider')"),
+    'E cut combo claimed native geometry or authored before confirmation');
+  await screenshot('16a-e-combo-cut.png');
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-feature-combo-confirm]');b?.click();return !!b})()"),
+    'cannot confirm explicit cut in E combo');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider' && !document.querySelector('[data-testid=runtime-feature-combo]')"),
+    'E combo cut missing or erroneously exact');
   check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('2 displayed circular holes')"),
     'cut-intent viewport failed to show intended hole locations');
   await screenshot('17-sketch-through-cut-pending-native.png');
@@ -516,7 +540,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '16-sketch-extruded-uncut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png'],
+    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -524,6 +548,8 @@ async function main() {
     actualSketchFirstExtrudeCutInteraction: true,
     uncutExtrusionHonestPreview: true,
     stagedCutUndoRedoAndArchiveReopen: true,
+    keyboardEComboExtrusionAndCut: true,
+    comboEscapeLeavesJournalUnchanged: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
