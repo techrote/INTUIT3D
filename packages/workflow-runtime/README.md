@@ -829,8 +829,10 @@ the uncorrupted 12 mm / three-hole project. The rebuild transport uses an
 explicitly **synthetic** native provider. It is NOT a real OCCT run.
 
 The existing native integration executable,
-`test/local-occt8-bridge.native-demo.mjs`, also tests a final two-command
-batch through the **actual configured OCCT 8.0.1 C++ provider**. It
+`test/local-occt8-bridge.native-demo.mjs`, retains its original seven-stage
+JSON contract for PLATFORM's exact stage/material oracle. With explicit
+`--atomic-batch` it additionally tests a two-command batch through the
+**actual configured OCCT 8.0.1 C++ provider**. It
 retrospectively changes extrusion thickness and independently resizes both
 SKETCH hole constraints, verifies one file-backed model publication, tests
 analytic volume and physical STEP receipts, then reconstructs the identical
@@ -848,15 +850,27 @@ npm run typecheck --workspace @intuit3d/workflow-runtime
 INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
   npm run demo:occt8:bridge --workspace @intuit3d/workflow-runtime
 
+# Additional physical atomic batch + fresh disk-backed session restart:
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+  node packages/workflow-runtime/test/local-occt8-bridge.native-demo.mjs --atomic-batch
+
 # For real independent imported STEP samples, also provide both:
 INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
 INTUIT3D_ANVIL_STEP_PROBE=/absolute/path/to/intuit_step_probe \
 INTUIT3D_ANVIL_PROBE_SHA256=<actual-64-character-binary-sha256> \
   npm run demo:occt8:independent --workspace @intuit3d/workflow-runtime
+
+# The combined physical batch AND independent CAD importer:
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+INTUIT3D_ANVIL_STEP_PROBE=/absolute/path/to/intuit_step_probe \
+INTUIT3D_ANVIL_PROBE_SHA256=<actual-64-character-binary-sha256> \
+  node packages/workflow-runtime/test/local-occt8-bridge.native-demo.mjs \
+    --atomic-batch --require-independent
 ```
 
 The demonstration prints SHA-256, source revision, actual provider/geometry
-and STEP outputs, and a digest of the canonical disk archive; it deletes
+and STEP outputs. The additive `--atomic-batch` mode also prints a digest
+of the canonical disk archive and its durable write count. The script deletes
 its temporary working directory on normal exit. This adds a runnable
 **acceptance path**, not evidence that the worker or external probe was
 executed on ordinary Node CI. The host still requires provisioned,
