@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {
   newProject, commitEvent, featuresOf, planProject, serializeProject, deserializeProject,
   ProjectRevisionError, ProjectFormatError,
@@ -173,4 +175,18 @@ test('parameter change after selection requires new provider trace; no cached ex
   assert.equal(report.status,'pending_evidence');
   assert.ok(report.diagnosticCodes.includes('MISSING_STEP'));
   assert.equal(featuresOf(doc).find(f=>f.id==='feature.plate').payload.thicknessMm,12);
+});
+
+test('public local example actually executes authored split repair and 8→12 mm replay',()=>{
+  const file=fileURLToPath(new URL('../examples/face-recovery.mjs',import.meta.url));
+  const result=spawnSync(process.execPath,['--experimental-strip-types',file],
+    {encoding:'utf8',timeout:15000});
+  assert.equal(result.status,0,result.stderr || result.stdout);
+  const report=JSON.parse(result.stdout.trim());
+  assert.equal(report.format,'intuit3d.semantic-face-recovery-demo');
+  assert.equal(report.thicknessMm,12);
+  assert.equal(report.cutTargetRoleId,'face.top.right');
+  assert.equal(report.postEditSelectionStatus,'pending_evidence');
+  assert.deepEqual(report.splitCandidates,['face.top.left','face.top.right']);
+  assert.match(report.geometryAuthority,/none/);
 });
