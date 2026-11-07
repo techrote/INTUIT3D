@@ -122,7 +122,7 @@ export function previewParameterFormulaTableEdit(
   const seenEventIds = new Set<string>();
   const finalRows: { row: ParameterFormulaTableRow; name: string }[] = [];
   const renameOnly: ParameterTableEdit[] = [];
-  for (const row of request.rows) {
+  for (const row of request.rows as readonly ParameterFormulaTableRow[]) {
     if (!plain(row) || !keys(row, ['eventId','featureId'],
         ['eventId','featureId','name','formula']) ||
         !('name' in row || 'formula' in row) ||
