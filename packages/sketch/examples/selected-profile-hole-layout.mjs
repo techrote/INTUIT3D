@@ -51,4 +51,6 @@ selection={...selection,sourceSignature:serializeSketch(sketch)};
 console.log(JSON.stringify(summary('reopen',sketch,selection)));
 const restored=parseSketch(saved),initialSelection={
   candidateId:selected.id,sourceSignature:serializeSketch(restored)};
-console.log(JSON.stringify(summary('undo',restored,initialSelection)));
+// Snapshot restoration proves reversibility; the external INTENT/RUNTIME journal
+// must supply a real durable undo event after integration.
+console.log(JSON.stringify(summary('source_restore',restored,initialSelection)));
