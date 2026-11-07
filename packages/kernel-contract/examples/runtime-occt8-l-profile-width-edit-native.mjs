@@ -73,7 +73,7 @@ assert.equal(requestFromRuntimeOcct8LProfile(redo,MODEL_L_BODY_ID,{
   runtime:edited.runtime,model:edited.model,requestId:'l.width.redo',
   exportStep:false}).profile.width,140);
 fixture={...edited,history:edited.runtime.reopen(edited.runtime.save(edited.history))};
-await physicalRebuild('l-width-140',140,35860);
+await physicalRebuild('l-width-140',140,35920);
 assert.notEqual(records[0].stepSha256,records[1].stepSha256);
 assert.equal(records[0].profileId,records[1].profileId);
 await writeFile(join(output,'authoritative-document.json'),

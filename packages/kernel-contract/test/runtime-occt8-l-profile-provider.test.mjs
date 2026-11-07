@@ -101,7 +101,7 @@ test('real constrained SKETCH width edit physically changes the pending native L
   assert.deepEqual([after.profile.legWidth,after.profile.footHeight,
     after.profile.thickness],[30,20,8]);
   assert.equal(expectedOcct8LProfileMetrics(before).volumeMm3,32720);
-  assert.equal(expectedOcct8LProfileMetrics(after).volumeMm3,35860);
+  assert.equal(expectedOcct8LProfileMetrics(after).volumeMm3,35920);
   assert.equal(after.profile.profileId,before.profile.profileId);
   assert.deepEqual(after.cuts.map(c=>c.featureId),before.cuts.map(c=>c.featureId));
   assert.deepEqual(after.cuts.map(c=>c.cutDepthMm),[8,3]);
