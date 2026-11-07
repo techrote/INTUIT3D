@@ -7,6 +7,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
+import {mkdtempSync,readFileSync,writeFileSync,renameSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import * as model from '@intuit3d/model';
 import * as transactions from '@intuit3d/model/transactions';
 import * as bindings from '@intuit3d/model/dimension-bindings';
@@ -184,4 +189,77 @@ test('stale, malformed, inadmissible and failed-storage batches are all-or-nothi
       'failed durable publication must preserve the still-current verified STEP');
     assert.equal(calls,1);
   } finally {session.cancel();await host.close();}
+});
+
+test('disk-persisted authoritative edit burst reopens from a fresh session after a torn storage attempt',async()=>{
+  const folder=mkdtempSync(join(tmpdir(),'intuit3d-runtime-durable-batch-'));
+  const projectFile=join(folder,'project.json');
+  let attempt=0,writes=0,failBeforeRename=false;
+  const storage={
+    getItem(){
+      try{return readFileSync(projectFile,'utf8');}
+      catch(error){if(error?.code==='ENOENT')return null;throw error;}
+    },
+    setItem(key,value){
+      const temp=join(folder,'project.'+(++attempt)+'.tmp');
+      writeFileSync(temp,value,{flag:'wx'});
+      // A worker crash or storage error after staging must not replace the
+      // previously published canonical archive.
+      if(failBeforeRename)throw new Error('synthetic crash before archive rename');
+      renameSync(temp,projectFile);writes++;
+    },
+  };
+  try{
+    const source=createPersistentHistorySource({runtime,storage,
+      initialHistory:initialHistory()});
+    const session=createLivePlateSession({runtime,...source});
+    const startingArchive=session.save();
+    assert.equal(writes,1);
+    const committed=session.applyCommands(batch(session,[
+      thickness('disk.batch.thickness',12),
+      addHole('disk.batch.third.hole','diskHoleC',60,20),
+    ]));
+    assert.equal(committed.kind,'committed',JSON.stringify(committed));
+    assert.equal(writes,2,'two accepted commands publish one archive');
+    const durableArchive=readFileSync(projectFile,'utf8');
+    assert.notEqual(durableArchive,startingArchive);
+    const restarted=createLivePlateSession({runtime,
+      ...createPersistentHistorySource({runtime,storage})});
+    assert.equal(restarted.save(),durableArchive);
+    assert.equal(restarted.refresh().revision,committed.report.revision);
+    assert.equal(restarted.currentStep(),null,
+      'native bytes are never persisted or accepted from an older process');
+
+    failBeforeRename=true;
+    assert.throws(()=>restarted.applyCommands(batch(restarted,[
+      thickness('disk.failed.edit',10),
+      addHole('disk.failed.hole','diskHoleD',80,20),
+    ])),/synthetic crash before archive rename/);
+    assert.equal(writes,2);
+    assert.equal(readFileSync(projectFile,'utf8'),durableArchive);
+    const secondRestart=createLivePlateSession({runtime,
+      ...createPersistentHistorySource({runtime,storage})});
+    assert.equal(secondRestart.save(),durableArchive,
+      'an orphan staging file must never be mistaken for the current archive');
+
+    const host=await startLocalPlateBridge({runtime,model,plateContract,
+      runExperimentalPlate:syntheticProvider});
+    try{
+      const result=await secondRestart.evaluate({
+        url:host.url,token:host.token,requestId:'disk.batch.recovered',
+        exportStep:true,
+      });
+      assert.equal(result.kind,'experimental_plate_evaluated',JSON.stringify(result));
+      assert.equal(result.result.intendedPlate.thickness,12);
+      assert.equal(result.result.intendedPlate.holes.length,3);
+      assert.equal(secondRestart.currentStep()?.sha256,result.step.sha256);
+      assert.equal(writes,2,'native rebuild must not rewrite canonical model');
+    }finally{secondRestart.cancel();restarted.cancel();session.cancel();await host.close();}
+  }finally{rmSync(folder,{recursive:true,force:true});}
+});
+
+test('genuine pinned native demonstration remains syntactically executable without installing a test double',()=>{
+  const script=fileURLToPath(new URL('./local-occt8-bridge.native-demo.mjs',import.meta.url));
+  const syntax=spawnSync(process.execPath,['--check',script],{encoding:'utf8'});
+  assert.equal(syntax.status,0,syntax.stderr);
 });
