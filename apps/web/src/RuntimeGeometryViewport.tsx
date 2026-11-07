@@ -5,20 +5,27 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { PlateProfile } from '@intuit3d/sketch';
 import { handleDimensionAtPoint, nudgeSketchHandle, type SketchDimensionHandle } from './runtimeSketchHandles';
 import { circleDrawingPreview, type CircleDrawingState } from './circleDrawing';
+import { radialHoleDiameter, nudgeHoleDiameter } from './holeDiameterDrag';
 
 /** A visually useful, disposable tessellation of the ACTUAL admitted SKETCH
  * profile. Never used as document state, a STEP source, or geometric proof. */
 type HoleId = string;
-export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, circleDrawing, onCirclePick }: {
+export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, circleDrawing, onCirclePick }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
   onHoleMove?: (id: HoleId,x:number,y:number)=>void;
   onDimensionEdit?: (id: SketchDimensionHandle, millimetres:number)=>void;
+  /** Commits only after SKETCH/RUNTIME has admitted the edited circle. */
+  onHoleDiameterEdit?: (id: HoleId,diameterMm:number)=>void;
+  onHoleSelect?: (id:HoleId)=>void;
+  selectedHoleId?: string|null;
   circleDrawing?: CircleDrawingState;
   onCirclePick?: (x:number,y:number)=>void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const moving = useRef<{id:HoleId;pointerId:number}|null>(null);
   const [dragPreview,setDragPreview] = useState<{id:HoleId;x:number;y:number}|null>(null);
+  const radialMove=useRef<{id:HoleId;pointerId:number;source:PlateProfile;original:number}|null>(null);
+  const [radialPreview,setRadialPreview]=useState<{id:HoleId;diameter:number}|null>(null);
   const [circleHover,setCircleHover]=useState<{x:number;y:number}|null>(null);
   const dimensionMove=useRef<{id:SketchDimensionHandle;pointerId:number;source:PlateProfile;original:number}|null>(null);
   const [dimensionPreview,setDimensionPreview]=useState<{id:SketchDimensionHandle;value:number}|null>(null);
@@ -131,7 +138,8 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         fill="#34758b22" stroke="#76d1e5" strokeWidth=".5" vectorEffect="non-scaling-stroke"/>
       {profile.holes.map(h=><g key={h.id}>
         <circle data-testid={`runtime-sketch-outline-hole-${h.id}`} cx={h.x} cy={h.y} r={h.radius} fill="#152332"
-          stroke="#e4be81" strokeWidth=".5" vectorEffect="non-scaling-stroke"/>
+          stroke={selectedHoleId===h.id?'#6af0cd':'#e4be81'} strokeWidth={selectedHoleId===h.id?'.9':'.5'} vectorEffect="non-scaling-stroke"
+          onClick={()=>onHoleSelect?.(h.id)}/>
         {onHoleMove&&
           <circle data-testid={`runtime-sketch-hole-${h.id}`}
             aria-label={`Drag ${h.id} center`}
@@ -142,6 +150,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
               if(event.button!==0)return;
               event.preventDefault();
               event.currentTarget.setPointerCapture(event.pointerId);
+              onHoleSelect?.(h.id);
               moving.current={id:h.id as HoleId,pointerId:event.pointerId};
               setDragPreview({id:h.id as HoleId,x:h.x,y:h.y});
             }}
@@ -161,6 +170,50 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
             }}
             onPointerCancel={()=>{moving.current=null;setDragPreview(null);}}
           />}
+        {onHoleDiameterEdit&&<circle
+          data-testid={`runtime-sketch-diameter-${h.id}`}
+          role="slider" tabIndex={0}
+          aria-label={`Resize ${h.id} circular cut diameter in millimetres`}
+          aria-valuemin={0.5} aria-valuemax={10000} aria-valuenow={2*h.radius}
+          cx={h.x} cy={h.y-h.radius} r={Math.max(2.1,Math.min(width,height)/43)}
+          fill="#fed792" stroke="#4b3122" strokeWidth=".7"
+          style={{cursor:'nwse-resize',touchAction:'none'}}
+          onPointerDown={event=>{
+            if(event.button!==0||moving.current||dimensionMove.current)return;
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            onHoleSelect?.(h.id);
+            radialMove.current={id:h.id,pointerId:event.pointerId,source:profile,original:2*h.radius};
+            setRadialPreview({id:h.id,diameter:2*h.radius});
+          }}
+          onPointerMove={event=>{
+            const current=radialMove.current;
+            if(!current||current.id!==h.id||current.pointerId!==event.pointerId||current.source!==profile)return;
+            const point=pointerPosition(event);
+            const diameter=point&&radialHoleDiameter({x:h.x,y:h.y},point,event.shiftKey);
+            if(diameter!==null&&diameter!==undefined)setRadialPreview({id:h.id,diameter});
+          }}
+          onPointerUp={event=>{
+            const current=radialMove.current;
+            if(!current||current.id!==h.id||current.pointerId!==event.pointerId)return;
+            radialMove.current=null;setRadialPreview(null);
+            if(current.source!==profile)return;
+            const point=pointerPosition(event);
+            const diameter=point&&radialHoleDiameter({x:h.x,y:h.y},point,event.shiftKey);
+            if(diameter!==null&&diameter!==undefined&&diameter!==current.original)
+              onHoleDiameterEdit(h.id,diameter);
+          }}
+          onPointerCancel={()=>{radialMove.current=null;setRadialPreview(null);}}
+          onLostPointerCapture={()=>{radialMove.current=null;setRadialPreview(null);}}
+          onKeyDown={event=>{
+            if(event.key==='Escape'){
+              radialMove.current=null;setRadialPreview(null);event.preventDefault();return;
+            }
+            const diameter=nudgeHoleDiameter(2*h.radius,event.key,event.shiftKey);
+            if(diameter!==null){
+              event.preventDefault();onHoleSelect?.(h.id);onHoleDiameterEdit(h.id,diameter);
+            }
+          }}/>}
       </g>)}
       {onDimensionEdit&&(['width','depth','holeA.diameter','holeB.diameter'] as const)
         .filter(id=>Number.isFinite(dimensionValue(id)))
@@ -224,6 +277,11 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         cx={ghost.x} cy={ghost.y} r={ghost.radius || Math.max(1.5,Math.min(width,height)/60)}
         fill="#6af0cd24" stroke="#6af0cd" strokeDasharray="2 1"
         strokeWidth=".55" pointerEvents="none"/>}
+      {radialPreview&&profile.holes.filter(h=>h.id===radialPreview.id).map(h=>
+        <circle key={h.id} data-testid="runtime-sketch-diameter-preview"
+          cx={h.x} cy={h.y} r={radialPreview.diameter/2}
+          fill="none" stroke="#fed792" strokeDasharray="2 1"
+          strokeWidth=".65" pointerEvents="none"/>)}
       {dragPreview&&<circle cx={dragPreview.x} cy={dragPreview.y}
         r={Math.max(2.5,Math.min(width,height)/30)}
         fill="#6af0cd55" stroke="#84f2d3" strokeDasharray="1 1"

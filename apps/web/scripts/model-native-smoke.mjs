@@ -294,6 +294,43 @@ async function main(){
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'sketch-drawn circle falsely promoted STEP/exact state');
   await screenshot('native-00b-circle-committed.png');
+  // Newly drawn holes are immediately editable, including real radial
+  // pointer drags and keyboard arrows; no browser-side CAD state is authored.
+  const drawnId=await evaluate("Array.from(document.querySelectorAll('[data-testid^=runtime-hole-editor-]')).map(x=>x.getAttribute('data-testid').slice(20)).find(x=>x.startsWith('hole.user.'))");
+  check(drawnId,'drawn hole ID missing');
+  const diameterHandle=await evaluate(`(() => {
+    const h=document.querySelector('[data-testid="runtime-sketch-diameter-${drawnId}"]');
+    if(!h)return null;
+    const x=Number(h.getAttribute('cx')),y=Number(h.getAttribute('cy')),m=h.getScreenCTM();
+    const a=new DOMPoint(x,y).matrixTransform(m);
+    const b=new DOMPoint(x,y-2).matrixTransform(m);
+    return {x:a.x,y:a.y,dx:b.x-a.x,dy:b.y-a.y};
+  })()`);
+  check(diameterHandle&&Number.isFinite(diameterHandle.dy)&&Math.abs(diameterHandle.dy)>3,
+    'radial diameter handle cannot be projected into actual Chromium');
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:diameterHandle.x,y:diameterHandle.y});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:diameterHandle.x,y:diameterHandle.y,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:diameterHandle.x+diameterHandle.dx,y:diameterHandle.y+diameterHandle.dy,button:'left',buttons:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:diameterHandle.x+diameterHandle.dx,y:diameterHandle.y+diameterHandle.dy,button:'left',clickCount:1});
+  const drawnDiameter=()=>evaluate(`Number(document.querySelector('[data-testid="runtime-hole-${drawnId}-diameter"]')?.value)`);
+  await eventually(async()=>await drawnDiameter()===14,'radial pointer did not commit 14 mm solved diameter');
+  check(await evaluate(`document.querySelector('[data-testid=runtime-active-hole]')?.textContent.includes('${drawnId}')`),
+    'selected radial cut did not reach inspector');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'radial sketch edit incorrectly promoted physical exactness');
+  await screenshot('native-00b-circle-radial-edited.png');
+  check(await evaluate(`(() => {const h=document.querySelector('[data-testid="runtime-sketch-diameter-${drawnId}"]');h?.focus();return document.activeElement===h})()`),
+    'new radial diameter handle was not keyboard focusable');
+  await key('ArrowRight','ArrowRight',39);
+  await eventually(async()=>await drawnDiameter()===15,'keyboard radial arrow did not author 15 mm diameter');
+  const historyButton=async(label)=>evaluate(`(() => {
+    const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()===${JSON.stringify(label)});
+    b?.click();return !!b;
+  })()`);
+  check(await historyButton('Undo'),'cannot undo radial keyboard resize');
+  await eventually(async()=>await drawnDiameter()===14,'undo lost pointer-edited diameter');
+  check(await historyButton('Undo'),'cannot undo radial pointer resize');
+  await eventually(async()=>await drawnDiameter()===10,'undo lost original drawn diameter');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Undo');b?.click();return !!b})()"),'cannot undo sketch drawn circle');
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===2"),
     'one undo did not remove drawn circle');
