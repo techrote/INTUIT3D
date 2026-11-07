@@ -7,6 +7,10 @@
     "./plate-v1": {
       "types": "./src/plate-v1.d.mts",
       "default": "./src/plate-v1.mjs"
+    },
+    "./local-plate-provider": {
+      "types": "./src/local-plate-provider.d.mts",
+      "node": "./src/local-plate-provider.mjs"
     }
   },
   "scripts": {
