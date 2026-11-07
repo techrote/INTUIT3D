@@ -520,9 +520,9 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           {nativeBusy&&<button type="button" className="ribbon-button"
             data-testid="runtime-native-cancel" onClick={()=>{invalidateNative();setNativeReport('Native evaluation cancelled; no STEP published.');}}>Cancel native evaluation</button>}
           {nativeEvidence&&<div className="runtime-native-evidence" data-testid="runtime-native-evidence" role="status">
-            <strong>Experimental physical receipt · revision {nativeEvidence.revision}</strong>
+            <strong>Experimental provider result · revision {nativeEvidence.revision}</strong>
             <span>Through-holes: {nativeEvidence.holeCount} · Solids: {nativeEvidence.solidCount??'not reported'} · Volume: {nativeEvidence.volumeMm3===null?'not reported':nativeEvidence.volumeMm3.toFixed(3)+' mm³'}</span>
-            <small>Provider-reported OCP B-rep metrics; same-engine STEP readback. Not production exactness or independent external CAD verification.</small>
+            <small>Provider-reported metrics when available; host STEP readback is same-engine only. Not production exactness or independent external CAD verification.</small>
           </div>}
           {nativeReport&&<p className="microcopy" role="status" data-testid="runtime-native-result">{nativeReport}</p>}
           <p className="microcopy">The persistent RUNTIME session invalidates native receipts on every model edit, undo/redo, archive replacement or provider change. Build-only keeps same-engine-verified bytes available for the current revision; download rechecks the authoritative journal. No preview tessellation is exported as STEP. <strong>Experimental OCP is not production-qualified CAD.</strong></p>
