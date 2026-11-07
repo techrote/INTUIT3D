@@ -16,7 +16,7 @@ import * as discovery from '@intuit3d/sketch/profile-discovery/v1';
 import * as plateContract from '@intuit3d/kernel-contract/plate-v1';
 import {createWorkflowRuntime} from '../index.mjs';
 import {startLocalPlateBridge} from '../local-plate-bridge.mjs';
-import {evaluateLocalPlate,decodeVerifiedLocalStep} from '../local-plate-client.mjs';
+import {evaluateLocalPlate,decodeVerifiedLocalStep,inspectLocalPlateBridge} from '../local-plate-client.mjs';
 
 const runtime=createWorkflowRuntime({model,transactions,bindings,dimensions,archive,sketch,discovery});
 const created=(eventId,feature)=>({eventId,type:'feature.create',feature});
@@ -187,4 +187,45 @@ test('STEP client rejects corrupted bytes and remote URL before network',async()
   await assert.rejects(()=>evaluateLocalPlate({url:'https://elsewhere.example',
     token:'0'.repeat(64),runtime,readCurrentHistory:plateProject,
     cutFeatureId:'cut',requestId:'bad.url'}),/loopback/);
+});
+
+test('authenticated provider pairing refuses experimental fallback before starting native work',async()=>{
+  const before=nativeCalls;
+  const current=plateProject();
+  await runHost(fakeProvider,async host=>{
+    const identity=await inspectLocalPlateBridge({url:host.url,token:host.token});
+    assert.equal(identity.kind,'paired',JSON.stringify(identity));
+    assert.equal(identity.backend,'OCP-python-prototype');
+    assert.equal(identity.occtVersion,'7.9.3.1');
+    assert.equal(identity.stepVerification,'same_engine_step_readback');
+    assert.equal(identity.exactAuthority,false);
+    assert.equal(identity.independentInteroperability,false);
+    const rejected=await evaluateLocalPlate({
+      url:host.url,token:host.token,runtime,readCurrentHistory:()=>current,
+      cutFeatureId:'cut',requestId:'must.be.pinned',exportStep:true,
+      requiredBackend:'OCCT-cxx-8.0.1',
+    });
+    assert.equal(rejected.kind,'unresolved');
+    assert.equal(rejected.code,'provider_mismatch');
+    assert.equal(nativeCalls,before,'wrong provider must never execute a native job');
+    const noToken=await fetch(host.url+'/v1/plate/capabilities');
+    assert.equal(noToken.status,403,'native provider identity requires host pairing');
+    const wrongOrigin=await fetch(host.url+'/v1/plate/capabilities',{
+      headers:{'x-intuit3d-token':host.token,origin:'https://outside.example'},
+    });
+    assert.equal(wrongOrigin.status,403);
+    const allowed=await fetch(host.url+'/v1/plate/capabilities',{
+      method:'OPTIONS',headers:{origin:'http://127.0.0.1:5173'},
+    });
+    assert.equal(allowed.status,204);
+    assert.match(allowed.headers.get('access-control-allow-methods'),/GET/);
+    const original=await evaluateLocalPlate({
+      url:host.url,token:host.token,runtime,readCurrentHistory:()=>current,
+      cutFeatureId:'cut',requestId:'explicit.ocp',exportStep:true,
+      requiredBackend:'OCP-python-prototype',
+    });
+    assert.equal(original.kind,'experimental_plate_evaluated',JSON.stringify(original));
+    assert.equal(original.exactAuthority,false);
+    assert.equal(nativeCalls,before+1);
+  });
 });
