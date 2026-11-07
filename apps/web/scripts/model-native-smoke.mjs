@@ -135,6 +135,14 @@ async function main(){
     await send('Input.dispatchMouseEvent',{type:'mousePressed',x:pos.x,y:pos.y,button:'left',clickCount:1});
     await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:pos.x,y:pos.y,button:'left',clickCount:1});
   };
+  // The default mounting-plate fixture is parameter-bound at 10 mm.
+  // Seed the owner's representative 8→12 mm edit via the REAL inspector,
+  // without silently changing RUNTIME's canonical fixture or using a mock.
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-dimension-thickness]');e.focus();e.select();return document.activeElement===e})()"),
+    'cannot focus authoritative extrusion dimension for 8 mm baseline');
+  await send('Input.insertText',{text:'8'});await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
+    'cannot seed 8 mm model-backed thickness');
   // Actual Chromium 3D direct manipulation. Camera-projected axis is read
   // from the rendered handle; no synthetic geometry or runtime model is edited
   // until the completed gesture reaches INTENT/RUNTIME.
