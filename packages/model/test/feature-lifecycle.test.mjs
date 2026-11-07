@@ -175,7 +175,7 @@ test('stale sessions, duplicate event IDs, invalid tombstones and bounds reject 
   assert.equal(serializeProject(doc),before);
 });
 
-test('retrospective dimension edit after recovery invalidates only the physical plate branch', () => {
+test('retrospective dimension edit after recovery invalidates only the physical plate branch', async () => {
   const base = plate();
   let history = startUndoHistory(base);
   history = commitUndoableFeatureRemoval(history,
