@@ -622,6 +622,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                   :[id]);
               }} selectedHoleId={displayedActiveHole} selectedHoleIds={layoutIds}
               onDimensionEdit={circleDrawing.phase==='idle'?dragDimension:undefined}
+              onThicknessEdit={plateActive?(mm)=>update('thickness',mm):undefined}
               circleDrawing={circleDrawing}
               onCirclePick={circleDrawing.phase!=='idle'?pickCirclePoint:undefined}/>:
             <div className="empty-overlay" data-testid="runtime-empty">Current dimensions cannot produce an admitted sketch profile. No previous mesh is represented as current.</div>}
@@ -636,7 +637,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <div className="viewport-hint">{renderSketch?(circleDrawing.phase!=='idle'?
             'Circle tool: centre click → radius click; profile admission rejects overlaps or outside holes':
             'Drag edge/diameter handles or hole centers; arrow keys nudge focused dimensions (Shift = 0.1 mm)'):
-            'Drag to orbit · Wheel to zoom · Right-drag to pan · edit historical dimensions in inspector'}</div>
+            'Drag extrusion-thickness grip or use ↑/↓ · Drag background to orbit · Wheel to zoom · Right-drag to pan'}</div>
         </div>
         <section className="timeline" aria-label="Authoritative history versus dependency schedule">
           <div className="timeline-head"><div className="tab-group">

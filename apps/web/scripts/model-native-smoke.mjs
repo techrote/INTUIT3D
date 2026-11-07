@@ -135,6 +135,51 @@ async function main(){
     await send('Input.dispatchMouseEvent',{type:'mousePressed',x:pos.x,y:pos.y,button:'left',clickCount:1});
     await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:pos.x,y:pos.y,button:'left',clickCount:1});
   };
+  // The default mounting-plate fixture is parameter-bound at 10 mm.
+  // Seed the owner's representative 8→12 mm edit via the REAL inspector,
+  // without silently changing RUNTIME's canonical fixture or using a mock.
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-dimension-thickness]');e.focus();e.select();return document.activeElement===e})()"),
+    'cannot focus authoritative extrusion dimension for 8 mm baseline');
+  await send('Input.insertText',{text:'8'});await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
+    'cannot seed 8 mm model-backed thickness');
+  // Actual Chromium 3D direct manipulation. Camera-projected axis is read
+  // from the rendered handle; no synthetic geometry or runtime model is edited
+  // until the completed gesture reaches INTENT/RUNTIME.
+  await eventually(()=>evaluate("(() => {const e=document.querySelector('[data-testid=runtime-thickness-handle]');return Boolean(e&&!e.hidden&&Number.isFinite(Number(e.dataset.axisX))&&Number.isFinite(Number(e.dataset.axisY)))})()"),
+    '3D extrusion thickness grip projection');
+  check(await evaluate("(() => {const h=document.querySelector('[data-testid=runtime-thickness-handle]');h.focus();return document.activeElement===h})()"),
+    'thickness grip cannot receive keyboard focus');
+  await key('ArrowUp','ArrowUp',38);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='9'"),
+    '3D keyboard thickness did not edit the actual parameter');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    '3D edit incorrectly claimed exact native geometry');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
+    'keyboard undo did not restore the authored extrusion parameter');
+  const grip=await eventually(()=>evaluate(`(() => {
+    const h=document.querySelector('[data-testid=runtime-thickness-handle]');
+    if(!h||h.hidden)return null;
+    const r=h.getBoundingClientRect();
+    return {x:r.left+r.width/2,y:r.top+r.height/2,ax:Number(h.dataset.axisX),ay:Number(h.dataset.axisY)};
+  })()`),'projected 3D pointer grip');
+  check(grip.x>0&&grip.x<1360&&grip.y>0&&grip.y<900,
+    '3D extrusion grip is outside Chromium viewport');
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:grip.x,y:grip.y});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:grip.x,y:grip.y,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:grip.x+grip.ax*4,y:grip.y+grip.ay*4,button:'left',buttons:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:grip.x+grip.ax*4,y:grip.y+grip.ay*4,button:'left',clickCount:1});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
+    '3D pointer drag did not commit the 8-to-12 mm authoritative edit');
+  await screenshot('native-00-3d-thickness-grip-12mm.png');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    '3D thickness gesture claimed exact geometry');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
+    'undo of 3D pointer gesture did not restore original thickness');
   await pointerClick('runtime-feature-plate');
   await pointerClick('runtime-feature-remove');
   await eventually(()=>evaluate(
