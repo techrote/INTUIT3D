@@ -5,7 +5,7 @@ import {
   createModelExtrusion,createModelThroughCut,editModelDimension,inspectModelSession,
   modelFeatureTimeline,newModelSketchSession,previewModelProfile,previewModelSketchProfile,
   redoModelSession,reopenModelSession,runtime,serializeModelSession,undoModelSession,
-} from './runtimeSession';
+} from './runtimeSession.ts';
 
 const status=(h:ReturnType<typeof newModelSketchSession>,id:string)=>
   inspectModelSession(h).features.find(f=>f.featureId===id)?.status;
