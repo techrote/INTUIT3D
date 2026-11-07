@@ -4,11 +4,24 @@ import type {ExperimentalPlateWorkflowResult} from './experimental-plate.mjs';
 
 export declare const LOCAL_PLATE_CLIENT_FORMAT:'intuit3d.local-plate-bridge';
 export declare const LOCAL_PLATE_CLIENT_VERSION:1;
+export declare const LOCAL_PLATE_CAPABILITY_FORMAT:'intuit3d.local-plate-bridge-capability';
+export declare const LOCAL_PLATE_CAPABILITY_VERSION:1;
+export type PinnedPlateBackend='OCCT-cxx-8.0.1'|'OCP-python-prototype';
+export type LocalPlateBridgeIdentity=
+  | Readonly<{kind:'paired';backend:PinnedPlateBackend;
+      occtVersion:'8.0.1'|'7.9.3.1';
+      stepVerification:'occt8_part21_plate_subset'|'same_engine_step_readback';
+      exactAuthority:false;independentInteroperability:false}>
+  | Extract<LocalPlateClientResult,{kind:'unresolved'}>;
+/** Authenticated backend selection, NOT a binary readiness or exactness test. */
+export declare function inspectLocalPlateBridge(options:Readonly<{
+  url:string;token:string;signal?:AbortSignal;fetchImpl?:typeof fetch;
+}>):Promise<LocalPlateBridgeIdentity>;
 export interface VerifiedLocalStep {
   filename:'plate.step';
   bytes:Uint8Array;
   sha256:string;
-  verification:'same_engine_step_readback';
+  verification:'same_engine_step_readback'|'occt8_part21_plate_subset';
 }
 export type LocalPlateClientResult =
   | Readonly<{kind:'unresolved';code:string;reason:string;artifact:null;
@@ -31,6 +44,8 @@ export declare function evaluateLocalPlate(options:Readonly<{
   cutFeatureId:string;
   requestId:string;
   exportStep?:boolean;
+  /** Refuse to dispatch to a different backend; preflight is authenticated. */
+  requiredBackend?:PinnedPlateBackend;
   signal?:AbortSignal;
   fetchImpl?:typeof fetch;
 }>):Promise<LocalPlateClientResult>;
