@@ -493,3 +493,50 @@ independent external STEP evidence.
 
 `createLivePlateSession(...).evaluate({url,token,exportStep:true,deadlineMs:30000})` has a **total** 30-second default deadline (adjustable from 25 to 120000 milliseconds), covering provider execution and bounded host-busy retries. A hung HTTP/native adapter that ignores `AbortSignal` now resolves as `{kind:'unresolved',code:'timeout'}` instead of leaving the browser awaiting forever. Explicit cancellation likewise settles promptly; old workers remain fenced and their late responses cannot publish. `refresh().lastResultKind` records the failed attempt while `currentStep()` retains prior same-archive SHA-verified experimental bytes. Any committed edit, external project mutation or confirmed archive replacement still revokes them. Native host timeouts and browser deadlines are separate controls; none establishes production exactness or independent STEP validation.
 
+
+
+## Solver-backed edits without publishing on every pointer move
+
+`createLivePlateSession()` now supports a **two-phase model-backed edit** for
+interactive dimensions, hole moves, and other actual INTENT/SKETCH commands.
+A preview is an ephemeral candidate journal **inside the same authoritative
+runtime**, not another project, preview-mesh geometry authority, or native solid.
+
+```js
+// Pointer move: create a real INTENT/SKETCH candidate without touching the
+// current document, undo journal, native worker, or still-current STEP bytes.
+const proposal = session.previewEdit(history => runtime.editSketchConstraints(history, {
+  sketchFeatureId: 'sketch.plate',
+  eventId: 'drag.holeA.' + history.document.revision,
+  expectedRevision: history.document.revision,
+  admission: 'require_admissible',
+  edits: [{constraintId: 'holeA:fixed',patch: {x: -20, y: 0}}],
+}));
+if (proposal.kind === 'preview') {
+  // Display proposal.report and its solver/profile diagnostics as a
+  // NON-AUTHORITATIVE visual candidate, not as validated exact geometry.
+  // Pointer release: the opaque token commits once only if the source
+  // archive remains byte-identical; then one real native evaluation runs.
+  const result = await session.commitPreviewAndEvaluate(proposal, nativeOptions);
+  if (result.kind === 'submitted') {
+    // Only result.evaluation can contain current-revision experimental STEP;
+    // even that is NOT qualified exact or independent interoperability.
+  }
+}
+```
+
+If another edit, undo, project reopen or replacement occurs before release, the
+preview commit returns `{kind:'refused',code:'stale_preview'}` without publishing
+its candidate or dispatching a provider. A consumed/foreign token returns
+`invalid_preview`. Normal SKETCH admission refusal also performs no commit.
+A preview does not revoke an already verified current STEP; **a committed
+preview does revoke it immediately**, and the new provider result is
+revision-fenced by the existing live session.
+
+Run the deterministic model/solver/local-host test with
+`node --experimental-strip-types --test packages/workflow-runtime/test/live-plate-session.integration.test.mjs`
+from a locked installed repository. The loopback provider in this test is a
+synthetic native test double. The separately existing `npm run demo:bridge
+--workspace @intuit3d/workflow-runtime` exercises experimental OCP; neither
+is independent STEP verification. WORKBENCH owns wiring pointer
+press/move/release to this API, and INTEGRATION owns cross-package admission.
