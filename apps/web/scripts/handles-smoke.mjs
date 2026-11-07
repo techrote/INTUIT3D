@@ -447,7 +447,7 @@ async function main() {
     'sketch-first replacement review');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
     'sketch-first replacement confirmation unavailable');
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-sketch.plate]')?.textContent==='analytic_profile_only' && !document.querySelector('[data-testid=runtime-feature-plate]')"),
+  await eventually(()=>evaluate("document.querySelector('[data-testid=\"runtime-status-sketch.plate\"]')?.textContent==='analytic_profile_only' && !document.querySelector('[data-testid=runtime-feature-plate]')"),
     'new project fabricated an already-extruded plate');
   check(await evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch]')) && document.querySelector('[data-testid=runtime-create-cut]')?.disabled"),
     'sketch-first profile or cutting command state wrong');
