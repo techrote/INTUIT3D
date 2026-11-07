@@ -122,6 +122,11 @@ test('real saved SKETCH v1 fillet renders four analytic SVG circular arcs, not s
   const m=curved.measurement,base=measurePlateFromProject(source(authored));
   assert.equal(m.outlineKind,'rounded_plate');
   assert.equal(m.cornerRadiusMm,8);
+  assert.equal(m.boundaryLengths.length,8);
+  assert.equal(m.boundaryLengths.filter(c=>c.kind==='arc').length,4);
+  const expectedPerimeter=2*(120+80)-8*8+4*(Math.PI/2*8);
+  assert.ok(Math.abs(m.perimeterMm-expectedPerimeter)<1e-8);
+  assert.match(curved.svg,/OUTLINE: /);
   assert.equal(m.provenance.roundedIntentId,'plate:fillet');
   assert.equal(m.holePitchMm,50);
   assert.equal(m.status,'analytic_sketch_only');
