@@ -7,6 +7,10 @@
     ".": {
       "types": "./index.d.mts",
       "default": "./index.mjs"
+    },
+    "./experimental-plate": {
+      "types": "./experimental-plate.d.mts",
+      "default": "./experimental-plate.mjs"
     }
   },
   "types": "./index.d.mts",
@@ -16,9 +20,8 @@
   },
   "scripts": {
     "test": "node --experimental-strip-types --test test/*.test.mjs",
-    "typecheck": "tsc --noEmit --strict --allowImportingTsExtensions --module nodenext --moduleResolution nodenext --target es2022 --typeRoots ../../tooling/contract-type-roots test/contract.mts"
+    "typecheck": "tsc --noEmit --strict --allowImportingTsExtensions --module nodenext --moduleResolution nodenext --target es2022 --typeRoots ../../tooling/contract-type-roots test/contract.mts",
+    "demo:native": "node test/experimental-plate.native-demo.mjs"
   },
-  "engines": {
-    "node": ">=22.6.0"
-  }
+  "engines": {"node": ">=22.6.0"}
 }
