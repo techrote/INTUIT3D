@@ -28,6 +28,24 @@ if(edit.kind==='committed') {
   const next:UndoHistory=edit.history;
   void [invalidated,next];
 }
+async function editAndDownloadInOneCommand() {
+  const outcome=await session.applyEditAndEvaluate(h=>runtime.editPlateHoles(h,{
+    sketchFeatureId:'sketch.plate',eventId:'session.contract.one.call',
+    expectedRevision:h.document.revision,admission:'require_admissible',
+    operations:[{kind:'add',id:'holeD',x:75,y:20,radius:4}],
+  }),{url:'http://127.0.0.1:3000',token:'0'.repeat(64),exportStep:true});
+  if(outcome.kind==='refused'){
+    const noEvaluation:null=outcome.evaluation;
+    const noCommit:undefined|boolean=outcome.edit.notCommitted;
+    void [noEvaluation,noCommit];
+  }else{
+    const committed:UndoHistory=outcome.edit.history;
+    const status:LocalPlateClientResult=outcome.evaluation;
+    // The native outcome can still be unresolved: never assume exact STEP.
+    void [committed,status];
+  }
+  return outcome;
+}
 async function browserDownload() {
   const result:LocalPlateClientResult=await session.evaluate({
     url:'http://127.0.0.1:3000',token:'0'.repeat(64),exportStep:true,
@@ -41,4 +59,4 @@ async function browserDownload() {
   session.cancel();
   return result;
 }
-void [currentRevision,authority,browserDownload];
+void [currentRevision,authority,browserDownload,editAndDownloadInOneCommand];
