@@ -266,3 +266,49 @@ hole, exports a fresh actual OCP STEP, undoes the hole and rebuilds a
 second native STEP (when the pinned Linux OCP environment is available).
 The package does **not** claim interactive UI controls; WORKBENCH owns their
 consumer wiring, and INTEGRATION owns exact-head admission and CI.
+
+## Rectangular hole arrays — one-shot, authored CAD feature
+
+`runtime.patternPlateHoles(history, {sketchFeatureId, eventId, expectedRevision,
+sourceHoleId, idPrefix, rows, columns, pitchXmm, pitchYmm, admission})`
+creates a bounded **one-shot rectangular array** from an existing solved circle
+in the authoritative SKETCH document. The existing circle occupies row 0,
+column 0; all remaining cells are independent circles with stable IDs like
+`grid1:r0c1`, fixed centres and real radius constraints. The source centre
+and radius come from the **SKETCH solved geometry**, not the possibly obsolete
+authored seed coordinates. Signed pitches are in mm; 2–32 cells and the
+experimental plate-v1 64-hole ceiling are enforced.
+
+```js
+const out=runtime.patternPlateHoles(currentHistory,{
+  sketchFeatureId:'sketch.plate',
+  eventId:'user.pattern.'+currentHistory.document.revision,
+  expectedRevision:currentHistory.document.revision,
+  sourceHoleId:'holeA',idPrefix:'grid1',
+  rows:2,columns:2,pitchXmm:16,pitchYmm:-18,
+});
+if(out.kind==='committed') {
+  currentHistory=out.history; // exactly ONE undoable INTENT model transaction
+  // Cancel any in-flight native evaluation and rebuild on the new revision.
+} else {
+  showDiagnostics(out.candidateFeature); // the source history is unchanged
+}
+```
+
+This is **not** an associative parametric pattern or a new feature-history
+dependency: after authoring, changing the source hole does not silently edit
+its copies. Consumers must clearly label it a one-shot rectangular array and
+may edit its individual circles using `editSketchConstraints`. The exact
+SKETCH profile gate refuses overlapping/outside copies by default; callers may
+explicitly `preserve_unresolved` for repair. All copies, their IDs and
+dimensions survive model archive, undo/redo, and transitive invalidation;
+the KERNEL plate-v1 request maps all admitted holes to native Boolean bores.
+
+`test/hole-pattern.integration.test.mjs` verifies real INTENT/SKETCH solver
+admission (including changed source constraints vs seed geometry), journal
+atomicity, archive replay, refusal/repair, and actual KERNEL parser mapping.
+`npm run demo:bridge --workspace @intuit3d/workflow-runtime` additionally
+creates the five-hole array via the live loopback/OCP STEP path, undoes the
+array and produces a fresh two-hole STEP on Linux with pinned experimental
+OCP. This is **not** OCCT 8.0.1 production or independent STEP import.
+WORKBENCH owns the browser array interaction; INTEGRATION owns CI and merges.
