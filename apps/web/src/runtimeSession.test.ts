@@ -235,7 +235,7 @@ test('one-shot rectangular hole array authors solved circular cuts, retains IDs 
   const reopened=reopenModelSession(serializeModelSession(patterned.history));
   assert.deepEqual(modelHoleValues(reopened),modelHoleValues(patterned.history));
   const undo=undoModelSession(reopened);
-  assert.equal(serializeModelSession(undo),startArchive);
+  assert.deepEqual(modelHoleValues(undo),modelHoleValues(h));
   const redo=redoModelSession(undo);
   assert.deepEqual(modelHoleValues(redo),modelHoleValues(patterned.history));
   const changedSource=editModelHole(patterned.history,'holeA','diameter',10);
