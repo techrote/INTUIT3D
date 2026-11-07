@@ -17,7 +17,7 @@ const fmt = n => {
 };
 const xml = s => String(s).replace(/[&<>"']/g, c =>
   ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&apos;'}[c]));
-const dist = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
+const dist = (a,b) => Math.hypot(a.xMm-b.xMm,a.yMm-b.yMm);
 const required = (ok, reason) => {if (!ok) throw new TypeError('drawing: '+reason);};
 
 /**
