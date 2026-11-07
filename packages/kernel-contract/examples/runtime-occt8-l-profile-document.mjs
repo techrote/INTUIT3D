@@ -139,6 +139,53 @@ export function editAuthoredLBracketWidth(fixture,widthMm) {
   return {...fixture,history:result.history,invalidation:result.invalidation};
 }
 
+/**
+ * Retrospectively edit the *authored* blind pocket's depth as a single INTENT
+ * body-cut-extent journal transaction. The existing model contract owns
+ * revision fencing, selection, stable identity, dependency planning and undo.
+ *
+ * Only a real blind pocket is supported; an invalid, stale or non-blind cut
+ * is never silently converted into a valid native request. The result is
+ * pending physical rebuilding, not newly certified exact geometry.
+ */
+export function editAuthoredLBracketPocketDepth(fixture,depthMm) {
+  const document=fixture?.history?.document;
+  if (!document || !Number.isSafeInteger(document.revision))
+    throw new TypeError('authoritative L bracket history required');
+  const pocketId=MODEL_L_CUT_IDS[1];
+  const chain=fixture.services?.cutChain;
+  if (typeof chain?.inspectBodyCutExtent!=='function' ||
+      typeof chain?.commitUndoableBodyCutExtentEdit!=='function')
+    throw new TypeError('accepted INTENT body-cut extent contract required');
+  const extrude=fixture.model.featuresOf(document)
+    .find(f=>f.id==='extrude.bracket');
+  const thickness=extrude?.payload?.thicknessMm;
+  if (extrude?.kind!=='extrude' ||
+      extrude.writeTargets?.length!==1 ||
+      extrude.writeTargets[0]!==MODEL_L_BODY_ID ||
+      typeof thickness!=='number' || !Number.isFinite(thickness))
+    throw new TypeError('missing authoritative bracket extrusion');
+  if (typeof depthMm!=='number' || !Number.isFinite(depthMm) ||
+      depthMm<1e-6 || depthMm>=thickness)
+    throw new RangeError('blind pocket depth must be positive and below extrusion thickness');
+  const selected=chain.inspectBodyCutExtent(document,pocketId,MODEL_L_BODY_ID);
+  if (selected.semanticStatus!=='ready' ||
+      selected.extent.kind!=='blind')
+    throw new TypeError('selected pocket is not a ready authored blind cut');
+  const history=chain.commitUndoableBodyCutExtentEdit(fixture.history,{
+    format:chain.BODY_CUT_EXTENT_EDIT_FORMAT,
+    version:chain.BODY_CUT_EXTENT_EDIT_VERSION,
+    expectedProjectId:document.projectId,
+    expectedRevision:document.revision,
+    eventId:'edit.bracket.pocket.depth.r'+document.revision,
+    cutFeatureId:pocketId,targetBodyId:MODEL_L_BODY_ID,
+    fromExtent:selected.extent,toExtent:{kind:'blind',depthMm},
+    admission:'require_ready',
+  });
+  const invalidation=fixture.runtime.diff(fixture.history,history);
+  return {...fixture,history,invalidation};
+}
+
 export function editAuthoredLBracketThickness(fixture,thicknessMm) {
   const result=editExtrudeThickness(fixture.history,{
     eventId:'edit.thickness.'+thicknessMm,
