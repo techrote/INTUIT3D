@@ -18,7 +18,10 @@ export type ArcProfileToolChange =
   | {kind:'array';sourceCircleId:string;patternId:string;
      rows:number;columns:number;spacingXmm:number;spacingYmm:number}
   | {kind:'drag-handle';handleId:string;xMm:number;yMm:number}
-  | {kind:'translate-holes';circleIds:string[];deltaXMm:number;deltaYMm:number};
+  | {kind:'translate-holes';circleIds:string[];deltaXMm:number;deltaYMm:number}
+  | {kind:'bind-hole';circleId:string;anchorPointId:string}
+  | {kind:'unbind-hole';circleId:string}
+  | {kind:'hole-offset';circleId:string;offsetXMm:number;offsetYMm:number};
 export type ArcProfileToolStamp={sourceSignature:string;selectionSignature:string};
 export interface ArcProfileToolInspection extends ArcProfileToolStamp {
   format:'intuit3d.arc-profile-tools';version:1;
