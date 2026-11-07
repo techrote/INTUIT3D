@@ -245,8 +245,125 @@ fn cut_chains(args: &[String]) {
              kind,cad.length_unit,tris);
 }
 
+
+// Genuine selected eight-edge U-bracket with one circular BLIND and one
+// rectangular THROUGH cut. All predicates run on separately imported
+// non-OCCT CAD mesh vertices, never on the producer's STEP metadata.
+fn u_bracket(args: &[String]) {
+    if args.len()!=4 { fail("usage: --u-bracket STEP 8|12"); }
+    let thickness=number(&args[3]);
+    if thickness!=8.0 && thickness!=12.0 {
+        fail("unsupported native U-bracket thickness");
+    }
+    let source=fs::read_to_string(&args[2])
+        .unwrap_or_else(|_|fail("cannot read original U-bracket STEP"));
+    let cad=import(&source)
+        .unwrap_or_else(|e| fail(&format!("independent U-bracket import failed: {e}")));
+    if cad.length_unit!="millimetre" && cad.length_unit!="millimeter" {
+        fail("U-bracket units are not independently recognized as millimetres");
+    }
+    if cad.bodies.len()!=1 || !cad.bodies[0].solid ||
+       cad.bodies[0].exact.is_none() || !cad.warnings.is_empty() {
+        fail("U-bracket import lacks one exact warning-free B-rep solid");
+    }
+    let mesh=&cad.bodies[0].mesh;
+    if mesh.vertices.is_empty() || mesh.faces.is_empty() {
+        fail("empty imported U-bracket mesh");
+    }
+    let mut oriented:HashMap<(u32,u32),usize>=HashMap::new();
+    let mut signed_volume=0.0f64;
+    let mut tris=0usize;
+    for tri in mesh.faces.iter().flat_map(|face| &face.triangles) {
+        let a=point(mesh,tri[0]); let b=point(mesh,tri[1]); let c=point(mesh,tri[2]);
+        tris+=1;
+        let cross=[b[1]*c[2]-b[2]*c[1],b[2]*c[0]-b[0]*c[2],b[0]*c[1]-b[1]*c[0]];
+        signed_volume+=(a[0]*cross[0]+a[1]*cross[1]+a[2]*cross[2])/6.0;
+        for i in 0..3 { *oriented.entry((tri[i],tri[(i+1)%3])).or_default()+=1; }
+    }
+    let open=oriented.iter().filter(|((a,b),count)|
+        **count!=1 || oriented.get(&(*b,*a))!=Some(&1)).count();
+    let expected=(120.0*80.0-70.0*50.0-10.0*12.0)*thickness
+        -std::f64::consts::PI*25.0*3.0;
+    let measured=signed_volume.abs();
+    if tris<8 || open!=0 || !measured.is_finite() || 
+       (measured-expected).abs()>expected*0.01 {
+        fail(&format!("wrong independent U-bracket topology/volume: {measured} vs {expected}, open={open}"));
+    }
+    // Fixed world XY anchors from the source fixture's independently specified
+    // polygon vertices and cut dimensions. 'None' means no material along Z.
+    let mut rays:Vec<(String,f64,f64,Option<f64>)>=vec![
+        ("stock.left.foot".into(),-47.0,-30.0,Some(thickness)),
+        ("stock.right.foot".into(),47.0,-30.0,Some(thickness)),
+        ("stock.web".into(),0.0,-30.0,Some(thickness)),
+        ("stock.left.top".into(),-47.0,30.0,Some(thickness)),
+        ("stock.right.top".into(),47.0,30.0,Some(thickness)),
+        ("notch.void".into(),0.0,10.0,None),
+        ("notch.floor.inner".into(),0.0,-9.0,None),
+        ("notch.floor.outer".into(),0.0,-11.0,Some(thickness)),
+        ("notch.left.inner".into(),-34.0,10.0,None),
+        ("notch.left.outer".into(),-36.0,10.0,Some(thickness)),
+        ("notch.right.inner".into(),34.0,10.0,None),
+        ("notch.right.outer".into(),36.0,10.0,Some(thickness)),
+        ("exterior.left.inner".into(),-59.0,0.0,Some(thickness)),
+        ("exterior.left.outer".into(),-61.0,0.0,None),
+        ("exterior.right.inner".into(),59.0,0.0,Some(thickness)),
+        ("exterior.right.outer".into(),61.0,0.0,None),
+        ("exterior.bottom.inner".into(),0.0,-39.0,Some(thickness)),
+        ("exterior.bottom.outer".into(),0.0,-41.0,None),
+        ("exterior.top.left.inner".into(),-47.0,39.0,Some(thickness)),
+        ("exterior.top.left.outer".into(),-47.0,41.0,None),
+        ("exterior.top.right.inner".into(),47.0,39.0,Some(thickness)),
+        ("exterior.top.right.outer".into(),47.0,41.0,None),
+    ];
+    // Right-leg 10x12 through rectangle centred (47,10): empty on the
+    // inside, full-height material just outside each of its four walls.
+    rays.push(("rectangle.centre".into(),47.0,10.0,None));
+    for (side,dx,dy,half) in [
+        ("east",1.0,0.0,5.0),("west",-1.0,0.0,5.0),
+        ("north",0.0,1.0,6.0),("south",0.0,-1.0,6.0)
+    ] {
+        rays.push((format!("rectangle.inner.{side}"),47.0+(half-0.5)*dx,
+                   10.0+(half-0.5)*dy,None));
+        rays.push((format!("rectangle.outer.{side}"),47.0+(half+0.5)*dx,
+                   10.0+(half+0.5)*dy,Some(thickness)));
+    }
+    // Left-leg R5 blind circular pocket centred (-47,10), with a physical
+    // floor at thickness-3, NOT a zero-material through hole.
+    let floor=Some(thickness-3.0);
+    rays.push(("circle.centre".into(),-47.0,10.0,floor));
+    for (side,dx,dy) in [
+        ("east",1.0,0.0),("west",-1.0,0.0),
+        ("north",0.0,1.0),("south",0.0,-1.0)
+    ] {
+        rays.push((format!("circle.inner.{side}"),-47.0+4.5*dx,
+                   10.0+4.5*dy,floor));
+        rays.push((format!("circle.outer.{side}"),-47.0+5.5*dx,
+                   10.0+5.5*dy,Some(thickness)));
+    }
+    if rays.len()!=40 { fail("U-bracket physical sampling incomplete"); }
+    for (name,x,y,top) in rays {
+        let zs=intersections(mesh,x,y);
+        match top {
+            Some(expected_z) => {
+                if zs.len()!=2 || zs[0].abs()>0.05 || (zs[1]-expected_z).abs()>0.05 {
+                    fail(&format!("{name}: wrong imported U-bracket material/floor at ({x},{y}): {zs:?}"));
+                }
+            }
+            None => if !zs.is_empty() {
+                fail(&format!("{name}: unexpected imported material in U-bracket void at ({x},{y}): {zs:?}"));
+            },
+        }
+        println!("U_RAY {name} {x:.9} {y:.9} {} {:.9} {:.9}",
+                 zs.len(),zs.first().copied().unwrap_or(-1.0),
+                 zs.last().copied().unwrap_or(-1.0));
+    }
+    println!("U_ACCEPT solids=1 source_unit={} imported_exact=true tris={} open_edges=0 volume_mm3={measured:.9} expected_mm3={expected:.9} warnings=0",
+             cad.length_unit,tris);
+}
+
 fn main() {
     let args:Vec<String>=env::args().collect();
+    if args.get(1).map(String::as_str)==Some("--u-bracket") { u_bracket(&args); return; }
     if args.get(1).map(String::as_str)==Some("--cut-chains") { cut_chains(&args); return; }
     let args:Vec<String>=env::args().collect();
     if args.get(1).map(String::as_str)==Some("--l-profile") { l_profile(&args); return; }
