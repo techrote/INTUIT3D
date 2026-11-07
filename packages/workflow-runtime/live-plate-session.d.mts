@@ -29,6 +29,11 @@ export type SessionEditAndEvaluateResult =
   | Readonly<{kind:'submitted';edit:Extract<SessionEditResult,{kind:'committed'}>;
       /** Always check this for unresolved/stale/provider failure; not proof of exactness. */
       evaluation:LocalPlateClientResult}>;
+export type SessionReopenAndEvaluateResult =
+  | Readonly<{kind:'refused';reopen:Extract<SessionReopenResult,{kind:'refused'}>;evaluation:null}>
+  | Readonly<{kind:'submitted';reopen:Extract<SessionReopenResult,{kind:'opened'}>;
+      /** A new provider attempt; never implies production exactness. */
+      evaluation:LocalPlateClientResult}>;
 export interface LivePlateEvaluationOptions {
   url?:string;
   token?:string;
@@ -45,7 +50,10 @@ export interface LivePlateSession {
   reopen(serialized:string,options?:Readonly<{confirmReplacement?:boolean}>):SessionReopenResult;
   save():string;
   cancel():void;
-  /** Revalidate live archive immediately before using already-verified STEP. */
+  /** Revalidate live archive immediately before using already-verified STEP.
+   * A same-revision failed refresh/cancel retains prior verified bytes, but
+   * edits, undo, replacement archives and external mutation revoke them.
+   */
   currentStep():VerifiedLocalStep|null;
   evaluate(options?:Readonly<LivePlateEvaluationOptions>):Promise<LocalPlateClientResult>;
   /** One consumer operation: model edit, then latest-revision experimental evaluation. */
@@ -53,6 +61,13 @@ export interface LivePlateSession {
     edit:(history:UndoHistory)=>SessionEdit,
     options?:Readonly<LivePlateEvaluationOptions>,
   ):Promise<SessionEditAndEvaluateResult>;
+  /** Reopen an archive and rebuild through the trusted native host in one call.
+   * A different archive requires confirmReplacement. Refusal never dispatches.
+   */
+  reopenAndEvaluate(
+    serialized:string,
+    options?:Readonly<LivePlateEvaluationOptions & {confirmReplacement?:boolean}>,
+  ):Promise<SessionReopenAndEvaluateResult>;
 }
 export declare function createLivePlateSession(options:Readonly<{
   runtime:Pick<WorkflowRuntime,'save'|'reopen'|'inspect'|'diff'>;
