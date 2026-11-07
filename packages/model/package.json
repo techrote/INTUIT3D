@@ -119,6 +119,10 @@
     "./parameter-sheet": {
       "types": "./src/parameter-sheet.ts",
       "default": "./src/parameter-sheet.ts"
+    },
+    "./parameter-sheet-rebase": {
+      "types": "./src/parameter-sheet-rebase.ts",
+      "default": "./src/parameter-sheet-rebase.ts"
     }
   },
   "scripts": {
