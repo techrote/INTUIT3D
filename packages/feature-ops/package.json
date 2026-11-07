@@ -23,6 +23,10 @@
     "./extrusion-reconfiguration/v1": {
       "types": "./extrusion-reconfiguration.d.mts",
       "default": "./src/extrusion-reconfiguration.mjs"
+    },
+    "./ordered-cut/v1": {
+      "types": "./ordered-cut.d.mts",
+      "default": "./src/ordered-cut.mjs"
     }
   },
   "peerDependencies": {
