@@ -15,6 +15,43 @@ import sys
 
 from brlcad_flange import digest, extract_verified, fixture_manifest, NotQualified, sample_rays
 
+def checked_accept_receipt(lines: list[str], case: dict) -> tuple[dict, float, float]:
+    """Require an exact non-OCCT B-rep before accepting sampled mesh geometry.
+
+    AnvilCAD can yield a triangulation even when exact reconstruction is absent.
+    That is useful diagnostic evidence, but cannot satisfy this CAD gate.
+    """
+    accepts = [line for line in lines if line.startswith('ACCEPT ')]
+    if len(accepts) != 1:
+        raise NotQualified('AnvilCAD did not print exactly one physical acceptance receipt')
+    fields = [field.split('=', 1) for field in accepts[0].split()[1:]]
+    if any(len(field) != 2 or not field[0] or not field[1] for field in fields):
+        raise NotQualified('malformed AnvilCAD acceptance receipt')
+    result = dict(fields)
+    if len(result) != len(fields):
+        raise NotQualified('duplicate AnvilCAD acceptance receipt field')
+    try:
+        measured = float(result['volume_mm3'])
+        expected = float(result['expected_mm3'])
+        triangles = int(result['tris'])
+    except (KeyError, ValueError) as exc:
+        raise NotQualified('invalid AnvilCAD physical measurement') from exc
+    theoretical = (case['widthMm'] * case['depthMm'] -
+                   sum(math.pi * h['radius'] ** 2 for h in case['holes'])) * case['thicknessMm']
+    if (result.get('solids') != '1'
+        or result.get('source_unit') not in ('millimetre', 'millimeter')
+        or result.get('imported_exact') != 'true'
+        or result.get('open_edges') != '0'
+        or result.get('warnings') != '0'
+        or triangles < 8):
+        raise NotQualified('AnvilCAD did not reconstruct one exact warning-free closed B-rep solid')
+    if (not all(math.isfinite(v) for v in (measured, expected, theoretical))
+        or theoretical <= 0
+        or abs(expected - theoretical) > 1e-5
+        or abs(measured - theoretical) > theoretical * .01):
+        raise NotQualified('AnvilCAD independently reconstructed wrong plate volume')
+    return result, measured, theoretical
+
 def qualify(args):
     if args.output_dir.exists():
         raise NotQualified('AnvilCAD evidence directory already exists')
@@ -41,20 +78,7 @@ def qualify(args):
             if proc.returncode!=0:
                 raise NotQualified(f"AnvilCAD returned {proc.returncode}: {case['filename']} (see {log.name})")
             lines=proc.stdout.splitlines()
-            accepts=[x for x in lines if x.startswith('ACCEPT ')]
-            if len(accepts)!=1:
-                raise NotQualified('AnvilCAD did not print exactly one physical acceptance receipt')
-            result=dict(t.split('=',1) for t in accepts[0].split()[1:])
-            if (result.get('solids')!='1' or result.get('source_unit') not in ('millimetre','millimeter')
-                or result.get('open_edges')!='0'):
-                raise NotQualified('AnvilCAD receipt did not confirm one closed mm unit solid')
-            measured=float(result['volume_mm3'])
-            expected=float(result['expected_mm3'])
-            theoretical=(case['widthMm']*case['depthMm']-
-                         sum(math.pi*h['radius']**2 for h in case['holes']))*case['thicknessMm']
-            if (not math.isfinite(measured) or not math.isfinite(expected) or theoretical<=0
-                or abs(expected-theoretical)>1e-5 or abs(measured-theoretical)>theoretical*.01):
-                raise NotQualified('AnvilCAD independently reconstructed wrong plate volume')
+            result, measured, theoretical = checked_accept_receipt(lines, case)
             rows=[x.split() for x in lines if x.startswith('RAY ')]
             probes=sample_rays(case)
             if len(rows)!=len(probes):
@@ -65,10 +89,14 @@ def qualify(args):
                     raise NotQualified('AnvilCAD ray evidence missing or out of sequence')
                 rx,ry=float(row[2]),float(row[3]); n=int(row[4])
                 low,high=float(row[5]),float(row[6])
-                if abs(rx-x)>1e-7 or abs(ry-y)>1e-7 or n!=(2 if kind=='solid' else 0):
+                if (not all(math.isfinite(v) for v in (rx, ry, low, high))
+                    or abs(rx-x)>1e-7 or abs(ry-y)>1e-7
+                    or n!=(2 if kind=='solid' else 0)):
                     raise NotQualified('AnvilCAD ray coordinate or occupancy mismatch: '+name)
                 if kind=='solid' and (abs(low)>0.05 or abs(high-case['thicknessMm'])>0.05):
                     raise NotQualified('AnvilCAD misplaced material thickness or Z origin: '+name)
+                if kind!='solid' and (low!=-1.0 or high!=-1.0):
+                    raise NotQualified('AnvilCAD empty ray has inconsistent entry/exit evidence: '+name)
                 observations.append({'probe':name,'xMm':rx,'yMm':ry,'hitCount':n,
                                      'entryZMm':low if n else None,'exitZMm':high if n else None})
             report['cases'].append({'filename':case['filename'],'sourceSha256':digest(args.output_dir/case['filename']),

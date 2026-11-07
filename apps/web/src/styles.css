@@ -219,6 +219,18 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
 .runtime-shell .runtime-file-input { display: none; }
 .runtime-entry { border-color: #326879; color: #a9e5e5; font-weight: 680; background: #1d3845; margin: 0; }
 .runtime-3d-canvas, .runtime-sketch-svg { display: block; height: 100%; width: 100%; }
+.runtime-3d-canvas { position:relative; }
+.runtime-3d-thickness-grip {
+  position:absolute;z-index:5;transform:translate(-50%,-50%);
+  min-width:79px;min-height:30px;padding:5px 8px;
+  border:1px solid #79f0d0;border-radius:6px;background:#163b46ee;
+  color:#d5fff2;font:600 11px ui-monospace,monospace;
+  cursor:ns-resize;touch-action:none;user-select:none;
+  box-shadow:0 0 0 2px #0d2a34b3,0 3px 15px #0008;
+}
+.runtime-3d-thickness-grip:focus-visible {outline:3px solid #ffe29c;outline-offset:3px;}
+.runtime-3d-thickness-grip[hidden] {display:none;}
+.runtime-3d-thickness-grip span {color:#6af0cd;}
 .runtime-3d-canvas canvas { display:block; width:100%; height:100%; }
 .runtime-sketch-svg { background: radial-gradient(ellipse at center, #273e51, #172434); }
 .runtime-mesh-caption { position:absolute;left:14px;top:18px;max-width:60%;

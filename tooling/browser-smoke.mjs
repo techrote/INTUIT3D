@@ -127,7 +127,10 @@ async function main() {
   await eventually(() => ws.readyState === WebSocket.OPEN, 'CDP websocket');
   await send('Runtime.enable');
   await send('Page.enable');
-  await send('Page.navigate', { url: origin });
+  // Exercise the legacy preview explicitly: the real model-backed CAD editor
+  // is the default on newer WORKBENCH builds. The preview recovery contract
+  // remains valid and must not be weakened or mistaken for exact geometry.
+  await send('Page.navigate', { url: origin + '/?mode=preview' });
   const hydrated = await eventually(async () => evaluate(
     "Boolean(document.querySelector('[data-testid=solid-viewport]') && document.querySelector('input[type=number]') && document.querySelector('canvas'))"
   ), 'React workbench + WebGL canvas hydration');

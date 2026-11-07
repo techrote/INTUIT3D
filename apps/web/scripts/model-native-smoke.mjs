@@ -117,9 +117,9 @@ async function main(){
   await eventually(()=>ws.readyState===WebSocket.OPEN,'CDP connection');
   await send('Runtime.enable');await send('Page.enable');
   await send('Page.navigate',{url:origin});
-  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=enter-model-runtime]'))"),'model editor launch');
-  check(await evaluate("(() => {document.querySelector('[data-testid=enter-model-runtime]').click();return true})()"),'cannot enter model editor');
-  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-export]'))"),'native panel');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-export]'))"),'model-first native panel');
+  check(await evaluate("document.querySelector('[data-testid=runtime-panel]')!==null && document.querySelector('[data-testid=enter-model-runtime]')===null"),
+    'Default startup did not mount only the authoritative CAD editor');
   // Real Chromium click/keyboard + archive roundtrip of authoritative
   // INTENT feature tombstones. No retired solid may remain on screen as current.
   const pointerClick=async(testid)=>{
@@ -135,6 +135,51 @@ async function main(){
     await send('Input.dispatchMouseEvent',{type:'mousePressed',x:pos.x,y:pos.y,button:'left',clickCount:1});
     await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:pos.x,y:pos.y,button:'left',clickCount:1});
   };
+  // The default mounting-plate fixture is parameter-bound at 10 mm.
+  // Seed the owner's representative 8→12 mm edit via the REAL inspector,
+  // without silently changing RUNTIME's canonical fixture or using a mock.
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-dimension-thickness]');e.focus();e.select();return document.activeElement===e})()"),
+    'cannot focus authoritative extrusion dimension for 8 mm baseline');
+  await send('Input.insertText',{text:'8'});await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
+    'cannot seed 8 mm model-backed thickness');
+  // Actual Chromium 3D direct manipulation. Camera-projected axis is read
+  // from the rendered handle; no synthetic geometry or runtime model is edited
+  // until the completed gesture reaches INTENT/RUNTIME.
+  await eventually(()=>evaluate("(() => {const e=document.querySelector('[data-testid=runtime-thickness-handle]');return Boolean(e&&!e.hidden&&Number.isFinite(Number(e.dataset.axisX))&&Number.isFinite(Number(e.dataset.axisY)))})()"),
+    '3D extrusion thickness grip projection');
+  check(await evaluate("(() => {const h=document.querySelector('[data-testid=runtime-thickness-handle]');h.focus();return document.activeElement===h})()"),
+    'thickness grip cannot receive keyboard focus');
+  await key('ArrowUp','ArrowUp',38);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='9'"),
+    '3D keyboard thickness did not edit the actual parameter');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    '3D edit incorrectly claimed exact native geometry');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
+    'keyboard undo did not restore the authored extrusion parameter');
+  const grip=await eventually(()=>evaluate(`(() => {
+    const h=document.querySelector('[data-testid=runtime-thickness-handle]');
+    if(!h||h.hidden)return null;
+    const r=h.getBoundingClientRect();
+    return {x:r.left+r.width/2,y:r.top+r.height/2,ax:Number(h.dataset.axisX),ay:Number(h.dataset.axisY)};
+  })()`),'projected 3D pointer grip');
+  check(grip.x>0&&grip.x<1360&&grip.y>0&&grip.y<900,
+    '3D extrusion grip is outside Chromium viewport');
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:grip.x,y:grip.y});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:grip.x,y:grip.y,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:grip.x+grip.ax*4,y:grip.y+grip.ay*4,button:'left',buttons:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:grip.x+grip.ax*4,y:grip.y+grip.ay*4,button:'left',clickCount:1});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
+    '3D pointer drag did not commit the 8-to-12 mm authoritative edit');
+  await screenshot('native-00-3d-thickness-grip-12mm.png');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    '3D thickness gesture claimed exact geometry');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
+    'undo of 3D pointer gesture did not restore original thickness');
   await pointerClick('runtime-feature-plate');
   await pointerClick('runtime-feature-remove');
   await eventually(()=>evaluate(
@@ -611,13 +656,37 @@ async function main(){
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-evidence]')) && !document.querySelector('[data-testid=runtime-native-download-cached]').disabled"),
     'layout edit failed to auto rebuild current native session revision');
   await screenshot('native-08-retrospective-hole-layout-rebuild.png');
+  // Actual Chromium Ctrl+N creates a sketch-only project, with an Escape-safe
+  // replacement gate. The existing model must survive cancellation.
+  const projectBeforeNew=await evaluate("document.querySelector('.browser-project')?.textContent");
+  const ctrlN={key:'n',code:'KeyN',windowsVirtualKeyCode:78,modifiers:2};
+  await send('Input.dispatchKeyEvent',{type:'keyDown',...ctrlN});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',...ctrlN});
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'Ctrl+N did not offer a sketch-first project');
+  await key('Escape','Escape',27);
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]')"),
+    'Escape did not cancel new-project review');
+  check(await evaluate("document.querySelector('.browser-project')?.textContent")===projectBeforeNew,
+    'Cancel unexpectedly replaced the authoritative model');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',...ctrlN});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',...ctrlN});
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'Second Ctrl+N did not offer the project');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(x=>x.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'Cannot confirm fresh sketch-first project');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-create-extrusion]')?.disabled===false && !document.querySelector('[data-testid=runtime-feature-plate]')"),
+    'Fresh sketch project not solved and ready for extrusion');
+  check(await evaluate("document.querySelector('.project-title')?.textContent?.includes('Sketch project')"),
+    'Sketch-only project incorrectly titled as completed plate');
+  await screenshot('native-09-model-first-new-sketch-shortcut.png');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder, NOT OCP/native/STEP interoperability',
     downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,realPhysicalGeometry:false,
     retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png'
+      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }

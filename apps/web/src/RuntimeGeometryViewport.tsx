@@ -6,11 +6,12 @@ import type { PlateProfile } from '@intuit3d/sketch';
 import { handleDimensionAtPoint, nudgeSketchHandle, type SketchDimensionHandle } from './runtimeSketchHandles';
 import { circleDrawingPreview, type CircleDrawingState } from './circleDrawing';
 import { radialHoleDiameter, nudgeHoleDiameter } from './holeDiameterDrag';
+import { projectThicknessAxis, proposeThicknessDrag, nudgeThickness, type ScreenPoint, type ThicknessDrag } from './thicknessDrag';
 
 /** A visually useful, disposable tessellation of the ACTUAL admitted SKETCH
  * profile. Never used as document state, a STEP source, or geometric proof. */
 type HoleId = string;
-export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick }: {
+export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick, onThicknessEdit }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
   onHoleMove?: (id: HoleId,x:number,y:number,selectedIds?:readonly HoleId[])=>void;
   onDimensionEdit?: (id: SketchDimensionHandle, millimetres:number)=>void;
@@ -21,8 +22,14 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   selectedHoleIds?: readonly HoleId[];
   circleDrawing?: CircleDrawingState;
   onCirclePick?: (x:number,y:number)=>void;
+  /** Commits extrusion thickness through the authoritative INTENT/RUNTIME journal. */
+  onThicknessEdit?: (millimetres:number)=>void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const thicknessGrip = useRef<HTMLButtonElement>(null);
+  const thicknessAxis = useRef<ScreenPoint|null>(null);
+  const thicknessMove = useRef<(ThicknessDrag & { pointerId:number })|null>(null);
+  const [thicknessPreview,setThicknessPreview] = useState<number|null>(null);
   const moving = useRef<{id:HoleId;pointerId:number;groupIds:readonly HoleId[]}|null>(null);
   const [dragPreview,setDragPreview] = useState<{id:HoleId;x:number;y:number}|null>(null);
   const radialMove=useRef<{id:HoleId;pointerId:number;source:PlateProfile;original:number}|null>(null);
@@ -110,8 +117,34 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
     };
     const observer=new ResizeObserver(resize);
     observer.observe(node);resize();
+    // The handle follows camera orbit in SCREEN SPACE, but the proposed
+    // dimension is committed to the original named INTENT parameter, never
+    // inferred from the disposable mesh. Projection is frozen on pointer-down.
+    const updateThicknessGrip=()=>{
+      const handle=thicknessGrip.current;
+      if(!handle)return;
+      const rect=node.getBoundingClientRect();
+      const project=(z:number)=>{
+        const point=new THREE.Vector3(maxX,midY,z).project(camera);
+        return {x:(point.x+1)*rect.width/2,y:(1-point.y)*rect.height/2};
+      };
+      try{
+        const base=project(0),raised=project(thickness);
+        const axis=projectThicknessAxis(base,raised,thickness);
+        thicknessAxis.current=axis;
+        handle.hidden=false;
+        handle.style.left=raised.x+'px';
+        handle.style.top=raised.y+'px';
+        // Readable only by browser gesture tests; not an authority channel.
+        handle.dataset.axisX=String(axis.x);
+        handle.dataset.axisY=String(axis.y);
+      }catch{
+        thicknessAxis.current=null;
+        handle.hidden=true;
+      }
+    };
     let frameId=0,alive=true;
-    const animate=()=>{if(!alive)return;controls.update();renderer.render(scene,camera);frameId=requestAnimationFrame(animate);};
+    const animate=()=>{if(!alive)return;controls.update();updateThicknessGrip();renderer.render(scene,camera);frameId=requestAnimationFrame(animate);};
     animate();
     return ()=>{alive=false;cancelAnimationFrame(frameId);observer.disconnect();controls.dispose();
       edgeGeometry.dispose();edgeMaterial.dispose();geometry.dispose();material.dispose();
@@ -308,5 +341,52 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       fontSize={Math.max(2,width/43)} fill="#a5f2de" pointerEvents="none">
       D {dimensionPreview?.id==='depth'?dimensionPreview.value:height} mm
     </text>}
-  </svg> : <div ref={host} className="runtime-3d-canvas" data-testid="runtime-3d-viewport" />;
+  </svg> : <div ref={host} className="runtime-3d-canvas" data-testid="runtime-3d-viewport">
+    {onThicknessEdit&&<button type="button" ref={thicknessGrip}
+      className="runtime-3d-thickness-grip" data-testid="runtime-thickness-handle"
+      role="slider" aria-label="Extrusion thickness direct handle in millimetres"
+      aria-valuemin={0.001} aria-valuemax={10000} aria-valuenow={thickness}
+      aria-valuetext={thicknessPreview===null?`${thickness} mm`:`Proposed ${thicknessPreview} mm; not yet committed`}
+      title="Drag projected extrusion axis or use ↑/↓ (Shift: 0.1 mm). Escape cancels."
+      onPointerDown={event=>{
+        if(event.button!==0||!thicknessAxis.current)return;
+        event.preventDefault();event.stopPropagation();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        thicknessMove.current={
+          pointerId:event.pointerId,startClient:{x:event.clientX,y:event.clientY},
+          initialMm:thickness,axisPixelsPerMm:{...thicknessAxis.current},
+        };
+        setThicknessPreview(thickness);
+      }}
+      onPointerMove={event=>{
+        const gesture=thicknessMove.current;
+        if(!gesture||gesture.pointerId!==event.pointerId)return;
+        try{
+          setThicknessPreview(proposeThicknessDrag(gesture,{x:event.clientX,y:event.clientY},event.shiftKey?0.1:1));
+        }catch{setThicknessPreview(null);}
+      }}
+      onPointerUp={event=>{
+        const gesture=thicknessMove.current;
+        if(!gesture||gesture.pointerId!==event.pointerId)return;
+        thicknessMove.current=null;setThicknessPreview(null);
+        try{
+          const value=proposeThicknessDrag(gesture,{x:event.clientX,y:event.clientY},event.shiftKey?0.1:1);
+          if(value!==gesture.initialMm)onThicknessEdit(value);
+        }catch{/* A failed projection cannot author a dimension. */}
+      }}
+      onPointerCancel={()=>{thicknessMove.current=null;setThicknessPreview(null);}}
+      onLostPointerCapture={()=>{thicknessMove.current=null;setThicknessPreview(null);}}
+      onKeyDown={event=>{
+        if(event.key==='Escape'){
+          thicknessMove.current=null;setThicknessPreview(null);event.preventDefault();return;
+        }
+        if(event.key==='ArrowUp'||event.key==='ArrowDown'){
+          event.preventDefault();
+          const value=nudgeThickness(thickness,event.key==='ArrowUp'?'up':'down',event.shiftKey?0.1:1);
+          if(value!==thickness)onThicknessEdit(value);
+        }
+      }}>
+      <span aria-hidden="true">↕</span> {thicknessPreview??thickness} mm
+    </button>}
+  </div>;
 }

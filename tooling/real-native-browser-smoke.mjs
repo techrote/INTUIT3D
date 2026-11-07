@@ -147,9 +147,19 @@ async function main(){
   await eventually(()=>ws.readyState===WebSocket.OPEN,'CDP connection');
   await send('Runtime.enable');await send('Page.enable');
   await send('Page.navigate',{url:origin});
-  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=enter-model-runtime]'))"),'model editor launch');
-  check(await evaluate("(() => {document.querySelector('[data-testid=enter-model-runtime]').click();return true})()"),'cannot enter model editor');
-  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-export]'))"),'native panel');
+  // Existing workspaces expose the model-backed editor through the legacy
+  // launch button; model-first workspaces mount it directly. Require one real
+  // route and then the same authoritative runtime/native controls in both.
+  await eventually(()=>evaluate(
+    "Boolean(document.querySelector('[data-testid=enter-model-runtime]') || document.querySelector('[data-testid=runtime-panel]'))"
+  ),'model editor or legacy launch');
+  if (await evaluate("Boolean(document.querySelector('[data-testid=enter-model-runtime]'))")) {
+    check(await evaluate("(() => {document.querySelector('[data-testid=enter-model-runtime]').click();return true})()"),
+      'cannot enter model editor');
+  }
+  await eventually(()=>evaluate(
+    "Boolean(document.querySelector('[data-testid=runtime-panel]') && document.querySelector('[data-testid=runtime-native-export]'))"
+  ),'authoritative model/native panel');
   check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent.includes('NO EXACT KERNEL')"),
     'experimental bridge promoted to exact');
   check(await evaluate(`(() => {
