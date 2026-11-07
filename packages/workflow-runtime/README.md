@@ -672,3 +672,48 @@ trusted Node-host consumer API; the browser cannot pick local executable paths.
 The synthetic subprocess test proves only revision fences. Real C++ and AnvilCAD
 executables, binary-source attestation and graphical interaction remain separate
 gates. Exact and general interoperability authority remain false.
+
+
+## Authenticated local provider pairing and pinned-only export
+
+A browser intending to export through pinned OCCT 8.0.1 C++ must not silently
+fall back to experimental OCP 7.9.3.1. The trusted loopback host now provides
+**GET \`/v1/plate/capabilities\`**, protected by the same per-launch token,
+Origin and Host checks as native evaluation. Its response identifies the
+configured backend, version and expected STEP verification. It does **not**
+prove the executable is provisioned, that native geometry executed, or that
+independent CAD import passed. No host filesystem path is disclosed.
+
+The browser-safe API exposes strict opt-in:
+
+\`\`\`js
+import {inspectLocalPlateBridge} from '@intuit3d/workflow-runtime/local-plate-client';
+
+const identity=await inspectLocalPlateBridge({url:hostUrl,token:pairedToken});
+if(identity.kind==='paired' && identity.backend==='OCCT-cxx-8.0.1') {
+  const result=await session.evaluate({
+    url:hostUrl,token:pairedToken,requestId:'model.native.1',
+    requiredBackend:'OCCT-cxx-8.0.1',exportStep:true,
+  });
+  if(result.kind==='experimental_plate_evaluated') {
+    // Read session.currentStep() again at the moment of download.
+    // Keep experimental/native provenance and exact-authority=false.
+  }
+}
+\`\`\`
+
+Supplying \`requiredBackend\` to \`evaluateLocalPlate\` or through
+\`session.evaluate\` / \`applyEditAndEvaluate\` /
+\`reopenAndEvaluate\` / \`commitPreviewAndEvaluate\`
+performs authenticated pairing *before* dispatch. A mismatched provider
+returns \`unresolved/provider_mismatch\` without executing a native job.
+The actual response backend, version, STEP SHA and Part21 evidence remain
+separately checked after execution. Omitting this option preserves the
+existing dual-provider client.
+
+**Tests:** \`npm test --workspace @intuit3d/workflow-runtime\` and
+\`npm run typecheck --workspace @intuit3d/workflow-runtime\` exercise actual
+INTENT/SKETCH histories across authenticated HTTP with explicitly synthetic
+native doubles. Genuine combined C++→AnvilCAD evidence still requires
+\`npm run demo:occt8:independent --workspace @intuit3d/workflow-runtime\`
+with physical source-qualified provisioned binaries. WORKBENCH owns UI adoption.
