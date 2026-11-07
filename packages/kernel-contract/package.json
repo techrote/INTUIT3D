@@ -27,6 +27,10 @@
     "./runtime-profile-provider": {
       "types": "./src/runtime-profile-provider.d.mts",
       "node": "./src/runtime-profile-provider.mjs"
+    },
+    "./local-body-cut-provider": {
+      "types": "./src/local-body-cut-provider.d.mts",
+      "node": "./src/local-body-cut-provider.mjs"
     }
   },
   "scripts": {
