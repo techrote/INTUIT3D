@@ -62,7 +62,8 @@ test('sketch-only and extruded-but-uncut archives are durable; undo isolates fea
   assert.equal(modelFeatureTimeline(reopenedExtrusion).length,2);
   const cut=createModelThroughCut(reopenedExtrusion);
   const undone=undoModelSession(cut);
-  assert.equal(modelFeatureTimeline(undone).length,2);
+  assert.equal(modelFeatureTimeline(undone).length,3);
+  assert.equal(modelFeatureTimeline(undone).find(f=>f.featureId==='cut')?.active,false);
   assert.equal(status(undone,'plate'),'preview_only');
   const redone=redoModelSession(undone);
   assert.equal(status(redone,'cut'),'pending_exact_provider');
