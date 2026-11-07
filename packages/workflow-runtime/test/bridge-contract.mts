@@ -76,3 +76,20 @@ export async function nonOcctBridgeConsumer(step:{bytes:Uint8Array;sha256:string
   const noInteroperability:false=evidence.independentInteroperability;
   return {noExact,noInteroperability,evidence};
 }
+
+import {verifyCurrentLivePlateStep} from '../nonocct-step-probe.mjs';
+import type {LivePlateSession} from '../live-plate-session.mjs';
+declare const liveSession:LivePlateSession;
+export async function livePinnedExternalConsumer(
+  evaluation:Parameters<typeof verifyCurrentLivePlateStep>[0]['evaluation'],
+) {
+  const evidence=await verifyCurrentLivePlateStep({
+    session:liveSession,evaluation,
+    probeExecutable:'/trusted/anvil_step_probe',
+    expectedProbeSha256:'a'.repeat(64),
+  });
+  const rev:number=evidence.source.revision;
+  const experimental:false=evidence.exactAuthority;
+  const unqualified:false=evidence.independentInteroperability;
+  return {rev,experimental,unqualified};
+}

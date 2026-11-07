@@ -657,3 +657,18 @@ hosted execution still require separate PLATFORM/INTEGRATION verification.
 unchanged at the application boundary. No general/arbitrary STEP or browser
 qualification is inferred. Integration alone wires native provisioned executables
 into official CI or accepts this new evidence.
+
+
+### Current revision-fenced external STEP receipt (Node host)
+
+The pinned C++ seven-stage demonstration calls
+\`verifyCurrentLivePlateStep({session,evaluation,probeExecutable,expectedProbeSha256})\`
+for each STEP. This obtains \`session.currentStep()\` rather than importing an
+unrelated old buffer. It checks project ID, exact saved archive SHA-256, revision,
+Part21 audit and STEP content SHA **before and after** asynchronous external
+CAD import. An edit, undo, reopen or replacement during import makes the receipt
+stale, never a successful check of the new active project. The function is a
+trusted Node-host consumer API; the browser cannot pick local executable paths.
+The synthetic subprocess test proves only revision fences. Real C++ and AnvilCAD
+executables, binary-source attestation and graphical interaction remain separate
+gates. Exact and general interoperability authority remain false.

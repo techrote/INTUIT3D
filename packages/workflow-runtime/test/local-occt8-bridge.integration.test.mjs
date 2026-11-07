@@ -221,3 +221,31 @@ test('solved two-hole layout resize is one native revision, reversible and repla
     assert.ok(calls.every(x=>x.options.part21StepAudit===true));
   });
 });
+
+test('actual INTENT/SKETCH revision edit revokes obsolete independent STEP source',async()=>{
+  const {verifyCurrentLivePlateStep}=await import('../nonocct-step-probe.mjs');
+  let current=plateProject();
+  const calls=[];
+  const session=createLivePlateSession({
+    runtime,readCurrentHistory:()=>current,publishHistory:h=>{current=h;},
+  });
+  await withHost(fakePinnedFactory(calls),async host=>{
+    const original=await session.evaluate({
+      url:host.url,token:host.token,requestId:'occt8.external.original',exportStep:true,
+    });
+    assert.equal(original.kind,'experimental_plate_evaluated');
+    const edit=session.applyEdit(h=>runtime.resizePlateHoleLayout(h,{
+      sketchFeatureId:'sketch.plate',eventId:'occt8.external.edit',
+      expectedRevision:h.document.revision,admission:'require_admissible',
+      holeIds:['holeA','holeB'],pivotXmm:60,pivotYmm:40,
+      scaleX:0.8,scaleY:1,radiusScale:0.75,
+    }));
+    assert.equal(edit.kind,'committed');
+    assert.equal(session.currentStep(),null);
+    await assert.rejects(()=>verifyCurrentLivePlateStep({
+      session,evaluation:original,probeExecutable:'/not/run',
+      expectedProbeSha256:'a'.repeat(64),
+    }),/stale live CAD revision/);
+    assert.equal(calls.length,1,'stale external check never starts a native rebuild');
+  });
+});

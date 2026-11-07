@@ -19,7 +19,7 @@ import {runPinnedOcct8Plate} from '@intuit3d/kernel-contract/local-occt8-provide
 import {createWorkflowRuntime} from '../index.mjs';
 import {startLocalPinnedOcct8Bridge} from '../local-plate-bridge.mjs';
 import {createLivePlateSession} from '../live-plate-session.mjs';
-import {runNonOcctPlateProbe} from '../nonocct-step-probe.mjs';
+import {verifyCurrentLivePlateStep} from '../nonocct-step-probe.mjs';
 
 const worker=process.env.INTUIT3D_OCCT8_WORKER;
 if(!worker||!isAbsolute(worker))
@@ -74,9 +74,8 @@ async function record(out,stage){
   assert.ok(Math.abs(target.volumeMm3-volume)<=Math.max(1e-7,Math.abs(target.volumeMm3)*1e-10));
   assert.ok(new TextDecoder().decode(out.step.bytes.subarray(0,20)).includes('ISO-10303-21'));
   const sample=runIndependent
-    ? await runNonOcctPlateProbe({
-        probeExecutable,expectedProbeSha256,
-        source:out.source,step:out.step,plate:out.result.intendedPlate,
+    ? await verifyCurrentLivePlateStep({
+        session,evaluation:out,probeExecutable,expectedProbeSha256,
       })
     : null;
   results.push({stage,revision:out.source.revision,

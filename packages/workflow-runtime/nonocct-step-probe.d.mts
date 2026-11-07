@@ -22,3 +22,32 @@ export declare function runNonOcctPlateProbe(options:Readonly<{
   stepSha256:string;probeSha256:string;transcriptSha256:string;rawTranscript:string;
   sample:NonOcctPlateSample;exactAuthority:false;independentInteroperability:false;note:string;
 }>>;
+
+/** Node-only externally checked CURRENT native export. No browser executable controls. */
+export declare function verifyCurrentLivePlateStep(options:Readonly<{
+  session:Readonly<{
+    refresh():{projectId:string;revision:number};
+    save():string;
+    currentStep():Readonly<{bytes:Uint8Array;sha256:string;
+      verification:'same_engine_step_readback'|'occt8_part21_plate_subset'}>|null;
+  }>;
+  evaluation:Readonly<{
+    kind:'experimental_plate_evaluated';exactAuthority:false;
+    independentInteroperability:false;
+    source:Readonly<{projectId:string;revision:number;archiveSha256:string}>;
+    result:Readonly<{
+      backend:'OCCT-cxx-8.0.1';occtVersion:'8.0.1';
+      intendedPlate:NonOcctPlate;
+      part21Audit:Readonly<{kind:'part21-plate-structural-v1';sha256:string}>;
+    }>;
+    step:Readonly<{bytes:Uint8Array;sha256:string;
+      verification:'occt8_part21_plate_subset'}>;
+  }>;
+  probeExecutable:string;expectedProbeSha256:string;timeoutMs?:number;
+}>):Promise<Readonly<{
+  format:'intuit3d.nonocct-step-sample';version:1;
+  kind:'executed_current_live_plate_nonocct_sample';
+  source:Readonly<{projectId:string;revision:number;archiveSha256:string}>;
+  stepSha256:string;probeSha256:string;transcriptSha256:string;rawTranscript:string;
+  sample:NonOcctPlateSample;exactAuthority:false;independentInteroperability:false;note:string;
+}>>;

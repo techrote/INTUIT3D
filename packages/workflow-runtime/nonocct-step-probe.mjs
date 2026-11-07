@@ -160,3 +160,60 @@ export async function runNonOcctPlateProbe({probeExecutable,expectedProbeSha256,
       note:'External probe execution is source/sample evidence, not general STEP or product exact authority. Independent build provenance must be verified separately.'});
   } finally { await rm(folder,{recursive:true,force:true}); }
 }
+
+/**
+ * Trusted Node-host API: check the STEP that the live authoritative session
+ * would let WORKBENCH download NOW. Older evaluation replies are not authority.
+ * External binary/source provenance remains the Integration qualification gate.
+ */
+export async function verifyCurrentLivePlateStep({
+  session,evaluation,probeExecutable,expectedProbeSha256,timeoutMs,
+}={}) {
+  if(typeof session?.refresh!=='function'||typeof session?.save!=='function'||
+      typeof session?.currentStep!=='function') reject('live session required');
+  const source=evaluation?.source;
+  const plate=evaluation?.result?.intendedPlate;
+  if(evaluation?.kind!=='experimental_plate_evaluated'||
+      evaluation.exactAuthority!==false||
+      evaluation.independentInteroperability!==false||
+      evaluation.result?.backend!=='OCCT-cxx-8.0.1'||
+      evaluation.result?.occtVersion!=='8.0.1'||
+      evaluation.result?.part21Audit?.kind!=='part21-plate-structural-v1'||
+      evaluation.result.part21Audit.sha256!==evaluation.step?.sha256||
+      evaluation.step?.verification!=='occt8_part21_plate_subset'||
+      typeof source?.projectId!=='string'||
+      !Number.isSafeInteger(source?.revision)||
+      !HASH.test(source?.archiveSha256||''))
+    reject('pinned source and artifact-bound Part21 receipt required');
+  validPlate(plate);
+
+  const readCurrent=()=>{
+    // These are synchronous session methods: no asynchronous interleaving
+    // occurs between identity, archive and downloaded receipt acquisition.
+    const state=session.refresh(),archive=session.save(),step=session.currentStep();
+    if(state?.projectId!==source.projectId||
+        state?.revision!==source.revision||
+        sha256(Buffer.from(archive,'utf8'))!==source.archiveSha256||
+        !step||step.sha256!==evaluation.step.sha256||
+        step.verification!=='occt8_part21_plate_subset'||
+        !(step.bytes instanceof Uint8Array)||
+        sha256(step.bytes)!==step.sha256)
+      reject('stale live CAD revision or STEP receipt');
+    return step;
+  };
+  const step=readCurrent();
+  const evidence=await runNonOcctPlateProbe({
+    probeExecutable,expectedProbeSha256,timeoutMs,
+    source,plate,step,
+  });
+  // A user can edit/undo/reopen while a genuine external importer is running.
+  // Never attach the old import result to the newly current CAD document.
+  const stillCurrent=readCurrent();
+  if(stillCurrent.sha256!==step.sha256||
+      sha256(stillCurrent.bytes)!==sha256(step.bytes))
+    reject('STEP changed while external importer was executing');
+  return Object.freeze({
+    ...evidence,kind:'executed_current_live_plate_nonocct_sample',
+    note:'External CAD sample of the current revision-fenced STEP. Not generalized STEP qualification or production exact authority; independent importer build provenance still requires external attestation.',
+  });
+}
