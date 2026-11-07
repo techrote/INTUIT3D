@@ -15,6 +15,7 @@ import { createWorkflowRuntime } from '@intuit3d/workflow-runtime';
 import type { UndoHistory } from '@intuit3d/model/transactions';
 import type { RuntimeReport, RuntimeFeature, SketchConstraintBatchResult } from '@intuit3d/workflow-runtime';
 import type { SketchDocument, PlateProfile } from '@intuit3d/sketch';
+import type { SketchDimensionHandle } from './runtimeSketchHandles';
 
 export const runtime = createWorkflowRuntime({ model, transactions, bindings, dimensions, archive, sketch, discovery });
 export type ModelSession = UndoHistory;
@@ -73,6 +74,28 @@ export function moveModelHoleCenter(
     expectedRevision:h.document.revision,admission:'require_admissible',
     edits:[{constraintId:hole+':fixed',patch:{x,y}}],
   });
+}
+
+/** Gesture/keyboard dimension edit: one authoritative transaction, refusing
+ * inadmissible direct manipulation without discarding typed invalid intent.
+ * Numeric inspector edits deliberately retain their separate recovery policy. */
+export function editModelSketchHandle(
+  h:ModelSession,handle:SketchDimensionHandle,value:number,
+):{kind:'committed';history:ModelSession;invalidatedFeatureIds:readonly string[]} |
+  {kind:'refused';reason:string} {
+  if(!Number.isFinite(value)||value<=0||value>10000)
+    return {kind:'refused',reason:'Direct dimension must be finite and positive (up to 10,000 mm).'};
+  if(handle==='width'||handle==='depth'){
+    const candidate=editModelDimension(h,handle,value);
+    if(!previewModelProfile(inspectModelSession(candidate)))
+      return {kind:'refused',reason:'Resize would invalidate the sketch profile. Use the numeric inspector to preserve and repair an unresolved constraint.'};
+    return {kind:'committed',history:candidate,invalidatedFeatureIds:runtime.diff(h,candidate).invalidatedFeatureIds};
+  }
+  const hole=handle==='holeA.diameter'?'holeA':'holeB';
+  const outcome=editModelHole(h,hole,'diameter',value,'require_admissible');
+  if(outcome.kind==='refused')
+    return {kind:'refused',reason:outcome.reason};
+  return {kind:'committed',history:outcome.history,invalidatedFeatureIds:outcome.invalidation.invalidatedFeatureIds};
 }
 
 /** Presentation-only timeline move; INTENT preserves body and DAG authority. */
