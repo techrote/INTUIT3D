@@ -166,7 +166,7 @@ test('stale, ambiguous, malformed and mismatched body cut requests reject atomic
     {extra:'not part of the protocol'},
   ]) {
     assert.throws(()=>commitUndoableBodyCutAppend(history,req(doc,edit)),
-      /body cut chain|stale|journal\\[|reuses semantic feature ID/);
+      /body cut chain|stale|journal\[|reuses semantic feature ID/);
   }
   assert.equal(serializeUndoHistory(history),untouched);
 
