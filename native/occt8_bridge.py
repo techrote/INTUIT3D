@@ -37,7 +37,8 @@ def execute(request_input: object, *, worker: Path, step_output: Path | None = N
         raise ValueError("step_output required if and only if exportStep is true")
     if not 0 < timeout <= 3600:
         raise ValueError("timeout must be between 0 and 3600 seconds")
-    with tempfile.TemporaryDirectory(prefix="intuit3d-occt8-") as temp:
+    with tempfile.TemporaryDirectory(prefix=".intuit3d-occt8-",
+                                         dir=step_output.parent if step_output else None) as temp:
         directory = Path(temp)
         wire = directory / "request.txt"
         report = directory / "result.json"
@@ -71,9 +72,10 @@ def execute(request_input: object, *, worker: Path, step_output: Path | None = N
                         raise ValueError("not STEP Part 21")
                 # The caller owns the destination. Atomic exclusive publication:
                 # no overwrite of files created during the C++ worker's lifetime.
+                digest = hashlib.sha256(stage.read_bytes()).hexdigest()
                 os.link(stage, step_output)
                 response["stepPath"] = str(step_output)
-                response["stepSha256"] = hashlib.sha256(step_output.read_bytes()).hexdigest()
+                response["stepSha256"] = digest
             elif stage.exists():
                 raise ValueError("worker emitted STEP for no-export intent")
             return response
