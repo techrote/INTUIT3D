@@ -1,4 +1,4 @@
-# @intuit3d/workflow-runtime — version 1 (experimental, no exact provider)
+# @intuit3d/workflow-runtime — version 1 (experimental native provider opt-in)
 
 **Issue:** [RUNTIME-001 #49](https://github.com/techrote/INTUIT3D/issues/49). **Code owner:** RUNTIME; this package and its tests only. No changes to INTENT, SKETCH, KERNEL, WORKBENCH or shared integration source are authorized.
 
@@ -50,3 +50,56 @@ parameters, reparented/deleted ancestors, newly satisfied future targets, cycles
 12,000-feature iterative closure, and unsafe revision/cross-project inputs.
 `test/runtime.integration.test.mjs` additionally exercises actual model-backed
 sketch edits, dependent plate/cut invalidation and archive replay.
+
+
+## Experimental native plate+cut execution (additive, versioned API)
+
+The browser-safe `@intuit3d/workflow-runtime/experimental-plate` entry point
+exports `createExperimentalPlateWorkflow`, accepting the **actual**
+`createWorkflowRuntime` instance, INTENT's `featuresOf`, the public
+`@intuit3d/kernel-contract/plate-v1` parser, and the trusted Node host's
+`runExperimentalPlate` from `@intuit3d/kernel-contract/local-plate-provider`.
+It does **not** import or bundle Node filesystem/process functionality into
+WORKBENCH. A future local desktop/loopback bridge must own host IPC and safe
+filesystem access; do not call the Node provider directly inside React.
+
+`evaluate(history, {cutFeatureId, requestId, readCurrentHistory, exportStep?,
+stepOutput?, timeoutMs?, signal?})` derives the live INTENT report and
+SKETCH-admitted analytic profile, matches one explicit body-targeted dependent
+cut and rectangular extrude, and maps the **off-origin** SKETCH rectangle/circles
+to the centred plate-v1 native fixture. It refuses arbitrary/rotated polygons,
+unsupported profile geometry, ambiguous competing body writes, invalid sketch
+states or missing holes. The public KERNEL parser independently checks physical
+plate dimensions, unsupported numerical ranges and hole contact. A revision
+callback checks the live model/solver snapshot, so altered same-revision source
+cannot be passed as current to native STEP publication. The trusted KERNEL
+provider owns subprocess cancellation, bounded timeout, revision-aware SHA-256
+verification and exclusive STEP output publication.
+
+Outputs are only `experimental_plate_evaluated` or `unresolved`; there is **no**
+`validated_exact` return. The local host constructs an actual OCP 7.9.3.1
+B-rep with Boolean bores and same-engine STEP readback. This is deliberately
+*not* a general chained cut evaluator, production OCCT 8.0.1 authority,
+independent STEP consumer, reusable exact-shape cache, Windows native gate,
+or proof of crash-durable external file publication. Keep
+`exactAuthority:false` and `independentInteroperability:false`.
+
+**One command for real native plate/two-hole/edit/reopen/STEP demonstration**
+(run on a host where pinned Python/OCP is installed):
+
+```sh
+npm run demo:native --workspace @intuit3d/workflow-runtime
+```
+
+This constructs an authoritatively journalled SKETCH plate with two circular
+holes and dependent cut, invokes the actual local native worker to emit
+same-engine-checked STEP, then adds a retrospective INTENT thickness binding,
+reopens the saved model and repeats native evaluation. It checks both STEP
+files and their changed SHA-256 hashes across 8 mm -> 10 mm thickness,
+removing temporary files afterward. **Missing OCP must fail, not count as a
+native pass.** This command is deliberately separate from `npm test`, which
+tests contract wiring with an explicitly stubbed native provider on both OSes.
+
+WORKBENCH can consume the versioned entry point now, but must introduce its
+own controlled local host bridge before any real native or STEP UI operation.
+INTEGRATION retains exact-head CI/qualification and cross-lane integration.
