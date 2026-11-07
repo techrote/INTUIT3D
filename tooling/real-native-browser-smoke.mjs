@@ -72,7 +72,16 @@ async function main(){
     stdio:['ignore','pipe','pipe'],detached:process.platform!=='win32'
   });
   children.push(vite);
-  await eventually(async()=>{try{return(await fetch(origin)).ok}catch{return false}},'Vite preview');
+  // Always drain child pipes: a noisy Vite/Chromium process can block while
+  // writing into an unread pipe before the CDP handshake is established.
+  let viteStderr='';
+  vite.stdout?.resume();
+  vite.stderr?.on('data',chunk=>{viteStderr=(viteStderr+chunk.toString()).slice(-4096);});
+  try {
+    await eventually(async()=>{try{return(await fetch(origin)).ok}catch{return false}},'Vite preview');
+  } catch(error) {
+    throw new Error(String(error)+'; viteExit='+vite.exitCode+'; stderr='+viteStderr);
+  }
   const chrome=spawn(browser(),[
     '--headless=new','--no-sandbox','--disable-dev-shm-usage','--use-gl=angle',
     '--use-angle=swiftshader','--enable-unsafe-swiftshader',
@@ -81,8 +90,20 @@ async function main(){
     '--user-data-dir='+home,'about:blank',
   ],{stdio:['ignore','pipe','pipe'],detached:process.platform!=='win32'});
   children.push(chrome);
-  const p=await eventually(()=>existsSync(join(home,'DevToolsActivePort')) &&
-    readFileSync(join(home,'DevToolsActivePort'),'utf8'),'CDP port');
+  let chromeStderr='';
+  chrome.stdout?.resume();
+  chrome.stderr?.on('data',chunk=>{chromeStderr=(chromeStderr+chunk.toString()).slice(-8192);});
+  // The Linux runner can briefly delay the first SwiftShader subprocess.
+  // A failed startup remains a failing acceptance gate, but now has concrete
+  // exit/signal/stderr evidence rather than an unexplained CDP-port timeout.
+  let p;
+  try {
+    p=await eventually(()=>existsSync(join(home,'DevToolsActivePort')) &&
+      readFileSync(join(home,'DevToolsActivePort'),'utf8'),'CDP port',180);
+  } catch(error) {
+    throw new Error(String(error)+'; chromeExit='+chrome.exitCode+
+      '; chromeSignal='+chrome.signalCode+'; stderr='+chromeStderr);
+  }
   const endpoint='http://127.0.0.1:'+Number(p.split('\n')[0]);
   const target=await eventually(async()=>{
     const reply=await fetch(endpoint+'/json/list');const all=await reply.json();
