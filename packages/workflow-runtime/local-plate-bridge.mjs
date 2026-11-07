@@ -123,6 +123,12 @@ export async function startLocalPlateBridge({
       safeWrite(422,unresolved('invalid_archive','model archive cannot be admitted'),sameOrigin);
       return;
     }
+    // A second request can finish its body while a first is still parsing.
+    // Close that admission race before acquiring the single native slot.
+    if (active) {
+      safeWrite(409,unresolved('busy','another native evaluation is in progress'),sameOrigin);
+      return;
+    }
     const abort=new AbortController();
     const onClose=()=>{if (!res.writableEnded) abort.abort();};
     res.once('close',onClose);
