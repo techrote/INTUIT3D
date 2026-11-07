@@ -15,18 +15,23 @@ python3 conformance/external-cad/brlcad_flange.py \
   --output-dir /tmp/intuit-flange-input --verify-input-only
 # INPUT_VERIFIED_NOT_EXTERNAL_CAD is not external CAD acceptance.
 
-# On a host with the genuine BRL-CAD binaries installed, discover import root:
-step-g --strict --exact --repair none --report /tmp/first-import.json \
-  -o /tmp/first-import.g /tmp/intuit-flange-input/flange.four.step
-mged -c /tmp/first-import.g tops
-
+# On a host with genuine BRL-CAD binaries, run the complete importer and
+# physical volume/ray checks. If each imported database has exactly ONE root,
+# its name is discovered automatically from "mged -c ... tops" per case:
 python3 conformance/external-cad/brlcad_flange.py \
   --bundle /path/to/original-artifact-13563062028.zip \
-  --output-dir /tmp/intuit-flange-external-unique \
-  --object ACTUAL_SINGLE_IMPORTED_ROOT_OBJECT
+  --output-dir /tmp/intuit-flange-external-unique
+
+# If a database has MULTIPLE top-level objects, the run rejects ambiguity.
+# Inspect the exact import with step-g/mged, then explicitly select a root
+# verified in every case; substring matches and unknown roots are rejected:
+#   step-g --strict --exact --repair none --report /tmp/first-import.json \
+#     -o /tmp/first-import.g /tmp/intuit-flange-input/flange.four.step
+#   mged -c /tmp/first-import.g tops
+#   python3 conformance/external-cad/brlcad_flange.py ... --object EXACT_ROOT_NAME
 ~~~
 
-The importer must expose the same unambiguous top object name in each fixture; otherwise the runner refuses it. The evidence output directory must not exist already. The script saves original STEP bytes, imported BRL geometry databases, logs, tool SHA-256, ray results and a manifest.
+The importer must expose a single unambiguous top-level object **in each fixture** for automatic selection; roots may have different names between cases. For multiple roots, explicit `--object` must match an actual top-level object **exactly** in every case or qualification fails. BRL-CAD `tops` lists combination markers `/` and region markers `/R`; these are normalized, and all extra/duplicate/unrecognized top-level records are rejected. The selected root and full top-level inventory are retained per case in the evidence manifest. This discovery enhancement removes an unnecessary manual step, but only an **actual installed BRL-CAD execution** can qualify geometry. The evidence output directory must not exist already. The script saves original STEP bytes, imported BRL geometry databases, logs, tool SHA-256, ray results and a manifest.
 
 Each fixture undergoes strict, exact, no-repair import, a gqa independent approximate ray-volume comparison (explicit 1% tolerance), and individual nirt rays through every bore, four material points, the exterior and the optional central fifth-hole location. These physical ray checks reject a displaced hole that leaves overall volume unchanged.
 
