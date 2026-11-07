@@ -263,13 +263,87 @@ async function main(){
   check(await evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent.includes('not independent STEP')"),
     'hole-rebuilt STEP lost experimental provenance');
   await screenshot('native-real-06-hole-reopened-step.png');
+
+  // PRODUCT ACCEPTANCE: execute the newly admitted feature-lifecycle UI
+  // against the REAL paired OCP provider, not the synthetic CDP responder.
+  // A deleted plate must revoke an already downloaded/current STEP receipt.
+  // Save/reopen the tombstone, restore semantic identity and obtain a NEW
+  // physically reconstructed revision-fenced STEP from the real native host.
+  const priorMetrics=await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-native-evidence]')?.textContent||'';return {volume:s.match(/Volume: ([0-9.]+) mm³/)?.[1]||null,solids:s.match(/Solids: ([0-9]+)/)?.[1]||null}})()");
+  check(!!priorMetrics.volume&&priorMetrics.solids==='1','pre-deletion native OCP body evidence missing');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]').disabled"),
+    'pre-deletion current native STEP receipt unavailable');
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-feature-plate]').click();return true})()"),
+    'cannot select original extrusion feature');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-feature-remove]'))"),
+    'selected extrusion has no remove action');
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-feature-remove]').click();return true})()"),
+    'cannot remove paired native extrusion');
+  await eventually(()=>evaluate(
+    "Boolean(document.querySelector('[data-testid=runtime-feature-restore]')) && "+
+    "Boolean(document.querySelector('[data-testid=runtime-removed-extrusion]')) && "+
+    "!document.querySelector('[data-testid=runtime-boundary]') && "+
+    "document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled===true && "+
+    "document.querySelector('[data-testid=runtime-native-export]')?.disabled===true"),
+    'deleted extrusion left current preview or stale STEP receipt downloadable');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent!=='pending_exact_provider'"),
+    'deleted extrusion falsely left its dependent cut admitted');
+  check(await evaluate("window.__nativeStepBlobs.length===4"),
+    'removal unexpectedly downloaded or published stale STEP');
+  await screenshot('native-real-07-deleted-native-receipt.png');
+
+  // Browser archive must carry a tombstone, not silently resurrect the plate.
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell .title-actions button')].find(x=>x.textContent?.trim()==='Save model archive');b?.click();return !!b})()"),
+    'cannot save a deleted-extrusion model archive');
+  await eventually(()=>evaluate("window.__nativeStepBlobs.length===5"),
+    'deleted-extrusion archive download');
+  check(await evaluate("(async()=>{const s=await window.__nativeStepBlobs[4].text();return s.includes('feature.remove')&&s.includes('plate')})()"),
+    'deleted-extrusion archive lost journal tombstone');
+  check(await evaluate("(async()=>{const s=await window.__nativeStepBlobs[4].text();const input=document.querySelector('input[aria-label=\"Open INTUIT model archive\"]');const transfer=new DataTransfer();transfer.items.add(new File([s],'deleted-plate.i3d-model.json',{type:'application/json'}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
+    'cannot re-import deleted-extrusion archive');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'deleted-extrusion archive did not enter explicit review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(x=>x.textContent?.trim()==='Replace with model archive');b?.click();return !!b})()"),
+    'cannot reopen deleted extrusion journal');
+  await eventually(()=>evaluate(
+    "Boolean(document.querySelector('[data-testid=runtime-feature-restore]')) && "+
+    "document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled===true"),
+    'reopened deleted plate resurrected a cached STEP receipt');
+  check(await evaluate("window.__nativeStepBlobs.length===5"),
+    'archive reopen published stale STEP');
+
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-feature-restore]').click();return true})()"),
+    'cannot restore original semantic plate ID after archive reopening');
+  await eventually(()=>evaluate(
+    "document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only' && "+
+    "document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider' && "+
+    "document.querySelector('[data-testid=runtime-native-build]')?.disabled===false && "+
+    "document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled===true"),
+    'restored semantics reused old STEP, or failed to enable fresh native rebuild');
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-native-build]').click();return true})()"),
+    'cannot rebuild recovered native plate');
+  await eventually(()=>evaluate(
+    "document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('Experimental STEP prepared') && "+
+    "document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled===false"),
+    'real OCP reconstruction after restore',240);
+  const restoredMetrics=await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-native-evidence]')?.textContent||'';return {volume:s.match(/Volume: ([0-9.]+) mm³/)?.[1]||null,solids:s.match(/Solids: ([0-9]+)/)?.[1]||null}})()");
+  check(restoredMetrics.solids==='1'&&restoredMetrics.volume===priorMetrics.volume,
+    'reopened/restored plate failed to reproduce physical native volume and solid count');
+  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-native-download-cached]').click();return true})()"),
+    'cannot download fresh restored-revision STEP');
+  await eventually(()=>evaluate("window.__nativeStepBlobs.length===6"),
+    'restored native STEP download');
+  check(await evaluate("(async()=>{const s=await window.__nativeStepBlobs[5].text();return s.length>1000 && s.includes('ISO-10303-21;') && s.includes('END-ISO-10303-21;')})()"),
+    'recovered STEP was not genuine OCP Part 21 bytes');
+  await screenshot('native-real-08-recovered-native-step.png');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'actual pinned OCP 7.9.3.1 Python through trusted RUNTIME HTTP host',
-    downloadedFiles:3,holeDrag:true,independentHoleDimension:true,undoRedo:true,archiveReplay:true,staleDownloadRefused:'covered by separate synthetic Chromium gate',realPhysicalGeometry:true,
+    downloadedFiles:4,holeDrag:true,independentHoleDimension:true,undoRedo:true,archiveReplay:true,staleDownloadRefused:true,physicalRestoreAfterTombstoneArchive:true,realPhysicalGeometry:true,
     independentStep:false,humanAcceptance:false,screenshots:[
-      'native-real-01-paired.png','native-real-02-download.png','native-real-03-edit-invalidates.png','native-real-04-edited-step.png','native-real-05-hole-sketch.png','native-real-06-hole-reopened-step.png'
+      'native-real-01-paired.png','native-real-02-download.png','native-real-03-edit-invalidates.png','native-real-04-edited-step.png','native-real-05-hole-sketch.png','native-real-06-hole-reopened-step.png',
+      'native-real-07-deleted-native-receipt.png','native-real-08-recovered-native-step.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_REAL_OCP_NATIVE_UI_BROWSER_PASS same_engine_step_only');
 }
