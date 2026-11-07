@@ -107,6 +107,10 @@
     "./parameter-table": {
       "types": "./src/parameter-table.ts",
       "default": "./src/parameter-table.ts"
+    },
+    "./parameter-formula": {
+      "types": "./src/parameter-formula.ts",
+      "default": "./src/parameter-formula.ts"
     }
   },
   "scripts": {
