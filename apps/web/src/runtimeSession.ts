@@ -6,6 +6,13 @@
 import * as model from '@intuit3d/model';
 import * as transactions from '@intuit3d/model/transactions';
 import * as bindings from '@intuit3d/model/dimension-bindings';
+import { evaluateParameterPlan } from '@intuit3d/model/parameters';
+import type { ParameterExpression, ParameterUnit } from '@intuit3d/model/parameters';
+import { formatParameterFormula } from '@intuit3d/model/parameter-formula';
+import {
+  PARAMETER_FORMULA_TABLE_FORMAT, PARAMETER_FORMULA_TABLE_VERSION,
+  previewParameterFormulaTableEdit, commitUndoableParameterFormulaTableEdit,
+} from '@intuit3d/model/parameter-formula-table';
 import * as dimensions from '@intuit3d/model/dimension-batch-edit';
 import * as archive from '@intuit3d/model/archive';
 import { moveHistoryFeature } from '@intuit3d/model/history-move';
@@ -448,6 +455,94 @@ export function editNamedThicknessParameter(h:ModelSession,name:string,valueMm:n
   });
 }
 
+/** An editable spreadsheet row reflects the living authoritative INTENT DAG. */
+export interface ModelParameterFormulaRow {
+  readonly featureId:string;
+  readonly name:string;
+  readonly formula:string;
+  readonly unit:ParameterUnit;
+  readonly value:number|null;
+  readonly status:string;
+  readonly diagnostics:readonly string[];
+}
+
+export function modelParameterFormulaRows(h:ModelSession):readonly ModelParameterFormulaRow[] {
+  const evaluation=evaluateParameterPlan(model.planProject(h.document));
+  const values=new Map(evaluation.parameterValues.map(x=>[x.featureId,x.value]));
+  const gates=new Map(evaluation.featureGates.map(x=>[x.featureId,x]));
+  return model.featuresOf(h.document).filter(f=>f.kind==='parameter').map(feature=>{
+    const source=feature.payload.parameter;
+    if(!source||typeof source!=='object'||Array.isArray(source))
+      throw Error('Malformed authored parameter: '+feature.id);
+    const parameter=source as Record<string,unknown>;
+    if(typeof parameter.name!=='string'||
+       !['mm','deg','unitless'].includes(String(parameter.unit)))
+      throw Error('Malformed parameter name/unit: '+feature.id);
+    // Formatting, naming, expression parsing, and dependency resolution all
+    // belong to INTENT. Never evaluate a formula with JS or derive it from UI.
+    const formula=formatParameterFormula(h.document,feature.id,
+      parameter.expression as ParameterExpression);
+    const gate=gates.get(feature.id);
+    return {
+      featureId:feature.id,name:parameter.name,formula,
+      unit:parameter.unit as ParameterUnit,value:values.get(feature.id)??null,
+      status:gate?.status??'unready',
+      diagnostics:gate?.diagnostics.map(d=>d.message)??[],
+    };
+  });
+}
+
+export interface ModelParameterFormulaDraft {
+  readonly featureId:string;
+  readonly name:string;
+  readonly formula:string;
+}
+function formulaTableRequest(h:ModelSession,edits:readonly ModelParameterFormulaDraft[],
+  expectedRevision:number) {
+  if(expectedRevision!==h.document.revision)
+    throw Error('Parameter sheet is stale. Refresh the current model revision.');
+  const originals=new Map(modelParameterFormulaRows(h).map(row=>[row.featureId,row]));
+  const seen=new Set<string>();
+  const changed=edits.flatMap(row=>{
+    if(seen.has(row.featureId))throw Error('Duplicate parameter sheet row');
+    seen.add(row.featureId);
+    const old=originals.get(row.featureId);
+    if(!old)throw Error('Parameter no longer exists: '+row.featureId);
+    const nameChanged=row.name!==old.name,formulaChanged=row.formula!==old.formula;
+    return nameChanged||formulaChanged?[{
+      eventId:`workbench.formula.table.${expectedRevision}.${seen.size}`,
+      featureId:row.featureId,
+      ...(nameChanged?{name:row.name}:{}),
+      ...(formulaChanged?{formula:row.formula}:{}),
+    }]:[];
+  });
+  if(!changed.length)throw Error('No parameter sheet changes to apply.');
+  return {
+    format:PARAMETER_FORMULA_TABLE_FORMAT,
+    version:PARAMETER_FORMULA_TABLE_VERSION,
+    expectedProjectId:h.document.projectId,
+    expectedRevision,
+    admission:'require_admissible' as const,
+    rows:changed,
+  };
+}
+
+/** Preview the FINAL table and invalidation without touching project history. */
+export function previewModelParameterFormulaTable(
+  h:ModelSession,rows:readonly ModelParameterFormulaDraft[],expectedRevision:number,
+) {
+  return previewParameterFormulaTableEdit(
+    h.document,formulaTableRequest(h,rows,expectedRevision));
+}
+
+/** One undo frame for all named/formula edits; no partial UI row commits. */
+export function commitModelParameterFormulaTable(
+  h:ModelSession,rows:readonly ModelParameterFormulaDraft[],expectedRevision:number,
+):ModelSession {
+  return commitUndoableParameterFormulaTableEdit(
+    h,formulaTableRequest(h,rows,expectedRevision));
+}
+
 /** Freeze CURRENT resolved thickness, explicitly release the witnessed binding
  * edge and retire the now-unused parameter in ONE undoable INTENT transaction.
  * The model API refuses stale, unresolved or non-owned releases. */
@@ -488,11 +583,12 @@ export function modelDimensionValues(h: ModelSession): Record<ModelDimension, nu
   const a = dimension(h, 'holeA:fixed'), b = dimension(h, 'holeB:fixed');
   let value: unknown;
   if (modelThicknessBinding(h)==='named_parameter') {
-    const parameter = getFeature(h, 'parameter.t').payload.parameter;
-    if (!parameter || typeof parameter !== 'object' || Array.isArray(parameter)) throw Error('Invalid thickness parameter');
-    const expression = (parameter as Record<string, unknown>).expression;
-    if (!expression || typeof expression !== 'object' || Array.isArray(expression)) throw Error('Invalid parameter expression');
-    value = (expression as Record<string, unknown>).value;
+    // A named CAD parameter may be an authored expression referencing other
+    // semantic parameters. Read the INTENT dimension-binding evaluator, never
+    // the literal AST node or an independently evaluated browser expression.
+    const gate=bindings.evaluateDimensionBindingPlan(model.planProject(h.document))
+      .featureGates.find(row=>row.featureId==='plate');
+    value=gate?.resolvedPayload?.thicknessMm;
   } else {
     value = getFeature(h,'plate').payload.thicknessMm;
   }
@@ -585,9 +681,15 @@ export function reopenModelSession(text: string): ModelSession {
   // Accept a genuine authored plate/cut tombstone archive without
   // resurrecting deleted geometry; unrelated document formats are refused.
   const rows=model.featureTimelineOf(h.document);
+  const living=new Map(model.featuresOf(h.document).map(f=>[f.id,f.kind]));
   if(!rows.some(t=>t.featureId==='sketch.plate'&&t.active) ||
-      rows.some(t=>t.active&&!['sketch.plate','plate','cut','parameter.t'].includes(t.featureId)))
+      rows.some(t=>t.active&&
+        !['sketch.plate','plate','cut'].includes(t.featureId)&&
+        living.get(t.featureId)!=='parameter'))
     throw Error('Archive does not contain the supported plate/sketch/cut history.');
+  // Additional named INTENT parameters are safe semantic sources, not a new
+  // unsupported solid/mesh. Keep the rest of this plate workbench's bounded
+  // feature inventory while preserving genuine multi-row archive history.
   modelHoleValues(h);
   modelSketchDimensionValues(h);
   if(rows.some(t=>t.featureId==='plate'&&t.active))modelDimensionValues(h);

@@ -7,6 +7,7 @@ import {
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
+import { ParameterFormulaTable } from './ParameterFormulaTable';
 import type { SketchDimensionHandle } from './runtimeSketchHandles';
 import { nextCircleDrawing, type CircleDrawingState } from './circleDrawing';
 import { createLivePlateSession } from '@intuit3d/workflow-runtime/live-plate-session';
@@ -775,6 +776,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                 onClick={applyNamedParameter}>Apply parameter name + value</button>
               <p className="microcopy">One revision-fenced INTENT rename/value edit preserves stable parameter and body IDs. A renamed source stays renamed when the extrusion grip moves. Nonliteral formulas are never overwritten here.</p>
             </div>}
+            <ParameterFormulaTable history={history} disabled={!!pendingImport}
+              onCommit={next=>acceptHistory(next)} onMessage={setMessage}/>
             <button type="button" className="ribbon-button runtime-native-export"
               data-testid="runtime-freeze-thickness"
               disabled={thicknessBinding!=='named_parameter' || !!pendingImport}

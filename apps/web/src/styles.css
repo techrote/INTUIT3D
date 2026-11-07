@@ -322,3 +322,20 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
   outline:2px solid #78d5d8;outline-offset:2px;
 }
 .runtime-shell .runtime-feature-combo .recovery-actions { margin-top:18px; }
+
+
+/* Model-owned parameter formula spreadsheet: a revision-fenced draft surface. */
+.runtime-formula-sheet { margin-top: 14px; padding: 12px; border: 1px solid #35566b; border-radius: 7px; background: #152937; min-width: 0; }
+.runtime-formula-rows { display: grid; gap: 9px; max-height: 340px; overflow-y: auto; padding-right: 3px; }
+.runtime-formula-row { display: grid; grid-template-columns: minmax(0,1fr); gap: 5px; padding: 9px; background: #1d3444; border: 1px solid #355366; border-radius: 5px; min-width: 0; }
+.runtime-formula-row > small { overflow-wrap: anywhere; color: #96becd; }
+.runtime-formula-row label { display: grid; gap: 3px; min-width: 0; color: #c3d9e3; font-size: 11px; }
+.runtime-formula-row label input { width: 100%; min-width: 0; box-sizing: border-box; background: #0e2230; color: #ebf6fc; border: 1px solid #4b7485; padding: 7px; border-radius: 4px; font: 12px ui-monospace, monospace; }
+.runtime-formula-row label input:focus-visible { outline: 2px solid #6af0cd; outline-offset: 1px; }
+.runtime-formula-value { color: #b5f3de; font: 12px ui-monospace,monospace; }
+.runtime-formula-value small { display: block; color: #8faab8; }
+.runtime-formula-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+.runtime-formula-actions button { flex: 1 1 130px; }
+.runtime-formula-impact { padding: 9px; border-left: 3px solid #6bd9c2; margin-top: 9px; font-size: 11px; color: #d2e8ed; overflow-wrap: anywhere; }
+.runtime-formula-impact p { margin: 6px 0; }
+.runtime-formula-impact small { color: #86a9ba; }
