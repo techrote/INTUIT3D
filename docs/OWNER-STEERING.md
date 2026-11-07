@@ -1,12 +1,12 @@
 # INTUIT3D — Owner Steering & Programme Assessment
 
-**Status:** Live project authority and intake protocol. **Maintainer:** INTEGRATION & QA. **Readers:** all six permanent hourly lanes at the start of every run.
+**Status:** Live project authority and intake protocol. **Maintainer:** INTEGRATION & QA. **Readers:** all eight owner-approved permanent hourly lanes at the start of every run.
 
 ## Purpose
 
-Provide one durable, project-wide interface between the repository owner and a continuously operating six-lane engineering workforce. The owner may discuss progress, feature direction, UX, architecture and priorities with Integration & QA. The integration worker captures decisions in this document and/or linked GitHub issues/ADRs, ensures they are discoverable and assesses whether the real product meets the owner's intent.
+Provide one durable, project-wide interface between the repository owner and a continuously operating eight-lane engineering workforce. The owner may discuss progress, feature direction, UX, architecture and priorities with Integration & QA. The integration worker captures decisions in this document and/or linked GitHub issues/ADRs, ensures they are discoverable and assesses whether the real product meets the owner's intent.
 
-This is **not** a central work planner. INTENT, SKETCH, KERNEL, WORKBENCH and RUNTIME continue to choose, prototype, implement and qualify independent dependency-ready tasks inside their scopes. INTEGRATION keeps code/CI coherent, qualifies/merges admissible PRs and records owner guidance. It must not spawn, pause or redirect other scheduled tasks.
+This is **not** a central work planner. INTENT, SKETCH, KERNEL, WORKBENCH, RUNTIME, FEATUREOPS and PLATFORM continue to choose, prototype, implement and qualify independent dependency-ready tasks inside their scopes. INTEGRATION keeps code/CI coherent, qualifies/merges admissible PRs and records owner guidance. It must not spawn, pause or redirect other scheduled tasks.
 
 ## Authority and classification
 
@@ -38,6 +38,8 @@ Owner input can be committed here by a repository maintainer acting on explicit 
 | ST-004 | Accepted owner steering interface | Use INTEGRATION & QA for holistic status assessment and guidance intake; write consequential direction into shared GitHub authority accessible to every lane. Integration is not a dispatcher. | This file, docs/ORCHESTRATION.md and startup audits |
 | ST-005 | **Accepted owner decision, 2026-11-06** | Expand from five to **six** independent fixed hourly lanes by adding Workflow Runtime. Historical ST-002's *count* is superseded; its no-dispatch principle remains. | [Owner-approved issue #49](https://github.com/techrote/INTUIT3D/issues/49), `packages/workflow-runtime/**` only; original five ownership boundaries and single Integration merge authority unchanged |
 | ST-006 | **Accepted owner delivery priority, 2026-11-07** | Favour connected runnable CAD features and verified user workflows over speculative defect chains, micro-regression PRs and document-only review cycles. Integrate mature RUNTIME/KERNEL and deliver an honest sketch→extrude→cut→retrospective edit→rebuild→undo/archive/STEP workflow; preserve all exactness/independent/human evidence gates. | [Integration deliverable #5](https://github.com/techrote/INTUIT3D/issues/5), [model/native execution PR #60](https://github.com/techrote/INTUIT3D/pull/60), six existing lane scopes; observable commands, passing native + graphical qualification, precise gaps to production acceptance |
+| ST-007 | **Accepted owner decision, 2026-11-07** | Add independent seventh FEATUREOPS lane for new real mechanical part authoring and generalized parametric operations, not a parallel model/solver/kernel. | [#80](https://github.com/techrote/INTUIT3D/issues/80); exclusive `packages/feature-ops/**`; CI/lockfile and guarded merge remain Integration-owned |
+| ST-008 | **Accepted owner decision, 2026-11-07** | Add independent eighth PLATFORM lane for reproducible pinned OCCT 8.0.1 C++ and truly independent non-OCCT STEP readback. | [#81](https://github.com/techrote/INTUIT3D/issues/81); exclusive `platform/native-toolchain/**` and `conformance/external-cad/**` |
 
 These entries record the owner's already stated project objectives; they do **not** claim any feature is implemented, tested or released. Newly accepted decisions receive a new stable ID, date and issue/ADR reference when available.
 
@@ -60,6 +62,13 @@ These entries record the owner's already stated project objectives; they do **no
 - **Verification:** runnable non-mock semantic→sketch→native STEP fixture; correct retrospective changed dimensions and dependency invalidation; two actual STEP files/readback evidence; abort/corruption gates retained; exact-head Ubuntu/Windows and Linux native qualification; actual browser checks for UX. Production OCCT 8.0.1 C++, independent external STEP reader, topological lineage, Windows-native and human acceptance remain distinct unfinished gates until executed.
 - **Implementation references:** [RUNTIME #51](https://github.com/techrote/INTUIT3D/pull/51), [KERNEL #54](https://github.com/techrote/INTUIT3D/pull/54), [INTENT #58](https://github.com/techrote/INTUIT3D/pull/58), [WORKBENCH #59](https://github.com/techrote/INTUIT3D/pull/59), [INTEGRATION #60](https://github.com/techrote/INTUIT3D/pull/60). CI and accepted-main evidence must be confirmed separately; a merge is not a test pass.
 - **Supersedes:** no numbered engineering safety requirement or ST-005. Extends ST-001 delivery priorities and ST-003 research-to-tested-product expectations.
+
+### ST-007 and ST-008 — New product implementation lanes
+
+- **Recorded and classified:** 7 November 2026, explicitly owner-approved decisions in [FEATUREOPS #80](https://github.com/techrote/INTUIT3D/issues/80) and [PLATFORM #81](https://github.com/techrote/INTUIT3D/issues/81).
+- **Ownership:** FEATUREOPS writes only `packages/feature-ops/**`; PLATFORM writes only `platform/native-toolchain/**` and `conformance/external-cad/**`. No other lane's write set changes. INTEGRATION alone owns shared manifests, checks, status, admission and merges.
+- **Observable acceptance:** a new part authored/rebuilt/undoable through accepted semantic contracts; real pinned C++ executable/STEP and independently reconstructed external CAD geometry with preserved artifacts. Experimental OCP and a custom STEP text checker do not constitute production or independent external CAD qualification.
+- **Prior authority:** expands only the historical six-lane count of ST-005, retaining no-dispatch, explicit exactness gates and immutable existing source ownership. These edits neither create nor alter schedules.
 
 ## Intake entry template
 
