@@ -63,6 +63,18 @@ class ExternalCadHarness(unittest.TestCase):
         rays4=mod.sample_rays(cases[0]); rays5=mod.sample_rays(cases[2]); raysu=mod.sample_rays(cases[3])
         self.assertIn('central.material',[x[0] for x in rays4]); self.assertNotIn('central.material',[x[0] for x in rays5]); self.assertIn('central.material',[x[0] for x in raysu]);
         self.assertEqual(sum(r[-1]=='empty' for r in rays5),6)
+    def test_actual_pinned_744_step_g_cli_regression(self):
+        # Original exact hosted failure: step-g rejects --strict --exact
+        # --repair none --report FILE, supporting only [-v] -o OUT IN.
+        # This is a SOURCE harness test; physical import remains a hosted gate.
+        source = self.root / 'flange.four.step'
+        dest = self.root / 'imported.g'
+        argv = mod.step_g_argv('/brlcad/bin/step-g', dest, source)
+        self.assertEqual(argv, ['/brlcad/bin/step-g', '-o', str(dest), str(source)])
+        self.assertNotIn('--strict', argv)
+        self.assertNotIn('--report', argv)
+        self.assertNotIn('--repair', argv)
+
     def test_missing_real_engine_is_not_a_pass(self):
         with self.assertRaises(mod.NotQualified): mod.tool('definitely-not-a-real-brlcad-engine-91827')
 
