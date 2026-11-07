@@ -47,6 +47,10 @@
     "./body-operation-lifecycle/v1": {
       "types": "./body-operation-lifecycle.d.mts",
       "default": "./src/body-operation-lifecycle.mjs"
+    },
+    "./multi-feature-dimensions/v1": {
+      "types": "./multi-feature-dimensions.d.mts",
+      "default": "./src/multi-feature-dimensions.mjs"
     }
   },
   "peerDependencies": {
