@@ -20,6 +20,7 @@ test('pinned C++ result still has experimental provenance',()=>{
  assert.equal(assessment.independentInteroperability,false);
  assert.equal(assessment.artifactSha256,'a'.repeat(64));
  assert.equal(assessment.stepVerification,'occt-7.9.3.1-separate-process');
+ assert.equal(assessment.part21Audit,null);
 });
 test('cross-engine substitution, wrong version, bad digest and stale revision',()=>{
  for(const override of [{backend:'OCP-python-prototype',occtVersion:'7.9.3.1'},
@@ -35,4 +36,16 @@ test('missing or displaced cylindrical holes fail admission',()=>{
  assert.throws(()=>assessOcct8PlateResponse(request,
    {...response,stepReadback:{...metrics(),cylindricalHoles:
      [{x:-29,y:0,radius:6,axisZ:1},{x:30,y:0,radius:6,axisZ:1}]}},{currentRevision:1}));
+});
+
+test('independent Part 21 plate-subset evidence is bound to the STEP digest without claiming full interoperability',()=>{
+ const audit={kind:'part21-plate-structural-v1',sha256:'a'.repeat(64)};
+ const admitted=assessOcct8PlateResponse(request,{...response,part21Audit:audit},{currentRevision:1});
+ assert.deepEqual(admitted.part21Audit,audit);
+ assert.equal(admitted.independentInteroperability,false);
+ for (const bad of [{kind:'part21-plate-structural-v1',sha256:'b'.repeat(64)},
+                   {kind:'full-step-certified',sha256:'a'.repeat(64)},{}]) {
+   assert.throws(()=>assessOcct8PlateResponse(request,
+     {...response,part21Audit:bad},{currentRevision:1}));
+ }
 });
