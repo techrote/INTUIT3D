@@ -71,7 +71,7 @@ export function authorCircularBoltPattern(history,request,services) {
   const extrusion=features.find(f=>f.id===extrudeId);
   const cut=features.find(f=>f.id===cutId);
   if(sketch?.kind!=='sketch'||!sketch.payload?.sketch||
-     !same(sketch.writeTargets,[])||
+     !Array.isArray(sketch.writeTargets)||sketch.writeTargets.length!==0||
      extrusion?.kind!=='extrude'||!same(extrusion.writeTargets,bodyId)||
      extrusion.payload?.sourceSketchId!==sketchId||
      !extrusion.dependsOn?.includes(sketchId)||
