@@ -43,6 +43,10 @@
     "./ordered-cut-swap/v1": {
       "types": "./ordered-cut-swap.d.mts",
       "default": "./src/ordered-cut-swap.mjs"
+    },
+    "./body-operation-lifecycle/v1": {
+      "types": "./body-operation-lifecycle.d.mts",
+      "default": "./src/body-operation-lifecycle.mjs"
     }
   },
   "peerDependencies": {
