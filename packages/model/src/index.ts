@@ -438,8 +438,11 @@ export function planProject(input: ProjectDocument): EvaluationPlan {
     }
   }
 
-  // Stable Kahn sort of only ready nodes. The arbitrary tie breaker affects
-  // execution scheduling, not authoritative user-authored feature semantics.
+  // Stable Kahn sort of only ready nodes. Use a binary min-heap keyed by
+  // authored ordinal: a wide independent-feature frontier must not pay for
+  // repeated full-array sort/shift (quadratic), while preserving the exact
+  // scheduling order of the previous implementation. This queue is derived
+  // and makes no new authoritative chronology/dependency assertions.
   const ready = features.filter((f) => status.get(f.id) === 'ready');
   const ordinal = new Map(features.map((f, i) => [f.id, i] as const));
   const indegree = new Map<string, number>(ready.map((f) => [f.id, 0] as const));
@@ -451,15 +454,46 @@ export function planProject(input: ProjectDocument): EvaluationPlan {
       followers.get(dep)!.push(f.id);
     }
   }
-  const queue = ready.filter((f) => indegree.get(f.id) === 0).map((f) => f.id);
+
+  const frontier: string[] = [];
+  const pushFrontier = (id: string): void => {
+    let i = frontier.length;
+    frontier.push(id);
+    const rank = ordinal.get(id)!;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (ordinal.get(frontier[parent])! <= rank) break;
+      frontier[i] = frontier[parent];
+      i = parent;
+    }
+    frontier[i] = id;
+  };
+  const popFrontier = (): string => {
+    const first = frontier[0]!;
+    const last = frontier.pop()!;
+    if (frontier.length > 0) {
+      let i = 0;
+      const rank = ordinal.get(last)!;
+      while (2 * i + 1 < frontier.length) {
+        let child = 2 * i + 1;
+        if (child + 1 < frontier.length &&
+            ordinal.get(frontier[child + 1])! < ordinal.get(frontier[child])!) child++;
+        if (rank <= ordinal.get(frontier[child])!) break;
+        frontier[i] = frontier[child];
+        i = child;
+      }
+      frontier[i] = last;
+    }
+    return first;
+  };
+  for (const f of ready) if (indegree.get(f.id) === 0) pushFrontier(f.id);
   const sorted: string[] = [];
-  while (queue.length) {
-    queue.sort((a, b) => ordinal.get(a)! - ordinal.get(b)!);
-    const id = queue.shift()!;
+  while (frontier.length > 0) {
+    const id = popFrontier();
     sorted.push(id);
     for (const next of followers.get(id)!) {
       indegree.set(next, indegree.get(next)! - 1);
-      if (indegree.get(next) === 0) queue.push(next);
+      if (indegree.get(next) === 0) pushFrontier(next);
     }
   }
   if (sorted.length !== ready.length) {
