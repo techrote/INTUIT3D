@@ -401,12 +401,12 @@ claim they are dimension-owned.
 
 ## Retrospective parameter expression editing — v1 authoring API
 
-The additive \`@intuit3d/model/parameter-edit\` package export provides
-\`previewParameterEdit(document, request)\` and
-\`commitUndoableParameterEdit(undoHistory, request)\`. Both accept a
-\`intuit3d.parameter-edit\` version-1 request with fresh \`eventId\`, stable
-\`featureId\`, \`expectedRevision\`, replacement scalar \`expression\` and
-\`admission\` (\`require_admissible\` or \`permit_unresolved\`).
+The additive `@intuit3d/model/parameter-edit` package export provides
+`previewParameterEdit(document, request)` and
+`commitUndoableParameterEdit(undoHistory, request)`. Both accept a
+`intuit3d.parameter-edit` version-1 request with fresh `eventId`, stable
+`featureId`, `expectedRevision`, replacement scalar `expression` and
+`admission` (`require_admissible` or `permit_unresolved`).
 
 A valid reauthoring operation changes the existing parameter feature's source
 expression as **one append-only journal event** and (on commit) one durable undo
@@ -424,7 +424,7 @@ responsibilities.
 
 Example:
 
-\`\`\`ts
+```ts
 import { commitUndoableParameterEdit, PARAMETER_EDIT_FORMAT } from
   '@intuit3d/model/parameter-edit';
 
@@ -437,19 +437,19 @@ const next = commitUndoableParameterEdit(history, {
   expression: { op: 'literal', value: 12, unit: 'mm' },
   admission: 'require_admissible',
 });
-\`\`\`
+```
 
 To execute a representative real-public-package consumer workflow with an
 actual SKETCH solver and accepted WORKFLOW RUNTIME (sketch with two holes,
 extrude preview, retrospective 8→12 mm edit, dependent invalidation, undo/redo
 and archive save/reopen):
 
-\`\`\`sh
+```sh
 npm ci
 node --experimental-strip-types packages/model/examples/plate-parameter-lifecycle.mjs
-\`\`\`
+```
 
-The example explicitly reports \`cutStatus: "pending_exact_provider"\` and
-\`exactGeometryAvailable: false\`. It does not generate a native B-rep, export
+The example explicitly reports `cutStatus: "pending_exact_provider"` and
+`exactGeometryAvailable: false`. It does not generate a native B-rep, export
 STEP or establish browser/human acceptance. These require independent
 qualification and must never be inferred from successful model replay.
