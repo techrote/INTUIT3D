@@ -10,7 +10,7 @@ const metrics=()=>({valid:true,solidCount:1,...expectedPlateMetrics(request.plat
 const response={protocol:PLATE_PROTOCOL,requestId:request.requestId,featureId:request.featureId,
  revision:1,backend:OCCT8_BACKEND,occtVersion:OCCT8_VERSION,status:'validated_exact',
  units:'mm',source:metrics(),stepReadback:metrics(),stepWritten:true,
- stepSha256:'a'.repeat(64),stepPath:'/tmp/non-authoritative.step'};
+ stepSha256:'a'.repeat(64),stepVerification:'occt-7.9.3.1-separate-process',stepPath:'/tmp/non-authoritative.step'};
 test('pinned C++ result still has experimental provenance',()=>{
  const assessment=assessOcct8PlateResponse(request,response,{currentRevision:1});
  assert.equal(assessment.kind,'experimental_report');
@@ -19,10 +19,12 @@ test('pinned C++ result still has experimental provenance',()=>{
  assert.equal(assessment.exactAuthority,false);
  assert.equal(assessment.independentInteroperability,false);
  assert.equal(assessment.artifactSha256,'a'.repeat(64));
+ assert.equal(assessment.stepVerification,'occt-7.9.3.1-separate-process');
 });
 test('cross-engine substitution, wrong version, bad digest and stale revision',()=>{
  for(const override of [{backend:'OCP-python-prototype',occtVersion:'7.9.3.1'},
-                         {occtVersion:'8.0.0'},{stepSha256:'not-hash'}]){
+                         {occtVersion:'8.0.0'},{stepSha256:'not-hash'},
+                         {stepVerification:'independently-certified'}]){
   assert.throws(()=>assessOcct8PlateResponse(request,{...response,...override},{currentRevision:1}));
  }
  assert.equal(assessOcct8PlateResponse(request,response,{currentRevision:2}).code,'stale_revision');
