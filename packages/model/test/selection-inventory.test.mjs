@@ -109,9 +109,7 @@ test('retrospective thickness edit invalidates affected branch while preserving 
 
 test('explicit face recovery persists through undo/redo/archive; provider proof is never persisted',()=>{
   let history=selectedHistory();
-  history={...history,document:history.document}; // no mutation
   const old=history.document;
-  history=selectedHistory();
   history=importThicknessChange(history);
   const provider=faceReceipt(history.document,{split:true});
   history=commitUndoableSemanticSelectionRecovery(history,{
@@ -127,9 +125,9 @@ test('explicit face recovery persists through undo/redo/archive; provider proof 
   const pending=inspectSelectionInventory(deserializeProject(serializeProject(reopened.document)));
   assert.deepEqual(pending.selections.map(s=>s.status),['pending_evidence','pending_evidence']);
   history=undoTransaction(reopened,['event.undo-choice']);
-  assert.deepEqual(featuresOf(history.document).find(f=>f.id==='feature.cut').payload.sourceFace.anchor,face);
+  assert.deepEqual(JSON.parse(JSON.stringify(featuresOf(history.document).find(f=>f.id==='feature.cut').payload.sourceFace.anchor)),face);
   history=redoTransaction(history,['event.redo-choice']);
-  assert.deepEqual(featuresOf(history.document).find(f=>f.id==='feature.cut').payload.sourceFace.anchor,left);
+  assert.deepEqual(JSON.parse(JSON.stringify(featuresOf(history.document).find(f=>f.id==='feature.cut').payload.sourceFace.anchor)),left);
   assert.equal(featuresOf(history.document).find(f=>f.id==='feature.measure').payload.sourceBody.anchor.roleId,
     'body.plate');
   assert.equal(planProject(history.document).features.every(s=>s.status==='ready'),true);
@@ -151,7 +149,9 @@ test('receipt collision, stale/replaced reference, wrong project and foreign tar
   assert.throws(()=>inspectSelectionInventory(doc,[{...a,reference:ref(right)}]),ProjectRevisionError);
   assert.throws(()=>inspectSelectionInventory(doc,[{...a,field:'missing'}]),ProjectFormatError);
   assert.throws(()=>inspectSelectionInventory(doc,[{...a,provider:'independent_certified'}]),ProjectFormatError);
-  assert.throws(()=>inspectSelectionInventory(doc,[{...a,steps:a.steps.slice(1)}]),Error);
+  const incomplete=inspectSelectionInventory(doc,[{...a,steps:a.steps.slice(1)}]);
+  assert.equal(incomplete.selections[0].status,'pending_evidence');
+  assert.ok(incomplete.selections[0].diagnosticCodes.includes('MISSING_STEP'));
 });
 
 test('authored body reference cannot impersonate a non-owned semantic output',()=>{
@@ -171,4 +171,22 @@ test('missing provider evidence is not inferred from compatible names after save
       writeTargets:[],payload:{text:'unrelated'}}});
   assert.deepEqual(inspectSelectionInventory(unrelated).selections.map(s=>s.status),
     ['pending_evidence','pending_evidence']);
+});
+
+test('public runnable plate-and-holes recovery example executes without geometry overclaims',async()=>{
+  const {spawnSync}=await import('node:child_process');
+  const {fileURLToPath}=await import('node:url');
+  const file=fileURLToPath(new URL('../examples/selection-inventory.mjs',import.meta.url));
+  const result=spawnSync(process.execPath,['--experimental-strip-types',file],
+    {encoding:'utf8',timeout:15000});
+  assert.equal(result.status,0,result.stderr || result.stdout);
+  const report=JSON.parse(result.stdout.trim());
+  assert.equal(report.format,'intuit3d.semantic-selection-inventory-demo');
+  assert.equal(report.thicknessMm,12);
+  assert.equal(report.bodyId,'body.plate');
+  assert.equal(report.selectedFaceRoleId,'face.top.right');
+  assert.deepEqual(report.repairCandidates,['face.top.left','face.top.right']);
+  assert.deepEqual(report.postReopenStatus,['pending_evidence','pending_evidence']);
+  assert.deepEqual(report.changedBranch,['feature.extrude','feature.cut','feature.measure']);
+  assert.equal(report.exactGeometryAuthority,false);
 });
