@@ -6,7 +6,7 @@ Applies to **every** agent implementation, research, validation and integration 
 
 Build an ambitious, local-first, engineering-grade, intent-first parametric CAD package with Fusion-inspired interaction. Deliver working code at high velocity without sacrificing geometric truth. The defining product capabilities are: non-chronological intent and dependency-aware evaluation, retrospective constraints/parameters, direct + parametric editing, durable semantic references and explicit recovery from unsolved operations.
 
-The long-lived programme has **six permanent scheduled worker lanes**. Each worker owns a broad, clearly bounded subsystem, selects its own highest-value dependency-ready work on every run and does not need a central planner. **Do not spawn, schedule, pause or redirect other workers, and do not create scheduswarm queue successors.** A standing integration lane is a code integrator and quality owner, *not* a dispatcher or centralized selector of other lanes' work.
+The long-lived programme has **eight owner-approved permanent scheduled worker lanes** ([#49](https://github.com/techrote/INTUIT3D/issues/49), [#80](https://github.com/techrote/INTUIT3D/issues/80), [#81](https://github.com/techrote/INTUIT3D/issues/81)). Each worker owns a broad, clearly bounded subsystem, selects its own highest-value dependency-ready work on every run and does not need a central planner. **Do not spawn, schedule, pause or redirect other workers, and do not create scheduswarm queue successors.** A standing integration lane is a code integrator and quality owner, *not* a dispatcher or centralized selector of other lanes' work.
 
 ## Mandatory fresh audit
 
@@ -26,6 +26,8 @@ At every run:
 - **KERNEL:** `native/**`, `packages/kernel-contract/**` — pinned OCCT experiments and integration, isolated workers, exact B-rep, validation, STEP, measured fallback strategy.
 - **WORKBENCH:** `apps/web/**` — React/TypeScript local interface, viewport, UX, command routing, timeline/dependency graph, selection and direct manipulation.
 - **RUNTIME:** `packages/workflow-runtime/**` — authoritative application workflow bridge using versioned INTENT/SKETCH/KERNEL contracts, revision-fenced results and explicit preview/pending/exact provenance, approved in [issue #49](https://github.com/techrote/INTUIT3D/issues/49).
+- **FEATUREOPS:** `packages/feature-ops/**` — versioned mechanical operations using existing INTENT/SKETCH/RUNTIME/KERNEL, owner-approved [#80](https://github.com/techrote/INTUIT3D/issues/80).
+- **PLATFORM:** `platform/native-toolchain/**`, `conformance/external-cad/**` — pinned OCCT build/provisioning and truly independent CAD STEP qualification, owner-approved [#81](https://github.com/techrote/INTUIT3D/issues/81); no edits to KERNEL-owned `native/**`.
 - **INTEGRATION:** shared workspace/CI, top-level configs, cross-lane compatibility, qualification, orderly merges, demos, official evidence/roadmap/status; **owner steering intake, evidence-based programme assessment and durable routing of approved direction**; proactively integrate qualified research and feature PRs.
 
 Owner steering is authoritative only when explicitly accepted and recorded. Workers should read docs/OWNER-STEERING.md every run, apply decisions relevant to their owned lane, and maintain their independent task selection; INTEGRATION maintains the steering ledger but is not a dispatcher or supervisor. A steering conversation not recorded in GitHub is not automatically visible to other scheduled workers.
