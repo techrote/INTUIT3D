@@ -1,3 +1,13 @@
+## 7 November 2026 — integrated user-operable experimental native STEP download
+
+**Accepted-main merge checkpoint:** `c5218b7fc1fcdbd68ccae87868ead1da003eb218` after guarded admission of [RUNTIME #69](https://github.com/techrote/INTUIT3D/pull/69), [WORKBENCH #72](https://github.com/techrote/INTUIT3D/pull/72), [INTENT #70](https://github.com/techrote/INTUIT3D/pull/70) and [SKETCH #71](https://github.com/techrote/INTUIT3D/pull/71). The combined-main push gate is tracked at [#42335478735](https://github.com/techrote/INTUIT3D/actions/runs/42335478735); no pass is assumed before completion.
+
+**Working capability:** In the model-backed React workbench, a user can pair a separate local RUNTIME host using a one-launch token, edit an earlier thickness parameter, undo/redo/save/reopen, request a real experimental OCP two-hole Boolean + STEP and download SHA-256-verified STEP bytes. The viewport remains correctly labelled preview/non-exact. [#72 exact-head workspace CI](https://github.com/techrote/INTUIT3D/actions/runs/42335152305) and [real Chromium click/keyboard/download gate](https://github.com/techrote/INTUIT3D/actions/runs/42335152302) passed; the browser CI's provider is **synthetic**, so it does not establish browser-to-real-OCP execution. RUNTIME #69's own HTTP native demo was not executed at its acceptance checkpoint; current Integration admission adds the missing real provider test.
+
+**Candidate integration verification [#68](https://github.com/techrote/INTUIT3D/pull/68):** replace the earlier weaker duplicate HTTP bridge with one actual Chromium → accepted RUNTIME token-authenticated localhost server → pinned OCP 7.9.3.1 → nonempty real STEP download. Test original/edited thickness revision, distinct STEP bytes, explicit pending/exact status, and preserve screenshot/STEP evidence. This remains **candidate only** until new exact-head Linux CI passes. No weaker duplicate local authority should be admitted.
+
+**Remaining actual blockers:** pinned OCCT 8.0.1 C++ worker [#67](https://github.com/techrote/INTUIT3D/pull/67) still has no compiled geometry execution; independent non-OCCT STEP reading, Windows-native solid generation, real OCCT topology lineage, and human CAD UX signoff are not established. INTENT #62, SKETCH #63, WORKBENCH #64, KERNEL #3 and INTEGRATION #5 are continuing scoped deliverables. RUNTIME founding #49 should be evaluated for closure only after its initial acceptance is demonstrably met on accepted main.
+
 # INTUIT3D — live integration status
 
 ## 7 November 2026 — newly admitted runtime, native experimental provider and fast planner
