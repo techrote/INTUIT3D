@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelFeature, removeModelHole,
-  newModelPlateSession, previewModelProfile, redoModelSession,
+  newModelPlateSession, patternModelHoles, previewModelProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
 } from './runtimeSession.ts';
 
@@ -214,4 +214,42 @@ test('added hole is a real editable cut with durable identity, archive, undo and
   const outside=addModelHole(h,'holeOutside',1000,1000,10);
   assert.equal(outside.kind,'refused');
   assert.deepEqual(Object.keys(modelHoleValues(h)),['holeA','holeB']);
+});
+
+test('one-shot rectangular hole array authors solved circular cuts, retains IDs through undo/archive and does not link copies',()=>{
+  const h=newModelPlateSession('workbench.pattern.holes');
+  const startArchive=serializeModelSession(h);
+  const source=modelHoleValues(h).holeA;
+  const patterned=patternModelHoles(h,{
+    sourceHoleId:'holeA',rows:2,columns:2,pitchXmm:20,pitchYmm:20,
+  });
+  assert.equal(patterned.kind,'committed');
+  if(patterned.kind!=='committed')return;
+  assert.equal(patterned.history.document.revision,h.document.revision+1);
+  const id=`array.${h.document.revision}:r0c1`;
+  assert.deepEqual(modelHoleValues(patterned.history)[id],{x:source.x+20,y:source.y,diameter:source.diameter});
+  assert.equal(Object.keys(modelHoleValues(patterned.history)).length,5);
+  assert.equal(previewModelProfile(patterned.report)?.profile.holes.length,5);
+  assert.deepEqual(patterned.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  assert.equal(patterned.report.features.find(f=>f.featureId==='cut')?.status,'pending_exact_provider');
+  const reopened=reopenModelSession(serializeModelSession(patterned.history));
+  assert.deepEqual(modelHoleValues(reopened),modelHoleValues(patterned.history));
+  const undo=undoModelSession(reopened);
+  assert.equal(serializeModelSession(undo),startArchive);
+  const redo=redoModelSession(undo);
+  assert.deepEqual(modelHoleValues(redo),modelHoleValues(patterned.history));
+  const changedSource=editModelHole(patterned.history,'holeA','diameter',10);
+  assert.equal(changedSource.kind,'committed');
+  if(changedSource.kind!=='committed')return;
+  assert.equal(modelHoleValues(changedSource.history).holeA.diameter,10);
+  assert.equal(modelHoleValues(changedSource.history)[id].diameter,source.diameter,
+    'array copies must not misrepresent themselves as associative');
+  const refused=patternModelHoles(h,{
+    sourceHoleId:'holeA',rows:2,columns:2,pitchXmm:4,pitchYmm:20,
+  });
+  assert.equal(refused.kind,'refused');
+  assert.equal(serializeModelSession(h),startArchive);
+  assert.throws(()=>patternModelHoles(h,{
+    sourceHoleId:'holeA',rows:9,columns:2,pitchXmm:20,pitchYmm:20,
+  }),/Array requires/);
 });
