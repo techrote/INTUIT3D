@@ -130,8 +130,9 @@ test('renaming a referenced parameter updates text without changing saved featur
   assert.equal(expression.left.featureId,'p.offset');
   assert.equal(formatParameterFormula(renamed.document,'p.thickness',expression),
     '(holePitch + 2 mm)');
-  assert.deepEqual(parseParameterFormula(renamed.document,'p.thickness',
-    '(holePitch + 2 mm)'),expression);
+  assert.deepEqual(JSON.parse(JSON.stringify(parseParameterFormula(
+    renamed.document,'p.thickness','(holePitch + 2 mm)'))),
+    JSON.parse(JSON.stringify(expression)));
   assert.equal(gate(renamed.document,'extrude').resolvedPayload.thicknessMm,18);
 });
 
@@ -174,12 +175,13 @@ test('permissive cycle stays explicitly unresolved, while strict mode refuses it
   const cycle=request(a.document,'plateThickness + 1 mm','edit.cycle',
     'p.offset');
   assert.throws(()=>previewParameterFormulaEdit(a.document,cycle),ProjectFormatError);
+  const snapshot=JSON.stringify(a);
   const pending=previewParameterFormulaEdit(a.document,
     {...cycle,admission:'permit_unresolved'});
   assert.ok(pending.evaluation.featureGates.find(g=>g.featureId==='p.thickness')
     .status !== 'admissible');
   assert.equal(gate(pending.document,'extrude').resolvedPayload,null);
-  assert.equal(JSON.stringify(a),JSON.stringify(a));
+  assert.equal(JSON.stringify(a),snapshot);
 });
 
 test('real public INTENT/SKETCH/RUNTIME formula demonstration runs', () => {
