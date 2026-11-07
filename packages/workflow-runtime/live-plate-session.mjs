@@ -35,13 +35,22 @@ export function createLivePlateSession({
     return {history,archive,report};
   }
   let observed=snapshot().archive;
-  let serial=0,controller=null,latest=null,latestArchive=null;
-  function discard() {
+  let serial=0,controller=null,latest=null,latestArchive=null,lastOutcomeKind=null;
+  function discard({preserveCurrentStep=false}={}) {
+    // A fresh native attempt or explicit cancellation does not revoke a
+    // *previously verified*, still-current STEP. An actual model edit/reopen
+    // always calls discard() without this option and invalidates the receipt.
+    const retain=preserveCurrentStep &&
+      latest?.kind==='experimental_plate_evaluated' && !!latest.step &&
+      latestArchive===observed;
     serial++;
     controller?.abort();
     controller=null;
-    latest=null;
-    latestArchive=null;
+    if(!retain) {
+      latest=null;
+      latestArchive=null;
+    }
+    lastOutcomeKind=null;
   }
   function synchronize() {
     const current=snapshot();
@@ -66,7 +75,7 @@ export function createLivePlateSession({
       return {format:LIVE_PLATE_SESSION_FORMAT,version:LIVE_PLATE_SESSION_VERSION,
         projectId:state.report.projectId,revision:state.report.revision,
         inFlight:controller!==null,hasVerifiedStep:!!latest?.step,
-        lastResultKind:latest?.kind??null,exactAuthority:false};
+        lastResultKind:lastOutcomeKind,exactAuthority:false};
     },
     /** Delegate a genuine INTENT command; commit only if revision/project fences hold. */
     applyEdit(edit) {
@@ -106,7 +115,7 @@ export function createLivePlateSession({
         exactReuseAllowed:false};
     },
     save() {return synchronize().archive;},
-    cancel() {discard();},
+    cancel() {synchronize();discard({preserveCurrentStep:true});},
     /** A download button must obtain bytes through this synchronously, at use time. */
     currentStep() {
       const current=synchronize();
@@ -117,7 +126,7 @@ export function createLivePlateSession({
     /** Latest request wins, even if a cancelled provider ignores AbortSignal. */
     async evaluate({url,token,requestId,exportStep=true,signal,fetchImpl}={}) {
       const before=synchronize();
-      discard();
+      discard({preserveCurrentStep:true});
       const operation=serial;
       const abort=new AbortController();
       controller=abort;
@@ -155,8 +164,15 @@ export function createLivePlateSession({
              result.result?.requestId!==id||result.result?.cutFeatureId!==cutFeatureId||
              (exportStep&&!result.step)||(!exportStep&&result.step)))
           return refuse('invalid_provider_result','native result does not match current authored request');
-        latest=result;
-        latestArchive=before.archive;
+        // A failed same-revision refresh must not erase already-verified
+        // bytes. A successful new STEP supersedes them. A model edit always
+        // clears both via the ordinary discard() path.
+        lastOutcomeKind=result.kind;
+        if(result.kind==='experimental_plate_evaluated' && result.step ||
+           !latest || latestArchive!==before.archive) {
+          latest=result;
+          latestArchive=before.archive;
+        }
         return result;
       } finally {
         signal?.removeEventListener('abort',onAbort);
@@ -180,6 +196,19 @@ export function createLivePlateSession({
         return {kind:'refused',edit:outcome,evaluation:null};
       const evaluation=await session.evaluate(options);
       return {kind:'submitted',edit:outcome,evaluation};
+    },
+    /**
+     * Reopen a saved project and request a fresh native STEP in ONE consumer
+     * command. Replacing a different authoritative archive requires explicit
+     * confirmation; refusal never dispatches a provider or changes the model.
+     * STEP remains experimental, even after successful same-engine readback.
+     */
+    async reopenAndEvaluate(serialized,{confirmReplacement=false,...options}={}) {
+      const reopened=session.reopen(serialized,{confirmReplacement});
+      if(reopened.kind==='refused')
+        return {kind:'refused',reopen:reopened,evaluation:null};
+      const evaluation=await session.evaluate(options);
+      return {kind:'submitted',reopen:reopened,evaluation};
     },
   };
   return Object.freeze(session);
