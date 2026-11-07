@@ -226,3 +226,38 @@ They are not physical OCCT qualification. Hosted execution using the
 real installed OCCT worker remains the required product gate. Independent
 AnvilCAD import, browser graphical acceptance, Windows-native compilation
 and cross-distribution ABI are separate.
+
+
+## Preserve the physical STEP outputs of the extracted offline worker
+
+The real C++ archive self-test now supports an **optional durable output directory**.
+Its original four cases remain mandatory and fail closed; this option preserves
+the newly generated STEP bytes instead of deleting them with the replay's
+temporary directory. The output is **outside the distributed bundle** so the
+signed inventory is not changed.
+
+\`\`\`bash
+python3 platform/native-toolchain/bundle_offline.py \
+  --qualification /path/to/qualification \
+  --prefix /path/to/pinned-occt-prefix \
+  --kernel-tree /path/to/exact-kernel-checkout \
+  --output /tmp/occt801-offline \
+  --replay-evidence /tmp/actual-extracted-four-step-evidence
+\`\`\`
+
+The fresh evidence directory contains
+\`fresh-{8,12,edited8,restored8}.step\`, matching
+\`request-{8,12,edited8,restored8}.json\` and \`evidence.json\`
+with individual STEP/request SHA-256 digests and exact KERNEL/OCCT/worker
+source identities. It is published only after four genuine C++ executions,
+STEP/readback/volume checks, a dimensional edit and restoration all succeed.
+Any failure removes the temporary evidence output without suppressing the
+C++ failure. The source-matched hosted example in the Platform-owned workflow
+template retains these bytes under its uploaded native-evidence directory.
+
+Existing installed archives may also be re-executed with
+\`python3 selftest.py --evidence-dir /new/output/directory\`; the destination
+must not exist. These files are **same-engine C++/Part 21 evidence**, *not*
+proof of independent non-OCCT import. Integration may pass the immutable
+STEP files and hashes to the STEP conformance lane for additional independent
+checks without rerunning the costly OCCT compilation.
