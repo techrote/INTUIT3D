@@ -402,8 +402,10 @@ async function main() {
     'Model-backed redo did not restore invalid authored intent');
   // Save and open an actual browser Blob through File.text(), with explicit
   // destructive replacement review, rather than pretending preview JSON is CAD.
-  check(await evaluate("(() => {window.__modelArchiveBlobs=[];const prior=URL.createObjectURL.bind(URL);URL.createObjectURL=(blob)=>{window.__modelArchiveBlobs.push(blob);return prior(blob)};return true})()"),
+  check(await evaluate("(() => {window.__modelArchiveBlobs=[];window.__modelDownloadNames=[];document.addEventListener('click',e=>{if(e.target instanceof HTMLAnchorElement&&e.target.download.endsWith('.i3d-model.json'))window.__modelDownloadNames.push(e.target.download)},true);const prior=URL.createObjectURL.bind(URL);URL.createObjectURL=(blob)=>{window.__modelArchiveBlobs.push(blob);return prior(blob)};return true})()"),
     'Cannot instrument browser model archive download');
+  check(await evaluate("document.querySelector('[data-testid=runtime-archive-state]')?.textContent?.includes('UNEXPORTED')"),
+    'new model not labelled as unexported');
   // Physical Ctrl+S in model-backed mode must download exactly ONE archive;
   // the unmounted preview sandbox must never save its separate document.
   await send('Input.dispatchKeyEvent',{type:'rawKeyDown',key:'Control',code:'ControlLeft',windowsVirtualKeyCode:17,modifiers:2});
@@ -412,17 +414,39 @@ async function main() {
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Control',code:'ControlLeft',windowsVirtualKeyCode:17});
   await eventually(()=>evaluate("window.__modelArchiveBlobs?.length===1"),'single Ctrl+S model archive Blob');
   check(await evaluate("window.__modelArchiveBlobs.length===1"),'Preview sandbox also handled model-only save shortcut');
+  check(await evaluate("window.__modelDownloadNames.length===1 && /^intuit3d-workbench[.]plate[.]one-r\\d+[.]i3d-model[.]json$/.test(window.__modelDownloadNames[0])"),
+    'archive download filename failed project/revision identity check');
+  check(await evaluate("document.querySelector('[data-testid=runtime-archive-state]')?.textContent?.includes('DOWNLOAD REQUESTED')"),
+    'successful archive download request did not update export status');
   check(await evaluate("(async()=>{const content=await window.__modelArchiveBlobs[0].text();const f=JSON.parse(content);return f.format==='intuit3d.model-archive' || content.includes('intuit3d.model-archive')})()"),
     'Downloaded archive is not model history');
   check(await evaluate("(async()=>{const data=await window.__modelArchiveBlobs[0].text();const dt=new DataTransfer();dt.items.add(new File([data],'plate.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
     'Cannot reinject saved model archive into real browser file input');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),'model archive import review');
+  check(await evaluate("document.querySelector('[data-testid=runtime-import-incoming]')?.textContent?.includes('undo /')"),
+    'model import review did not show incoming durable history');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
     'Model archive replacement confirmation missing');
   await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]')"),'model archive reopened');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
     'Save/reopen changed authored unsolved status');
   await screenshot('13-model-runtime-reopened.png');
+  // A genuine browser DragEvent follows the same worker validation/review as file input.
+  const beforeDrop=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  check(await evaluate("(async()=>{const data=await window.__modelArchiveBlobs[0].text();const dt=new DataTransfer();dt.items.add(new File([data],'dropped.i3d-model.json',{type:'application/json'}));return document.querySelector('.runtime-shell').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}))===false})()"),
+    'model archive drop did not prevent browser navigation');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),'drop archive review');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===beforeDrop,
+    'dropped file replaced current model before confirmation');
+  check(await evaluate("document.querySelector('[data-testid=runtime-import-incoming]')?.textContent?.includes('dropped.i3d-model.json')"),
+    'dropped archive name missing from review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(x=>x.textContent==='Cancel');b?.click();return !!b})()"),
+    'drop replacement cancel unavailable');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]')"),'drop cancellation');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===beforeDrop,
+    'cancelling dropped model changed journal');
+  check(await evaluate("(() => {const dt=new DataTransfer();dt.items.add(new File(['{}'],'1.json'));dt.items.add(new File(['{}'],'2.json'));document.querySelector('.runtime-shell').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));return document.querySelector('.runtime-message')?.textContent?.includes('exactly one')})()"),
+    'multiple-file drop was not refused');
 
   // Create a genuinely new semantic project. Cancel must preserve the
   // unresolved prior project; accepting resets the journal and project ID.
