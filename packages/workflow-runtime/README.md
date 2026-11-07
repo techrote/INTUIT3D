@@ -229,7 +229,7 @@ adds or removes circular holes in a **single undoable authoritative INTENT featu
 Operations are `{kind:'add',id,x,y,radius}` or `{kind:'remove',id}`; all
 coordinates and **radii** are in millimetres. Distinct stable IDs are required.
 New circles receive a named centre point, a fixed-centre constraint and
-a radius constraint in the actual SKETCH document; existing holes can be
+a radius-valued constraint named `<id>:diameter` (matching the accepted SKETCH fixture/WORKBENCH convention) in the actual SKETCH document; existing holes can be
 deleted only if their centre and radius are owned by exactly those two
 constraints with no external references. Attempts to destroy shared
 constraint intent are rejected rather than auto-healed. Multiple independent
