@@ -126,6 +126,7 @@ jobs:
             --prefix "$RUNNER_TEMP/intuit3d-native-work/occt-prefix" \
             --kernel-tree "$GITHUB_WORKSPACE/kernel-repo" \
             --output "$RUNNER_TEMP/intuit3d-native-work/offline-occt801" \
+            --replay-evidence "$RUNNER_TEMP/intuit3d-native-evidence/offline-extracted-fresh-steps" \
             | tee "$RUNNER_TEMP/intuit3d-native-evidence/offline-bundle-execution.json"
           test -s "$RUNNER_TEMP/intuit3d-native-work/offline-occt801.tar.gz"
           cp "$RUNNER_TEMP/intuit3d-native-work/offline-occt801.tar.gz" \
