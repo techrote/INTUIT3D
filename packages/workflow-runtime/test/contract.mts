@@ -21,3 +21,17 @@ const direct:WorkflowInvalidation=diffWorkflowPlans(model.planProject(session.do
 const exact:false=delta.exactReuseAllowed;
 const affected:readonly string[]=direct.invalidatedFeatureIds;
 void exact;void affected;
+
+import * as kernelPlate from '@intuit3d/kernel-contract/plate-v1';
+import {runExperimentalPlate} from '@intuit3d/kernel-contract/local-plate-provider';
+import {createExperimentalPlateWorkflow, rectanglePlateFromProfile,
+  type ExperimentalPlateWorkflowResult} from '../experimental-plate.mjs';
+const experimental=createExperimentalPlateWorkflow({runtime,model,
+  plateContract:kernelPlate,runExperimentalPlate});
+const experimentalResult:Promise<ExperimentalPlateWorkflowResult>=experimental.evaluate(session,{
+  requestId:'runtime.typed.plate',cutFeatureId:'cut',readCurrentHistory:()=>session});
+void experimentalResult;
+const rectangle=rectanglePlateFromProfile({status:'analytic_profile_only',units:'mm',
+  outer:[{x:0,y:0},{x:1,y:0},{x:1,y:1},{x:0,y:1}],holes:[{x:0.5,y:0.5,radius:0.1}]},1);
+const width:number=rectangle.width;
+void width;
