@@ -122,6 +122,9 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       const point=pointFromScreen(event.currentTarget,event.clientX,event.clientY);
       if(point)onCirclePick(point.x,point.y);
     }}>
+    {onCirclePick&&<rect x={minX-width*.12} y={minY-height*.12}
+      width={width*1.24} height={height*1.24}
+      fill="transparent" pointerEvents="all" data-testid="runtime-circle-hit-surface"/>}
     <g transform={`translate(0 ${minY+maxY}) scale(1 -1)`}
        pointerEvents={onCirclePick?'none':undefined}>
       <polygon points={profile.outer.map(p=>`${p.x},${p.y}`).join(' ')}
