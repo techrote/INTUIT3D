@@ -296,7 +296,7 @@ export function createModelExtrusion(h: ModelSession, thicknessMm: number): Mode
   if(!profile) throw Error('The sketch has no admitted solved profile for extrusion.');
   const existing=modelFeatureTimeline(h).find(f=>f.featureId==='plate');
   if(existing?.active) throw Error('An extrusion already exists in this project.');
-  if(existing) return restoreModelFeature(h,'plate');
+  if(existing) throw Error('Extrusion was removed; select its tombstone and restore it without changing its authored dimension.');
   return runtime.commit(h,[
     created(`workbench.extrude.${h.document.revision}`,feature('plate','extrude',
       ['sketch.plate'],['body.plate'],{sourceSketchId:'sketch.plate',thicknessMm})),
@@ -314,7 +314,7 @@ export function createModelThroughCut(h: ModelSession): ModelSession {
     throw Error('Add a solved circular hole before committing the cut.');
   const existing=modelFeatureTimeline(h).find(f=>f.featureId==='cut');
   if(existing?.active) throw Error('A cut already exists in this project.');
-  if(existing) return restoreModelFeature(h,'cut');
+  if(existing) throw Error('Cut was removed; restore its original semantic feature instead of duplicating the body operation.');
   return runtime.commit(h,[
     created(`workbench.cut.${h.document.revision}`,feature('cut','cut',
       ['plate'],['body.plate'],
@@ -492,7 +492,7 @@ export function reopenModelSession(text: string): ModelSession {
   const rows=model.featureTimelineOf(h.document);
   if(!rows.some(t=>t.featureId==='sketch.plate'&&t.active) ||
       rows.some(t=>t.active&&!['sketch.plate','plate','cut','parameter.t'].includes(t.featureId)))
-    throw Error('Archive does not contain a supported plate sketch and feature history.');
+    throw Error('Archive does not contain the supported plate/sketch/cut history.');
   modelHoleValues(h);
   modelSketchDimensionValues(h);
   if(rows.some(t=>t.featureId==='plate'&&t.active))modelDimensionValues(h);
