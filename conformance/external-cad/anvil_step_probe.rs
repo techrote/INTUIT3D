@@ -142,7 +142,112 @@ fn l_profile(args: &[String]) {
         cad.length_unit,tris);
 }
 
+
+// Independent, restricted OCCT8 KERNEL-002 ordered-rectangle and mixed-circle
+// cut chain admission. Read the actual imported *non-OCCT* mesh; do not accept
+// native source-side volume, STEP entity strings, or synthetic probe receipts.
+fn cut_chains(args: &[String]) {
+    if args.len()!=5 { fail("usage: --cut-chains STEP ordered|mixed 8|12"); }
+    let kind=&args[3];
+    if kind!="ordered" && kind!="mixed" { fail("unsupported physical cut-chain kind"); }
+    let thickness=number(&args[4]);
+    if thickness!=8.0 && thickness!=12.0 { fail("unsupported physical cut-chain thickness"); }
+    let pocket_depth=if thickness==8.0 {3.0} else {5.0};
+    let area=if kind=="ordered" { 120.0 } else { std::f64::consts::PI*25.0 };
+    let volume_expected=(120.0*80.0-2.0*std::f64::consts::PI*36.0)*thickness
+        -80.0*thickness-area*pocket_depth;
+    let source=fs::read_to_string(&args[2]).unwrap_or_else(|_|fail("cannot read pinned cut-chain STEP"));
+    let cad=import(&source).unwrap_or_else(|e|fail(&format!("independent cut-chain STEP import failed: {e}")));
+    if cad.length_unit!="millimetre" && cad.length_unit!="millimeter" {
+        fail("cut-chain STEP units are not mm");
+    }
+    if cad.bodies.len()!=1 || !cad.bodies[0].solid || cad.bodies[0].exact.is_none() ||
+       !cad.warnings.is_empty() {
+        fail("cut-chain import lacks one exact warning-free B-rep solid");
+    }
+    let mesh=&cad.bodies[0].mesh;
+    if mesh.vertices.is_empty() || mesh.faces.is_empty() { fail("empty cut-chain mesh"); }
+    let mut oriented:HashMap<(u32,u32),usize>=HashMap::new();
+    let mut signed_volume=0.0f64;
+    let mut tris=0usize;
+    for tri in mesh.faces.iter().flat_map(|f| &f.triangles) {
+        let a=point(mesh,tri[0]); let b=point(mesh,tri[1]); let c=point(mesh,tri[2]); tris+=1;
+        let cross=[b[1]*c[2]-b[2]*c[1],b[2]*c[0]-b[0]*c[2],b[0]*c[1]-b[1]*c[0]];
+        signed_volume+=(a[0]*cross[0]+a[1]*cross[1]+a[2]*cross[2])/6.0;
+        for k in 0..3 { *oriented.entry((tri[k],tri[(k+1)%3])).or_default()+=1; }
+    }
+    let open=oriented.iter().filter(|((a,b),n)| **n!=1 ||
+        oriented.get(&(*b,*a))!=Some(&1)).count();
+    let measured=signed_volume.abs();
+    if tris<8 || open!=0 || !measured.is_finite() ||
+       (measured-volume_expected).abs()>volume_expected*0.01 {
+        fail(&format!("wrong independent cut-chain watertightness/volume: {measured} vs {volume_expected}, open={open}"));
+    }
+    // Each ray contains the source-model coordinate, not an importer-provided
+    // descriptive label. None=exterior/through void; Some=solid terminal Z.
+    let mut rays:Vec<(String,f64,f64,Option<f64>)>=Vec::new();
+    for (name,x,y) in [
+        ("stock.centre",0.0,0.0),("stock.nw",-45.0,-30.0),
+        ("stock.ne",45.0,30.0),
+    ] { rays.push((name.to_string(),x,y,Some(thickness))); }
+    for (i,x) in [-30.0f64,30.0].iter().enumerate() {
+        rays.push((format!("bore.{i}.centre"),*x,0.0,None));
+        for (direction,dx,dy) in [
+            ("east",1.0,0.0),("west",-1.0,0.0),
+            ("north",0.0,-1.0),("south",0.0,1.0),
+        ] {
+            rays.push((format!("bore.{i}.inner.{direction}"),*x+5.4*dx,5.4*dy,None));
+            rays.push((format!("bore.{i}.outer.{direction}"),*x+6.6*dx,6.6*dy,Some(thickness)));
+        }
+    }
+    // Authoritative cut coordinates are defined by the independent fixture,
+    // not copied from the OCCT runtime receipt. Through window centre (5,-20),
+    // width 10, height 8, and 8.0/12.0-mm through-depth.
+    rays.push(("window.centre".to_string(),5.0,-20.0,None));
+    for (direction,dx,dy,half) in [
+        ("east",1.0,0.0,5.0),("west",-1.0,0.0,5.0),
+        ("north",0.0,1.0,4.0),("south",0.0,-1.0,4.0),
+    ] {
+        rays.push((format!("window.inner.{direction}"),5.0+(half-0.5)*dx,
+                   -20.0+(half-0.5)*dy,None));
+        rays.push((format!("window.outer.{direction}"),5.0+(half+0.5)*dx,
+                   -20.0+(half+0.5)*dy,Some(thickness)));
+    }
+    let floor=Some(thickness-pocket_depth);
+    rays.push(("pocket.centre".to_string(),-10.0,20.0,floor));
+    for (direction,dx,dy,half) in [
+        ("east",1.0,0.0,if kind=="ordered" {6.0} else {5.0}),
+        ("west",-1.0,0.0,if kind=="ordered" {6.0} else {5.0}),
+        ("north",0.0,1.0,5.0),("south",0.0,-1.0,5.0),
+    ] {
+        rays.push((format!("pocket.inner.{direction}"),
+                   -10.0+(half-0.5)*dx,20.0+(half-0.5)*dy,floor));
+        rays.push((format!("pocket.outer.{direction}"),
+                   -10.0+(half+0.5)*dx,20.0+(half+0.5)*dy,Some(thickness)));
+    }
+    for (name,x,y,end) in rays {
+        let hits=intersections(mesh,x,y);
+        match end {
+            Some(top) => {
+                if hits.len()!=2 || hits[0].abs()>0.05 || (hits[1]-top).abs()>0.05 {
+                    fail(&format!("{name}: wrong material or blind-pocket floor at ({x},{y}): {hits:?}"));
+                }
+            }
+            None => if !hits.is_empty() {
+                fail(&format!("{name}: expected independent through void at ({x},{y}): {hits:?}"));
+            },
+        }
+        println!("CUT_RAY {name} {x:.9} {y:.9} {} {:.9} {:.9}",
+                 hits.len(),hits.first().copied().unwrap_or(-1.0),
+                 hits.last().copied().unwrap_or(-1.0));
+    }
+    println!("CUT_ACCEPT kind={} solids=1 source_unit={} imported_exact=true tris={} open_edges=0 volume_mm3={measured:.9} expected_mm3={volume_expected:.9} warnings=0",
+             kind,cad.length_unit,tris);
+}
+
 fn main() {
+    let args:Vec<String>=env::args().collect();
+    if args.get(1).map(String::as_str)==Some("--cut-chains") { cut_chains(&args); return; }
     let args:Vec<String>=env::args().collect();
     if args.get(1).map(String::as_str)==Some("--l-profile") { l_profile(&args); return; }
     if args.len()!=6 { fail("usage: intuit_step_probe INPUT.step WIDTH DEPTH THICKNESS x,y,r;x,y,r;..."); }
