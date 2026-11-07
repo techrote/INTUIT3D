@@ -110,8 +110,11 @@ test('missing target, hole intrusions, underconstraint and overconstraint retain
   source.cornerRadii[0].vertexId='missing';
   assert.equal(run(plateSketchFixture(),source).status,'conflicted');
   assert.equal(run(plateSketchFixture(),source).geometry,null);
-  const intruding=editConstraint(plateSketchFixture(),'holeA:fixed',{x:7,y:7});
-  assert.equal(run(intruding).status,'conflicted');
+  let intruding=editConstraint(plateSketchFixture(),'holeA:fixed',{x:9});
+  intruding=editConstraint(intruding,'holeA:fixed',{y:9});
+  const roundedIntrusion=editVariableRoundedPlateRadius(intent(),'p0',18);
+  assert.equal(run(intruding,roundedIntrusion).status,'conflicted');
+  assert.equal(run(intruding,roundedIntrusion).geometry,null);
   const free=plateSketchFixture();
   free.constraints=free.constraints.filter(c=>c.id!=='width');
   assert.equal(run(free).status,'underconstrained');
