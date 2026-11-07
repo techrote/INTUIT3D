@@ -11,6 +11,14 @@
     "./experimental-plate": {
       "types": "./experimental-plate.d.mts",
       "default": "./experimental-plate.mjs"
+    },
+    "./local-plate-bridge": {
+      "types": "./local-plate-bridge.d.mts",
+      "node": "./local-plate-bridge.mjs"
+    },
+    "./local-plate-client": {
+      "types": "./local-plate-client.d.mts",
+      "default": "./local-plate-client.mjs"
     }
   },
   "types": "./index.d.mts",
@@ -20,8 +28,11 @@
   },
   "scripts": {
     "test": "node --experimental-strip-types --test test/*.test.mjs",
-    "typecheck": "tsc --noEmit --strict --allowImportingTsExtensions --module nodenext --moduleResolution nodenext --target es2022 --typeRoots ../../tooling/contract-type-roots test/contract.mts",
-    "demo:native": "node test/experimental-plate.native-demo.mjs"
+    "typecheck": "tsc --noEmit --strict --allowImportingTsExtensions --module nodenext --moduleResolution nodenext --target es2022 --typeRoots ../../tooling/contract-type-roots test/contract.mts test/bridge-contract.mts",
+    "demo:native": "node test/experimental-plate.native-demo.mjs",
+    "demo:bridge": "node test/local-plate-bridge.native-demo.mjs"
   },
-  "engines": {"node": ">=22.6.0"}
+  "engines": {
+    "node": ">=22.6.0"
+  }
 }

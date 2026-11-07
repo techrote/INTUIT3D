@@ -103,3 +103,93 @@ tests contract wiring with an explicitly stubbed native provider on both OSes.
 WORKBENCH can consume the versioned entry point now, but must introduce its
 own controlled local host bridge before any real native or STEP UI operation.
 INTEGRATION retains exact-head CI/qualification and cross-lane integration.
+
+
+## Local experimental plate bridge — Node host ↔ authoritative browser client (v1)
+
+The new **Node-only** `@intuit3d/workflow-runtime/local-plate-bridge`
+and **browser-safe** `@intuit3d/workflow-runtime/local-plate-client` connect
+the admitted model-backed WORKBENCH flow to the existing experimental
+`@intuit3d/kernel-contract/local-plate-provider`. This is an executable
+local end-to-end adapter, **not** a separate project journal, solver or B-rep.
+
+Start a trusted Node process with the existing public INTENT/SKETCH namespaces
+and kernel provider (do **not** bundle the local native provider in Vite):
+
+```js
+import {startLocalPlateBridge} from '@intuit3d/workflow-runtime/local-plate-bridge';
+import {createWorkflowRuntime} from '@intuit3d/workflow-runtime';
+import {runExperimentalPlate} from '@intuit3d/kernel-contract/local-plate-provider';
+// Compose the actual accepted model, transactions, bindings, dimensions,
+// archive, sketch and profile-discovery namespaces, as in the runtime demo.
+const runtime = createWorkflowRuntime(services);
+const host = await startLocalPlateBridge({
+  runtime, model, plateContract, runExperimentalPlate,
+  origin:'http://127.0.0.1:5173', port:0, timeoutMs:45000,
+});
+console.log(host.url); // token must be handed only to a trusted local UI
+// await host.close() on application shutdown
+```
+
+The browser consumes its live authoritative model history (not a copied
+preview journal). The token and host URL must be entered/passed only by the
+trusted local UI; there is intentionally no token-discovery endpoint.
+
+```js
+import {evaluateLocalPlate} from '@intuit3d/workflow-runtime/local-plate-client';
+const response = await evaluateLocalPlate({
+  url:hostUrl,token:pairedToken,runtime,
+  readCurrentHistory:()=>latestHistoryRef.current,
+  cutFeatureId:'cut',requestId:'plate.edit.1',exportStep:true,
+  signal:controller.signal,
+});
+if (response.kind==='experimental_plate_evaluated' && response.step) {
+  // Before actually offering a download, check the model revision AGAIN.
+  // response.step.bytes is a Uint8Array, SHA-256 verified by the client.
+  // It is a *same-engine checked experimental* STEP, not independent CAD truth.
+}
+```
+
+The HTTP protocol is `POST /v1/plate/evaluate` with exactly
+`{archive,cutFeatureId,requestId,exportStep}` as JSON. It returns
+`intuit3d.local-plate-bridge` v1 with source project/revision/archive digest,
+the strictly experimental result, and optional bounded verified STEP bytes.
+The host enforces a per-launch random token, exact local origin and Host,
+loopback binding, 2 MiB request limit, 8 MiB STEP limit, single active native
+job, cancellation when the HTTP response closes, bounded native timeout and
+server-owned temporary STEP staging with deletion after reply. It does not
+accept any file path from a browser. No cloud service, telemetry or login is
+involved. Unsupported profiles/cuts remain `unresolved`.
+
+The HTTP server cannot see a browser's live state while native work is
+running: the client compares an authoritative serialized model snapshot both
+before and after asynchronous evaluation and after STEP verification. The UI
+must repeat that fence immediately before offering/saving bytes, especially
+if its state can change after the promise resolves. A local token is a pairing
+secret, not hostile local-process or browser-extension containment. No automatic
+production/native/external-STEP equivalence may be inferred.
+
+**Executable checks:**
+
+```sh
+npm ci
+npm test --workspace @intuit3d/workflow-runtime
+npm run typecheck --workspace @intuit3d/workflow-runtime
+# Requires actual pinned Python/OCP research installation:
+npm run demo:bridge --workspace @intuit3d/workflow-runtime
+```
+
+The integration test exercises real INTENT and SKETCH through live localhost
+HTTP with an **explicit synthetic provider double**; it verifies a step payload,
+archive replay, later dimension edit, origin/token/path rejection and stale
+browser revision containment. It is **not native geometry evidence**. The
+`demo:bridge` command, when actually run on a pinned OCP machine, performs
+two genuine native cut/STEP runs (thickness 8→10 mm) through the loopback
+browser client and verifies material volume/STEP digest differences. Report
+its result separately from ordinary Node tests and from independent STEP
+interoperability (which is not established).
+
+Consumer ownership: WORKBENCH integrates these browser APIs and a paired
+local-host UI only within `apps/web/**`; INTEGRATION qualifies full host/browser
+interaction, source/lock/CI and merging. RUNTIME changes only
+`packages/workflow-runtime/**`.
