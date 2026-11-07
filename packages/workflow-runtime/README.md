@@ -4,6 +4,12 @@
 
 This is an **executable adapter over accepted public package modules**, not a second document model, solver, geometry engine, or viewport. Its `createWorkflowRuntime(services)` constructor receives the authentic module namespaces from `@intuit3d/model`, `@intuit3d/model/transactions`, `@intuit3d/model/dimension-bindings`, `@intuit3d/model/dimension-batch-edit`, `@intuit3d/model/archive`, `@intuit3d/sketch` and `@intuit3d/sketch/profile-discovery/v1` (see `test/runtime.integration.test.mjs`). Runtime inspection derives a revision-fenced dependency plan and scalar binding evaluation from the authoritative undo-history document. It never mutates the journal.
 
+## One-shot circular hole arrays (RUNTIME-002)
+
+`runtime.patternCircularHoles(history, {sketchFeatureId,eventId,expectedRevision,sourceHoleId,idPrefix,instances,pivotXmm,pivotYmm,sweepDegrees})` creates 2–32 evenly spaced positions around a chosen pivot. The **solved** source circle is instance 0 and is not duplicated; the remaining instances are independent circles with stable IDs `idPrefix:p1`, `idPrefix:p2`, ... and real SKETCH-owned centre/fixed/radius constraints. `sweepDegrees` defaults to 360; negative values reverse direction. Full +/−360 sweeps omit the duplicate source endpoint, while partial arcs include the final endpoint. A pivot coincident with the solved source centre is refused.
+
+It runs through the existing `editPlateHoles` single undoable INTENT event and the real SKETCH profile admission, with revision-fenced refusal if copies collide or cross the plate. Its return type, undo/redo/reopen and dependency invalidation are identical to the accepted rectangular-pattern API. This is **one-shot, not associative**, and is only an analytic authoring operation until a genuine native provider constructs and validates the resulting B-rep/STEP. The browser can consume the typed API without maintaining its own hole model.
+
 ## Deliberately narrow v1 modelling contract
 
 The project document is the sole authority. A feature with `kind: 'sketch'` supplies its versioned SKETCH document in `payload.sketch`. The runtime validates/solves it using SKETCH, discovers candidate profiles, and **replays** the sole admissible profile through SKETCH's admission function. The outcome is `analytic_profile_only` and cannot be exported as a B-rep.
