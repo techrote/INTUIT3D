@@ -1,0 +1,167 @@
+/**
+ * Browser-safe live CAD session for the accepted INTENT journal + local native
+ * bridge. The caller's read/write pair remains the ONE authoritative history;
+ * this coordinator stores no second document, sketch, solver or B-rep.
+ *
+ * Native artifacts are usable only while their EXACT serialized archive remains
+ * current. Cancelling and superseding also fences non-cooperative old providers.
+ */
+import {evaluateLocalPlate} from './local-plate-client.mjs';
+
+export const LIVE_PLATE_SESSION_FORMAT='intuit3d.live-plate-session';
+export const LIVE_PLATE_SESSION_VERSION=1;
+const ID=/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
+const refuse=(code,reason)=>({kind:'unresolved',code,reason,artifact:null,
+  exactAuthority:false,independentInteroperability:false});
+
+export function createLivePlateSession({
+  runtime,readCurrentHistory,publishHistory,cutFeatureId='cut',
+  evaluateImpl=evaluateLocalPlate,busyRetries=3,
+}={}) {
+  if (typeof runtime?.save!=='function'||typeof runtime?.reopen!=='function'||
+      typeof runtime?.inspect!=='function'||typeof runtime?.diff!=='function'||
+      typeof readCurrentHistory!=='function'||typeof publishHistory!=='function'||
+      typeof evaluateImpl!=='function'||!ID.test(cutFeatureId)||
+      !Number.isSafeInteger(busyRetries)||busyRetries<0||busyRetries>5)
+    throw new TypeError('live plate session requires a real runtime, synchronous authoritative history reader/writer, cut ID and bounded native adapter');
+
+  function snapshot(history=readCurrentHistory()) {
+    const archive=runtime.save(history);
+    const report=runtime.inspect(history);
+    if (report.projectId!==history?.document?.projectId||
+        report.revision!==history?.document?.revision||
+        !Number.isSafeInteger(report.revision)||report.revision<0)
+      throw new Error('live plate session: authoritative report/history fence mismatch');
+    return {history,archive,report};
+  }
+  let observed=snapshot().archive;
+  let serial=0,controller=null,latest=null,latestArchive=null;
+  function discard() {
+    serial++;
+    controller?.abort();
+    controller=null;
+    latest=null;
+    latestArchive=null;
+  }
+  function synchronize() {
+    const current=snapshot();
+    if (current.archive!==observed) {
+      observed=current.archive;
+      discard();
+    }
+    return current;
+  }
+  function publish(next,expectedArchive) {
+    discard();
+    publishHistory(next);
+    const actual=synchronize();
+    if (actual.archive!==expectedArchive)
+      throw new Error('live plate session: publishHistory must update readCurrentHistory synchronously');
+    return actual;
+  }
+  return Object.freeze({
+    /** Call after external model changes; refuses to retain stale native bytes. */
+    refresh() {
+      const state=synchronize();
+      return {format:LIVE_PLATE_SESSION_FORMAT,version:LIVE_PLATE_SESSION_VERSION,
+        projectId:state.report.projectId,revision:state.report.revision,
+        inFlight:controller!==null,hasVerifiedStep:!!latest?.step,
+        lastResultKind:latest?.kind??null,exactAuthority:false};
+    },
+    /** Delegate a genuine INTENT command; commit only if revision/project fences hold. */
+    applyEdit(edit) {
+      if(typeof edit!=='function') throw new TypeError('live plate session: edit callback required');
+      const before=synchronize();
+      const outcome=edit(before.history);
+      if(outcome && typeof outcome.then==='function')
+        throw new TypeError('live plate session: edits must be synchronous INTENT transactions');
+      if(outcome?.kind==='refused') return outcome;
+      const next=outcome?.kind==='committed'?outcome.history:outcome;
+      const after=snapshot(next);
+      if(after.report.projectId!==before.report.projectId||
+          after.report.revision<=before.report.revision)
+        throw new Error('live plate session: edit must advance the same authoritative project revision');
+      if(snapshot().archive!==before.archive)
+        throw new Error('live plate session: concurrent authoritative edit, retry from current revision');
+      const invalidation=runtime.diff(before.history,next);
+      if(invalidation.projectId!==before.report.projectId||
+          invalidation.previousRevision!==before.report.revision||
+          invalidation.revision!==after.report.revision||
+          invalidation.exactReuseAllowed!==false)
+        throw new Error('live plate session: invalid model dependency fence');
+      publish(next,after.archive);
+      return {kind:'committed',history:next,report:after.report,invalidation};
+    },
+    /** Explicit opt-in required to replace a different authoritative archive. */
+    reopen(serialized,{confirmReplacement=false}={}) {
+      if(typeof serialized!=='string') throw new TypeError('live plate session: archive string required');
+      const before=synchronize();
+      const after=snapshot(runtime.reopen(serialized));
+      if(after.archive!==serialized)
+        throw new Error('live plate session: noncanonical archive refused');
+      if(after.archive!==before.archive&&!confirmReplacement)
+        return {kind:'refused',reason:'replacing the current project requires confirmation',notCommitted:true};
+      if(after.archive!==before.archive) publish(after.history,after.archive);
+      return {kind:'opened',history:after.history,report:after.report,
+        exactReuseAllowed:false};
+    },
+    save() {return synchronize().archive;},
+    cancel() {discard();},
+    /** A download button must obtain bytes through this synchronously, at use time. */
+    currentStep() {
+      const current=synchronize();
+      if(!latest || latestArchive!==current.archive || latest.kind!=='experimental_plate_evaluated')
+        return null;
+      return latest.step??null;
+    },
+    /** Latest request wins, even if a cancelled provider ignores AbortSignal. */
+    async evaluate({url,token,requestId,exportStep=true,signal,fetchImpl}={}) {
+      const before=synchronize();
+      discard();
+      const operation=serial;
+      const abort=new AbortController();
+      controller=abort;
+      const id=requestId??('session.'+operation);
+      if(!ID.test(id)) {discard();throw new TypeError('live plate session: invalid request identity');}
+      const onAbort=()=>abort.abort();
+      if(signal?.aborted) abort.abort();
+      signal?.addEventListener('abort',onAbort,{once:true});
+      let result;
+      try {
+        for(let attempt=0;attempt<=busyRetries;attempt++) {
+          if(abort.signal.aborted) return refuse('cancelled','native evaluation cancelled');
+          if(synchronize().archive!==before.archive||serial!==operation)
+            return refuse('stale_revision','a newer edit or request superseded native evaluation');
+          try {
+            result=await evaluateImpl({url,token,runtime,readCurrentHistory,
+              cutFeatureId,requestId:id,exportStep,signal:abort.signal,
+              ...(fetchImpl?{fetchImpl}:{}),});
+          } catch(error) {
+            result=refuse('provider_failure',error instanceof Error?error.message:'native adapter failed');
+          }
+          if(result?.kind!=='unresolved'||result.code!=='busy'||attempt===busyRetries)
+            break;
+          await new Promise(resolve=>setTimeout(resolve,50*(2**attempt)));
+        }
+        if(synchronize().archive!==before.archive||serial!==operation)
+          return refuse('stale_revision','a newer edit or request superseded native evaluation');
+        if(abort.signal.aborted) return refuse('cancelled','native evaluation cancelled');
+        if(!result||!['unresolved','experimental_plate_evaluated'].includes(result.kind)||
+            result.exactAuthority!==false||result.independentInteroperability!==false)
+          return refuse('invalid_provider_result','native response is not a qualified experimental contract');
+        if(result.kind==='experimental_plate_evaluated' &&
+            (result.source?.projectId!==before.report.projectId||
+             result.source.revision!==before.report.revision||
+             result.result?.requestId!==id||result.result?.cutFeatureId!==cutFeatureId||
+             (exportStep&&!result.step)||(!exportStep&&result.step)))
+          return refuse('invalid_provider_result','native result does not match current authored request');
+        latest=result;
+        latestArchive=before.archive;
+        return result;
+      } finally {
+        signal?.removeEventListener('abort',onAbort);
+        if(controller===abort) controller=null;
+      }
+    },
+  });
+}
