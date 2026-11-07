@@ -13,6 +13,7 @@ const status=(h:ReturnType<typeof newModelSketchSession>,id:string)=>
 test('genuine staged sketch -> extrude -> explicit body cut -> dimension edit -> undo/save/reopen',()=>{
   const sketch=newModelSketchSession('workbench.sketch-first.test');
   assert.deepEqual(modelFeatureTimeline(sketch).map(f=>f.featureId),['sketch.plate']);
+  assert.equal(sketch.undoStack.length,0,'new-project baseline must not erase the only sketch on Undo');
   assert.equal(status(sketch,'sketch.plate'),'analytic_profile_only');
   assert.equal(previewModelSketchProfile(inspectModelSession(sketch))?.holes.length,2);
   assert.equal(previewModelProfile(inspectModelSession(sketch)),null);
