@@ -237,8 +237,16 @@ def execute(case: dict, root: Path, args, exe: dict) -> dict:
     # Official 7.44.0 importer provides neither strict/repair modes nor JSON
     # import reports. Exit status, populated .g, tops, gqa and coordinate-anchored
     # nirt rays must ALL pass; a command-only success cannot admit geometry.
-    run(step_g_argv(exe['step-g'][0], database, target),
-        output/'step-g.log', args.timeout)
+    importer_output = run(step_g_argv(exe['step-g'][0], database, target),
+                          output/'step-g.log', args.timeout)
+    # Observed real BRL-CAD 7.44.0: step-g exits ZERO after emitting
+    # "Error: ::LoadONBrep(...) not implemented for Curve" followed by
+    # several failed Edge_Curve/Closed_Shell/Manifold_Solid_Brep conversions.
+    # A nonempty .g is not solid geometry. Reject even on exit zero.
+    if re.search(r'(?mi)^\\s*Error:\\s*', importer_output):
+        raise NotQualified(
+            f'BRL-CAD reported STEP B-rep conversion errors despite exit 0: {name}; '
+            f'see {output / "step-g.log"}')
     if not database.is_file() or not database.stat().st_size:
         raise NotQualified(f'BRL-CAD importer did not produce a nonempty geometry database: {name}')
     roots = run([exe['mged'][0],'-c',str(database),'tops'],output/'mged-tops.log',args.timeout)
