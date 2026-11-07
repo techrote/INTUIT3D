@@ -8,7 +8,7 @@
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
-    "noUncheckedIndexedAccess": false,
+    "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,

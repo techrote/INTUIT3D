@@ -212,7 +212,7 @@ test('overflowed polygon area is refused instead of exported as Infinity', () =>
   const doc = createSketch({version:1,units:'mm',points,lines,circles:[],constraints});
   const result = solveSketch(doc);
   assert.equal(result.status,'solved');
-  assert.throws(() => buildPlateProfile(doc,result,lines.map(l=>l.id)), /nonfinite or zero-area/);
+  assert.throws(() => buildPlateProfile(doc,result,lines.map(l=>l.id)), /unrepresentable_area/);
 });
 
 

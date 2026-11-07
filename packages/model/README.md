@@ -362,3 +362,38 @@ journal correctness are qualified here. SKETCH/KERNEL must independently
 validate dimensions, solids, tolerances and STEP; preview meshes are not exact.
 Test entry: `node --experimental-strip-types --test
 packages/model/test/dimension-batch-edit.test.mjs`.
+
+## Explicit orphaned dimension dependency release (v1 additive subpath)
+
+Import `previewDimensionDependencyReconciliation` and
+`commitUndoableDimensionDependencyReconciliation` from
+`@intuit3d/model/dimension-dependency-reconcile`. Clearing or replacing a
+binding **never** automatically deletes a feature dependency. To release an
+orphaned edge, the author must name it, supply a fresh revision/event ID,
+inspect any independent intent and set
+`confirmIndependentIntentReviewed: true`.
+
+Preflight accepts only existing edges whose **latest introduction** occurred
+in a journal edit that simultaneously added a matching dimension binding.
+Edges authored on initial feature creation, edges introduced by generic
+dependency edits, and later reintroductions without a matching binding are
+**not** eligible. Every current binding is scanned, so shared live parameter
+references cannot be released. Existing non-parameter dependencies are
+ineligible even with a coincidental prior witness. Unknown future parameter
+IDs are permitted only with an actual binding-introduction witness. Original
+other dependencies, authored payloads and feature IDs are retained.
+
+The witness demonstrates **co-occurrence, not exclusive ownership**:
+arbitrary other semantics might have acquired meaning after the binding was
+added. Explicit human/user confirmation remains necessary and the API never
+infers that permission. `require_admissible` refuses an unresolved result or
+a regression of formerly admissible affected features; `permit_unresolved`
+retains a pending graph and null derived payload, not fabricated exact
+geometry. Each successful release is a journal event and a single durable
+undo frame, with deterministic replay and structural invalidation.
+
+These checks prove only conservative *semantic graph repair*; no B-rep,
+kernel geometry, browser UX, STEP exchange or operator authorship
+authentication is attested. Other kinds of dependency must be reconciled
+through explicit general-purpose semantic editing; this v1 adapter does not
+claim they are dimension-owned.

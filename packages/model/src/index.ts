@@ -313,56 +313,75 @@ export function planProject(input: ProjectDocument): EvaluationPlan {
     }
   }
 
-  // Tarjan SCCs detect true cycles, including those occurring inside a larger graph.
-  const indices = new Map<string, number>();
-  const low = new Map<string, number>();
-  const stack: string[] = [];
-  const onStack = new Set<string>();
-  let counter = 0;
-  const strongConnect = (id: string): void => {
-    indices.set(id, counter);
-    low.set(id, counter++);
-    stack.push(id);
-    onStack.add(id);
-    for (const dep of byId.get(id)!.dependsOn) {
-      if (!byId.has(dep) || dep === id) continue;
-      if (!indices.has(dep)) {
-        strongConnect(dep);
-        low.set(id, Math.min(low.get(id)!, low.get(dep)!));
-      } else if (onStack.has(dep)) {
-        low.set(id, Math.min(low.get(id)!, indices.get(dep)!));
+  // Iterative Kosaraju SCCs. Deep, valid feature histories must not overflow
+  // the JS call stack or be misreported as cycles. Do not infer journal order.
+  const reversed = new Map(features.map((f) => [f.id, [] as string[]] as const));
+  for (const f of features) {
+    for (const dep of f.dependsOn) {
+      if (dep !== f.id && byId.has(dep)) reversed.get(dep)!.push(f.id);
+    }
+  }
+  const visited = new Set<string>();
+  const finishOrder: string[] = [];
+  for (const f of features) {
+    if (visited.has(f.id)) continue;
+    visited.add(f.id);
+    const frames: { id: string; next: number }[] = [{ id: f.id, next: 0 }];
+    while (frames.length) {
+      const frame = frames[frames.length - 1];
+      const deps = byId.get(frame.id)!.dependsOn;
+      if (frame.next >= deps.length) {
+        finishOrder.push(frame.id);
+        frames.pop();
+        continue;
+      }
+      const dep = deps[frame.next++];
+      if (dep === frame.id || !byId.has(dep) || visited.has(dep)) continue;
+      visited.add(dep);
+      frames.push({ id: dep, next: 0 });
+    }
+  }
+  const assigned = new Set<string>();
+  for (let i = finishOrder.length - 1; i >= 0; i--) {
+    const root = finishOrder[i];
+    if (assigned.has(root)) continue;
+    assigned.add(root);
+    const component: string[] = [];
+    const pending = [root];
+    while (pending.length) {
+      const id = pending.pop()!;
+      component.push(id);
+      for (const follower of reversed.get(id)!) {
+        if (assigned.has(follower)) continue;
+        assigned.add(follower);
+        pending.push(follower);
       }
     }
-    if (low.get(id) === indices.get(id)) {
-      const component: string[] = [];
-      let member: string;
-      do {
-        member = stack.pop()!;
-        onStack.delete(member);
-        component.push(member);
-      } while (member !== id);
-      if (component.length > 1) {
-        const ordered = features.filter((f) => component.includes(f.id)).map((f) => f.id);
-        for (const target of ordered) add(target, diagnostic('DEPENDENCY_CYCLE', 'dependency cycle: ' + ordered.join(' -> '), ordered));
+    if (component.length > 1) {
+      const members = new Set(component);
+      const ordered = features.filter((f) => members.has(f.id)).map((f) => f.id);
+      for (const target of ordered) {
+        add(target, diagnostic('DEPENDENCY_CYCLE', 'dependency cycle: ' + ordered.join(' -> '), ordered));
       }
     }
-  };
-  for (const f of features) if (!indices.has(f.id)) strongConnect(f.id);
+  }
 
-  // A structural happens-before edge can be transitive. No chronology shortcut.
+  // A structural happens-before edge can be transitive. Bound traversal to
+  // actual reachable IDs without recursive DFS, even for very deep histories.
   const reachability = new Map<string, Set<string>>();
   const ancestors = (id: string): Set<string> => {
     const cached = reachability.get(id);
     if (cached) return cached;
     const visited = new Set<string>();
-    const walk = (node: string): void => {
+    const pending = [id];
+    while (pending.length) {
+      const node = pending.pop()!;
       for (const dep of byId.get(node)?.dependsOn ?? []) {
         if (!byId.has(dep) || visited.has(dep)) continue;
         visited.add(dep);
-        walk(dep);
+        pending.push(dep);
       }
-    };
-    walk(id);
+    }
     reachability.set(id, visited);
     return visited;
   };
@@ -384,33 +403,46 @@ export function planProject(input: ProjectDocument): EvaluationPlan {
     }
   }
 
+  // Propagate non-ready states over reverse dependencies without recursion.
+  // Local conflicts win over missing references; descendants remain blocked,
+  // while independent subgraphs stay executable. Diagnostics retain each
+  // directly blocked dependency in its authored dependency order.
   const status = new Map<string, FeatureStatus>();
-  const inProgress = new Set<string>();
-  const resolve = (id: string): FeatureStatus => {
-    const cached = status.get(id);
-    if (cached) return cached;
-    const current = diag.get(id)!;
-    const conflicted = current.some((d) => ['SELF_DEPENDENCY', 'DEPENDENCY_CYCLE', 'UNORDERED_MUTATION'].includes(d.code));
-    if (conflicted) { status.set(id, 'conflicted'); return 'conflicted'; }
-    if (current.some((d) => d.code === 'MISSING_REFERENCE')) { status.set(id, 'pending'); return 'pending'; }
-    if (inProgress.has(id)) { status.set(id, 'conflicted'); return 'conflicted'; }
-    inProgress.add(id);
-    let blocked = false;
-    for (const dep of byId.get(id)!.dependsOn) {
-      if (resolve(dep) !== 'ready') {
-        blocked = true;
-        add(id, diagnostic('BLOCKED_DEPENDENCY', 'dependency ' + dep + ' is not ready', [dep]));
+  const propagationQueue: string[] = [];
+  for (const f of features) {
+    const current = diag.get(f.id)!;
+    const conflicted = current.some((d) =>
+      d.code === 'SELF_DEPENDENCY' ||
+      d.code === 'DEPENDENCY_CYCLE' ||
+      d.code === 'UNORDERED_MUTATION');
+    if (conflicted) status.set(f.id, 'conflicted');
+    else if (current.some((d) => d.code === 'MISSING_REFERENCE')) status.set(f.id, 'pending');
+    if (status.has(f.id)) propagationQueue.push(f.id);
+  }
+  for (let i = 0; i < propagationQueue.length; i++) {
+    for (const child of reversed.get(propagationQueue[i]) ?? []) {
+      if (status.has(child)) continue;
+      status.set(child, 'blocked');
+      propagationQueue.push(child);
+    }
+  }
+  for (const f of features) {
+    if (!status.has(f.id)) status.set(f.id, 'ready');
+  }
+  for (const f of features) {
+    if (status.get(f.id) !== 'blocked') continue;
+    for (const dep of f.dependsOn) {
+      if (status.get(dep) !== 'ready') {
+        add(f.id, diagnostic('BLOCKED_DEPENDENCY', 'dependency ' + dep + ' is not ready', [dep]));
       }
     }
-    inProgress.delete(id);
-    const result: FeatureStatus = blocked ? 'blocked' : 'ready';
-    status.set(id, result);
-    return result;
-  };
-  for (const f of features) resolve(f.id);
+  }
 
-  // Stable Kahn sort of only ready nodes. The arbitrary tie breaker affects
-  // execution scheduling, not authoritative user-authored feature semantics.
+  // Stable Kahn sort of only ready nodes. Use a binary min-heap keyed by
+  // authored ordinal: a wide independent-feature frontier must not pay for
+  // repeated full-array sort/shift (quadratic), while preserving the exact
+  // scheduling order of the previous implementation. This queue is derived
+  // and makes no new authoritative chronology/dependency assertions.
   const ready = features.filter((f) => status.get(f.id) === 'ready');
   const ordinal = new Map(features.map((f, i) => [f.id, i] as const));
   const indegree = new Map<string, number>(ready.map((f) => [f.id, 0] as const));
@@ -422,15 +454,46 @@ export function planProject(input: ProjectDocument): EvaluationPlan {
       followers.get(dep)!.push(f.id);
     }
   }
-  const queue = ready.filter((f) => indegree.get(f.id) === 0).map((f) => f.id);
+
+  const frontier: string[] = [];
+  const pushFrontier = (id: string): void => {
+    let i = frontier.length;
+    frontier.push(id);
+    const rank = ordinal.get(id)!;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (ordinal.get(frontier[parent])! <= rank) break;
+      frontier[i] = frontier[parent];
+      i = parent;
+    }
+    frontier[i] = id;
+  };
+  const popFrontier = (): string => {
+    const first = frontier[0]!;
+    const last = frontier.pop()!;
+    if (frontier.length > 0) {
+      let i = 0;
+      const rank = ordinal.get(last)!;
+      while (2 * i + 1 < frontier.length) {
+        let child = 2 * i + 1;
+        if (child + 1 < frontier.length &&
+            ordinal.get(frontier[child + 1])! < ordinal.get(frontier[child])!) child++;
+        if (rank <= ordinal.get(frontier[child])!) break;
+        frontier[i] = frontier[child];
+        i = child;
+      }
+      frontier[i] = last;
+    }
+    return first;
+  };
+  for (const f of ready) if (indegree.get(f.id) === 0) pushFrontier(f.id);
   const sorted: string[] = [];
-  while (queue.length) {
-    queue.sort((a, b) => ordinal.get(a)! - ordinal.get(b)!);
-    const id = queue.shift()!;
+  while (frontier.length > 0) {
+    const id = popFrontier();
     sorted.push(id);
     for (const next of followers.get(id)!) {
       indegree.set(next, indegree.get(next)! - 1);
-      if (indegree.get(next) === 0) queue.push(next);
+      if (indegree.get(next) === 0) pushFrontier(next);
     }
   }
   if (sorted.length !== ready.length) {

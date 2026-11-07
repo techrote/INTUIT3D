@@ -5,6 +5,8 @@
  */
 import { requireSimplePolygonBoundary } from './boundary-guard.mjs';
 import { assessCircularProfile } from './circle-guard.mjs';
+import { assessAnalyticProfileArea } from './analytic-area.mjs';
+import { assessSignedDistanceFidelity } from './dimension-fidelity.mjs';
 export const SKETCH_VERSION = 1;
 const DEFAULT_PIVOT_TOLERANCE = 1e-12;
 const DEFAULT_RESIDUAL_TOLERANCE_MM = 1e-9;
@@ -220,6 +222,17 @@ export function solveSketch(source, options = {}) {
     lines: structuredClone(sketch.lines),
     circles: sketch.circles.map((c) => ({ id: c.id, center: c.center, radius: solved[ids.get(`${c.id}.radius`)] }))
   };
+  // Absolute solver residuals alone can accept a signed dimension rounded
+  // completely away at a large coordinate origin. Audit actual binary64
+  // output against each nonzero encoded signed dimension before returning
+  // ANY geometry (including underconstrained or drag previews).
+  const fidelity = assessSignedDistanceFidelity(sketch, geometry);
+  if (fidelity.status !== 'verified') return {
+    ...resultBase, status: 'numerical_failure', geometry: null,
+    diagnostics: [{ code: 'dimension_precision_lost',
+      candidates: fidelity.failedConstraintIds.length ? fidelity.failedConstraintIds : sketch.constraints.filter(c => c.kind === 'distanceX' || c.kind === 'distanceY').map(c => c.id),
+      magnitudeMm: null }]
+  };
   const diagnostics = [];
   if (equations.length > rank) diagnostics.push({ code: 'redundant_constraints', count: equations.length - rank });
   if (n > rank) diagnostics.push({ code: 'free_degrees_of_freedom', count: n - rank });
@@ -298,28 +311,6 @@ export function buildPlateProfile(sketchSource, solution, edgeIds, holeIds = [])
   // Exact dyadic crossing oracle: finite binary64 orientations cannot silently
   // underflow to zero and admit a genuinely self-intersecting profile.
   requireSimplePolygonBoundary(vertices);
-  const cross = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-  const onSegment = (a, b, c) => Math.min(a.x, b.x) <= c.x && c.x <= Math.max(a.x, b.x) && Math.min(a.y, b.y) <= c.y && c.y <= Math.max(a.y, b.y);
-  const intersects = (a,b,c,d) => {
-    const p = cross(a,b,c), q = cross(a,b,d), r = cross(c,d,a), s = cross(c,d,b);
-    if ((p > 0 && q < 0 || p < 0 && q > 0) && (r > 0 && s < 0 || r < 0 && s > 0)) return true;
-    return p === 0 && onSegment(a,b,c) || q === 0 && onSegment(a,b,d) || r === 0 && onSegment(c,d,a) || s === 0 && onSegment(c,d,b);
-  };
-  const count = vertices.length;
-  for (let i = 0; i < count; i++) {
-    const a = vertices[i], b = vertices[(i+1)%count];
-    if (Math.hypot(b.x-a.x,b.y-a.y) <= 0) fail('zero-length polygon edge');
-    for (let j = i + 1; j < count; j++) {
-      if (j === i+1 || i === 0 && j === count-1) continue;
-      if (intersects(a,b,vertices[j],vertices[(j+1)%count])) fail('self-intersecting polygon');
-    }
-  }
-  let signedDoubleArea = 0;
-  for (let i = 0; i < count; i++) {
-    const a = vertices[i], b = vertices[(i + 1) % count];
-    signedDoubleArea += a.x * b.y - b.x * a.y;
-  }
-  if (!Number.isFinite(signedDoubleArea) || signedDoubleArea === 0) fail('nonfinite or zero-area profile');
   const circleMap = new Map(solution.geometry.circles.map((c) => [c.id, c]));
   const holes = holeIds.map((id) => {
     const circle = circleMap.get(id);
@@ -340,8 +331,10 @@ export function buildPlateProfile(sketchSource, solution, edgeIds, holeIds = [])
       fail('circular holes touch or overlap');
     fail('circle guard: ' + contact.reason);
   }
-  const areaMm2 = Math.abs(signedDoubleArea) / 2 - Math.PI * holes.reduce((sum,h) => sum + h.radius*h.radius, 0);
-  if (!Number.isFinite(areaMm2) || areaMm2 <= 0) fail('nonpositive or nonfinite analytic area');
+  const areaReport = assessAnalyticProfileArea(vertices,holes.map(h=>({radius:h.radius})));
+  if (areaReport.status !== 'verified')
+    fail('analytic area guard: ' + areaReport.reason);
+  const areaMm2 = areaReport.areaMm2;
   return { status: 'analytic_profile_only', units: 'mm', outer: vertices.map(({id,x,y}) => ({id,x,y})),
     holes: holes.map((h) => ({ id: h.id, centerId: h.center.id, x: h.center.x, y: h.center.y, radius: h.radius })),
     areaMm2 };

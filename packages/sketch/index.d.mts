@@ -15,7 +15,7 @@ export interface SketchDocument {
 export type SolveStatus = 'solved' | 'underconstrained' | 'conflicted' | 'numerical_failure';
 export type SketchGeometry = { points: Point2[]; lines: Line2[]; circles: Circle2[] };
 export type Diagnostic =
-  | { code: 'contradictory_constraints' | 'nonpositive_solved_radius' | 'residual_tolerance_exceeded' | 'arithmetic_overflow'; candidates: string[]; magnitudeMm: number | null }
+  | { code: 'contradictory_constraints' | 'nonpositive_solved_radius' | 'residual_tolerance_exceeded' | 'arithmetic_overflow' | 'dimension_precision_lost'; candidates: string[]; magnitudeMm: number | null }
   | { code: 'redundant_constraints' | 'free_degrees_of_freedom'; count: number };
 export interface SketchSolution {
   status: SolveStatus;

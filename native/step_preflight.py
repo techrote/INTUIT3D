@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 from step_graph_guard import verify_step_graph
+from step_analytic_guard import verify_step_analytic_plate
 
 MAX_STEP_BYTES = 32 * 1024 * 1024
 MIN_STEP_BYTES = 512
@@ -27,7 +28,7 @@ _LENGTH_UNIT = re.compile(
 )
 
 
-def verify_step_artifact(path: Path, *, expected_holes: int) -> None:
+def verify_step_artifact(path: Path, *, expected_holes: int, plate: dict | None = None) -> None:
     """Fail-closed OCCT AP214 STEP structure/units check; *not* geometry proof.
 
     The source B-rep and same-engine STEP reimport must *separately* pass the
@@ -68,3 +69,8 @@ def verify_step_artifact(path: Path, *, expected_holes: int) -> None:
     # and that the millimetre unit is bound to that shape representation.
     # This remains an independent *structural* gate, not geometry proof.
     verify_step_graph(body, expected_holes=expected_holes)
+    # For supervisor exports, independently decode the serialised AP214
+    # support surfaces against authored intent before same-OCCT reimport.
+    # Legacy callers without plate only request structural preflight.
+    if plate is not None:
+        verify_step_analytic_plate(body, plate)

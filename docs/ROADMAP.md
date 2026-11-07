@@ -21,6 +21,7 @@
 - **SKETCH**: solver benchmark harness and usable sketch primitives/dimensions/constraint API; working test fixture or interactive demo.
 - **KERNEL**: pinned native OCCT build/probe, worker protocol, Boolean/STEP tests, crash isolation and comparisons to radiCADSAC evidence.
 - **WORKBENCH**: bootable local React/Vite/three.js shell, working selection, precision sketch interaction, inspectable tree/timeline and UX screenshots.
+- **RUNTIME**: versioned authoritative application workflow bridge, typed evaluation statuses, revision fences and runnable INTENT/SKETCH/KERNEL consumer tests under the approved [issue #49](https://github.com/techrote/INTUIT3D/issues/49); no separate domain truth.
 - **INTEGRATION**: workspace wiring, head CI for JS/C++ as runnable, an integration smoke demo, acceptance gates, merge/risk register and first qualified cross-lane PR.
 
 Each lane selects its next highest-value increment itself from current issues, dependency readiness, breakages, research results and observed gaps. Do not wait for a central planner. If blocked on cross-lane code, complete a compatible mock/adapter/probe or an independent improvement, record the dependency and avoid conflicting writes.

@@ -35,12 +35,20 @@
     "./circle-guard/v1": {
       "types": "./circle-guard.d.mts",
       "default": "./circle-guard.mjs"
+    },
+    "./analytic-area/v1": {
+      "types": "./analytic-area.d.mts",
+      "default": "./analytic-area.mjs"
+    },
+    "./dimension-fidelity/v1": {
+      "types": "./dimension-fidelity.d.mts",
+      "default": "./dimension-fidelity.mjs"
     }
   },
   "types": "./index.d.mts",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts test/conflict-explanation-contract.mts test/snap-contract.mts test/snap-admission-contract.mts test/profile-discovery-contract.mts test/boundary-guard-contract.mts test/circle-guard-contract.mts"
+    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/type-contract.mts test/drag-projection-contract.mts test/conflict-explanation-contract.mts test/snap-contract.mts test/snap-admission-contract.mts test/profile-discovery-contract.mts test/boundary-guard-contract.mts test/circle-guard-contract.mts test/analytic-area-contract.mts test/dimension-fidelity-contract.mts"
   },
   "engines": {
     "node": ">=22"

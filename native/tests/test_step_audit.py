@@ -55,8 +55,8 @@ class StepAuditTests(unittest.TestCase):
             )
             result = execute(plate(), step_output=destination, worker=wrapper, timeout=35)
             self.assertEqual(result['status'], 'requires_reconciliation', result)
-            self.assertIn('cylinder', result['message'])
-            self.assertIn('wrong x', result['message'])
+            self.assertIn('STEP analytic: cylindrical bore centre/radius', result['message'])
+            self.assertIn('differs from authored intent', result['message'])
             self.assertFalse(destination.exists())
 
     def test_structurally_valid_wrong_radius_is_not_published(self):
@@ -79,7 +79,7 @@ class StepAuditTests(unittest.TestCase):
             )
             result = execute(plate(), step_output=destination, worker=wrapper, timeout=35)
             self.assertEqual(result['status'], 'requires_reconciliation', result)
-            self.assertTrue('analytic oracle' in result['message'] or 'cylinder' in result['message'], result)
+            self.assertIn('STEP analytic: cylindrical bore centre/radius', result['message'])
             self.assertFalse(destination.exists())
 
     def test_isomass_isosurface_alternate_plate_step_is_not_published(self):
@@ -144,7 +144,7 @@ class StepAuditTests(unittest.TestCase):
             )
             result = execute(plate(), step_output=target, worker=wrapper, timeout=35)
             self.assertEqual(result['status'], 'requires_reconciliation', result)
-            self.assertIn('STEP vertex envelope', result['message'])
+            self.assertIn('STEP analytic: X support planes', result['message'])
             self.assertFalse(target.exists())
 
     def test_parent_audit_timeout_reports_timeout_without_export(self):

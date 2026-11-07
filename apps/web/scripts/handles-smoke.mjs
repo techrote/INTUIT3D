@@ -112,6 +112,53 @@ async function main() {
   await screenshot('02-sketch.png');
   check(await numberValue('Plate width') === '120', 'Unexpected initial width');
 
+  // Real browser keyboard entry: unit arithmetic is preview-only, invalid input
+  // must not change the model, Escape must not commit stale onBlur text.
+  // Preserve the ordinary numeric entry for the existing integration CDP gate.
+  check(await evaluate("(() => {const b=document.querySelector('button[aria-label=\"Use expression for Plate width\"]');b?.click();return !!b})()"),
+    'Preview fx toggle missing');
+  await eventually(() => evaluate("document.querySelector('input[aria-label=\"Plate width\"]')?.type==='text'"), 'fx text entry');
+  check(await evaluate("(() => {const e=document.querySelector('input[aria-label=\"Plate width\"]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'Dimension editor cannot focus');
+  await send('Input.insertText', { text: '1in + 95mm' });
+  await key('Enter', 'Enter', 13);
+  await eventually(async () => (await numberValue('Plate width')) === '120.4', 'unit expression commit');
+  check((await revision()).includes('1'), 'Valid arithmetic should make one preview revision');
+  check(await evaluate("document.querySelector('input[aria-label=\"Plate width\"]')?.type==='number'"),
+    'Valid expression did not return to normal numeric entry');
+  check(await evaluate("(() => {const b=document.querySelector('button[aria-label=\"Use expression for Plate width\"]');b?.click();return !!b})()"),
+    'Cannot enter fx mode to test invalid arithmetic');
+  await eventually(() => evaluate("document.querySelector('input[aria-label=\"Plate width\"]')?.type==='text'"), 're-enter fx mode');
+  check(await evaluate("(() => {const e=document.querySelector('input[aria-label=\"Plate width\"]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'Dimension editor cannot refocus');
+  await send('Input.insertText', { text: '1cm/0' });
+  await key('Enter', 'Enter', 13);
+  await eventually(async () => evaluate("Boolean(document.querySelector('#expression-error-width[role=alert]'))"), 'invalid arithmetic shown inline');
+  check(await numberValue('Plate width') === '1cm/0', 'Invalid arithmetic text must remain repairable');
+  check((await revision()).includes('1'), 'Invalid arithmetic must not change journal revision');
+  await screenshot('02a-invalid-expression.png');
+  // Binary64 must not silently discard a nonzero dimensional increment.
+  check(await evaluate("(() => {const e=document.querySelector('input[aria-label=\"Plate width\"]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'Invalid calculator draft cannot be repaired');
+  await send('Input.insertText', { text: '120.4mm + 1e-15mm' });
+  await key('Enter', 'Enter', 13);
+  await eventually(async () => evaluate(
+    "document.querySelector('#expression-error-width[role=alert]')?.textContent?.includes('lost a nonzero operand')"
+  ), 'precision loss must be diagnosed rather than silently committed');
+  check((await revision()).includes('1'), 'Rounded-away dimension edit must not author a revision');
+  check(await numberValue('Plate width') === '120.4mm + 1e-15mm',
+    'Precision-loss expression must remain editable after rejection');
+  await screenshot('02b-precision-loss.png');
+  check(await evaluate("(() => {const e=document.querySelector('input[aria-label=\"Plate width\"]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'Invalid draft cannot be selected for cancellation');
+  await send('Input.insertText', { text: '2mm' });
+  await key('Escape', 'Escape', 27);
+  await eventually(async () => (await numberValue('Plate width')) === '120.4', 'Escape must discard draft without blur commit');
+  check((await revision()).includes('1'), 'Escape must preserve original revision');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(el=>el.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'Undo button unavailable after calculator edit');
+  await eventually(async () => (await numberValue('Plate width')) === '120', 'calculator undo restore');
+
   // Real cursor movement must show a visual snap at the sketch origin, without
   // creating a dimension edit or claiming an authored solver constraint.
   const originScreen = await evaluate(`(() => {
@@ -271,7 +318,45 @@ async function main() {
   await key('ArrowUp', 'ArrowUp', 38);
   await eventually(async () => (await numberValue('Thickness')) === '12', '3D thickness keyboard nudge');
   await screenshot('07-solid-thickness-keyboard.png');
-
+  // Real local File-input import is a non-undoable replacement. Review and
+  // cancel must preserve edits; explicit acceptance can load invalid intent
+  // without inventing a last-good 3D body or a cross-file undo stack.
+  const injectImport = `(() => {
+    const recovery = JSON.parse(localStorage.getItem('intuit3d.web-preview.recovery.v1.current'));
+    const source = JSON.parse(recovery.previewJson);
+    const incoming = { ...source, id: 'imported-preview-002', name: 'Imported negative plate',
+      revision: 37, params: { ...source.params, width: 160, thickness: -2 },
+      chronology: [...source.chronology, 'Imported fixture with unresolved thickness'] };
+    const input = document.querySelector('input[type=file]');
+    const dt = new DataTransfer();
+    dt.items.add(new File([JSON.stringify(incoming)], 'invalid-plate.i3d-preview.json', { type: 'application/json' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`;
+  check(await evaluate(injectImport), 'Cannot inject local File input');
+  await eventually(() => evaluate("Boolean(document.querySelector('[data-testid=import-review]'))"), 'preview import confirmation');
+  check(await numberValue('Thickness') === '12', 'Import preview silently replaced current dimension before consent');
+  check(await evaluate("document.querySelector('[data-testid=import-review]')?.textContent?.includes('Incoming preview has')"),
+    'Invalid incoming geometry was not diagnosed before replacement');
+  await screenshot('08-import-review.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(e=>e.textContent==='Cancel replacement');b?.click();return !!b})()"),
+    'Cancel preview import button unavailable');
+  await eventually(() => evaluate("!document.querySelector('[data-testid=import-review]')"), 'import review cancellation');
+  check(await numberValue('Thickness') === '12', 'Canceled file import modified current preview');
+  check(await evaluate(injectImport), 'Cannot retry local File input');
+  await eventually(() => evaluate("Boolean(document.querySelector('[data-testid=import-review]'))"), 'import review re-entry');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(e=>e.textContent==='Replace preview document');b?.click();return !!b})()"),
+    'Explicit preview replacement action missing');
+  await eventually(async () => (await numberValue('Thickness')) === '-2' &&
+    (await revision()).includes('revision 37'), 'accepted imported invalid preview');
+  check(await evaluate("document.querySelector('.empty-overlay')?.textContent?.includes('No validated preview')"),
+    'Invalid imported geometry incorrectly inherited a stale last-good mesh');
+  check(await evaluate("document.querySelector('button[title=\"Open preview project\"]') !== null"),
+    'Preview file controls vanished after import');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(e=>e.textContent?.trim()==='Undo');return b?.disabled})()"),
+    'Accepted file replacement retained another document undo history');
+  await screenshot('09-imported-invalid-preview.png');
   // Real INTENT/SKETCH/RUNTIME consumer acceptance. This mode is separately
   // model-backed; only its display mesh remains a disposable tessellation.
   check(await evaluate("(() => {const b=document.querySelector('[data-testid=enter-model-runtime]');b?.click();return !!b})()"),
@@ -335,11 +420,18 @@ async function main() {
     cursorVisualOriginVerifiedWithoutEdit: true,
     blurredGestureCancelledWithoutRevision: true,
     missingAndSingularSvgProjectionFailClosed: true,
+    previewUnitExpressionCommittedAndUndoable: true,
+    invalidExpressionRejectedWithoutRevision: true,
+    roundedAwayDimensionEditRejectedWithoutRevision: true,
+    explicitProjectImportReviewCancelAndInvalidAcceptance: true,
+    expressionEscapeAbandonedUncommittedEdit: true,
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png'],
-    limits: 'Model-backed mode executes real INTENT + SKETCH + RUNTIME; native B-rep/OCCT, independent STEP and human acceptance remain unavailable.'
+    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png'],
+    modelBackedJournalSketchRuntimeBrowserEvidence: true,
+    modelBackedSaveOpenInvalidIntentPreserved: true,
+    limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log('WORKBENCH_HANDLE_BROWSER_PASS ' + JSON.stringify(report));
