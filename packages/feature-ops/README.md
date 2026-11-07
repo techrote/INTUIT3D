@@ -120,3 +120,37 @@ selection is rejected rather than editing a different solid. Display the
 returned `pending_exact_provider` status, revision and invalidation; do not
 render a committed exact cut. General profile Booleans, real B-rep evidence and
 STEP acceptance are still owned by KERNEL/RUNTIME/PLATFORM/INTEGRATION.
+
+## General profile extrusion reconfiguration v1
+
+`@intuit3d/feature-ops/extrusion-reconfiguration/v1` exports
+`reconfigureProfileExtrusion(history, request, services)`: an atomic edit of
+an existing named extrusion's **source profile and/or depth**, without deleting
+the body or cut. Callers explicitly fence old sketch, old depth, body, revision,
+new sketch and canonical SKETCH selection. Replacement SKETCH is re-admitted by
+the real solver/discovery and checked against RUNTIME before committing.
+
+A cut which used the *old* extrusion sketch keeps that sketch as its own
+source and gains an independent dependency when the extrusion is re-sourced.
+Conversely, if its source becomes the new extrusion sketch, the redundant
+dependency disappears. Both edits commit in **one undo frame**; unrelated
+bodies remain untouched. Unsolved **old** extrusion intent can be repaired
+by changing to a currently admitted sketch. Unknown, conflicting or multiple
+body writers are rejected; no Boolean commutativity is assumed.
+
+The runnable consumer is a five-sided gusset bracket replacing an L-profile,
+with an 8-to-14 mm depth edit, preserved pending cut, unaffected spacer,
+source-aware partial invalidation, undo/redo and save/reopen.
+
+```sh
+npm test --workspace @intuit3d/feature-ops
+node --experimental-strip-types packages/feature-ops/examples/extrusion-reconfiguration.mjs
+```
+
+**Truth boundary:** real INTENT/SKETCH/RUNTIME semantic operation and
+`preview_only` extrusion; cut remains `pending_exact_provider`. This does
+not generate or validate a native CAD body, production OCCT 8.0.1 operation
+or independently imported STEP. WORKBENCH should add a selected extrusion
+source-profile/depth editor passing both old and new revision-fenced values.
+RUNTIME retains execution authority; KERNEL must separately implement exact
+general-profile solids/cuts before any geometry qualification.
