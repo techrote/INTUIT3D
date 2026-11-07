@@ -1,5 +1,5 @@
 import type { ModelSession } from './runtimeSession';
-import { MAX_MODEL_ARCHIVE_BYTES } from './modelArchiveImport';
+import { MAX_MODEL_ARCHIVE_BYTES } from './modelArchiveImport.ts';
 
 /** Generate an OS-safe download basename from the authoritative project ID. */
 export function modelArchiveDownloadName(history: Pick<ModelSession,'document'>): string {
