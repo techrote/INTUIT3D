@@ -337,3 +337,90 @@ test('explicit cancellation settles immediately even if the adapter ignores Abor
   assert.equal(session.refresh().lastResultKind,null);
   await assert.rejects(session.evaluate({deadlineMs:Infinity}),/deadlineMs/);
 });
+
+
+test('solver-backed preview does not mutate project or STEP; one-call commit rebuilds physical request',async()=>{
+  let history=initialProject(),nativeRequests=0;
+  const host=await startLocalPlateBridge({runtime,model,plateContract,
+    runExperimentalPlate:async(req,opts)=>{nativeRequests++;return fakeProvider(req,opts);}});
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>history,publishHistory:next=>{history=next;}});
+  const native=id=>({url:host.url,token:host.token,requestId:id,exportStep:true});
+  try {
+    const original=await session.evaluate(native('preview.initial'));
+    assert.equal(original.kind,'experimental_plate_evaluated');
+    assert.equal(nativeRequests,1);
+    const originalArchive=session.save();
+    const originalStep=session.currentStep();
+    const admitted=session.previewEdit(h=>runtime.editPlateHoles(h,{
+      sketchFeatureId:'sketch.plate',eventId:'preview.hole.add',
+      expectedRevision:h.document.revision,admission:'require_admissible',
+      operations:[{kind:'add',id:'previewC',x:60,y:20,radius:4}],
+    }));
+    assert.equal(admitted.kind,'preview',JSON.stringify(admitted));
+    assert.equal(admitted.exactAuthority,false);
+    assert.equal(admitted.nativeEvaluation,null);
+    assert.equal(admitted.sourceRevision,history.document.revision);
+    assert.equal(admitted.candidateRevision,history.document.revision+1);
+    assert.equal(admitted.report.features.find(f=>f.featureId==='sketch.plate').profile.holes.length,3);
+    assert.deepEqual(admitted.invalidation.invalidatedFeatureIds,
+      ['sketch.plate','plate','cut']);
+    assert.equal(session.save(),originalArchive,'candidate must not enter authoritative journal');
+    assert.equal(session.currentStep(),originalStep,'uncommitted drag must not revoke STEP');
+    assert.equal(nativeRequests,1,'preview does not dispatch physical provider');
+    const applied=await session.commitPreviewAndEvaluate(admitted,native('preview.physical'));
+    assert.equal(applied.kind,'submitted');
+    assert.equal(applied.evaluation.kind,'experimental_plate_evaluated',
+      JSON.stringify(applied.evaluation));
+    assert.equal(applied.evaluation.result.intendedPlate.holes.length,3);
+    assert.equal(nativeRequests,2);
+    assert.equal(applied.edit.invalidation.exactReuseAllowed,false);
+    assert.notEqual(session.save(),originalArchive);
+    assert.equal(session.currentStep()?.sha256,applied.evaluation.step.sha256);
+    const twice=await session.commitPreviewAndEvaluate(admitted,native('preview.duplicate'));
+    assert.equal(twice.kind,'refused');
+    assert.equal(twice.edit.code,'invalid_preview');
+    assert.equal(twice.evaluation,null);
+    assert.equal(nativeRequests,2,'a consumed preview must never rebuild twice');
+    const undone=session.applyEdit(h=>runtime.undo(h,['preview.undo']));
+    assert.equal(undone.kind,'committed');
+    assert.equal(session.currentStep(),null);
+    assert.equal(undone.report.features.find(f=>f.featureId==='sketch.plate').profile.holes.length,2);
+  }finally{session.cancel();await host.close();}
+});
+
+test('preview refusal and stale archive fences preserve author intent with no native dispatch',async()=>{
+  let history=initialProject(),dispatched=0;
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>history,publishHistory:next=>{history=next;},
+    evaluateImpl:async()=>{dispatched++;throw Error('must not dispatch for stale or refused preview');}});
+  const attempt=(id,x,y)=>session.previewEdit(h=>runtime.editPlateHoles(h,{
+    sketchFeatureId:'sketch.plate',eventId:id,
+    expectedRevision:h.document.revision,admission:'require_admissible',
+    operations:[{kind:'add',id,x,y,radius:4}],
+  }));
+  const original=session.save();
+  const refused=attempt('preview.bad','previewBad',35,40);
+  assert.equal(refused.kind,'refused','overlap is decided by real SKETCH profile gate');
+  assert.equal(session.save(),original);
+  const first=attempt('preview.okA','previewA',60,20);
+  const competing=attempt('preview.okB','previewB',70,20);
+  assert.equal(first.kind,'preview');
+  assert.equal(competing.kind,'preview');
+  assert.equal(session.save(),original);
+  // Display-layer mutation must never become authoritative candidate geometry.
+  first.report.features[0].diagnostics.push('UI tampering must be ignored');
+  const accepted=session.commitPreview(first);
+  assert.equal(accepted.kind,'committed');
+  assert.equal(accepted.report.features.find(f=>f.featureId==='sketch.plate').profile.holes.length,3);
+  const stale=await session.commitPreviewAndEvaluate(competing,{requestId:'preview.stale'});
+  assert.equal(stale.kind,'refused');
+  assert.equal(stale.edit.code,'stale_preview');
+  assert.equal(stale.evaluation,null);
+  const foreign=createLivePlateSession({runtime,
+    readCurrentHistory:()=>history,publishHistory:next=>{history=next;}});
+  assert.equal(foreign.commitPreview(first).code,'invalid_preview');
+  assert.equal(dispatched,0,'previews, refused edits and stale tokens cannot invoke native');
+  assert.equal(history.document.revision,accepted.report.revision);
+  assert.equal(session.currentStep(),null,'committed preview revokes old geometry');
+});
