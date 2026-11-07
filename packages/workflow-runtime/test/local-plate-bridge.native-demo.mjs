@@ -16,7 +16,7 @@ import * as plateContract from '@intuit3d/kernel-contract/plate-v1';
 import {runExperimentalPlate} from '@intuit3d/kernel-contract/local-plate-provider';
 import {createWorkflowRuntime} from '../index.mjs';
 import {startLocalPlateBridge} from '../local-plate-bridge.mjs';
-import {evaluateLocalPlate} from '../local-plate-client.mjs';
+import {createLivePlateSession} from '../live-plate-session.mjs';
 
 const runtime=createWorkflowRuntime({model,transactions,bindings,dimensions,archive,sketch,discovery});
 const created=(eventId,feature)=>({eventId,type:'feature.create',feature});
@@ -31,12 +31,15 @@ current=runtime.commit(current,[
 ]);
 const host=await startLocalPlateBridge({runtime,model,plateContract,runExperimentalPlate,
   timeoutMs:45000});
+const session=createLivePlateSession({runtime,readCurrentHistory:()=>current,
+  publishHistory:h=>{current=h;}});
 try {
   const evaluate=async requestId=>{
-    const out=await evaluateLocalPlate({url:host.url,token:host.token,runtime,
-      readCurrentHistory:()=>current,cutFeatureId:'cut',requestId,exportStep:true});
+    const out=await session.evaluate({url:host.url,token:host.token,requestId,exportStep:true});
     assert.equal(out.kind,'experimental_plate_evaluated',JSON.stringify(out));
     assert.ok(out.step.bytes.length>0);
+    assert.equal(session.currentStep()?.sha256,out.step.sha256,
+      'STEP must remain bound to the live authoritative archive');
     assert.equal(out.exactAuthority,false);
     assert.equal(out.independentInteroperability,false);
     return {revision:out.source.revision,plate:out.result.intendedPlate,
@@ -66,7 +69,7 @@ try {
 
   // An actual user edit to BOTH hole constraints is now one revision-fenced,
   // undoable INTENT event via the public SKETCH-backed runtime API.
-  const edited=runtime.editSketchConstraints(current,{
+  const edited=session.applyEdit(h=>runtime.editSketchConstraints(h,{
     sketchFeatureId:'sketch.plate',eventId:'edit.bridge.holes',
     expectedRevision:current.document.revision,
     admission:'require_admissible',
@@ -74,7 +77,7 @@ try {
       {constraintId:'holeA:diameter',patch:{value:5}},
       {constraintId:'holeB:diameter',patch:{value:5}},
     ],
-  });
+  }));
   assert.equal(edited.kind,'committed',JSON.stringify(edited));
   assert.deepEqual(edited.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
   current=runtime.reopen(runtime.save(edited.history));
@@ -94,11 +97,11 @@ try {
     .find(f=>f.featureId==='plate').profile.holes.map(h=>h.radius),[5,5]);
   // Real third-hole creation: one model transaction, full SKETCH admission,
   // then a fresh OCP Boolean and STEP over authenticated localhost HTTP.
-  const added=runtime.editPlateHoles(current,{
+  const added=session.applyEdit(h=>runtime.editPlateHoles(h,{
     sketchFeatureId:'sketch.plate',eventId:'author.bridge.third.hole',
     expectedRevision:current.document.revision,admission:'require_admissible',
     operations:[{kind:'add',id:'holeC',x:60,y:20,radius:4}],
-  });
+  }));
   assert.equal(added.kind,'committed',JSON.stringify(added));
   assert.deepEqual(added.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
   current=runtime.reopen(runtime.save(added.history));
@@ -114,12 +117,12 @@ try {
   // One-shot rectangular hole array: copies the solved source constraint,
   // authors all three additional bores in one INTENT revision, then produces
   // a NEW real OCP Boolean/STEP through authenticated local HTTP.
-  const patterned=runtime.patternPlateHoles(current,{
+  const patterned=session.applyEdit(h=>runtime.patternPlateHoles(h,{
     sketchFeatureId:'sketch.plate',eventId:'author.bridge.array',
     expectedRevision:current.document.revision,admission:'require_admissible',
     sourceHoleId:'holeA',idPrefix:'grid1',
     columns:2,rows:2,pitchXmm:16,pitchYmm:-18,
-  });
+  }));
   assert.equal(patterned.kind,'committed',JSON.stringify(patterned));
   assert.deepEqual(patterned.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
   current=runtime.reopen(runtime.save(patterned.history));
@@ -135,4 +138,4 @@ try {
     first,second,changedHoles,undoneHoles,withThirdHole,afterUndoThirdHole,
     withArray,undoneArray,
     redoAdmitted:true,independentStep:false,productionExact:false},null,2));
-} finally {await host.close();}
+} finally {session.cancel();await host.close();}
