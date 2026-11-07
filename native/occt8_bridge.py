@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 from plate_envelope import require_plate_vertex_envelope_mm
-from protocol import validate_request, validate_result
+from protocol import validate_request, validate_result, analytic_invariants, close
 from process_supervision import run_isolated_worker
 
 BACKEND = "OCCT-cxx-8.0.1"
@@ -65,8 +65,43 @@ def _cross_version_step_audit(request: dict, response: dict, stage: Path,
     return digest
 
 
+def _part21_step_audit(request: dict, stage: Path, directory: Path, deadline: float) -> dict:
+    """Independent, strictly plate-subset readback; not a general CAD importer."""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise subprocess.TimeoutExpired(["part21-plate-audit"], 0)
+    intent = directory / "part21-intent.json"
+    report = directory / "part21-report.json"
+    intent.write_text(json.dumps(request, allow_nan=False), encoding="utf-8")
+    auditor = Path(__file__).resolve().parent / "occt8" / "part21_oracle.py"
+    result = run_isolated_worker(
+        [sys.executable, str(auditor), "--step", str(stage),
+         "--intent", str(intent), "--report", str(report)],
+        cwd=directory, timeout=remaining,
+    )
+    if result.returncode != 0:
+        raise ValueError("independent Part 21 plate geometry readback failed")
+    if not report.is_file() or not 1 <= report.stat().st_size <= MAX_RESPONSE_BYTES:
+        raise ValueError("missing or oversized Part 21 readback report")
+    audit = json.loads(report.read_text(encoding="utf-8"))
+    fields = {"sha256", "readback", "solidCount", "faceCount", "edgeCount",
+              "vertexEnvelopeMm", "cylindricalHoles", "analyticPlateVolumeMm3"}
+    if not isinstance(audit, dict) or set(audit) != fields or (
+            audit["readback"] != "independent-part21-plate-subset-v1"):
+        raise ValueError("unrecognized independent STEP readback report")
+    digest = hashlib.sha256(stage.read_bytes()).hexdigest()
+    if audit["sha256"] != digest:
+        raise ValueError("STEP bytes changed during independent readback")
+    volume, _ = analytic_invariants(request["plate"])
+    if type(audit["analyticPlateVolumeMm3"]) not in (int, float) or (
+            not close(float(audit["analyticPlateVolumeMm3"]), volume)):
+        raise ValueError("independent STEP geometry differs from analytic plate volume")
+    return {"kind": "part21-plate-structural-v1", "sha256": digest}
+
+
 def execute(request_input: object, *, worker: Path, step_output: Path | None = None,
-            timeout: float = 30.0, cross_version_audit: bool = False) -> dict:
+            timeout: float = 30.0, cross_version_audit: bool = False,
+            part21_audit: bool = False) -> dict:
     request = validate_request(request_input)
     # Normalize relative output paths before changing the subprocess cwd.
     if step_output is not None:
@@ -77,6 +112,8 @@ def execute(request_input: object, *, worker: Path, step_output: Path | None = N
         raise ValueError("timeout must be between 0 and 3600 seconds")
     if cross_version_audit and not request["exportStep"]:
         raise ValueError("cross-version STEP readback requires exportStep")
+    if part21_audit and not request["exportStep"]:
+        raise ValueError("Part 21 readback requires exportStep")
     deadline = time.monotonic() + timeout
     with tempfile.TemporaryDirectory(prefix=".intuit3d-occt8-",
                                          dir=step_output.parent if step_output else None) as temp:
@@ -118,9 +155,13 @@ def execute(request_input: object, *, worker: Path, step_output: Path | None = N
                 # no overwrite of files created during the C++ worker's lifetime.
                 digest = ( _cross_version_step_audit(request, response, stage, directory, deadline)
                            if cross_version_audit else hashlib.sha256(stage.read_bytes()).hexdigest() )
+                part21_result = (_part21_step_audit(request, stage, directory, deadline)
+                                 if part21_audit else None)
                 os.link(stage, step_output)
                 response["stepPath"] = str(step_output)
                 response["stepSha256"] = digest
+                if part21_result is not None:
+                    response["part21Audit"] = part21_result
                 response["stepVerification"] = (
                     "occt-7.9.3.1-separate-process" if cross_version_audit
                     else "occt-8.0.1-same-engine"
@@ -142,11 +183,14 @@ def main() -> int:
     p.add_argument("--timeout", type=float, default=30)
     p.add_argument("--cross-version-step-audit", action="store_true",
                    help="require separate OCP 7.9.3.1 reader; not independent CAD interoperability")
+    p.add_argument("--part21-step-audit", action="store_true",
+                   help="require independent plate-subset STEP geometry readback, not general interoperability")
     args = p.parse_args()
     try:
         response = execute(json.load(sys.stdin), worker=args.worker,
                            step_output=args.step_output, timeout=args.timeout,
-                           cross_version_audit=args.cross_version_step_audit)
+                           cross_version_audit=args.cross_version_step_audit,
+                           part21_audit=args.part21_step_audit)
     except (ValueError, KeyError, TypeError) as exc:
         print(json.dumps({"status":"invalid_request","message":str(exc)[:600]}))
         return 2
