@@ -47,6 +47,10 @@
     "./local-occt8-cut-provider": {
       "types": "./src/local-occt8-cut-provider.d.mts",
       "node": "./src/local-occt8-cut-provider.mjs"
+    },
+    "./runtime-occt8-cut-provider": {
+      "types": "./src/runtime-occt8-cut-provider.d.mts",
+      "node": "./src/runtime-occt8-cut-provider.mjs"
     }
   },
   "scripts": {
