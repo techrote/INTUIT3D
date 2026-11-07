@@ -60,6 +60,15 @@ test('live model-backed plate: add hole, thickness edit, undo/reopen and local S
     assert.equal(first.kind,'experimental_plate_evaluated',JSON.stringify(first));
     assert.equal(first.result.intendedPlate.holes.length,2);
     assert.deepEqual(Buffer.from(session.currentStep().bytes),STEP);
+    // Actual HTTP adapter SHA-verifies these test-provider bytes. The caller
+    // must not be able to corrupt the cached copy via either return path.
+    first.step.bytes[0]=0;
+    assert.deepEqual(Buffer.from(session.currentStep().bytes),STEP,
+      'modifying an evaluation response must not alter the native receipt');
+    const downloaded=session.currentStep();
+    downloaded.bytes[0]=0;
+    assert.deepEqual(Buffer.from(session.currentStep().bytes),STEP,
+      'modifying one download buffer must not corrupt later downloads');
     const savedBefore=session.save();
     const denied=session.applyEdit(h=>runtime.editPlateHoles(h,{
       sketchFeatureId:'sketch.plate',eventId:'bad.hole',
