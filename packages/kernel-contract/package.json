@@ -11,11 +11,17 @@
     "./local-plate-provider": {
       "types": "./src/local-plate-provider.d.mts",
       "node": "./src/local-plate-provider.mjs"
+    },
+    "./occt8-v1": {
+      "types": "./src/occt8-v1.d.mts",
+      "default": "./src/occt8-v1.mjs"
     }
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 --types node test/type-contract.mts"
   },
-  "engines": {"node": ">=22"}
+  "engines": {
+    "node": ">=22"
+  }
 }
