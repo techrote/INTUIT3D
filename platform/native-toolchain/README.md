@@ -40,6 +40,56 @@ Contract tests (which **are not** physical qualification):
 python3 -m unittest discover -s platform/native-toolchain -p 'test_*.py' -v
 ```
 
+
+
+## Source-matched, relocatable **offline Linux worker** bundle
+
+Once an **actual** pinned C++ qualification has produced `NATIVE_EXPERIMENTAL_PASS`
+for both 8 mm and 12 mm plates, create an offline worker + all fourteen
+SONAME-linked shared OCCT toolkits, bridge, source-matched requests and genuine
+STEP evidence. This is different from uploading only the executable: the real
+C++ worker's build-time absolute GNU `DT_RPATH` otherwise names the temporary
+runner installation, and its transitive `libTK*.so` dependencies are not
+available after extraction.
+
+**Hosted prerequisites:** `patchelf`, `binutils`, Python 3, CMake/Ninja,
+C++17 compiler; GitHub runner must have already executed `qualify.py` with the
+new `kernelSourceCommit` evidence field and kept the pinned OCCT prefix.
+
+```bash
+python3 platform/native-toolchain/bundle_offline.py \
+  --qualification /path/to/executed/qualification \
+  --prefix /path/to/verified/occt-prefix \
+  --kernel-tree /path/to/exact/kernel-checkout \
+  --output /tmp/occt801-offline
+# Emits /tmp/occt801-offline.tar.gz only after relocated real 8 + 12 mm
+# compiled-C++ geometry and Part 21 checks PASS.
+```
+
+Extract the tarball into a **different** location, not the original build tree;
+from the extracted folder:
+
+```bash
+python3 verify.py
+./run.sh --part21-step-audit --step-output /tmp/verified.step \
+  < requests/plate-8mm.json
+```
+
+The bundled launcher invokes the unchanged KERNEL subprocess bridge with the
+genuine relocated C++ worker. Its origin-relative `DT_RPATH` resolves the
+correct OCCT toolkits transitively, with no host OCCT fallback. The manifest
+contains the original worker SHA, patched/relocated worker SHA, original
+8/12 mm STEP SHA, immutable OCCT source pin and exact KERNEL checkout SHA,
+per-file SHA-256, SONAME symlink map, C++ runtime resolution and fresh
+post-relocation analytic/STEP results. Missing or stale source/STEP/binary
+evidence fails closed; the packager removes incomplete output.
+
+**Portability boundary:** Linux ELF plus compatible glibc/libstdc++ and Python
+3; this does **not** prove Windows-native execution, general geometry support
+or full non-OCCT external CAD STEP interoperability. The same-engine and strict
+Part 21 subset oracles do not replace external CAD qualification. INTEGRATION
+owns the workflow installation and immutable archive retention.
+
 ### Evidence boundaries and next action
 
 - Network-disabled shells without the pinned OCCT source or attested prefix are **BLOCKED**; their synthetic test PASS is **not** a native success. GitHub-hosted runner capability must be tested separately.
