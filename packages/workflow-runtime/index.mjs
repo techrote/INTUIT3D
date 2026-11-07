@@ -187,6 +187,57 @@ export function createWorkflowRuntime(services) {
     return diffWorkflowPlans(model.planProject(previous.document), model.planProject(next.document));
   }
 
+  /**
+   * Apply a batch of authored sketch constraint edits as ONE INTENT transaction.
+   * SKETCH alone validates and updates constraint geometry; runtime owns only
+   * revision-fenced admission and the authoritative journal commit.
+   *
+   * require_admissible: preview a candidate and refuse without changing history
+   * unless SKETCH admits exactly one analytic plate profile.
+   * preserve_unresolved: retain validly authored but unsolved/invalid geometry
+   * for subsequent user repair, with no fabricated usable solid.
+   */
+  function editSketchConstraints(history, request) {
+    const {sketchFeatureId,eventId,expectedRevision,edits,
+      admission='require_admissible'}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision!==previous.document.revision)
+      throw new Error('runtime sketch edit: stale or missing expectedRevision');
+    if (typeof sketchFeatureId!=='string' || !sketchFeatureId ||
+        typeof eventId!=='string' || !eventId ||
+        !['require_admissible','preserve_unresolved'].includes(admission) ||
+        !Array.isArray(edits) || edits.length<1 || edits.length>64 ||
+        typeof sketch.editConstraint!=='function')
+      throw new TypeError('runtime sketch edit: valid feature/event, SKETCH adapter and 1–64 edits required');
+    const entry=model.planProject(previous.document).features.find(x=>x.feature.id===sketchFeatureId);
+    if (entry?.feature.kind!=='sketch' || !entry.feature.payload?.sketch)
+      throw new TypeError('runtime sketch edit: authoritative sketch feature required');
+    let nextSketch=sketch.validateSketch(entry.feature.payload.sketch);
+    const seen=new Set();
+    for (const edit of edits) {
+      if (!edit || typeof edit.constraintId!=='string' || !edit.constraintId ||
+          seen.has(edit.constraintId) || !edit.patch || typeof edit.patch!=='object' ||
+          Array.isArray(edit.patch))
+        throw new TypeError('runtime sketch edit: invalid or repeated constraint edit');
+      seen.add(edit.constraintId);
+      // Do not reproduce SKETCH's constraint-kind rules, tolerance or solver.
+      nextSketch=sketch.editConstraint(nextSketch,edit.constraintId,edit.patch);
+    }
+    const candidate=commit(previous,[{
+      eventId,type:'feature.edit',featureId:sketchFeatureId,
+      patch:{payload:{...entry.feature.payload,sketch:nextSketch}},
+    }],expectedRevision);
+    const report=inspect(candidate);
+    const state=report.features.find(x=>x.featureId===sketchFeatureId);
+    if (!state) throw new Error('runtime sketch edit: candidate feature disappeared');
+    if (admission==='require_admissible' && state.status!=='analytic_profile_only')
+      return {kind:'refused',code:'inadmissible_sketch',sourceRevision:expectedRevision,
+        candidateRevision:report.revision,notCommitted:true,candidateFeature:state,
+        reason:'SKETCH did not admit a single solved analytic profile; authoritative history is unchanged'};
+    return {kind:'committed',history:candidate,report,
+      sketchStatus:state.status,invalidation:diff(previous,candidate)};
+  }
+
   /** Explicitly delegated, revision-fenced authoritative commands. */
   function commit(history, events, expectedRevision = history.document.revision) {
     return transactions.commitUndoableTransaction(history, events, expectedRevision);
@@ -207,5 +258,5 @@ export function createWorkflowRuntime(services) {
   function reopen(serialized) {
     return archive.deserializeModelArchive(serialized).history;
   }
-  return Object.freeze({inspect, diff, commit, editDimensions, undo, redo, save, reopen});
+  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, undo, redo, save, reopen});
 }
