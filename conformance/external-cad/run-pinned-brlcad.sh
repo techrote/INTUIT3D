@@ -76,7 +76,7 @@ nirt=$(find_bin nirt)
 # Honor the package's private shared libraries without requiring a root install.
 private_lib=$(find "$prefix" -name 'libbu.so*' -type f -printf '%h\n' -quit)
 if [[ -n "$private_lib" ]]; then
-  export LD_LIBRARY_PATH="$private_lib\${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  export LD_LIBRARY_PATH="$private_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
 export PATH="$(dirname "$step_g"):$(dirname "$mged"):$(dirname "$gqa"):$(dirname "$nirt"):$PATH"
 {
