@@ -549,3 +549,17 @@ synthetic native test double. The separately existing `npm run demo:bridge
 --workspace @intuit3d/workflow-runtime` exercises experimental OCP; neither
 is independent STEP verification. WORKBENCH owns wiring pointer
 press/move/release to this API, and INTEGRATION owns cross-package admission.
+
+### Safe repeated STEP downloads after interactive edits
+
+At the moment of download obtain `const receipt=session.currentStep()`; never
+reuse an older receipt across an edit, undo or reopen. The session retains an
+independent copy of SHA-verified experimental STEP bytes: mutating or transferring
+an `evaluation.step.bytes` response or a previously returned
+`currentStep().bytes` buffer cannot alter a subsequent download. The latest
+revision fence remains mandatory and a committed gesture still invalidates the
+previous receipt. For a real saved file, use a fresh copy from
+`session.currentStep()` and label it **experimental OCP / same-engine readback**,
+not production-certified STEP. The real-INTENT/SKETCH localhost regression
+exercises both mutation paths; native OCP and independent CAD qualifications
+remain separate gates.
