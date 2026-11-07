@@ -31,6 +31,10 @@
     "./ordered-cut-extent-edit/v1": {
       "types": "./ordered-cut-extent-edit.d.mts",
       "default": "./src/ordered-cut-extent-edit.mjs"
+    },
+    "./circular-bolt-pattern/v1": {
+      "types": "./circular-bolt-pattern.d.mts",
+      "default": "./src/circular-bolt-pattern.mjs"
     }
   },
   "peerDependencies": {
