@@ -271,3 +271,69 @@ test('one-call reopen and native rebuild refuses unconfirmed replacement; rebuil
     assert.equal(accepted.evaluation.independentInteroperability,false);
   } finally {session.cancel();await host.close();}
 });
+
+test('hung native attempt times out promptly, retains same-archive STEP, and recovers without late publication',async()=>{
+  let history=initialProject(),calls=0,releaseHung;
+  const hung=new Promise(resolve=>{releaseHung=resolve;});
+  const receipt=options=>({kind:'experimental_plate_evaluated',
+    exactAuthority:false,independentInteroperability:false,
+    source:{projectId:history.document.projectId,revision:history.document.revision},
+    result:{requestId:options.requestId,cutFeatureId:options.cutFeatureId},
+    step:{filename:'synthetic.step',bytes:new Uint8Array([calls]),sha256:'synthetic.'+calls}});
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>history,publishHistory:h=>{history=h;},
+    evaluateImpl:async options=>{
+      calls++;
+      if(calls===2) await hung; // Deliberately ignores AbortSignal.
+      return receipt(options);
+    }});
+  const initial=await session.evaluate({requestId:'deadline.initial'});
+  assert.equal(initial.kind,'experimental_plate_evaluated');
+  assert.equal(session.currentStep()?.sha256,'synthetic.1');
+  // The pre-fix path never settled until the test double voluntarily returned.
+  const bounded=await Promise.race([
+    session.evaluate({requestId:'deadline.hung',deadlineMs:40}),
+    new Promise(resolve=>setTimeout(()=>resolve({code:'test_watchdog'}),1500)),
+  ]);
+  assert.equal(bounded.code,'timeout',JSON.stringify(bounded));
+  assert.equal(bounded.exactAuthority,false);
+  assert.equal(session.refresh().lastResultKind,'unresolved');
+  assert.equal(session.currentStep()?.sha256,'synthetic.1',
+    'a hung same-revision refresh cannot revoke a verified older download');
+  const recovered=await session.evaluate({requestId:'deadline.recovered',deadlineMs:200});
+  assert.equal(recovered.kind,'experimental_plate_evaluated');
+  assert.equal(session.currentStep()?.sha256,'synthetic.3');
+  releaseHung(); // Native result from the timed-out attempt arrives late.
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(session.currentStep()?.sha256,'synthetic.3',
+    'late completion must not publish after a newer successful evaluation');
+  const changed=session.applyEdit(h=>runtime.commit(h,[{
+    eventId:'deadline.edit.thickness',type:'feature.edit',featureId:'plate',
+    patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:12}},
+  }]));
+  assert.equal(changed.kind,'committed');
+  assert.equal(session.currentStep(),null,'a real edit must invalidate the prior receipt');
+});
+
+test('explicit cancellation settles immediately even if the adapter ignores AbortSignal',async()=>{
+  let history=initialProject(),started,release;
+  const begun=new Promise(resolve=>{started=resolve;});
+  const gate=new Promise(resolve=>{release=resolve;});
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>history,publishHistory:h=>{history=h;},
+    evaluateImpl:async ()=>{started();await gate;return {kind:'unresolved',code:'cancelled',
+      exactAuthority:false,independentInteroperability:false};}});
+  const pending=session.evaluate({requestId:'cancel.noncooperative',deadlineMs:10000});
+  await begun;
+  session.cancel();
+  const result=await Promise.race([
+    pending,new Promise(resolve=>setTimeout(()=>resolve({code:'test_watchdog'}),1500)),
+  ]);
+  assert.equal(result.code,'stale_revision',JSON.stringify(result));
+  assert.equal(session.refresh().inFlight,false);
+  release();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(session.currentStep(),null);
+  assert.equal(session.refresh().lastResultKind,null);
+  assert.throws(()=>session.evaluate({deadlineMs:Infinity}),/deadlineMs/);
+});
