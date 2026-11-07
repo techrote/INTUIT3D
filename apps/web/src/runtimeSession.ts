@@ -9,6 +9,7 @@ import * as bindings from '@intuit3d/model/dimension-bindings';
 import * as dimensions from '@intuit3d/model/dimension-batch-edit';
 import * as archive from '@intuit3d/model/archive';
 import { moveHistoryFeature } from '@intuit3d/model/history-move';
+import { commitUndoableParameterFreeze, previewParameterFreeze } from '@intuit3d/model/parameter-freeze';
 import * as sketch from '@intuit3d/sketch';
 import * as discovery from '@intuit3d/sketch/profile-discovery/v1';
 import { createWorkflowRuntime } from '@intuit3d/workflow-runtime';
@@ -213,14 +214,61 @@ function dimension(h: ModelSession, id: string): number {
   return c.value;
 }
 
+/** Binding truth is the authoritative INTENT manifest, never a local UI flag.
+ * A frozen extrusion has a literal thickness and no parameter feature. */
+export function modelThicknessBinding(h: ModelSession): 'named_parameter' | 'independent' {
+  const manifest = getFeature(h,'plate').payload.dimensionBindings;
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return 'independent';
+  const entries = (manifest as Record<string, unknown>).entries;
+  return Array.isArray(entries) && entries.some((entry:unknown) =>
+    !!entry && typeof entry === 'object' && !Array.isArray(entry) &&
+      (entry as Record<string,unknown>).field === 'thicknessMm')
+    ? 'named_parameter' : 'independent';
+}
+
+/** Freeze CURRENT resolved thickness, explicitly release the witnessed binding
+ * edge and retire the now-unused parameter in ONE undoable INTENT transaction.
+ * The model API refuses stale, unresolved or non-owned releases. */
+export function makeModelThicknessIndependent(h: ModelSession): {
+  history: ModelSession;
+  bakedThicknessMm: number;
+  invalidatedFeatureIds: readonly string[];
+} {
+  if(modelThicknessBinding(h)!=='named_parameter')
+    throw Error('Thickness is already independent');
+  const revision=h.document.revision;
+  const request={
+    format:'intuit3d.parameter-freeze',version:1,expectedRevision:revision,
+    admission:'require_admissible',
+    edits:[{eventId:`workbench.freeze.thickness.${revision}`,featureId:'plate',field:'thicknessMm'}],
+    release:[{eventId:`workbench.freeze.release.${revision}`,featureId:'plate',dependencies:['parameter.t']}],
+    confirmIndependentIntentReviewed:true,
+    retire:{eventId:`workbench.freeze.retire.${revision}`,parameterId:'parameter.t'},
+  } as const;
+  const preview=previewParameterFreeze(h.document,request);
+  const history=commitUndoableParameterFreeze(h,request);
+  if (preview.baked.length!==1 || preview.baked[0].featureId!=='plate')
+    throw Error('Unexpected parameter freeze result');
+  return {
+    history,bakedThicknessMm:preview.baked[0].value,
+    invalidatedFeatureIds:preview.invalidation.invalidatedFeatureIds,
+  };
+}
+
 export function modelDimensionValues(h: ModelSession): Record<ModelDimension, number> {
   const a = dimension(h, 'holeA:fixed'), b = dimension(h, 'holeB:fixed');
-  const parameter = getFeature(h, 'parameter.t').payload.parameter;
-  if (!parameter || typeof parameter !== 'object' || Array.isArray(parameter)) throw Error('Invalid thickness parameter');
-  const expression = (parameter as Record<string, unknown>).expression;
-  if (!expression || typeof expression !== 'object' || Array.isArray(expression)) throw Error('Invalid parameter expression');
-  const value = (expression as Record<string, unknown>).value;
-  if (typeof value !== 'number') throw Error('Thickness expression is not an editable literal');
+  let value: unknown;
+  if (modelThicknessBinding(h)==='named_parameter') {
+    const parameter = getFeature(h, 'parameter.t').payload.parameter;
+    if (!parameter || typeof parameter !== 'object' || Array.isArray(parameter)) throw Error('Invalid thickness parameter');
+    const expression = (parameter as Record<string, unknown>).expression;
+    if (!expression || typeof expression !== 'object' || Array.isArray(expression)) throw Error('Invalid parameter expression');
+    value = (expression as Record<string, unknown>).value;
+  } else {
+    value = getFeature(h,'plate').payload.thicknessMm;
+  }
+  if (typeof value !== 'number' || !Number.isFinite(value))
+    throw Error('Invalid authoritative thickness dimension');
   return {
     width: dimension(h,'width'), depth: dimension(h,'height'),
     holeDiameter: 2 * dimension(h,'holeA:diameter'), holePitch: b-a,
@@ -234,12 +282,19 @@ export function editModelDimension(h: ModelSession, field: ModelDimension, value
   }
   const eventId = `workbench.edit.${field}.${h.document.revision}`;
   if (field === 'thickness') {
-    const source = getFeature(h, 'parameter.t');
-    return runtime.commit(h, [{
-      eventId, type:'feature.edit', featureId:source.id,
-      patch:{ payload:{ ...source.payload, parameter:{
-        name:'thickness', unit:'mm', expression:{ op:'literal', unit:'mm', value },
-      } } },
+    if (modelThicknessBinding(h)==='named_parameter') {
+      const source = getFeature(h, 'parameter.t');
+      return runtime.commit(h, [{
+        eventId, type:'feature.edit', featureId:source.id,
+        patch:{ payload:{ ...source.payload, parameter:{
+          name:'thickness', unit:'mm', expression:{ op:'literal', unit:'mm', value },
+        } } },
+      }]);
+    }
+    const source = getFeature(h,'plate');
+    return runtime.commit(h,[{
+      eventId,type:'feature.edit',featureId:source.id,
+      patch:{payload:{...source.payload,thicknessMm:value}},
     }]);
   }
   const source = getFeature(h,'sketch.plate');
