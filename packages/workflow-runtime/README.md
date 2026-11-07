@@ -417,3 +417,13 @@ and rebuilding; its native backend is explicitly synthetic. The separate
 `npm run demo:bridge --workspace @intuit3d/workflow-runtime` exercises actual
 experimental OCP when installed. Neither path substitutes for independent
 external STEP or production OCCT 8.0.1 qualification.
+
+## Rigidly reposition existing holes (RUNTIME-002)
+
+`runtime.transformPlateHoles(history,{sketchFeatureId,eventId,expectedRevision,holeIds,translateXmm,translateYmm,rotateDegrees,pivotXmm,pivotYmm})` performs one user-authorized rigid translation/rotation of **1–32 selected, independently constrained existing circular holes**. Both pivot coordinates are required for rotation. Positions are read from **the real SKETCH solve**; this does not trust preview geometry, assign new hole IDs, modify radii or introduce a parametric pattern engine.
+
+The operation patches the actual hole-centre fixed constraints, passes the batch through the accepted SKETCH edit/solve and profile-admission gate, and commits **one INTENT journal event** with dependency-aware invalidation. Invalid contacts/overlaps are refused without a write under default `require_admissible`; callers may explicitly preserve unresolved authoring intent for repair. Shared/externally referenced hole centres are refused rather than silently detaching constraints. Undo/redo/archive replay preserve the original IDs and operation history. This is a **one-shot** transform, not a live associative relationship.
+
+**WORKBENCH adoption:** a multi-hole selection/drag/rotate inspector can pass selected stable circle IDs and a chosen pivot. Use the existing `createLivePlateSession().applyEditAndEvaluate(h => runtime.transformPlateHoles(h, request), pairedNativeOptions)` to trigger a revision-fenced experimental plate/cut rebuild. On refusal, retain the unchanged current STEP; on a committed edit, discard the prior receipt. `currentStep()` remains the only approved download-time accessor. The browser preview is analytic/tessellated; native OCP/STEP remains experimental until independently qualified.
+
+**Qualification:** `npm test --workspace @intuit3d/workflow-runtime` includes actual INTENT/SKETCH solver, refusal, undo/save/reopen/redo and real KERNEL request-parser integration with an explicitly synthetic responder. `npm run demo:bridge --workspace @intuit3d/workflow-runtime` additionally physically rebuilds and same-engine-checks the repositioned holes **only when the pinned OCP backend is installed**. None of these is independent non-OCCT STEP interoperability.

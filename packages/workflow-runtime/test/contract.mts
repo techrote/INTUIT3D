@@ -86,3 +86,17 @@ const rectangle=rectanglePlateFromProfile({status:'analytic_profile_only',units:
   outer:[{x:0,y:0},{x:1,y:0},{x:1,y:1},{x:0,y:1}],holes:[{x:0.5,y:0.5,radius:0.1}]},1);
 const width:number=rectangle.width;
 void width;
+
+const rigidGroup=runtime.transformPlateHoles(session,{
+  sketchFeatureId:'sketch.plate',eventId:'author.contract.rigid-group',
+  expectedRevision:session.document.revision,
+  holeIds:['holeA','holeB'],rotateDegrees:90,pivotXmm:60,pivotYmm:40,
+  translateXmm:5,translateYmm:0,
+});
+if(rigidGroup.kind==='committed') {
+  const invalidated:readonly string[]=rigidGroup.invalidation.invalidatedFeatureIds;
+  void invalidated;
+} else {
+  const notCommitted:true=rigidGroup.notCommitted;
+  void notCommitted;
+}

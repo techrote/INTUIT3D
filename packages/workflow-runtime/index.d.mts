@@ -131,6 +131,25 @@ export interface CircularHolePatternRequest {
 }
 
 
+/** One-shot rigid move/rotation of existing independently constrained holes.
+ * All positions are calculated from solved SKETCH coordinates. The requested
+ * holes keep their stable identities/radii; profile admission guards overlaps
+ * and containment. Not an associative transform feature or a native solid.
+ */
+export interface RigidHoleTransformRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  admission?:'require_admissible'|'preserve_unresolved';
+  holeIds:readonly string[];
+  translateXmm?:number;
+  translateYmm?:number;
+  rotateDegrees?:number;
+  /** Both pivot coordinates are required when rotateDegrees is nonzero. */
+  pivotXmm?:number;
+  pivotYmm?:number;
+}
+
 export interface RuntimeServices {
   model: { planProject(document: ProjectDocument): EvaluationPlan };
   transactions: {
@@ -167,6 +186,8 @@ export interface WorkflowRuntime {
   patternPlateHoles(history:UndoHistory,request:RectangularHoleArrayRequest):PlateHoleBatchResult;
   /** One revision-fenced, undoable circular array using real solved SKETCH geometry. */
   patternCircularHoles(history:UndoHistory,request:CircularHolePatternRequest):PlateHoleBatchResult;
+  /** Transform 1–32 existing solved hole centres as ONE undoable model event. */
+  transformPlateHoles(history:UndoHistory,request:RigidHoleTransformRequest):SketchConstraintBatchResult;
   undo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   redo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   save(history: UndoHistory): string;

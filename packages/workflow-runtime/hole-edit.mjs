@@ -153,3 +153,52 @@ export function planCircularHolePattern(source,solution,request){
     fail('plate-v1 supports at most 64 circular holes');
   return operations;
 }
+
+/**
+ * Rigidly translate/rotate a selection of independently authored circular
+ * holes. This is a one-shot change of EXISTING fixed-point constraints, not an
+ * associative transform feature or solver. Solve supplies source coordinates;
+ * the caller delegates edits to SKETCH and performs full profile admission.
+ * No tolerance-based geometry repair or implicit body/selection inference.
+ */
+export function planRigidHoleTransform(source,solution,request){
+  const {holeIds,translateXmm=0,translateYmm=0,rotateDegrees=0,
+    pivotXmm,pivotYmm}=request??{};
+  if(!Array.isArray(holeIds)||holeIds.length<1||holeIds.length>32||
+      holeIds.some(id=>typeof id!=='string'||!HOLE_ID.test(id))||
+      new Set(holeIds).size!==holeIds.length||
+      !finite(translateXmm)||!finite(translateYmm)||!finite(rotateDegrees)||
+      Math.abs(rotateDegrees)>=360||
+      (translateXmm===0&&translateYmm===0&&rotateDegrees===0)||
+      (rotateDegrees!==0&&(!finite(pivotXmm)||!finite(pivotYmm))))
+    fail('rigid transform requires 1–32 unique hole IDs, finite translation and signed rotation under 360 degrees, with explicit rotation pivot');
+  if(solution?.status!=='solved'||!solution.geometry)
+    fail('rigid transform requires actual solved SKETCH geometry');
+  const angle=rotateDegrees*Math.PI/180,c=Math.cos(angle),s=Math.sin(angle);
+  const px=rotateDegrees===0?0:pivotXmm,py=rotateDegrees===0?0:pivotYmm;
+  const edits=[];
+  for(const holeId of holeIds){
+    const circle=source.circles.find(h=>h.id===holeId);
+    const center=circle?.center;
+    const point=solution.geometry.points?.find(p=>p.id===center);
+    const solvedCircle=solution.geometry.circles?.find(h=>h.id===holeId);
+    if(!circle||!point||!solvedCircle||!finite(point.x)||!finite(point.y)||
+        !finite(solvedCircle.radius)||solvedCircle.radius<=0)
+      fail('selected hole has no independently solved circle and centre');
+    if(source.circles.some(h=>h.id!==holeId&&h.center===center)||
+        source.lines.some(l=>l.start===center||l.end===center))
+      fail('selected hole shares geometry with another entity');
+    const related=source.constraints.filter(k=>refs(k,holeId,center));
+    const fixed=related.filter(k=>k.kind==='fixed'&&k.point===center);
+    const radius=related.filter(k=>k.kind==='radius'&&k.circle===holeId);
+    if(related.length!==2||fixed.length!==1||radius.length!==1)
+      fail('selected hole has external or ambiguous constraints; rigid transform refused');
+    const dx=point.x-px,dy=point.y-py;
+    const x=px+dx*c-dy*s+translateXmm;
+    const y=py+dx*s+dy*c+translateYmm;
+    if(!finite(x)||!finite(y))
+      fail('rigid transform produced non-finite solved coordinates');
+    edits.push({constraintId:fixed[0].id,patch:{x,y}});
+  }
+  return edits;
+}
