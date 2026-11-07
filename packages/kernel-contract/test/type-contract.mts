@@ -104,3 +104,18 @@ const executedCut:Promise<BodyCutResult> = runExperimentalRuntimeBodyCut(journal
 void mappedCut; void executedCut;
 // @ts-expect-error revision callback is compulsory for physical cut publication
 runExperimentalRuntimeBodyCut(journal,'cut.window',{...liveServices,requestId:'cut.native'});
+
+
+import {requestFromRuntimeBodyCutChain,runExperimentalRuntimeBodyCutChain,
+  type RuntimeBodyCutChainServices} from '../src/runtime-body-cut-chain-provider.mjs';
+declare const chainServices:RuntimeBodyCutChainServices;
+const chainMapped=requestFromRuntimeBodyCutChain(journal,'body.bracket',{
+  ...chainServices,requestId:'chain.native'});
+const chainExecuted=runExperimentalRuntimeBodyCutChain(journal,'body.bracket',{
+  ...chainServices,requestId:'chain.native',
+  readCurrentRevision:()=>journal.document.revision});
+const chainRequest:import('../src/local-body-cut-provider.mjs').BodyCutChainRequest=chainMapped;
+void chainRequest;void chainExecuted;
+// @ts-expect-error live multi-cut publication must be revision fenced
+runExperimentalRuntimeBodyCutChain(journal,'body.bracket',{
+  ...chainServices,requestId:'chain.native'});
