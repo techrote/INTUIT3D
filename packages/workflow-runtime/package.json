@@ -23,6 +23,10 @@
     "./live-plate-session": {
       "types": "./live-plate-session.d.mts",
       "default": "./live-plate-session.mjs"
+    },
+    "./nonocct-step-probe": {
+      "types": "./nonocct-step-probe.d.mts",
+      "node": "./nonocct-step-probe.mjs"
     }
   },
   "types": "./index.d.mts",
@@ -35,7 +39,8 @@
     "typecheck": "tsc --noEmit --strict --allowImportingTsExtensions --module nodenext --moduleResolution nodenext --target es2022 --typeRoots ../../tooling/contract-type-roots test/contract.mts test/bridge-contract.mts test/live-plate-session.contract.mts",
     "demo:native": "node test/experimental-plate.native-demo.mjs",
     "demo:bridge": "node test/local-plate-bridge.native-demo.mjs",
-    "demo:occt8:bridge": "node test/local-occt8-bridge.native-demo.mjs"
+    "demo:occt8:bridge": "node test/local-occt8-bridge.native-demo.mjs",
+    "demo:occt8:independent": "node test/local-occt8-bridge.native-demo.mjs --require-independent"
   },
   "engines": {
     "node": ">=22.6.0"

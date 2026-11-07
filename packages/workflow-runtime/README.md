@@ -616,3 +616,40 @@ audit receipts, model revision, analytic volume and SHA-256. It **fails** if
 the pinned binary is missing. This command is not a claim it ran on every
 CI runner. WORKBENCH pointer/browser use and the external AnvilCAD/BRL-CAD
 STEP checks still require their own executed integration qualification.
+
+
+### One-command authoritative edit → pinned C++ → separately executed non-OCCT STEP sampling
+
+The native demo now optionally reads back **the very STEP bytes returned by
+the live INTENT/SKETCH session**, not an older standalone native fixture.
+When a genuine source-pinned AnvilCAD probe has been compiled by PLATFORM,
+execute the following command on a host with both native executables:
+
+```bash
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+INTUIT3D_ANVIL_STEP_PROBE=/absolute/path/to/intuit_step_probe \
+INTUIT3D_ANVIL_PROBE_SHA256=<actual-64-character-binary-sha256> \
+npm run demo:occt8:independent --workspace @intuit3d/workflow-runtime
+```
+
+This deliberately requires both binaries: no mock or fallback substitutes for
+a missing independent reader. The bounded Node-only
+`@intuit3d/workflow-runtime/nonocct-step-probe` adapter checks the
+probe's binary SHA-256, copies the exact verified downloadable STEP into a
+private temporary path, executes the non-OCCT importer without a shell, and
+requires one source-matched solid, mm units, exact B-rep import, closed mesh,
+volume within the already-declared 1% sampled-mesh budget, zero warnings,
+two material Z intersections and correctly located bore/exterior rays.
+Each of **four real user states** (8 mm, retrospective 12 mm, undo to 8 mm,
+archive reopen) produces a source-archive/STEP/probe/transcript-SHA-bound
+receipt. Neither STEP bytes nor binaries are committed.
+
+**Evidence boundary:** ordinary package tests use *synthetic text transcripts*
+to exercise refusal of mislocated holes, bad units/topology, and false volume.
+These do not execute AnvilCAD. The command above executes the actual supplied
+non-OCCT binary and C++ provider, but binary origin, pin, license and completed
+hosted execution still require separate PLATFORM/INTEGRATION verification.
+`exactAuthority:false` and `independentInteroperability:false` remain
+unchanged at the application boundary. No general/arbitrary STEP or browser
+qualification is inferred. Integration alone wires native provisioned executables
+into official CI or accepts this new evidence.

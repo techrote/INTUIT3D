@@ -58,3 +58,21 @@ export async function pinnedNativeHostConsumer(){
   }
   await pinned.close();
 }
+
+
+// Node-only, versioned external reader consumer; the browser never imports it.
+import {parseNonOcctPlateTranscript,runNonOcctPlateProbe} from '../nonocct-step-probe.mjs';
+export async function nonOcctBridgeConsumer(step:{bytes:Uint8Array;sha256:string;
+  verification:'occt8_part21_plate_subset'}, source:{projectId:string;
+  revision:number;archiveSha256:string}) {
+  const plate={width:120,depth:80,thickness:8,holes:[
+    {x:-30,y:0,radius:6},{x:30,y:0,radius:6},
+  ]};
+  const transcript:(typeof parseNonOcctPlateTranscript)=parseNonOcctPlateTranscript;
+  void transcript;
+  const evidence=await runNonOcctPlateProbe({probeExecutable:'/trusted/anvil_probe',
+    expectedProbeSha256:'0'.repeat(64),step,source,plate});
+  const noExact:false=evidence.exactAuthority;
+  const noInteroperability:false=evidence.independentInteroperability;
+  return {noExact,noInteroperability,evidence};
+}

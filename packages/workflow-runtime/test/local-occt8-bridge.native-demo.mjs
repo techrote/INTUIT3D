@@ -19,6 +19,7 @@ import {runPinnedOcct8Plate} from '@intuit3d/kernel-contract/local-occt8-provide
 import {createWorkflowRuntime} from '../index.mjs';
 import {startLocalPinnedOcct8Bridge} from '../local-plate-bridge.mjs';
 import {createLivePlateSession} from '../live-plate-session.mjs';
+import {runNonOcctPlateProbe} from '../nonocct-step-probe.mjs';
 
 const worker=process.env.INTUIT3D_OCCT8_WORKER;
 if(!worker||!isAbsolute(worker))
@@ -42,11 +43,19 @@ const host=await startLocalPinnedOcct8Bridge({
 const session=createLivePlateSession({
   runtime,readCurrentHistory:()=>current,publishHistory:h=>{current=h;},
 });
+const independentRequired=process.argv.includes('--require-independent');
+const probeExecutable=process.env.INTUIT3D_ANVIL_STEP_PROBE;
+const expectedProbeSha256=process.env.INTUIT3D_ANVIL_PROBE_SHA256;
+if(independentRequired && (!probeExecutable||!expectedProbeSha256))
+  throw new Error('Independent run requires INTUIT3D_ANVIL_STEP_PROBE and INTUIT3D_ANVIL_PROBE_SHA256');
+if(Boolean(probeExecutable)!==Boolean(expectedProbeSha256))
+  throw new Error('Provide both AnvilCAD probe path and pinned binary SHA-256');
+const runIndependent=Boolean(probeExecutable);
 const results=[];
 const options=(id)=>({
   url:host.url,token:host.token,requestId:id,exportStep:true,deadlineMs:120000,
 });
-function record(out,stage){
+async function record(out,stage){
   assert.equal(out.kind,'experimental_plate_evaluated',JSON.stringify(out));
   assert.equal(out.result.backend,'OCCT-cxx-8.0.1');
   assert.equal(out.result.occtVersion,'8.0.1');
@@ -62,12 +71,19 @@ function record(out,stage){
   const volume=out.result.observed.source.volumeMm3;
   assert.ok(Math.abs(target.volumeMm3-volume)<=Math.max(1e-7,Math.abs(target.volumeMm3)*1e-10));
   assert.ok(new TextDecoder().decode(out.step.bytes.subarray(0,20)).includes('ISO-10303-21'));
+  const sample=runIndependent
+    ? await runNonOcctPlateProbe({
+        probeExecutable,expectedProbeSha256,
+        source:out.source,step:out.step,plate:out.result.intendedPlate,
+      })
+    : null;
   results.push({stage,revision:out.source.revision,
-    volumeMm3:volume,sha256:out.step.sha256,bytes:out.step.bytes.length});
+    volumeMm3:volume,sha256:out.step.sha256,bytes:out.step.bytes.length,
+    ...(sample?{externalCadSample:sample}:{})});
 }
 try{
   const saved=session.save();
-  record(await session.evaluate(options('pinned.real.8mm')),'plate-8mm-two-bores');
+  await record(await session.evaluate(options('pinned.real.8mm')),'plate-8mm-two-bores');
   const changed=await session.applyEditAndEvaluate(h=>{
     const plate=model.featuresOf(h.document).find(f=>f.id==='plate');
     return runtime.commit(h,[{eventId:'pinned.real.thickness.12mm',
@@ -75,23 +91,24 @@ try{
       patch:{payload:{...plate.payload,thicknessMm:12}}}],h.document.revision);
   },options('pinned.real.12mm'));
   assert.equal(changed.kind,'submitted');
-  record(changed.evaluation,'retrospective-12mm-rebuild');
+  await record(changed.evaluation,'retrospective-12mm-rebuild');
   assert.ok(results[1].volumeMm3>results[0].volumeMm3);
   assert.notEqual(results[1].sha256,results[0].sha256);
   const undone=await session.applyEditAndEvaluate(
     h=>runtime.undo(h,['pinned.real.undo.12mm']),options('pinned.real.undo'));
   assert.equal(undone.kind,'submitted');
-  record(undone.evaluation,'undo-rebuild-8mm');
+  await record(undone.evaluation,'undo-rebuild-8mm');
   assert.ok(Math.abs(results[2].volumeMm3-results[0].volumeMm3)<1e-7);
   const reopened=await session.reopenAndEvaluate(saved,{
     ...options('pinned.real.reopen'),confirmReplacement:true,
   });
   assert.equal(reopened.kind,'submitted');
-  record(reopened.evaluation,'archive-reopen-rebuild');
+  await record(reopened.evaluation,'archive-reopen-rebuild');
   assert.equal(session.save(),saved);
-  console.log(JSON.stringify({kind:'RUNTIME_REAL_PINNED_OCCT8_LOCAL_BRIDGE_PASS',
+  console.log(JSON.stringify({kind:runIndependent?'RUNTIME_REAL_PINNED_OCCT8_EXTERNAL_SAMPLE_EXECUTED':'RUNTIME_REAL_PINNED_OCCT8_LOCAL_BRIDGE_PASS',
     source:'actual INTENT/SKETCH and native C++ worker',
-    exactAuthority:false,independentInteroperability:false,results},null,2));
+    exactAuthority:false,independentInteroperability:false,
+    externalCadProbeExecuted:runIndependent,results},null,2));
 }finally{
   session.cancel();
   await host.close();
