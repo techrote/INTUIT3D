@@ -239,3 +239,25 @@ geometry acceptance must be reported separately.
 ### Preview-only dimensional calculator (v1)
 
 Select the **fx** button beside a dimension to enter arithmetic and `mm`, `cm`, `in`: `1in + 5mm`, `2*(35mm + 5mm)`, `120/2`. Bare numbers are interpreted as millimetres at the output; mixed additions treat bare terms as millimetres. Multiplication/division checks physical length dimensions; unsupported terms, nesting, zero division, underflow and nonfinite/oversized results fail closed with an inline, repairable message. Addition/subtraction also refuses a nonzero input that disappears entirely at binary64 precision, or a near-ULP subtraction residual whose cancellation makes the displayed precision unreliable. For example, `120mm + 1e-15mm` is rejected without journalling a false no-op. These checks detect specific loss modes, not all floating-point rounding errors or engineering tolerance compliance. Enter commits one numeric preview edit; Escape cancels before blur. Negative/zero values remain editable invalid intent with stale preview. Expressions are **not** stored or re-evaluated as parametric bindings; save/reopen retains only the resulting binary64 scalar. This interface is `intuit3d.web-preview.dimension-expression/v1`, not the authoritative INTENT evaluator, SKETCH solver, or OCCT exact provider. Real Chromium evidence is exercised by the existing `test:browser:handles` script when an installed workspace and built Vite app are available.
+
+## Confirmed local preview-project open/new (WORKBENCH-001)
+
+Opening a validated `.i3d-preview.json` file, or invoking **New mounting plate
+example**, now opens a keyboard-accessible replacement review rather than
+silently erasing the active document. The review compares parameter values,
+project identity, forward-reference state and authored chronology, and exposes
+incoming preview diagnostics. **Cancel** leaves the current document and its
+undo/redo intact. **Replace** explicitly clears the old undo/redo; no B-rep,
+STEP or authoritative model is imported or invented. Invalid but schema-valid
+intent is loaded for repair with no fabricated prior geometry.
+
+Asynchronous file reads are generation-fenced: a late older file cannot replace
+a newer selection or canceled review. Oversized, malformed or unsupported
+project files fail closed without changing the active workspace. In the browser,
+imported revision-zero projects are also eligible for local recovery, but
+browser-local recovery is not a replacement for saving distinct project files.
+
+Tests: `src/importReview.test.ts` checks comparisons, signed zero, reference/
+chronology changes and stale read tickets. The Chromium handle smoke test
+exercises a real File-input replacement, cancel, invalid imported preview and
+no-undo acceptance. Neither test confers precision CAD or human acceptance.
