@@ -12,6 +12,42 @@ const WORKER=resolve(dirname(fileURLToPath(import.meta.url)),'../../../native/an
 const FORMAT='intuit3d/kernel/profile-body-cut-v1';
 const POCKET_FORMAT='intuit3d/kernel/profile-body-cut-v2';
 const CHAIN_FORMAT='intuit3d/kernel/profile-body-cut-chain-v3';
+const NOTCH_FORMAT='intuit3d/kernel/profile-body-notch-v4';
+
+/** Bounded, independent rectangle-footprint material oracle for perimeter notches.
+ * Only the genuinely supported case is admitted: a rectangular plate, a
+ * rectangular cutter partially crossing its perimeter, with bores untouched.
+ */
+function notchOverlap(q){
+  function bounds(profile,label){
+    const curves=profile?.boundary;
+    ensure(Array.isArray(curves)&&curves.length===4&&
+      curves.every(c=>c.kind==='line'),label+' must be four line edges');
+    const p=curves.map(c=>c.start);
+    const xs=p.map(v=>v.x),ys=p.map(v=>v.y);
+    const x0=Math.min(...xs),x1=Math.max(...xs);
+    const y0=Math.min(...ys),y1=Math.max(...ys);
+    ensure(x1-x0>1e-6&&y1-y0>1e-6&&
+      new Set(p.map(v=>v.x+','+v.y)).size===4&&
+      p.every(v=>(v.x===x0||v.x===x1)&&(v.y===y0||v.y===y1))&&
+      near((x1-x0)*(y1-y0),profile.signedBoundaryAreaMm2),
+      label+' must be an axis-aligned rectangle');
+    return [x0,x1,y0,y1];
+  }
+  const [bx0,bx1,by0,by1]=bounds(q.baseExtrude.profile,'base');
+  const [cx0,cx1,cy0,cy1]=bounds(q.cutTool.profile,'tool');
+  ensure(q.cutTool.profile.holes.length===0,'notch tool cannot have islands');
+  const area=Math.max(0,Math.min(bx1,cx1)-Math.max(bx0,cx0))*
+    Math.max(0,Math.min(by1,cy1)-Math.max(by0,cy0));
+  ensure(area>1e-6&&area<(cx1-cx0)*(cy1-cy0)-1e-6,
+    'notch must partially cross the perimeter and remove material');
+  for(const h of q.baseExtrude.profile.holes){
+    const dx=Math.max(cx0-h.x,0,h.x-cx1),dy=Math.max(cy0-h.y,0,h.y-cy1);
+    ensure(dx*dx+dy*dy>(h.radiusMm+1e-6)**2,
+      'notch intersects existing circular bore');
+  }
+  return area;
+}
 const ID=/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
 const MAX_STEP=32*1024*1024,MAX_IPC=128*1024;
 const ensure=(ok,reason)=>{if(!ok)throw new TypeError('body-cut provider: '+reason)};
@@ -68,7 +104,8 @@ export function validateBodyCutRequest(request){
   ensure(request!==null&&typeof request==='object'&&!Array.isArray(request),
     'body cut request must be an object');
   if(request.protocol===CHAIN_FORMAT)return validateCutChainRequest(request);
-  const pocket=request.protocol===POCKET_FORMAT;
+  const notch=request.protocol===NOTCH_FORMAT;
+  const pocket=request.protocol===POCKET_FORMAT||notch;
   ensure(pocket||request.protocol===FORMAT,'unknown cut protocol');
   const fields=['protocol','requestId','cutFeatureId','targetBodyId','revision','units',
     'baseExtrude','cutTool','exportStep',...(pocket?['cutDepthMm']:[])];
@@ -96,6 +133,7 @@ export function validateBodyCutRequest(request){
   const cut=request.cutTool.profile.materialAreaMm2;
   ensure(Number.isFinite(cut)&&cut>1e-6&&cut<base,
     'cut has nonpositive or oversized area');
+  if(notch)notchOverlap(request);
   return request;
 }
 
@@ -146,6 +184,7 @@ export async function runExperimentalBodyCut(request,{
     let report;try{report=JSON.parse(result.output)}
     catch{return failure(q,'requires_reconciliation','malformed_native_report')}
     const chain=q.protocol===CHAIN_FORMAT;
+    const notch=q.protocol===NOTCH_FORMAT;
     let expected=q.baseExtrude.profile.materialAreaMm2*q.baseExtrude.thicknessMm;
     if(chain){
       if(report.protocol!==CHAIN_FORMAT||report.status!=='experimental_body_cut_chain_brep'||
@@ -169,8 +208,10 @@ export async function runExperimentalBodyCut(request,{
           return failure(q,'requires_reconciliation','native_cut_step_mismatch');
       }
     }else{
-      const cutDepth=q.protocol===POCKET_FORMAT?q.cutDepthMm:q.baseExtrude.thicknessMm;
-      expected-=q.cutTool.profile.materialAreaMm2*cutDepth;
+      const pocket=q.protocol===POCKET_FORMAT||notch;
+      const cutDepth=pocket?q.cutDepthMm:q.baseExtrude.thicknessMm;
+      const footprintArea=notch?notchOverlap(q):q.cutTool.profile.materialAreaMm2;
+      expected-=footprintArea*cutDepth;
       if(report.protocol!==q.protocol||report.status!=='experimental_body_cut_brep'||
         report.requestId!==q.requestId||report.cutFeatureId!==q.cutFeatureId||
         report.targetBodyId!==q.targetBodyId||report.baseFeatureId!==q.baseExtrude.featureId||
@@ -178,10 +219,11 @@ export async function runExperimentalBodyCut(request,{
         report.units!=='mm'||report.backend!=='OCP-python-prototype'||
         report.occtVersion!=='7.9.3.1'||report.exactAuthority!==false||
         report.independentInteroperability!==false||
-        (q.protocol===POCKET_FORMAT&&
+        (pocket&&
           (!near(report.cutDepthMm,cutDepth)||
            report.cutKind!==(cutDepth<q.baseExtrude.thicknessMm?
-             'blind_pocket':'through'))))
+             'blind_pocket':'through')))||
+        (notch&&!near(report.footprintIntersectionAreaMm2,footprintArea)))
         return failure(q,'requires_reconciliation','native_geometry_or_identity_mismatch');
     }
     if(report.source?.valid!==true||report.source?.solidCount!==1||
