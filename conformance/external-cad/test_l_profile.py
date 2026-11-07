@@ -98,7 +98,9 @@ class LProfileTests(unittest.TestCase):
                     parse_receipt(changed, 120, 8, 3, 32720)
 
     def test_thickness_width_pocket_changes_reject_stale_receipts(self):
-        for case in CASES[1:]:
+        # The three baseline exports intentionally have identical geometry;
+        # only genuinely edited 12mm, 140mm and 5mm states are different.
+        for case in (CASES[1], CASES[3], CASES[5]):
             _, name, width, thick, pocket, volume = case
             with self.subTest(name=name):
                 with self.assertRaises(Rejected):
