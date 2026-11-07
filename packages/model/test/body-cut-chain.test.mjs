@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   commitEvent, featuresOf, newProject, planProject,
-  ProjectFormatError, ProjectRevisionError, serializeProject,
+  ProjectFormatError, serializeProject,
 } from '../src/index.ts';
 import {
   startUndoHistory, commitUndoableTransaction, undoTransaction,
@@ -166,7 +166,7 @@ test('stale, ambiguous, malformed and mismatched body cut requests reject atomic
     {extra:'not part of the protocol'},
   ]) {
     assert.throws(()=>commitUndoableBodyCutAppend(history,req(doc,edit)),
-      ProjectFormatError || ProjectRevisionError);
+      /body cut chain|stale|journal\\[|reuses semantic feature ID/);
   }
   assert.equal(serializeUndoHistory(history),untouched);
 
