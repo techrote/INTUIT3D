@@ -41,6 +41,8 @@ export interface LivePlateEvaluationOptions {
   exportStep?:boolean;
   signal?:AbortSignal;
   fetchImpl?:typeof fetch;
+  /** Inclusive deadline across native attempts and busy retries (25–120000 ms; default 30000). */
+  deadlineMs?:number;
 }
 export interface LivePlateSession {
   refresh():LivePlateSessionState;
