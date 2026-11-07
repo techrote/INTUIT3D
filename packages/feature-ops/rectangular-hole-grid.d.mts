@@ -1,5 +1,6 @@
 import type {UndoHistory} from '@intuit3d/model/transactions';
 import type {WorkflowRuntime,RuntimeReport,WorkflowInvalidation} from '@intuit3d/workflow-runtime';
+import type {SketchDocument,SketchSolution} from '@intuit3d/sketch';
 export declare const RECTANGULAR_HOLE_GRID_FORMAT:'intuit3d.feature-ops.rectangular-hole-grid';
 export declare const RECTANGULAR_HOLE_GRID_VERSION:1;
 export type RectangularGridIdentity=Readonly<{
@@ -26,8 +27,8 @@ export type RectangularGridServices=Readonly<{
     writeTargets:readonly string[];payload:Record<string,unknown>;
   }[]};
   sketch?:Readonly<{
-    validateSketch(source:unknown):any;
-    solveSketch(source:any):any;
+    validateSketch(source:unknown):SketchDocument;
+    solveSketch(source:SketchDocument):SketchSolution;
   }>;
 }>;
 export type RectangularGridResult=
