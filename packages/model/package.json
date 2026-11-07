@@ -71,6 +71,10 @@
     "./selection-repair": {
       "types": "./src/selection-repair.ts",
       "default": "./src/selection-repair.ts"
+    },
+    "./feature-lifecycle": {
+      "types": "./src/feature-lifecycle.ts",
+      "default": "./src/feature-lifecycle.ts"
     }
   },
   "scripts": {
