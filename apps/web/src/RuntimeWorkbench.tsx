@@ -82,6 +82,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [holeDraft,setHoleDraft]=useState({x:'60',y:'20',diameter:'10'});
   const [arrayDraft,setArrayDraft]=useState({sourceHoleId:'holeA',rows:'2',columns:'2',pitchXmm:'20',pitchYmm:'20'});
   const [extrudeDraft,setExtrudeDraft]=useState('8');
+  // Presentation-only E combo: the actual feature is committed by RUNTIME/INTENT.
+  const [featureCombo,setFeatureCombo]=useState<'extrude'|'cut'|null>(null);
   const [selected,setSelected]=useState('plate');
   const [activeHole,setActiveHole]=useState<string|null>(null);
   const [layoutSelected,setLayoutSelected]=useState<string[]>(['holeA','holeB']);
@@ -126,6 +128,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     invalidateNative();
     setCascadeConfirmation(null);
     setCircleDrawing({phase:'idle'});
+    setFeatureCombo(null);
     setHistory(next);
     // An accepted journal change may trigger a new native evaluation, but a
     // burst of sketch drags coalesces and unsupported profiles stay pending.
@@ -164,6 +167,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   }:null;
   const solidProfile=useMemo(()=>previewModelProfile(report),[report]);
   const sketchProfile=useMemo(()=>previewModelSketchProfile(report),[report]);
+  const canAuthorExtrusion=!plateAuthored && !!sketchProfile && !pendingImport;
+  const canAuthorCut=plateActive && !cutAuthored && !!sketchProfile?.holes.length && !pendingImport;
   // Until an authored cut exists, show the extrusion WITHOUT through-holes.
   // This is disposable tessellation; derived profiles never become CAD authority.
   const geom=useMemo(()=>solidProfile
@@ -174,7 +179,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const faults=useMemo(()=>modelDiagnostics(report),[report]);
   const plate=report.features.find(f=>f.featureId==='plate');
   const cut=report.features.find(f=>f.featureId==='cut');
-  const createExtrusion=()=>{
+  const createExtrusion=():boolean=>{
     try{
       if(!extrudeDraft.trim())throw Error('Enter a positive extrusion distance.');
       const previous=liveHistory.current;
@@ -182,16 +187,29 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       const changes=runtime.diff(previous,next);
       acceptHistory(next);setSketchMode(false);setSelected('plate');
       setMessage(`Authored body.plate extrusion (${extrudeDraft} mm) at revision ${next.document.revision}; invalidated ${changes.invalidatedFeatureIds.join(' → ')||'none'}. Tessellated preview only; not exact.`);
-    }catch(e){setMessage('Extrude refused: '+(e instanceof Error?e.message:String(e)));}
+      return true;
+    }catch(e){setMessage('Extrude refused: '+(e instanceof Error?e.message:String(e)));return false;}
   };
-  const createCut=()=>{
+  const createCut=():boolean=>{
     try{
       const previous=liveHistory.current;
       const next=createModelThroughCut(previous);
       const changes=runtime.diff(previous,next);
       acceptHistory(next);setSketchMode(false);setSelected('cut');
       setMessage(`Authored through-cut against body.plate at revision ${next.document.revision}; invalidated ${changes.invalidatedFeatureIds.join(' → ')||'none'}. Native Boolean/STEP pending.`);
-    }catch(e){setMessage('Cut refused: '+(e instanceof Error?e.message:String(e)));}
+      return true;
+    }catch(e){setMessage('Cut refused: '+(e instanceof Error?e.message:String(e)));return false;}
+  };
+  const openFeatureCombo=()=>{
+    if(canAuthorExtrusion){setFeatureCombo('extrude');return;}
+    if(canAuthorCut){setFeatureCombo('cut');return;}
+    setMessage('E tool unavailable: select an admitted sketch without an extrusion, or an uncut body with solved circular holes. Removed features must be restored, not duplicated.');
+  };
+  const commitFeatureCombo=()=>{
+    if(featureCombo==='extrude')createExtrusion();
+    if(featureCombo==='cut')createCut();
+    // Successful commands call acceptHistory(), which closes this transient dialog;
+    // a refused edit leaves the dialog available for correction or cancellation.
   };
   const update=(field:ModelDimension,value:number)=>{
     try {
@@ -395,7 +413,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     // A removed extrusion remains the selected recoverable tombstone after
     // reopening; only a never-extruded sketch selects the source sketch.
     setSketchMode(!hasPlate);setSelected(plateRows.length?'plate':'sketch.plate');
-    setActiveHole(null);setPendingImport(null);
+    setActiveHole(null);setPendingImport(null);setFeatureCombo(null);
     setMessage('Model archive reopened with durable feature IDs, undo/redo and no cached meshes.');
   };
   // STEP stays in the RUNTIME live session until the very moment the user
@@ -460,13 +478,20 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   useEffect(()=>{
     const onKey=(e:KeyboardEvent)=>{
       if(pendingImport)return;
+      if(e.key==='Escape' && featureCombo){
+        e.preventDefault();setFeatureCombo(null);return;
+      }
       if(e.key==='Escape' && circleDrawing.phase!=='idle'){
         setCircleDrawing({phase:'idle'});
         setMessage('Circle sketch cancelled. No model revision was created.');
         e.preventDefault();return;
       }
       const target=e.target as HTMLElement|null;
-      if(target?.closest('input,textarea,[contenteditable=true]'))return;
+      if(target?.closest('input,textarea,select,[contenteditable=true]'))return;
+      if(!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey && e.key.toLowerCase()==='e' &&
+          circleDrawing.phase==='idle'){
+        e.preventDefault();openFeatureCombo();return;
+      }
       if(!(e.ctrlKey||e.metaKey))return;
       if(e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();}
       if(e.key.toLowerCase()==='y'){e.preventDefault();redo();}
@@ -520,11 +545,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <small>mm</small>
         </label>
         <button type="button" className="ribbon-button" data-testid="runtime-create-extrusion"
-          disabled={plateAuthored||!sketchProfile||!!pendingImport}
+          disabled={!canAuthorExtrusion}
           onClick={createExtrusion}>Extrude sketch</button>
         <button type="button" className="ribbon-button" data-testid="runtime-create-cut"
-          disabled={!plateActive||cutAuthored||!sketchProfile?.holes.length||!!pendingImport}
+          disabled={!canAuthorCut}
           onClick={createCut}>Cut holes through body.plate</button>
+        <button type="button" className="ribbon-button" data-testid="runtime-feature-combo-open"
+          disabled={!canAuthorExtrusion&&!canAuthorCut} onClick={openFeatureCombo}
+          title="E opens the context-sensitive feature tool; no document change until confirmation">Extrude / Cut · E</button>
       </div>
       <div className="ribbon-group"><span className="ribbon-label">AUTHORITATIVE HISTORY</span>
         <button className="ribbon-button" disabled={!history.undoStack.length} onClick={undo}>Undo</button>
@@ -815,6 +843,27 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     </div>
     <footer className="statusbar">LOCAL MODEL + SKETCH · INTENT JOURNAL · PREVIEW ONLY
       <span className="status-spacer"/> {report.revision} accepted journal events · Exact geometry: unavailable</footer>
+    {featureCombo&&!pendingImport&&<div className="recovery-backdrop"><form
+      className="recovery-dialog runtime-feature-combo" role="dialog" aria-modal="true"
+      aria-label="Extrude or cut feature" data-testid="runtime-feature-combo"
+      onSubmit={event=>{event.preventDefault();commitFeatureCombo();}}>
+      <h2>{featureCombo==='extrude'?'Extrude admitted sketch':'Cut circular holes through body.plate'}</h2>
+      {featureCombo==='extrude'?<label className="runtime-combo-distance">
+        <span>Extrusion distance · mm</span>
+        <input type="number" step="any" min="0.001" max="10000" autoFocus
+          data-testid="runtime-combo-distance" aria-label="Combo extrusion distance"
+          value={extrudeDraft} onChange={event=>setExtrudeDraft(event.target.value)}/>
+      </label>:<p>Target: <strong>body.plate</strong>. Source: solved circular holes in <strong>sketch.plate</strong>.
+        The Boolean and STEP remain pending a native provider; no exact geometry will be claimed.</p>}
+      <p className="microcopy">This commits one authoritative INTENT feature with RUNTIME validation and undo.
+        Press Enter to confirm or Escape to cancel; no operation is authored when the dialog opens.</p>
+      <div className="recovery-actions">
+        <button type="button" data-testid="runtime-feature-combo-cancel"
+          onClick={()=>setFeatureCombo(null)}>Cancel</button>
+        <button type="submit" data-testid="runtime-feature-combo-confirm">
+          {featureCombo==='extrude'?'Create extrusion':'Create through-cut'}</button>
+      </div>
+    </form></div>}
     {pendingImport&&<div className="recovery-backdrop"><section className="recovery-dialog" role="dialog"
       aria-modal="true" aria-label="Review incoming model archive" data-testid="runtime-import-review">
       <h2>Replace model session?</h2>
