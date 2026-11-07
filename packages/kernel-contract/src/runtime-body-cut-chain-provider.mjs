@@ -63,6 +63,12 @@ function cutTool(report,sourceId,featureId,requestId,thicknessMm){
 
 /** Determine real, direct dependency ordering; never sort by UI chronology. */
 function orderedWriters(features,bodyId){
+  // Do not silently omit a claimed cut merely because its authored writer
+  // target contradicts its named body target; that could publish a STEP
+  // missing an operation the user expects to affect this body.
+  ensure(!features.some(f=>f.kind==='cut'&&f.payload?.targetBodyId===bodyId&&
+    (f.writeTargets?.length!==1||f.writeTargets[0]!==bodyId)),
+    'cut body identity and write target disagree');
   const writers=features.filter(f=>f.writeTargets?.includes(bodyId));
   const bases=writers.filter(f=>f.kind==='extrude'&&
     f.writeTargets.length===1&&f.writeTargets[0]===bodyId);
