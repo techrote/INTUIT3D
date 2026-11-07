@@ -7,13 +7,21 @@ export function assessOcct8PlateResponse(request, raw, options = {}) {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     return assessPinned(request, raw, options);
   }
-  const {stepSha256, ...report} = raw;
+  const {stepSha256, stepVerification, ...report} = raw;
+  if (stepVerification !== undefined &&
+      !['occt-8.0.1-same-engine', 'occt-7.9.3.1-separate-process'].includes(stepVerification)) {
+    throw new Error('unsupported OCCT8 STEP verification provenance');
+  }
+  if (stepVerification !== undefined && (stepSha256 === undefined || !request?.exportStep)) {
+    throw new Error('STEP verification without a requested artifact');
+  }
   if (stepSha256 !== undefined &&
       (typeof stepSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(stepSha256))) {
     throw new Error('invalid OCCT 8.0.1 STEP digest');
   }
   const assessment = assessPinned(request, report, options);
   return assessment.kind === 'experimental_report'
-    ? {...assessment, artifactSha256: stepSha256 ?? null}
+    ? {...assessment, artifactSha256: stepSha256 ?? null,
+       stepVerification: stepVerification ?? null}
     : assessment;
 }
