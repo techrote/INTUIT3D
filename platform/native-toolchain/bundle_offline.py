@@ -107,9 +107,44 @@ def relocate_worker(original: Path, target: Path) -> None:
             "relocated worker has no transitive origin-relative DT_RPATH")
 
 
+def relocate_toolkits(directory: Path) -> None:
+    """Rewrite copied OCCT toolkit RPATHs, never the verified vendor prefix.
+
+    OCCT's installed libTK*.so files can retain a build-prefix RPATH of their
+    own. Merely patching the worker and setting LD_LIBRARY_PATH conceals that
+    dependency while the original prefix still exists on a hosted runner.
+    Every physical toolkit copy must instead resolve sibling dependencies
+    through its own $ORIGIN directory, including transitive dlopen cases.
+    """
+    patcher = shutil.which("patchelf")
+    require(patcher is not None, "patchelf required to relocate OCCT toolkit RPATHs")
+    physical = [p for p in sorted(directory.iterdir())
+                if p.is_file() and not p.is_symlink()]
+    require(bool(physical) and all(
+        re.fullmatch(r"libTK[A-Za-z0-9]+\\.so(?:\\..+)?", p.name)
+        for p in physical),
+        "unexpected or absent physical OCCT toolkit libraries")
+    for library in physical:
+        patched = subprocess.run(
+            [patcher, "--force-rpath", "--set-rpath", "$ORIGIN", str(library)],
+            capture_output=True, text=True, timeout=30, check=False)
+        require(patched.returncode == 0,
+                f"failed to relocate toolkit {library.name}: {patched.stderr}")
+        dynamic = subprocess.run(
+            ["readelf", "-d", str(library)], capture_output=True,
+            text=True, timeout=30, check=False)
+        require(dynamic.returncode == 0 and "(RPATH)" in dynamic.stdout
+                and "[$ORIGIN]" in dynamic.stdout
+                and "(RUNPATH)" not in dynamic.stdout,
+                f"toolkit {library.name} lacks exact origin-only DT_RPATH")
+
+
 def validate_elf_resolution(worker: Path, lib: Path) -> str:
     command = subprocess.run(["ldd", str(worker)], capture_output=True, text=True,
-                             env={**os.environ, "LD_LIBRARY_PATH": str(lib)},
+                             # No loader overrides: prove packaged ELF/RPATH
+                             # closure, not a host-prefix or injected-env pass.
+                             env={k: v for k, v in os.environ.items() if k not in
+                                  ("LD_LIBRARY_PATH", "LD_PRELOAD", "LD_AUDIT", "LD_DEBUG")},
                              timeout=30, check=False)
     require(command.returncode == 0 and "not found" not in command.stdout,
             f"relocated ELF cannot load: {command.stdout} {command.stderr}")
@@ -132,7 +167,9 @@ def launcher(root: Path) -> None:
 set -euo pipefail
 ROOT="$(cd -- "$(dirname -- "$0")" && pwd -P)"
 # Use the copied exact-version toolkit instead of a host OCCT.
-export LD_LIBRARY_PATH="$ROOT/lib"
+# The executable and each bundled OCCT toolkit carry origin-only DT_RPATH.
+# Remove ambient linker overrides instead of masking a broken relocated ELF.
+unset LD_LIBRARY_PATH LD_PRELOAD LD_AUDIT LD_DEBUG
 exec python3 "$ROOT/native/occt8_bridge.py" --worker "$ROOT/bin/intuit3d_occt8_plate" "$@"
 ''', encoding="utf-8")
     script.chmod(0o755)
@@ -222,6 +259,7 @@ def build(args: argparse.Namespace) -> dict:
         (output / "bin").mkdir()
         relocate_worker(worker, output / "bin/intuit3d_occt8_plate")
         copy_toolkits(args.prefix, output / "lib")
+        relocate_toolkits(output / "lib")
         copy_bridge(args.kernel_tree, output / "native")
         (output / "requests").mkdir()
         (output / "evidence").mkdir()
