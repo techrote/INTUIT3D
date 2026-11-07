@@ -21,6 +21,8 @@ import subprocess
 import sys
 import tempfile
 
+from runtime_material_oracle import check_stage, MaterialOracleError
+
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 EXPECTED_STAGES = (
@@ -86,6 +88,7 @@ def validate_demo(output: object) -> dict:
     require(isinstance(rows, list) and len(rows) == len(EXPECTED_STAGES),
             "native RUNTIME demo omitted a required edit/undo/archive stage")
     prepared = []
+    material_oracle = {}
     for row, stage in zip(rows, EXPECTED_STAGES):
         require(isinstance(row, dict) and row.get("stage") == stage,
                 "native RUNTIME stage order/content mismatch: " + stage)
@@ -107,6 +110,10 @@ def validate_demo(output: object) -> dict:
                     set(hole) == {"x", "y", "radius"} and
                     all(valid_number(hole[k]) for k in hole) and hole["radius"] > 0,
                     "invalid native bore geometry: " + stage)
+        try:
+            material_oracle[stage] = check_stage(stage, holes, row["volumeMm3"])
+        except MaterialOracleError as exc:
+            raise DeliveryError("native authored material oracle failed: " + str(exc)) from exc
         prepared.append(row)
     initial, thick, resized, undo_holes, undo_thick, reopened_edit, reopened_initial = prepared
     require(thick["volumeMm3"] > initial["volumeMm3"] and
@@ -129,6 +136,7 @@ def validate_demo(output: object) -> dict:
             "physicalNativeStepSha256": {x["stage"]: x["sha256"] for x in prepared},
             "volumesMm3": {x["stage"]: x["volumeMm3"] for x in prepared},
             "nativeStepCount": len(prepared),
+            "authoredMaterialOracle": material_oracle,
             "independentCadInteroperability": False,
             "windowsNativeQualified": False}
 

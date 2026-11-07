@@ -11,6 +11,7 @@ from unittest import mock
 import copy
 import hashlib
 import json
+import math
 from pathlib import Path
 import shutil
 import subprocess
@@ -26,7 +27,11 @@ def fixture() -> dict:
                {"x": 30, "y": 0, "radius": 6}]
     resized = [{"x": -20, "y": 0, "radius": 4.5},
                {"x": 20, "y": 0, "radius": 4.5}]
-    volumes = [100., 150., 155., 150., 100., 155., 100.]
+    # Analytic material volumes of the authored 120 x 80 mm plate, not
+    # fabricated monotone placeholder numbers that used to pass this gate.
+    base = lambda t: t * (9600 - 2 * math.pi * 6**2)
+    changed = 12 * (9600 - 2 * math.pi * 4.5**2)
+    volumes = [base(8), base(12), changed, base(12), base(8), changed, base(8)]
     holes = [initial, initial, resized, initial, initial, resized, initial]
     return {
         "kind": "RUNTIME_REAL_PINNED_OCCT8_LOCAL_BRIDGE_PASS",
@@ -60,7 +65,7 @@ class ReceiptTests(unittest.TestCase):
     def test_refuses_wrong_holes_or_unchanged_step(self):
         bad = fixture()
         bad['results'][3]['holes'][0]['radius'] = 9
-        with self.assertRaisesRegex(delivery.DeliveryError, 'bore inventory'):
+        with self.assertRaisesRegex(delivery.DeliveryError, 'bore'):
             delivery.validate_demo(bad)
         bad = fixture()
         bad['results'][1]['sha256'] = bad['results'][0]['sha256']
@@ -70,7 +75,7 @@ class ReceiptTests(unittest.TestCase):
     def test_refuses_fabricated_reopen_volume_and_unverified_digest(self):
         bad = fixture()
         bad['results'][6]['volumeMm3'] = 102
-        with self.assertRaisesRegex(delivery.DeliveryError, 'reconstruct'):
+        with self.assertRaisesRegex(delivery.DeliveryError, 'volume'):
             delivery.validate_demo(bad)
         bad = fixture()
         bad['results'][2]['sha256'] = 'tampered'
