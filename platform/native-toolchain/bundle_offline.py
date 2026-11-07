@@ -20,6 +20,7 @@ import tarfile
 import tempfile
 
 from qualify import COMMIT, VERSION, TOOLKITS, compare_geometry, verify_prefix
+from abi_compat import symbol_profile, ABIError
 from reproducible_archive import ArchiveError, ROOT_NAME as ARCHIVE_ROOT_NAME, write_archive
 
 BRIDGE_FILES = ("occt8_bridge.py", "plate_envelope.py", "protocol.py",
@@ -284,6 +285,7 @@ def build(args: argparse.Namespace) -> dict:
         resolution = validate_elf_resolution(
             output / "bin/intuit3d_occt8_plate", output / "lib")
         smoke = smoke_relocated(output, args.qualification)
+        elf_abi = symbol_profile(output / "bin/intuit3d_occt8_plate", output / "lib")
         files, links = inventory(output)
         manifest = {
             "schema": "intuit3d/pinned-occt801-offline-linux-bundle-v1",
@@ -294,7 +296,8 @@ def build(args: argparse.Namespace) -> dict:
             "workerOriginalSha256": report["worker"]["sha256"],
             "workerSha256": sha256(output / "bin/intuit3d_occt8_plate"),
             "machine": platform.machine(), "host": platform.platform(),
-            "abiResolution": resolution, "nativeCppExecuted": True,
+            "abiResolution": resolution, "elfAbiProfile": elf_abi,
+            "nativeCppExecuted": True,
             "independentCadInteroperability": False,
             "relocatedSmoke": smoke,
             "qualificationSteps": {str(c["thicknessMm"]): c["stepSha256"]
@@ -349,7 +352,7 @@ def main() -> int:
         p.add_argument("--" + arg, required=True, type=Path)
     try:
         build(p.parse_args())
-    except (ArchiveError, BundleError, OSError, ValueError, KeyError,
+    except (ArchiveError, BundleError, ABIError, OSError, ValueError, KeyError,
             subprocess.SubprocessError) as exc:
         print("OFFLINE_BUNDLE_BLOCKED:", exc, file=sys.stderr)
         return 2
