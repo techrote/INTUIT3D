@@ -1,5 +1,9 @@
 import type {UndoHistory} from '@intuit3d/model/transactions';
-import type {WorkflowRuntime,WorkflowInvalidation,RuntimeReport,SketchConstraintBatchResult} from './index.mjs';
+import type {JournalEvent} from '@intuit3d/model';
+import type {DimensionBatchEditRequest} from '@intuit3d/model/dimension-batch-edit';
+import type {WorkflowRuntime,WorkflowInvalidation,RuntimeReport,SketchConstraintBatchResult,
+  SketchConstraintBatchRequest,PlateHoleBatchRequest,RectangularHoleArrayRequest,
+  CircularHolePatternRequest,RigidHoleTransformRequest,HoleLayoutResizeRequest} from './index.mjs';
 import type {LocalPlateClientResult,VerifiedLocalStep} from './local-plate-client.mjs';
 
 export declare const LIVE_PLATE_SESSION_FORMAT:'intuit3d.live-plate-session';
@@ -16,6 +20,23 @@ export interface LivePlateSessionState {
   lastResultKind:LocalPlateClientResult['kind']|null;
   exactAuthority:false;
 }
+/**
+ * Serializable, model-backed consumer edits. No JS callback has to cross the
+ * WORKBENCH boundary; the runtime calls the accepted INTENT/SKETCH services.
+ * expectedRevision + projectId fence the whole command, including undo/redo.
+ * request.expectedRevision is injected from the outer command; never supply it.
+ */
+export type LiveCadCommand = Readonly<{projectId:string;expectedRevision:number}> & (
+  | Readonly<{kind:'model.events';events:readonly JournalEvent[]}>
+  | Readonly<{kind:'model.undo'|'model.redo';eventIds:readonly string[]}>
+  | Readonly<{kind:'dimensions.batch';request:Omit<DimensionBatchEditRequest,'expectedRevision'>}>
+  | Readonly<{kind:'sketch.constraints';request:Omit<SketchConstraintBatchRequest,'expectedRevision'>}>
+  | Readonly<{kind:'sketch.holes';request:Omit<PlateHoleBatchRequest,'expectedRevision'>}>
+  | Readonly<{kind:'sketch.holes.rectangular';request:Omit<RectangularHoleArrayRequest,'expectedRevision'>}>
+  | Readonly<{kind:'sketch.holes.circular';request:Omit<CircularHolePatternRequest,'expectedRevision'>}>
+  | Readonly<{kind:'sketch.holes.transform';request:Omit<RigidHoleTransformRequest,'expectedRevision'>}>
+  | Readonly<{kind:'sketch.holes.resize';request:Omit<HoleLayoutResizeRequest,'expectedRevision'>}>
+);
 export type SessionEdit = UndoHistory | SketchConstraintBatchResult;
 export type SessionEditResult =
   | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
@@ -69,6 +90,13 @@ export interface LivePlateSession {
   refresh():LivePlateSessionState;
   /** Genuine synchronous INTENT/ SKETCH transaction; never a private journal. */
   applyEdit(edit:(history:UndoHistory)=>SessionEdit):SessionEditResult;
+  /** Execute a versioned, project/revision-fenced semantic CAD command. */
+  applyCommand(command:LiveCadCommand):SessionEditResult;
+  /** Commit only an admitted command, then evaluate through the trusted native host. */
+  applyCommandAndEvaluate(
+    command:LiveCadCommand,
+    options?:Readonly<LivePlateEvaluationOptions>,
+  ):Promise<SessionEditAndEvaluateResult>;
   /** Compute real solver/profile admission without publishing history or requesting native work. */
   previewEdit(edit:(history:UndoHistory)=>SessionEdit):SessionEditPreviewResult;
   /** Discard only the matching current gesture, without editing or native work. */
