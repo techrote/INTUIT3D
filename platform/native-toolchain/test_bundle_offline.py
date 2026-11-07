@@ -29,7 +29,8 @@ class OfflineBundleTests(unittest.TestCase):
             (root / "main.c").write_text(
                 '#include <stdio.h>\nextern int kernel(void);\n'
                 'int main(void) {printf("%d\\n", kernel()); return 0;}\n')
-            for name in bundle.TOOLKITS:
+            # Link the transitive TKMath dependency before TKernel.
+            for name in ("TKMath", *[n for n in bundle.TOOLKITS if n != "TKMath"]):
                 source = root / ("math.c" if name == "TKMath" else
                                  "kernel.c" if name == "TKernel" else "math.c")
                 cmd = ["cc", "-shared", "-fPIC", str(source), "-o",
