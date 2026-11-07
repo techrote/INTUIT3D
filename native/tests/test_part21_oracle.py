@@ -18,7 +18,7 @@ PLATE = {"width":120, "depth":80, "thickness":8,
 
 class IndependentPart21Tests(unittest.TestCase):
     def test_nested_express_fields_and_escaped_string(self):
-        self.assertEqual(_fields("'O''Brien',(1.,2.),#7"), ["'O''Brien", "(1.,2.)", "#7"])
+        self.assertEqual(_fields("'O''Brien',(1.,2.),#7"), ["'O''Brien'", "(1.,2.)", "#7"])
         with self.assertRaises(UnsupportedStep):
             _fields("'unterminated")
 
