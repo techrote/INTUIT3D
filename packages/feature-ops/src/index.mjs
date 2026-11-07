@@ -173,3 +173,93 @@ export function editExtrudeThickness(history, request, services) {
     status:state(report,featureId)?.status,invalidation:runtime.diff(history,next),
     exactAuthority:false,independentInteroperability:false};
 }
+
+
+/**
+ * Reauthor a complete named-hole mounting flange and extrusion in ONE
+ * revision-fenced INTENT transaction. The caller explicitly provides the
+ * entire desired configuration: omission of a former hole means removal.
+ * Retained named hole IDs, feature IDs, the output body and the cut's target
+ * remain identical across the edit, undo, redo and save/reopen.
+ *
+ * This is orchestration over SKETCH/INTENT/RUNTIME, not a new solver, journal
+ * or Boolean provider. Inadmissible SKETCH configurations refuse before any
+ * command is committed. In particular, never downgrade to a preview mesh.
+ */
+export function reconfigureMountingFlange(history, request, services) {
+  keys(request, ['eventId','expectedRevision','sketchFeatureId','extrudeFeatureId',
+    'cutFeatureId','targetBodyId','thicknessMm','spec'], 'flange reconfiguration');
+  const {runtime,model,sketch,discovery} = services ?? {};
+  if (typeof runtime?.commit !== 'function' || typeof runtime.inspect !== 'function' ||
+      typeof runtime.diff !== 'function' || typeof model?.featuresOf !== 'function')
+    throw new TypeError('feature-ops: accepted RUNTIME/INTENT services required');
+  if (!history?.document || !Number.isSafeInteger(request.expectedRevision) ||
+      request.expectedRevision !== history.document.revision)
+    throw new Error('feature-ops: stale reconfiguration revision');
+  const eventId = id(request.eventId,'eventId');
+  if (eventId.length > 115) throw new TypeError('feature-ops: reconfiguration event id too long');
+  const ids = [
+    id(request.sketchFeatureId,'sketchFeatureId'),
+    id(request.extrudeFeatureId,'extrudeFeatureId'),
+    id(request.cutFeatureId,'cutFeatureId'),
+    id(request.targetBodyId,'targetBodyId')
+  ];
+  unique(ids,'semantic identities');
+  const [sketchId,extrudeId,cutId,bodyId] = ids;
+  const thickness = mm(request.thicknessMm,'thicknessMm');
+  const features = model.featuresOf(history.document);
+  const lookup = new Map(features.map(f => [f.id,f]));
+  const sk = lookup.get(sketchId), ex = lookup.get(extrudeId), cut = lookup.get(cutId);
+  if (sk?.kind !== 'sketch' || ex?.kind !== 'extrude' || cut?.kind !== 'cut' ||
+      !sk.payload?.sketch || ex.payload?.sourceSketchId !== sketchId ||
+      cut.payload?.sourceSketchId !== sketchId || cut.payload?.targetBodyId !== bodyId ||
+      !ex.dependsOn.includes(sketchId) || !cut.dependsOn.includes(extrudeId) ||
+      ex.writeTargets.length !== 1 || ex.writeTargets[0] !== bodyId ||
+      cut.writeTargets.length !== 1 || cut.writeTargets[0] !== bodyId)
+    throw new TypeError('feature-ops: existing authored flange, explicit cut and body lineage required');
+  if (features.some(f => f.id !== extrudeId && f.id !== cutId &&
+      f.writeTargets.includes(bodyId)))
+    throw new TypeError('feature-ops: additional writer on flange body; refusing ambiguous configuration');
+  const prior = sk.payload.sketch;
+  if (!Array.isArray(prior.points) || !Array.isArray(prior.lines) ||
+      !Array.isArray(prior.circles) || !Array.isArray(prior.constraints) ||
+      !['outline.sw','outline.se','outline.ne','outline.nw']
+        .every(name => prior.points.some(p => p.id === name)) ||
+      !['outline.bottom','outline.right','outline.top','outline.left']
+        .every(name => prior.lines.some(line => line.id === name)) ||
+      !prior.circles.every(circle => typeof circle.id === 'string' &&
+        /^hole\.[A-Za-z][A-Za-z0-9._-]{0,63}$/.test(circle.id)))
+    throw new TypeError('feature-ops: existing sketch is not a named mounting flange');
+  // SKETCH, not this module, owns solver, contact and unique-profile admission.
+  const built = mountingFlangeSketch(request.spec,sketch,discovery);
+  if (JSON.stringify(prior) === JSON.stringify(built.sketch) &&
+      ex.payload.thicknessMm === thickness)
+    throw new TypeError('feature-ops: reconfiguration has no change');
+  const before = new Set(prior.circles.map(circle => circle.id));
+  const after = new Set(built.sketch.circles.map(circle => circle.id));
+  const events = [
+    {eventId:eventId + '.sketch',type:'feature.edit',featureId:sketchId,
+      patch:{payload:{...sk.payload,sketch:built.sketch}}},
+    {eventId:eventId + '.extrude',type:'feature.edit',featureId:extrudeId,
+      patch:{payload:{...ex.payload,thicknessMm:thickness}}}
+  ];
+  const next = runtime.commit(history,events,request.expectedRevision);
+  const report = runtime.inspect(next);
+  if (state(report,sketchId)?.status !== 'analytic_profile_only' ||
+      state(report,extrudeId)?.status !== 'preview_only' ||
+      state(report,cutId)?.status !== 'pending_exact_provider')
+    throw new Error('feature-ops: authoritative runtime refused reconfigured flange');
+  return {
+    kind:'committed',history:next,report,invalidation:runtime.diff(history,next),
+    semanticIds:{sketchId,extrudeId,cutId,bodyId},
+    holeChanges:{
+      added:[...after].filter(name => !before.has(name)),
+      removed:[...before].filter(name => !after.has(name)),
+      retained:[...after].filter(name => before.has(name))
+    },
+    previousThicknessMm:ex.payload.thicknessMm,thicknessMm:thickness,
+    nativeHandoff:{kind:'experimental_plate_only',cutFeatureId:cutId,bodyId,
+      sourceRevision:next.document.revision,exactAuthority:false,independentInteroperability:false},
+    exactAuthority:false,independentInteroperability:false
+  };
+}

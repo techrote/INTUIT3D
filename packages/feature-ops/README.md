@@ -18,3 +18,25 @@ The package's local unit test suite uses injection fakes to check command shape,
 ## Integration-only prerequisite
 
 The new workspace requires Integration to register the `FEATUREOPS` lane in `tooling/check-workspace.mjs`, to update the root lockfile for its dependencies and to coordinate exact-head Linux/Windows CI. Neither shared path is owned here. Until that happens **the PR remains DRAFT / not merge-ready**, regardless of isolated tests. Integration and WORKBENCH/RUNTIME should consume public `@intuit3d/feature-ops` v1 when qualified; no other worker's files are modified by this PR.
+
+
+## Atomic layout-and-thickness reconfiguration
+
+\`reconfigureMountingFlange(history, request, services)\` changes the *entire*
+dimensioned rectangle, named circle layout and extrusion thickness in **one
+undoable INTENT transaction**. This is not a one-shot array that requires
+manual subsequent edits: the caller supplies the full new desired spec with
+an explicit revision fence; existing named holes retain semantic identities,
+new holes receive predictable IDs and omitted holes are explicitly removed.
+The authoritative sketch, extrude, cut and body IDs remain unchanged.
+
+All changes are validated through the accepted SKETCH solver/profile admission
+and RUNTIME model evaluation. Ambiguous/overlapping/out-of-bounds profiles,
+wrong cut-to-body lineage, third-party body writers, stale revisions and no-op
+reconfigurations refuse before committing. The operation does not execute
+native Booleans: it returns an **experimental-only** revision-fenced native
+handoff for the existing RUNTIME/KERNEL bridge.
+
+Run \`npm test --workspace @intuit3d/feature-ops\` for unit and **real**
+INTENT/SKETCH/RUNTIME undo/archive fixtures; an independently managed native
+STEP regression remains Integration-owned ([#90](https://github.com/techrote/INTUIT3D/pull/90)).
