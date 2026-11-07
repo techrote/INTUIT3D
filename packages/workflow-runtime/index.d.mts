@@ -112,6 +112,25 @@ export interface RectangularHoleArrayRequest {
 }
 
 
+/** One-shot NON-associative polar hole copies around a chosen pivot.
+ * The original solved source remains instance 0. Full +/-360 degree sweeps
+ * exclude the duplicate endpoint; partial sweeps include both endpoints.
+ * Each copy is an independent authored circle with stable ID `idPrefix:pN`.
+ */
+export interface CircularHolePatternRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  admission?:'require_admissible'|'preserve_unresolved';
+  sourceHoleId:string;
+  idPrefix:string;
+  instances:number;
+  pivotXmm:number;
+  pivotYmm:number;
+  sweepDegrees?:number;
+}
+
+
 export interface RuntimeServices {
   model: { planProject(document: ProjectDocument): EvaluationPlan };
   transactions: {
@@ -146,6 +165,8 @@ export interface WorkflowRuntime {
   editPlateHoles(history:UndoHistory,request:PlateHoleBatchRequest):PlateHoleBatchResult;
   /** Copy solved hole geometry into a bounded 2–32-cell array in one model event. */
   patternPlateHoles(history:UndoHistory,request:RectangularHoleArrayRequest):PlateHoleBatchResult;
+  /** One revision-fenced, undoable circular array using real solved SKETCH geometry. */
+  patternCircularHoles(history:UndoHistory,request:CircularHolePatternRequest):PlateHoleBatchResult;
   undo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   redo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   save(history: UndoHistory): string;
