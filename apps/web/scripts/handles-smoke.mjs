@@ -613,6 +613,73 @@ async function main() {
     'New sketch project inherited a former native cut or incorrect title');
   await screenshot('22-ctrl-n-new-sketch.png');
 
+
+  // WORKBENCH #177: actual Chromium file-selection flow. Reopen validation
+  // must execute in a disposable module Worker, not block the React thread.
+  const importWorkerInstrumented=await evaluate(`(() => {
+    const PreviousWorker=window.Worker;
+    window.__modelImportWorkerStarts=0;
+    window.Worker=class extends PreviousWorker {
+      constructor(...args){super(...args);window.__modelImportWorkerStarts++;}
+    };
+    return typeof window.Worker==='function';
+  })()`);
+  check(importWorkerInstrumented,'Cannot instrument real archive-validation worker');
+  const beforeInvalidImport=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  check(await evaluate(`(() => {
+    const dt=new DataTransfer();
+    dt.items.add(new File(['invalid JSON {'],'broken.i3d-model.json',{type:'application/json'}));
+    const input=document.querySelector('.runtime-file-input');
+    input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+    return true;
+  })()`),'Cannot inject malformed archive through file input');
+  await eventually(()=>evaluate("document.querySelector('.runtime-message')?.textContent?.includes('Open rejected')"),
+    'malformed archive was not rejected by the isolated validator');
+  check(await evaluate("window.__modelImportWorkerStarts===1"),
+    'Malformed archive was not validated by a separate Worker');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-import-review]')"),
+    'Malformed archive must not offer replacement');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===beforeInvalidImport,
+    'Malformed archive changed the existing model');
+
+  check(await evaluate(`(() => {
+    const dt=new DataTransfer();
+    dt.items.add(new File([new Uint8Array(4*1024*1024+1)],'oversized.i3d-model.json',
+      {type:'application/json'}));
+    const input=document.querySelector('.runtime-file-input');
+    input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+    return true;
+  })()`),'Cannot inject oversized archive through file input');
+  await eventually(()=>evaluate("document.querySelector('.runtime-message')?.textContent?.includes('4 MiB')"),
+    'oversized file was not refused before reading');
+  check(await evaluate("window.__modelImportWorkerStarts===1"),
+    'Oversized archive should be rejected before creating a Worker');
+
+  const archiveUndoCount=await evaluate("(async()=>JSON.parse(await window.__modelArchiveBlobs.at(-1).text()).history.undoStack.length)()");
+  check(archiveUndoCount>=2,'Synthetic replay fixture lacks multiple durable undo frames');
+  check(await evaluate(`(async()=>{
+    const data=await window.__modelArchiveBlobs.at(-1).text();
+    const dt=new DataTransfer();
+    dt.items.add(new File([data],'multi-edit.i3d-model.json',{type:'application/json'}));
+    const input=document.querySelector('.runtime-file-input');
+    input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+    return true;
+  })()`),'Cannot inject multi-edit saved archive');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'valid multi-edit archive did not reach replacement review');
+  check(await evaluate("window.__modelImportWorkerStarts===2"),
+    'Valid archive did not pass through isolated Worker');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===beforeInvalidImport,
+    'Validation replaced the existing model before user consent');
+  await screenshot('23-worker-import-confirmation.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(x=>x.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'Cannot confirm isolated validated multi-edit import');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'Valid archive lost pending native status after replacement');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")!==beforeInvalidImport,
+    'Confirmed archive did not replace model journal');
+  await screenshot('24-worker-import-reopened.png');
+
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -629,7 +696,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -641,6 +708,9 @@ async function main() {
     physicalCtrlClickMultiHoleAtomicDragAndArchive: true,
     actualChromiumCtrlNCancelAndSolvedNewSketch: true,
     comboEscapeLeavesJournalUnchanged: true,
+    archiveValidationRunsInRealChromiumWorker: true,
+    malformedAndOversizedFileSelectionPreservesExistingModel: true,
+    multiUndoHistoryWorkerImportRequiresConfirmation: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
