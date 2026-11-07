@@ -4,7 +4,7 @@
  * Services MUST be accepted public package modules; no parallel CAD policy here.
  */
 import {diffWorkflowPlans} from './invalidation.mjs';
-import {applyPlateHoleOperations,planRectangularHoleArray,planCircularHolePattern} from './hole-edit.mjs';
+import {applyPlateHoleOperations,planRectangularHoleArray,planCircularHolePattern,planRigidHoleTransform} from './hole-edit.mjs';
 export {WORKFLOW_INVALIDATION_FORMAT, WORKFLOW_INVALIDATION_VERSION, diffWorkflowPlans} from './invalidation.mjs';
 
 export const WORKFLOW_RUNTIME_FORMAT = 'intuit3d.workflow-runtime-evaluation';
@@ -324,6 +324,28 @@ export function createWorkflowRuntime(services) {
     return editPlateHoles(previous,{sketchFeatureId,eventId,expectedRevision,admission,operations});
   }
 
+  /**
+   * One undoable rigid move/rotation of existing, independently constrained
+   * holes. Positions are read from the actual SKETCH solve, never seed points
+   * or a browser preview. Any inadmissible/overlapping resulting physical
+   * profile is refused by the existing atomic sketch-edit admission gate.
+   */
+  function transformPlateHoles(history,request){
+    const {sketchFeatureId,eventId,expectedRevision,admission='require_admissible'}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if(!Number.isSafeInteger(expectedRevision)||expectedRevision!==previous.document.revision)
+      throw new Error('runtime rigid holes: stale or missing expectedRevision');
+    if(typeof sketchFeatureId!=='string'||!sketchFeatureId)
+      throw new TypeError('runtime rigid holes: authoritative sketch feature required');
+    const entry=model.planProject(previous.document).features.find(x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      throw new TypeError('runtime rigid holes: authoritative sketch feature required');
+    const doc=sketch.validateSketch(entry.feature.payload.sketch);
+    const solution=sketch.solveSketch(doc);
+    const edits=planRigidHoleTransform(doc,solution,request);
+    return editSketchConstraints(previous,{sketchFeatureId,eventId,expectedRevision,admission,edits});
+  }
+
   /** Explicitly delegated, revision-fenced authoritative commands. */
   function commit(history, events, expectedRevision = history.document.revision) {
     return transactions.commitUndoableTransaction(history, events, expectedRevision);
@@ -344,5 +366,5 @@ export function createWorkflowRuntime(services) {
   function reopen(serialized) {
     return archive.deserializeModelArchive(serialized).history;
   }
-  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, undo, redo, save, reopen});
+  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, undo, redo, save, reopen});
 }
