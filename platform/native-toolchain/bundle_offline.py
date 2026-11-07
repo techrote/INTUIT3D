@@ -20,7 +20,7 @@ import tarfile
 import tempfile
 
 from qualify import COMMIT, VERSION, TOOLKITS, compare_geometry, verify_prefix
-from reproducible_archive import ROOT_NAME as ARCHIVE_ROOT_NAME, write_archive
+from reproducible_archive import ArchiveError, ROOT_NAME as ARCHIVE_ROOT_NAME, write_archive
 
 BRIDGE_FILES = ("occt8_bridge.py", "plate_envelope.py", "protocol.py",
                 "process_supervision.py")
@@ -311,7 +311,8 @@ def main() -> int:
         p.add_argument("--" + arg, required=True, type=Path)
     try:
         build(p.parse_args())
-    except (BundleError, OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
+    except (ArchiveError, BundleError, OSError, ValueError, KeyError,
+            subprocess.SubprocessError) as exc:
         print("OFFLINE_BUNDLE_BLOCKED:", exc, file=sys.stderr)
         return 2
     return 0
