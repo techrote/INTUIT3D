@@ -42,6 +42,10 @@ current=runtime.commit(current,[
 // Fail before opening a localhost listener when an external verification run
 // cannot possibly proceed. Do not leave a live process behind on misconfiguration.
 const independentRequired=process.argv.includes('--require-independent');
+// Preserve the existing seven-stage JSON output contract for PLATFORM's
+// source-pinned runtime_material_oracle. An opt-in additive run qualifies the
+// new atomic two-command edit + disk-backed session recovery.
+const runAtomicBatch=process.argv.includes('--atomic-batch');
 const probeExecutable=process.env.INTUIT3D_ANVIL_STEP_PROBE;
 const expectedProbeSha256=process.env.INTUIT3D_ANVIL_PROBE_SHA256;
 if(independentRequired && (!probeExecutable||!expectedProbeSha256))
@@ -177,6 +181,7 @@ try{
   assert.ok(Math.abs(results[6].volumeMm3-results[0].volumeMm3)<1e-7);
   assert.equal(session.save(),initialArchive);
 
+  if(runAtomicBatch){
   // Physical batch acceptance: change an EARLIER extrusion dimension AND
   // resize two solver-authored hole constraints as one durable transaction
   // publication, then request one genuine pinned C++ rebuild. There must be
@@ -223,13 +228,16 @@ try{
   assert.equal(archiveWrites,writesBefore+1,
     'native evaluation and archive reopen must never rewrite model history');
   reopenedSession.cancel();
-
+  }
   console.log(JSON.stringify({kind:runIndependent?'RUNTIME_REAL_PINNED_OCCT8_EXTERNAL_SAMPLE_EXECUTED':'RUNTIME_REAL_PINNED_OCCT8_LOCAL_BRIDGE_PASS',
     source:'actual INTENT/SKETCH and native C++ worker',
     exactAuthority:false,independentInteroperability:false,
     externalCadProbeExecuted:runIndependent,
-    persistedArchiveSha256:createHash('sha256').update(batchArchive).digest('hex'),
-    persistentHistoryWrites:archiveWrites,results},null,2));
+    ...(runAtomicBatch?{
+      persistedArchiveSha256:createHash('sha256').update(session.save()).digest('hex'),
+      persistentHistoryWrites:archiveWrites,
+    }:{}),
+    results},null,2));
 }finally{
   session.cancel();
   try {await host.close();}
