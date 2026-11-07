@@ -4,7 +4,7 @@ import {
   serializeVariableRoundedPlateIntent,parseVariableRoundedPlateIntent,
   solveVariableRoundedPlate,inspectVariableRoundedPlateHandles,
   dragVariableRoundedPlateCorner
-} from '../rounded-plate.mjs';
+} from '@intuit3d/sketch/rounded-plate/v2';
 
 let sketch=plateSketchFixture();
 let intent=createVariableRoundedPlateIntent({version:2,id:'fillet:plate',
