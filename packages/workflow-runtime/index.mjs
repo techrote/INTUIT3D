@@ -3,6 +3,9 @@
  * This is not a geometry provider. The only ready solid state is `preview_only`.
  * Services MUST be accepted public package modules; no parallel CAD policy here.
  */
+import {diffWorkflowPlans} from './invalidation.mjs';
+export {WORKFLOW_INVALIDATION_FORMAT, WORKFLOW_INVALIDATION_VERSION, diffWorkflowPlans} from './invalidation.mjs';
+
 export const WORKFLOW_RUNTIME_FORMAT = 'intuit3d.workflow-runtime-evaluation';
 export const WORKFLOW_RUNTIME_VERSION = 1;
 
@@ -174,6 +177,16 @@ export function createWorkflowRuntime(services) {
     };
   }
 
+  /**
+   * Structural invalidation between authoritative histories. No derived geometry
+   * or previous exact/STEP artifact is implicitly made current by this diff.
+   */
+  function diff(previousHistory, nextHistory) {
+    const previous=transactions.parseUndoHistory(previousHistory);
+    const next=transactions.parseUndoHistory(nextHistory);
+    return diffWorkflowPlans(model.planProject(previous.document), model.planProject(next.document));
+  }
+
   /** Explicitly delegated, revision-fenced authoritative commands. */
   function commit(history, events, expectedRevision = history.document.revision) {
     return transactions.commitUndoableTransaction(history, events, expectedRevision);
@@ -194,5 +207,5 @@ export function createWorkflowRuntime(services) {
   function reopen(serialized) {
     return archive.deserializeModelArchive(serialized).history;
   }
-  return Object.freeze({inspect, commit, editDimensions, undo, redo, save, reopen});
+  return Object.freeze({inspect, diff, commit, editDimensions, undo, redo, save, reopen});
 }
