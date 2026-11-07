@@ -64,10 +64,10 @@ class OfflineBundleTests(unittest.TestCase):
             (root / "relocated/bin").mkdir(parents=True)
             prefix.mkdir(parents=True)
             dest.mkdir()
-            (root / "math.c").write_text("int answer(void) {return 42;}\\n")
+            (root / "math.c").write_text("int answer(void) {return 42;}\n")
             (root / "main.c").write_text(
-                '#include <stdio.h>\\nextern int answer(void);\\n'
-                'int main(void) {printf("%d\\\\n", answer()); return 0;}\\n')
+                '#include <stdio.h>\nextern int answer(void);\n'
+                'int main(void) {printf("%d\\n", answer()); return 0;}\n')
             original = prefix / "libTKMath.so.8.0"
             subprocess.run([
                 "cc", "-shared", "-fPIC", str(root / "math.c"),
