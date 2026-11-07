@@ -263,3 +263,8 @@ export function reconfigureMountingFlange(history, request, services) {
     exactAuthority:false,independentInteroperability:false
   };
 }
+
+
+// Generalized authored sketch-profile extrusion and explicit target-body cut.
+export {PROFILE_OPS_FORMAT,PROFILE_OPS_VERSION,
+  authorProfileExtrusion,authorProfileBodyCut} from './profile-solid.mjs';
