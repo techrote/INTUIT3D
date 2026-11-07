@@ -146,24 +146,27 @@ export function previewParameterFreeze(
 
   for (const entry of request.edits) {
     if (!plain(entry) || !exact(entry, ['eventId', 'featureId', 'field']) ||
+        typeof entry.eventId !== 'string' ||
+        typeof entry.featureId !== 'string' || typeof entry.field !== 'string' ||
         !ID.test(entry.eventId) || !ID.test(entry.featureId) ||
         !FIELD.test(entry.field)) fail('invalid bound field entry');
-    const target = entry.featureId + '\u0000' + entry.field;
-    if (seenTargets.has(target)) fail('duplicate bound field ' + entry.featureId + '.' + entry.field);
+    const edit = entry as { eventId: string; featureId: string; field: string };
+    const target = edit.featureId + '\u0000' + edit.field;
+    if (seenTargets.has(target)) fail('duplicate bound field ' + edit.featureId + '.' + edit.field);
     seenTargets.add(target);
-    const originalFeature = featuresOf(original).find((f) => f.id === entry.featureId);
-    const originalGate = beforeGates.get(entry.featureId);
+    const originalFeature = featuresOf(original).find((f) => f.id === edit.featureId);
+    const originalGate = beforeGates.get(edit.featureId);
     const manifest = originalFeature?.payload.dimensionBindings;
     if (!plain(manifest) || !Array.isArray(manifest.entries) ||
         !manifest.entries.some((e: unknown) =>
-          plain(e) && e.field === entry.field)) {
-      fail('field is not currently bound: ' + entry.featureId + '.' + entry.field);
+          plain(e) && e.field === edit.field)) {
+      fail('field is not currently bound: ' + edit.featureId + '.' + edit.field);
     }
-    const value = originalGate?.resolvedPayload?.[entry.field];
+    const value = originalGate?.resolvedPayload?.[edit.field];
     if (originalGate?.status !== 'bound' ||
         typeof value !== 'number' || !Number.isFinite(value)) {
       fail('cannot bake an unresolved/invalid dimension: ' +
-        entry.featureId + '.' + entry.field);
+        edit.featureId + '.' + edit.field);
     }
 
     // Reuse DIMENSION's audited manifest/expression parser. Override only its
@@ -171,42 +174,46 @@ export function previewParameterFreeze(
     // feature-edit event; subsequent edits see this authoritative numeric.
     const step = previewDimensionEdit(working, {
       format: DIMENSION_EDIT_FORMAT, version: DIMENSION_EDIT_VERSION,
-      eventId: entry.eventId, featureId: entry.featureId, field: entry.field,
+      eventId: edit.eventId, featureId: edit.featureId, field: edit.field,
       binding: null, expectedRevision: working.revision,
       admission: 'permit_unresolved',
     });
     if (step.event.type !== 'feature.edit' || !step.event.patch.payload) {
       fail('dimension editor returned no editable payload');
     }
-    const payload: JsonRecord = { ...step.event.patch.payload, [entry.field]: value };
+    const payload: JsonRecord = { ...step.event.patch.payload, [edit.field]: value };
     const event: JournalEvent = {
       ...step.event, patch: { ...step.event.patch, payload },
     };
     working = previewTransaction(working, [event]).document;
     events.push(event);
-    baked.push({ featureId: entry.featureId, field: entry.field, value });
+    baked.push({ featureId: edit.featureId, field: edit.field, value });
   }
 
   for (const entry of request.release) {
     if (!plain(entry) || !exact(entry, ['eventId', 'featureId', 'dependencies']) ||
+        typeof entry.eventId !== 'string' || typeof entry.featureId !== 'string' ||
         !ID.test(entry.eventId) || !ID.test(entry.featureId) ||
         !Array.isArray(entry.dependencies) || !entry.dependencies.length ||
         entry.dependencies.some((id: unknown) => typeof id !== 'string' || !ID.test(id)) ||
         seenReleaseFeatures.has(entry.featureId)) {
       fail('invalid or repeated dependency release');
     }
-    seenReleaseFeatures.add(entry.featureId);
+    const release = entry as {
+      eventId: string; featureId: string; dependencies: readonly string[];
+    };
+    seenReleaseFeatures.add(release.featureId);
     const proposal = previewDimensionDependencyReconciliation(working, {
       format: DIMENSION_DEPENDENCY_RECONCILE_FORMAT,
       version: DIMENSION_DEPENDENCY_RECONCILE_VERSION,
-      eventId: entry.eventId, featureId: entry.featureId,
-      expectedRevision: working.revision, release: entry.dependencies,
+      eventId: release.eventId, featureId: release.featureId,
+      expectedRevision: working.revision, release: release.dependencies,
       confirmIndependentIntentReviewed: true, admission: 'require_admissible',
     });
     working = proposal.document;
     events.push(proposal.event);
     for (const edge of proposal.released) {
-      released.push({ featureId: entry.featureId, ...edge });
+      released.push({ featureId: release.featureId, ...edge });
     }
   }
 
@@ -217,25 +224,26 @@ export function previewParameterFreeze(
         !ID.test(retire.eventId) || !ID.test(retire.parameterId)) {
       fail('invalid parameter retirement request');
     }
+    const retired = retire as { eventId: string; parameterId: string };
     const living = featuresOf(working);
-    const parameter = living.find((f) => f.id === retire.parameterId);
+    const parameter = living.find((f) => f.id === retired.parameterId);
     if (!parameter || parameter.kind !== 'parameter') {
       fail('parameter to retire must exist and be a parameter');
     }
     // Preserve explicit intent even if no dimension binding still mentions it.
     // An independent parameter expression or direct dependency blocks removal.
     const consumers = living.filter((f) =>
-      f.id !== retire.parameterId && f.dependsOn.includes(retire.parameterId));
+      f.id !== retired.parameterId && f.dependsOn.includes(retired.parameterId));
     if (consumers.length) {
       fail('parameter still has semantic dependents: ' +
         consumers.map((f) => f.id).join(', '));
     }
     const event: JournalEvent = {
-      eventId: retire.eventId, type: 'feature.remove', featureId: retire.parameterId,
+      eventId: retired.eventId, type: 'feature.remove', featureId: retired.parameterId,
     };
     working = previewTransaction(working, [event]).document;
     events.push(event);
-    retiredParameterId = retire.parameterId;
+    retiredParameterId = retired.parameterId;
   }
 
   // Recheck as ONE original-revision command, including event uniqueness.
