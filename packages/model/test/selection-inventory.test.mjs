@@ -66,7 +66,7 @@ const bodyReceipt=(doc,opts)=>receipt(doc,'feature.measure','sourceBody',body,op
 
 test('project inventory exposes stable, authored face/body targets and explicit missing evidence',()=>{
   const history=selectedHistory(),doc=history.document;
-  const before=structuredClone(doc);
+  const before=serializeProject(doc);
   const missing=inspectSelectionInventory(doc);
   assert.equal(missing.format,SELECTION_INVENTORY_FORMAT);
   assert.equal(missing.revision,6);
@@ -80,7 +80,7 @@ test('project inventory exposes stable, authored face/body targets and explicit 
   assert.equal(reported.allReferencesObserved,true);
   assert.equal(reported.exactGeometryAuthority,false);
   assert.equal(reported.selections[0].observedProvider,'deterministic_fixture');
-  assert.deepEqual(doc,before,'inspection must never mutate the source journal');
+  assert.equal(serializeProject(doc),before,'inspection must never mutate the source journal');
   assert.equal(serializeProject(doc).includes('intuit3d.selection-evidence'),false);
 });
 
