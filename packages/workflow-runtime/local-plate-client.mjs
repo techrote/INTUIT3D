@@ -5,6 +5,8 @@
  */
 export const LOCAL_PLATE_CLIENT_FORMAT='intuit3d.local-plate-bridge';
 export const LOCAL_PLATE_CLIENT_VERSION=1;
+export const LOCAL_PLATE_CAPABILITY_FORMAT='intuit3d.local-plate-bridge-capability';
+export const LOCAL_PLATE_CAPABILITY_VERSION=1;
 const MAX_STEP_BYTES=8*1024*1024;
 // Only pinned backend/version/provenance pairs are admitted. The model never
 // selects an arbitrary provider; even OCCT8+Part21 is experimental authority.
@@ -24,6 +26,47 @@ function baseUrl(url) {
       (parsed.pathname!=='/' && parsed.pathname!==''))
     throw new TypeError('local plate client requires uncredentialed loopback HTTP base URL');
   return parsed.origin;
+}
+
+/**
+ * Pair with a trusted, loopback-only native host before requesting a specific
+ * provider. This only establishes which backend the host is CONFIGURED for;
+ * it is not a binary availability check, an executed native test or exactness.
+ * The capability route is authenticated with the same per-launch secret and
+ * contains no worker paths or filesystem information.
+ */
+export async function inspectLocalPlateBridge({
+  url,token,signal,fetchImpl=globalThis.fetch,
+}={}) {
+  const endpoint=baseUrl(url);
+  if(!/^[a-f0-9]{64}$/.test(token||'') || typeof fetchImpl!=='function')
+    throw new TypeError('native bridge identity requires paired token and fetch');
+  if(signal?.aborted) return unresolved('cancelled','native bridge pairing cancelled');
+  let envelope;
+  try {
+    const response=await fetchImpl(endpoint+'/v1/plate/capabilities',{
+      method:'GET',headers:{'x-intuit3d-token':token},signal,
+      mode:'cors',credentials:'omit',cache:'no-store',
+    });
+    envelope=await response.json();
+    if(!response.ok)
+      return unresolved(envelope?.code||'host_failure',
+        envelope?.reason||'local native bridge rejected pairing');
+  } catch {
+    return unresolved(signal?.aborted?'cancelled':'host_unreachable',
+      signal?.aborted?'native bridge pairing cancelled':'local native bridge unavailable');
+  }
+  const expected=PROVIDERS[envelope?.backend];
+  if(envelope?.format!==LOCAL_PLATE_CAPABILITY_FORMAT ||
+      envelope.version!==LOCAL_PLATE_CAPABILITY_VERSION ||
+      !expected || envelope.occtVersion!==expected.version ||
+      envelope.stepVerification!==expected.verification ||
+      envelope.exactAuthority!==false ||
+      envelope.independentInteroperability!==false)
+    return unresolved('invalid_host_reply','local native provider identity is unrecognized');
+  return Object.freeze({kind:'paired',backend:envelope.backend,
+    occtVersion:expected.version,stepVerification:expected.verification,
+    exactAuthority:false,independentInteroperability:false});
 }
 
 /** Verify actual bytes before offering a STEP download to the UI. */
@@ -54,9 +97,11 @@ export async function decodeVerifiedLocalStep(step) {
  */
 export async function evaluateLocalPlate({
   url,token,runtime,readCurrentHistory,cutFeatureId,requestId,
-  exportStep=false,signal,fetchImpl=globalThis.fetch,
+  exportStep=false,signal,fetchImpl=globalThis.fetch,requiredBackend,
 }={}) {
   const endpoint=baseUrl(url);
+  if(requiredBackend!==undefined && !Object.hasOwn(PROVIDERS,requiredBackend))
+    throw new TypeError('local plate client requires a recognized pinned backend');
   if (!/^[a-f0-9]{64}$/.test(token||'') ||
       typeof runtime?.save!=='function' || typeof runtime?.inspect!=='function' ||
       typeof readCurrentHistory!=='function' || typeof fetchImpl!=='function')
@@ -73,6 +118,17 @@ export async function evaluateLocalPlate({
   };
   if (!stillCurrent()) return unresolved('stale_revision','model edited before HTTP dispatch');
   if (signal?.aborted) return unresolved('cancelled','request cancelled before dispatch');
+  if(requiredBackend!==undefined) {
+    // A pinned-native UI command must NOT silently launch the experimental OCP
+    // provider. Check before dispatch, and check the actual reply again below.
+    const paired=await inspectLocalPlateBridge({url,token,signal,fetchImpl});
+    if(paired.kind!=='paired') return paired;
+    if(paired.backend!==requiredBackend)
+      return unresolved('provider_mismatch',
+        'paired host is '+paired.backend+', not required '+requiredBackend);
+    if(!stillCurrent())
+      return unresolved('stale_revision','model edited during native provider pairing');
+  }
   let envelope;
   try {
     const response=await fetchImpl(endpoint+'/v1/plate/evaluate',{
@@ -115,7 +171,9 @@ export async function evaluateLocalPlate({
       (exportStep? !envelope.step : envelope.step!==null))
     return unresolved('invalid_host_reply','host response does not match authored request');
   const provider=PROVIDERS[envelope.result.backend];
-  if(!provider||envelope.result.occtVersion!==provider.version||
+  if(!provider||
+      (requiredBackend!==undefined && envelope.result.backend!==requiredBackend)||
+      envelope.result.occtVersion!==provider.version||
       (exportStep
         ? envelope.step?.verification!==provider.verification||
           envelope.result.artifact?.verification!==provider.verification
