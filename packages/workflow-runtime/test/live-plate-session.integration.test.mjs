@@ -394,8 +394,8 @@ test('preview refusal and stale archive fences preserve author intent with no na
   const session=createLivePlateSession({runtime,
     readCurrentHistory:()=>history,publishHistory:next=>{history=next;},
     evaluateImpl:async()=>{dispatched++;throw Error('must not dispatch for stale or refused preview');}});
-  const attempt=(id,x,y)=>session.previewEdit(h=>runtime.editPlateHoles(h,{
-    sketchFeatureId:'sketch.plate',eventId:id,
+  const attempt=(eventId,id,x,y)=>session.previewEdit(h=>runtime.editPlateHoles(h,{
+    sketchFeatureId:'sketch.plate',eventId,
     expectedRevision:h.document.revision,admission:'require_admissible',
     operations:[{kind:'add',id,x,y,radius:4}],
   }));
