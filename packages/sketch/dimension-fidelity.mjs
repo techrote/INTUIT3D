@@ -24,15 +24,16 @@ function dyadic(value) {
   return { numerator, exponent: numerator === 0n ? 0 :
     exponentBits === 0 ? -1074 : exponentBits - 1075 };
 }
-function withinRelativeFidelity(start, end, intended) {
+function withinRelativeFidelity(start, end, intended, strictZero = false) {
   const x = dyadic(start), y = dyadic(end), d = dyadic(intended);
   const exponent = Math.min(x.exponent, y.exponent, d.exponent);
   const integer = v => v.numerator << BigInt(v.exponent - exponent);
   const target = integer(d);
-  // The old physical residual policy still applies to zero-valued
-  // dimensions; this guard must not silently change that policy.
-  if (target === 0n) return true;
+  // Signed zero distances keep the existing physical residual policy.
+  // An explicitly FIXED zero coordinate, however, is an exact anchor:
+  // a nonzero solved coordinate cannot impersonate that source lock.
   const observed = integer(y) - integer(x);
+  if (target === 0n) return !strictZero || observed === 0n;
   const residual = observed - target;
   const absolute = n => n < 0n ? -n : n;
   return (absolute(residual) << FIDELITY_BITS) <= absolute(target);
@@ -55,6 +56,18 @@ export function assessSignedDistanceFidelity(sketch, geometry) {
   }
   const failed = [];
   for (const constraint of sketch.constraints) {
+    // Fixed coordinates are the required independent consistency control:
+    // Gauss elimination may satisfy a tiny distance by perturbing a fixed
+    // zero position less than its old 1e-9 mm residual tolerance.
+    if (constraint?.kind === 'fixed') {
+      const point = coordinates.get(constraint.point);
+      if (!point || !finite(constraint.x) || !finite(constraint.y) ||
+          typeof constraint.id !== 'string') return reject('invalid_input');
+      if (!withinRelativeFidelity(0, point.x, constraint.x, true) ||
+          !withinRelativeFidelity(0, point.y, constraint.y, true))
+        failed.push(constraint.id);
+      continue;
+    }
     if (constraint?.kind !== 'distanceX' && constraint?.kind !== 'distanceY') continue;
     const a = coordinates.get(constraint.a), b = coordinates.get(constraint.b);
     if (!a || !b || !finite(constraint.value) || typeof constraint.id !== 'string')

@@ -75,6 +75,11 @@ test('a tiny contradictory dimension is not erased by absolute residual toleranc
   assert.notEqual(result.status, 'solved');
   assert.equal(result.geometry, null);
   assert.ok(result.diagnostics.some(d => d.code === 'dimension_precision_lost' || d.code === 'contradictory_constraints'));
+  const candidate = {
+    points: [{id:'a',x:0,y:0},{id:'b',x:1e-170,y:0}],
+    lines: [], circles: []
+  };
+  assert.deepEqual(assessSignedDistanceFidelity(sketch, candidate).failedConstraintIds, ['lockB']);
 });
 test('diagnostic rejects tampered geometry and malformed inputs without promoting them', () => {
   const sketch = distanceSketch(0, 1e-170);

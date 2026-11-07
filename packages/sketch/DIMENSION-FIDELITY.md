@@ -10,7 +10,7 @@ That is a loss of authored dimensional intent, not an acceptable tolerance
 adjustment.
 
 `assessSignedDistanceFidelity(sketch, geometry)` audits each nonzero signed
-distance using **exact dyadic integer arithmetic on encoded binary64 inputs and
+distance and each explicitly fixed coordinate using **exact dyadic integer arithmetic on encoded binary64 inputs and
 outputs**. The difference between two coordinates must agree with the encoded
 authored dimension to relative error no greater than `2^-40`. The calculation
 never squares enormous coordinates, underflows a microscopic delta, enlarges
@@ -25,9 +25,10 @@ serialization/replay preserves the refused intent. The separate helper is a
 
 **Limits:** The threshold is a conservative binary64 fidelity diagnostic,
 not a manufacturing or engineering tolerance, general nonlinear accuracy
-guarantee, exact geometry or OCCT/STEP proof. Zero-valued distance constraints
-retain the existing absolute residual policy; fixed/horizontal/coincident and
-radius constraints are not covered by this v1 additional guard. These require
+guarantee, exact geometry or OCCT/STEP proof. Zero-valued *distance* constraints retain the old absolute residual policy;
+fixed zero-valued coordinates must remain exactly zero. Horizontal,
+coincident, equal-radius and radius constraints are not covered by this
+v1 additional guard. These require
 separate qualification before claiming fully reliable sketch numerical truth.
 
 Run `node --test test/dimension-fidelity.test.mjs`, `npm test`, and
