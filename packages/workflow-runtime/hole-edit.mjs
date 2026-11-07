@@ -35,7 +35,8 @@ export function applyPlateHoleOperations(source,operations){
       if(Object.keys(op).sort().join(',')!=='id,kind,radius,x,y'||
           !finite(op.x)||!finite(op.y)||!finite(op.radius)||op.radius<=0)
         fail('add requires finite x/y, positive radius and explicit identity');
-      const center=op.id+':center',fixed=op.id+':fixed',radius=op.id+':radius';
+      // Existing WORKBENCH names radius-valued constraints ':diameter'.
+      const center=op.id+':center',fixed=op.id+':fixed',radius=op.id+':diameter';
       const used=entityIds(doc);
       if([op.id,center,fixed,radius].some(id=>used.has(id)))
         fail('hole or derived entity identity already exists');
