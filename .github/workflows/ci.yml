@@ -32,6 +32,14 @@ jobs:
         run: npm ci
       - name: Run root integration oracle and existing workspace checks
         run: npm run ci
-      - name: Native scoped smoke gate (Linux only)
+      - name: Real semantic history to experimental OCP/STEP (Linux only)
         if: matrix.os == 'ubuntu-latest'
-        run: npm run ci:native
+        run: bash tooling/ci-model-native-plate.sh
+      - name: Preserve real OCP STEP and semantic archive evidence (Linux only)
+        if: matrix.os == 'ubuntu-latest' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-native-experimental-ocp-step
+          path: ${{ runner.temp }}/intuit3d-model-native-evidence/
+          if-no-files-found: warn
+          retention-days: 14
