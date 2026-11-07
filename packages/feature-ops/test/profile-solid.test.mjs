@@ -14,7 +14,7 @@ import {editExtrudeThickness} from '../src/index.mjs';
 
 const runtime=createWorkflowRuntime({model,transactions,bindings,dimensions,archive,sketch,discovery});
 const services={runtime,model,sketch,discovery};
-const protocol={format:PROFILE_OPS_FORMAT,version:PROFILE_OPS_VERSION};
+const protocol={format:PROFILE_OPS_FORMAT,version:PROFILE_OPS_VERSION,units:'mm',frame:'local_xy'};
 
 /** A real fully constrained SIX-sided L-profile — not a rectangular plate. */
 function sketchFixture(lShape=true) {
@@ -137,6 +137,8 @@ test('fail-closed source selection, body writer ambiguity, stale revision and in
   assert.throws(()=>authorProfileExtrusion(saved,{...ex,profileCandidateId:'cycle:foreign'},services),
     /ambiguous, missing or stale/);
   assert.throws(()=>authorProfileExtrusion(saved,{...ex,depthMm:0},services),/positive finite/);
+  assert.throws(()=>authorProfileExtrusion(saved,{...ex,units:'cm'},services),/millimetre frame/);
+  assert.throws(()=>authorProfileExtrusion(saved,{...ex,frame:'world_xy'},services),/millimetre frame/);
   assert.throws(()=>authorProfileExtrusion(saved,{...ex,expectedRevision:0},services),/stale/);
   assert.throws(()=>authorProfileExtrusion(saved,{...ex,outputBodyId:'sketch.l'},services),/duplicate/);
   const extruded=authorProfileExtrusion(saved,ex,services);

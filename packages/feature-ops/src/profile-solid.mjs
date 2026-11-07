@@ -80,6 +80,8 @@ function header(history, request, services, allowed, label) {
   if (request.format !== PROFILE_OPS_FORMAT || request.version !== PROFILE_OPS_VERSION)
     throw new TypeError('feature-ops profile: unsupported profile operation protocol');
   revision(history,request.expectedRevision);
+  if (request.units !== 'mm' || request.frame !== 'local_xy')
+    throw new TypeError('feature-ops profile: explicit local_xy millimetre frame required');
   const dependencies=requireServices(services);
   return {
     ...dependencies, features:dependencies.model.featuresOf(history.document),
@@ -96,7 +98,7 @@ function header(history, request, services, allowed, label) {
 export function authorProfileExtrusion(history, request, services) {
   const context=header(history,request,services,[
     'format','version','eventId','expectedRevision','sourceSketchId','profileCandidateId',
-    'extrudeFeatureId','outputBodyId','depthMm'
+    'extrudeFeatureId','outputBodyId','depthMm','units','frame'
   ],'profile extrusion request');
   const {features,before,runtime,eventId}=context;
   const sketchId=identity(request.sourceSketchId,'sourceSketchId');
@@ -112,7 +114,7 @@ export function authorProfileExtrusion(history, request, services) {
   const next=runtime.commit(history,[{
     eventId,type:'feature.create',
     feature:{id:extrudeId,kind:'extrude',dependsOn:[sketchId],
-      writeTargets:[bodyId],payload:{sourceSketchId:sketchId,thicknessMm:depthMm}}
+      writeTargets:[bodyId],payload:{sourceSketchId:sketchId,thicknessMm:depthMm,units:'mm',frame:'local_xy'}}
   }],request.expectedRevision);
   const report=runtime.inspect(next);
   const evaluated=reportFeature(report,extrudeId);
@@ -136,7 +138,7 @@ export function authorProfileExtrusion(history, request, services) {
 export function authorProfileBodyCut(history, request, services) {
   const context=header(history,request,services,[
     'format','version','eventId','expectedRevision','sourceSketchId','profileCandidateId',
-    'extrudeFeatureId','cutFeatureId','targetBodyId'
+    'extrudeFeatureId','cutFeatureId','targetBodyId','units','frame'
   ],'profile body cut request');
   const {features,before,runtime,eventId}=context;
   const sketchId=identity(request.sourceSketchId,'sourceSketchId');
@@ -163,7 +165,7 @@ export function authorProfileBodyCut(history, request, services) {
       dependsOn:sketchId===extrude.payload.sourceSketchId?
         [extrudeId]:[extrudeId,sketchId],
       writeTargets:[bodyId],
-      payload:{sourceSketchId:sketchId,targetBodyId:bodyId}}
+      payload:{sourceSketchId:sketchId,targetBodyId:bodyId,units:'mm',frame:'local_xy'}}
   }],request.expectedRevision);
   const report=runtime.inspect(next);
   if (reportFeature(report,cutId)?.status !== 'pending_exact_provider')

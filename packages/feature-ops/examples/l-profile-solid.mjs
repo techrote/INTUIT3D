@@ -36,7 +36,7 @@ const empty=transactions.startUndoHistory(model.newProject('l.bracket.profile.ex
 const saved=runtime.commit(empty,[{eventId:'create.sketch',type:'feature.create',
   feature:{id:'sketch.bracket',kind:'sketch',dependsOn:[],writeTargets:[],
     payload:{sketch:authored}}}],empty.document.revision);
-const protocol={format:PROFILE_OPS_FORMAT,version:PROFILE_OPS_VERSION};
+const protocol={format:PROFILE_OPS_FORMAT,version:PROFILE_OPS_VERSION,units:'mm',frame:'local_xy'};
 const extruded=authorProfileExtrusion(saved,{
   ...protocol,eventId:'create.extrude',expectedRevision:saved.document.revision,
   sourceSketchId:'sketch.bracket',profileCandidateId:proposal.candidates[0].id,

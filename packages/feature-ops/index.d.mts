@@ -65,6 +65,7 @@ export declare const PROFILE_OPS_VERSION: 1;
 export type ProfileExtrusionRequest = Readonly<{
   format:typeof PROFILE_OPS_FORMAT; version:typeof PROFILE_OPS_VERSION;
   eventId:string; expectedRevision:number; sourceSketchId:string;
+  units:'mm';frame:'local_xy';
   /** The canonical SKETCH discovery candidate ID (line-loop semantic IDs). */
   profileCandidateId:string;
   extrudeFeatureId:string; outputBodyId:string; depthMm:number;
@@ -72,6 +73,7 @@ export type ProfileExtrusionRequest = Readonly<{
 export type ProfileBodyCutRequest = Readonly<{
   format:typeof PROFILE_OPS_FORMAT; version:typeof PROFILE_OPS_VERSION;
   eventId:string; expectedRevision:number; sourceSketchId:string;
+  units:'mm';frame:'local_xy';
   profileCandidateId:string; extrudeFeatureId:string; cutFeatureId:string;
   targetBodyId:string;
 }>;

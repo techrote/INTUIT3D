@@ -22,7 +22,7 @@ The new workspace requires Integration to register the `FEATUREOPS` lane in `too
 
 ## Atomic layout-and-thickness reconfiguration
 
-\`reconfigureMountingFlange(history, request, services)\` changes the *entire*
+`reconfigureMountingFlange(history, request, services)` changes the *entire*
 dimensioned rectangle, named circle layout and extrusion thickness in **one
 undoable INTENT transaction**. This is not a one-shot array that requires
 manual subsequent edits: the caller supplies the full new desired spec with
@@ -37,39 +37,39 @@ reconfigurations refuse before committing. The operation does not execute
 native Booleans: it returns an **experimental-only** revision-fenced native
 handoff for the existing RUNTIME/KERNEL bridge.
 
-Run \`npm test --workspace @intuit3d/feature-ops\` for unit and **real**
+Run `npm test --workspace @intuit3d/feature-ops` for unit and **real**
 INTENT/SKETCH/RUNTIME undo/archive fixtures; an independently managed native
 STEP regression remains Integration-owned ([#90](https://github.com/techrote/INTUIT3D/pull/90)).
 
 
 ## Generalized profile extrusion / explicit body cut v1 — FEATUREOPS-002 #97
 
-The additive \`profile-solid\` contract imports an **existing persisted SKETCH feature**
-and an explicitly selected \`cycle:...\` semantic line-loop ID from
-\`@intuit3d/sketch/profile-discovery/v1\`. It replays SKETCH's exact current
+The additive `profile-solid` contract requires explicit `mm` units and a `local_xy` frame; it imports an **existing persisted SKETCH feature**
+and an explicitly selected `cycle:...` semantic line-loop ID from
+`@intuit3d/sketch/profile-discovery/v1`. It replays SKETCH's exact current
 admission and RUNTIME's authoritative solved profile before committing any
 model event. It does not infer which body, loop or cut target a user meant.
 
-\`authorProfileExtrusion(history, request, services)\` creates a real
-dependency-linked \`extrude\` feature for an arbitrary solved simple polygon
+`authorProfileExtrusion(history, request, services)` creates a real
+dependency-linked `extrude` feature for an arbitrary solved simple polygon
 (with any admitted circular holes), positive millimetre depth and a named new
-body. Its output is explicitly \`preview_only\`. The editable geometry is
+body. Its output is explicitly `preview_only`. The editable geometry is
 authored in SKETCH; no tessellation or geometric predicates are duplicated.
 
-\`authorProfileBodyCut(history, request, services)\` creates a real target-body
-\`cut\` feature. Its selected cut sketch can be the extrusion's sketch or a
+`authorProfileBodyCut(history, request, services)` creates a real target-body
+`cut` feature. Its selected cut sketch can be the extrusion's sketch or a
 distinct existing sketch; the latter retains both dependency edges. In either
-case the exact Boolean remains \`pending_exact_provider\`. The returned
-\`nativeHandoff\` is an **unverified RUNTIME request**, NOT a native result or
+case the exact Boolean remains `pending_exact_provider`. The returned
+`nativeHandoff` is an **unverified RUNTIME request**, NOT a native result or
 proof of support. The current experimental plate worker supports a stricter
 rectangle-with-circular-holes subset, and correctly refuses other polygons.
 
 Concrete runnable example and live regression:
 
-\`\`\`sh
+```sh
 node --experimental-strip-types packages/feature-ops/examples/l-profile-solid.mjs
 npm test --workspace @intuit3d/feature-ops
-\`\`\`
+```
 
 These perform real SKETCH/INTENT/RUNTIME authoring of a six-corner L-shaped
 bracket with a clearance hole, cut intent, retrospective 8→14 mm extrusion
