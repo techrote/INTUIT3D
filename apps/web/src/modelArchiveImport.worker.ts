@@ -1,7 +1,7 @@
 import { reopenModelSession } from './runtimeSession';
-import { MAX_MODEL_ARCHIVE_BYTES } from './modelArchiveImport';
 import type { ModelSession } from './runtimeSession';
 
+const MAX_MODEL_ARCHIVE_BYTES = 4 * 1024 * 1024;
 type WorkerRequest = { source: string };
 type WorkerReply =
   | { kind: 'accepted'; history: ModelSession }
