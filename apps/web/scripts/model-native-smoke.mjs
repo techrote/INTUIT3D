@@ -229,6 +229,33 @@ async function main(){
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Z',code:'KeyZ',modifiers:10,windowsVirtualKeyCode:90});
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
     'redo did not restore the named parameter edit');
+  // Real Chromium pointer/keyboard path through the accepted INTENT formula
+  // table: preview must not commit, commit must be one undo frame, and no
+  // native exactness may leak from a new derived parameter expression.
+  const formulaRevision=Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\\d+/)?.[0]);
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-formula-expression-0]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'formula spreadsheet field cannot receive keyboard focus');
+  await send('Input.insertText',{text:'14'});
+  await pointerClick('runtime-formula-preview');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-formula-impact]')?.textContent?.includes('plate')"),
+    'model-owned parameter preview did not identify dependent rebuild');
+  check(await evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
+    'parameter preview mutated the authoritative model before commit');
+  await pointerClick('runtime-formula-commit');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='14'"),
+    'model-owned spreadsheet commit did not rebuild extrusion dimensions');
+  check(Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\\d+/)?.[0])===formulaRevision+1,
+    'one edited formula row did not create exactly one journal revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'formula spreadsheet falsely promoted physical STEP authority');
+  await screenshot('native-00d-formula-table-committed.png');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12' && document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness'"),
+    'formula spreadsheet undo did not restore the original named source');
+  // Exact same 12-mm state continues into existing save/reopen/undo tests.
   // Real browser save -> OS file picker -> isolated #188 validation Worker ->
   // explicit Replace -> same authoritative named source and undo journal.
   // No private owner archive or browser-local model serializer is involved.
