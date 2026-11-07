@@ -67,3 +67,44 @@ export function applyPlateHoleOperations(source,operations){
   if(!doc.circles.length) fail('cut workflow requires at least one circular hole');
   return doc;
 }
+
+/**
+ * One-shot rectangular array from the SOLVED geometry of an authored circle.
+ * No associative pattern/history is invented: every copy becomes its own
+ * stable circle and fixed/radius constraints in one undoable SKETCH edit.
+ * Geometry, profile contact and hole containment remain SKETCH/KERNEL's job.
+ */
+export function planRectangularHoleArray(source,solution,request){
+  const {sourceHoleId,idPrefix,columns,rows,pitchXmm,pitchYmm}=request??{};
+  if(typeof sourceHoleId!=='string'||!sourceHoleId||
+      typeof idPrefix!=='string'||!/^[A-Za-z][\w:.-]{0,89}$/.test(idPrefix)||
+      !Number.isSafeInteger(columns)||columns<1||columns>8||
+      !Number.isSafeInteger(rows)||rows<1||rows>8||
+      rows*columns<2||rows*columns>32||
+      !finite(pitchXmm)||!finite(pitchYmm)||
+      (columns>1&&pitchXmm===0)||(rows>1&&pitchYmm===0))
+    fail('rectangular array needs an authored source, stable prefix, 2–32 cells and nonzero active pitches');
+  if(solution?.status!=='solved'||!solution.geometry)
+    fail('rectangular array requires actual solved SKETCH geometry');
+  const circle=source.circles.find(c=>c.id===sourceHoleId);
+  const solvedCircle=solution.geometry.circles?.find(c=>c.id===sourceHoleId);
+  const solvedCenter=solution.geometry.points?.find(p=>p.id===circle?.center);
+  if(!circle||!solvedCircle||!solvedCenter||
+      !finite(solvedCircle.radius)||solvedCircle.radius<=0||
+      !finite(solvedCenter.x)||!finite(solvedCenter.y))
+    fail('source hole has no usable solved circle and centre');
+  const operations=[];
+  for(let row=0;row<rows;row++){
+    for(let col=0;col<columns;col++){
+      if(row===0&&col===0) continue; // original is retained, not re-authored
+      const x=solvedCenter.x+col*pitchXmm;
+      const y=solvedCenter.y+row*pitchYmm;
+      if(!finite(x)||!finite(y)) fail('array coordinates are not finite');
+      const id=`${idPrefix}:r${row}c${col}`;
+      operations.push({kind:'add',id,x,y,radius:solvedCircle.radius});
+    }
+  }
+  if(source.circles.length+operations.length>64)
+    fail('plate-v1 supports at most 64 circular holes');
+  return operations;
+}
