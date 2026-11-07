@@ -202,3 +202,56 @@ export function planRigidHoleTransform(source,solution,request){
   }
   return edits;
 }
+
+/**
+ * Retrospectively redimension the spacing and bore radii of an existing hole
+ * selection around an explicit sketch-space datum. All coordinates and radii
+ * come from the accepted SKETCH solution; this is one-shot authored geometry,
+ * not a new solver, linked pattern constraint or source of model truth.
+ */
+export function planHoleLayoutResize(source,solution,request){
+  const {holeIds,pivotXmm,pivotYmm,scaleX=1,scaleY=1,radiusScale=1}=request??{};
+  if(!Array.isArray(holeIds)||holeIds.length<1||holeIds.length>32||
+      holeIds.some(id=>typeof id!=='string'||!HOLE_ID.test(id))||
+      new Set(holeIds).size!==holeIds.length||
+      !finite(pivotXmm)||!finite(pivotYmm)||
+      !finite(scaleX)||scaleX<=0||!finite(scaleY)||scaleY<=0||
+      !finite(radiusScale)||radiusScale<=0||
+      (scaleX===1&&scaleY===1&&radiusScale===1))
+    fail('layout resize requires 1–32 unique selected holes, explicit finite pivot, positive dimensionless scales and a nonzero change');
+  if(solution?.status!=='solved'||!solution.geometry)
+    fail('layout resize requires actual solved SKETCH geometry');
+  const edits=[];
+  for(const holeId of holeIds){
+    const circle=source.circles.find(h=>h.id===holeId);
+    const center=circle?.center;
+    const point=solution.geometry.points?.find(p=>p.id===center);
+    const solvedCircle=solution.geometry.circles?.find(h=>h.id===holeId);
+    if(!circle||!point||!solvedCircle||
+        !finite(point.x)||!finite(point.y)||
+        !finite(solvedCircle.radius)||solvedCircle.radius<=0)
+      fail('selected hole has no independently solved circle and centre');
+    if(source.circles.some(h=>h.id!==holeId&&h.center===center)||
+        source.lines.some(l=>l.start===center||l.end===center))
+      fail('selected hole shares geometry with another entity');
+    const related=source.constraints.filter(k=>refs(k,holeId,center));
+    const fixed=related.filter(k=>k.kind==='fixed'&&k.point===center);
+    const radius=related.filter(k=>k.kind==='radius'&&k.circle===holeId);
+    if(related.length!==2||fixed.length!==1||radius.length!==1)
+      fail('selected hole has external or ambiguous constraints; layout resize refused');
+    if(scaleX!==1||scaleY!==1){
+      const x=pivotXmm+(point.x-pivotXmm)*scaleX;
+      const y=pivotYmm+(point.y-pivotYmm)*scaleY;
+      if(!finite(x)||!finite(y))
+        fail('layout resize produced non-finite solved coordinates');
+      edits.push({constraintId:fixed[0].id,patch:{x,y}});
+    }
+    if(radiusScale!==1){
+      const value=solvedCircle.radius*radiusScale;
+      if(!finite(value)||value<=0)
+        fail('layout resize produced an invalid bore radius');
+      edits.push({constraintId:radius[0].id,patch:{value}});
+    }
+  }
+  return edits;
+}

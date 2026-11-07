@@ -150,6 +150,25 @@ export interface RigidHoleTransformRequest {
   pivotYmm?:number;
 }
 
+/** One-shot retrospective plate-hole pitch and bore re-dimensioning.
+ * ScaleX/scaleY move solved centres about a caller-chosen pivot; radiusScale
+ * independently resizes all selected circular bore radii. Changes commit as
+ * one journal event, keep stable hole IDs, and require physical profile admission.
+ * This is not an associative parameter constraint or an exact solid.
+ */
+export interface HoleLayoutResizeRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  admission?:'require_admissible'|'preserve_unresolved';
+  holeIds:readonly string[];
+  pivotXmm:number;
+  pivotYmm:number;
+  scaleX?:number;
+  scaleY?:number;
+  radiusScale?:number;
+}
+
 export interface RuntimeServices {
   model: { planProject(document: ProjectDocument): EvaluationPlan };
   transactions: {
@@ -188,6 +207,8 @@ export interface WorkflowRuntime {
   patternCircularHoles(history:UndoHistory,request:CircularHolePatternRequest):PlateHoleBatchResult;
   /** Transform 1–32 existing solved hole centres as ONE undoable model event. */
   transformPlateHoles(history:UndoHistory,request:RigidHoleTransformRequest):SketchConstraintBatchResult;
+  /** Resize solved hole spacing and radii in one undoable authoritative edit. */
+  resizePlateHoleLayout(history:UndoHistory,request:HoleLayoutResizeRequest):SketchConstraintBatchResult;
   undo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   redo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   save(history: UndoHistory): string;

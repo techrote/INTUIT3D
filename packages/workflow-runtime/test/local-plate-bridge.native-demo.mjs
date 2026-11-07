@@ -193,9 +193,33 @@ try {
   assert.deepEqual(undoneRigidTransform.plate.holes.map(h=>[h.x,h.y]),[[-25,0],[25,0]]);
   assert.ok(Math.abs(undoneRigidTransform.volumeMm3-undonePolarArray.volumeMm3)<1e-5);
 
+  // Retrospective dimensional resize of BOTH original bores and their
+  // centre spacing. This is real solver-backed intent and a fresh physical
+  // experimental OCP STEP, not a viewport-only transform.
+  const resized=session.applyEdit(h=>runtime.resizePlateHoleLayout(h,{
+    sketchFeatureId:'sketch.plate',eventId:'author.bridge.resize.layout',
+    expectedRevision:current.document.revision,admission:'require_admissible',
+    holeIds:['holeA','holeB'],pivotXmm:60,pivotYmm:40,
+    scaleX:0.8,scaleY:1,radiusScale:0.8,
+  }));
+  assert.equal(resized.kind,'committed',JSON.stringify(resized));
+  assert.deepEqual(resized.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  assert.equal(session.currentStep(),null,'layout edit invalidates old native STEP');
+  current=runtime.reopen(runtime.save(resized.history));
+  const withResizedLayout=await evaluate('bridge.native.resized.layout');
+  assert.deepEqual(withResizedLayout.plate.holes.map(h=>h.radius),[4,4]);
+  assert.deepEqual(withResizedLayout.plate.holes.map(h=>h.x),[-20,20]);
+  assert.ok(withResizedLayout.volumeMm3>undoneRigidTransform.volumeMm3);
+  assert.notEqual(withResizedLayout.sha256,undoneRigidTransform.sha256);
+  current=runtime.reopen(runtime.save(runtime.undo(current,['undo.bridge.resize.layout'])));
+  const undoneResize=await evaluate('bridge.native.undo.layout.resize');
+  assert.deepEqual(undoneResize.plate.holes.map(h=>h.radius),[5,5]);
+  assert.deepEqual(undoneResize.plate.holes.map(h=>h.x),[-25,25]);
+  assert.ok(Math.abs(undoneResize.volumeMm3-undoneRigidTransform.volumeMm3)<1e-5);
+
   console.log(JSON.stringify({status:'real_experimental_native_bridge_pass',
     first,second,changedHoles,undoneHoles,withThirdHole,afterUndoThirdHole,
     withArray,undoneArray,withPolarArray,undonePolarArray,
-    withRigidTransform,undoneRigidTransform,
+    withRigidTransform,undoneRigidTransform,withResizedLayout,undoneResize,
     redoAdmitted:true,independentStep:false,productionExact:false},null,2));
 } finally {session.cancel();await host.close();}

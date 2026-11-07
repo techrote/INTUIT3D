@@ -427,3 +427,25 @@ The operation patches the actual hole-centre fixed constraints, passes the batch
 **WORKBENCH adoption:** a multi-hole selection/drag/rotate inspector can pass selected stable circle IDs and a chosen pivot. Use the existing `createLivePlateSession().applyEditAndEvaluate(h => runtime.transformPlateHoles(h, request), pairedNativeOptions)` to trigger a revision-fenced experimental plate/cut rebuild. On refusal, retain the unchanged current STEP; on a committed edit, discard the prior receipt. `currentStep()` remains the only approved download-time accessor. The browser preview is analytic/tessellated; native OCP/STEP remains experimental until independently qualified.
 
 **Qualification:** `npm test --workspace @intuit3d/workflow-runtime` includes actual INTENT/SKETCH solver, refusal, undo/save/reopen/redo and real KERNEL request-parser integration with an explicitly synthetic responder. `npm run demo:bridge --workspace @intuit3d/workflow-runtime` additionally physically rebuilds and same-engine-checks the repositioned holes **only when the pinned OCP backend is installed**. None of these is independent non-OCCT STEP interoperability.
+
+## Retrospective multi-hole pitch and bore dimensioning (RUNTIME-002)
+
+`runtime.resizePlateHoleLayout(history,{sketchFeatureId,eventId,expectedRevision,holeIds,pivotXmm,pivotYmm,scaleX,scaleY,radiusScale})`
+resizes an already-authored selection of 1–32 circular holes in **one** journal
+event. Scale factors are positive, dimensionless; `scaleX`/`scaleY` change
+solved centre spacing around an explicitly chosen sketch-space pivot and
+`radiusScale` independently changes the solved bore radii. Leave a factor at
+1 to keep that dimension. This makes after-the-fact adjustments of rectangular
+and polar bolt-hole layouts immediately practical without replacing the model
+journal or recreating entity IDs. No persistent associative pattern is implied.
+
+Both positional and radius edits pass through the actual SKETCH solver and
+physical-profile admission. Stale requests, shared/external constraint
+ownership, negative scales and invalid profiles are refused; an explicit
+`preserve_unresolved` request can retain editable failed intent. The existing
+`session.applyEditAndEvaluate(h=>runtime.resizePlateHoleLayout(h,request),options)`
+provides an immediately consumable WORKBENCH edit/rebuild action, while
+`session.currentStep()` still fences experimental STEP by current revision.
+Consumers must label existing OCP 7.9.3.1 STEP experimental, not validated
+production exactness. Real native demonstration:
+`npm run demo:bridge --workspace @intuit3d/workflow-runtime`.
