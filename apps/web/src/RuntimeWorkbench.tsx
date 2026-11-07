@@ -169,8 +169,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const geom=useMemo(()=>solidProfile
     ?{...solidProfile,profile:renderSketch||cutActive?solidProfile.profile:
       {...solidProfile.profile,holes:[]}}
-    :sketchProfile?{profile:sketchProfile,thickness:0}:null,
-    [solidProfile,sketchProfile,renderSketch,cutActive]);
+    :!plateAuthored&&sketchProfile?{profile:sketchProfile,thickness:0}:null,
+    [solidProfile,sketchProfile,renderSketch,cutActive,plateAuthored]);
   const faults=useMemo(()=>modelDiagnostics(report),[report]);
   const plate=report.features.find(f=>f.featureId==='plate');
   const cut=report.features.find(f=>f.featureId==='cut');
@@ -636,8 +636,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
              key={field+':'+history.document.revision} field={field}
              value={sketchValues[field]} onCommit={update}/>)}
           {values?<ScalarInput key={'thickness:'+history.document.revision}
-             field="thickness" value={values.thickness} onCommit={update}/>:<p
-             data-testid="runtime-sketch-first-guidance" className="microcopy">
+             field="thickness" value={values.thickness} onCommit={update}/>:plateAuthored?<p
+             data-testid="runtime-removed-extrusion" className="microcopy">
+             Extrusion removed. Plate parameters remain authored in the journal;
+             restore the original extrusion to edit or rebuild it.
+           </p>:<p data-testid="runtime-sketch-first-guidance" className="microcopy">
              No active solid: edit the solved sketch, then choose Extrude sketch and a thickness
              in the Solid Features toolbar. Cut holes only after extrusion.
            </p>}
