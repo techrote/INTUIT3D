@@ -3,7 +3,7 @@ import {
   apply, beginDimensionGesture, cancelDimensionGesture, commitDimensionGesture,
   diagnostics, featureStates, geometryIsAdmissible, newDocument,
   newWorkspace, PARAMETER_LABELS, parseDocument, previewDimensionGesture, redo, serializeDocument, undo,
-  type Command, type DimensionKey, type Workspace,
+  type Command, type DimensionKey, type Document, type Workspace,
 } from './model';
 import { discardRecovery, inspectRecovery, persistRecovery, RECOVERY_CURRENT_KEY, RECOVERY_PREVIOUS_KEY } from './recovery';
 import {
@@ -11,6 +11,7 @@ import {
   type RecoverySnapshot,
 } from './recoveryFence';
 import { evaluateDimensionExpression } from './dimensionExpression';
+import { inspectReplacement, PreviewImportGate } from './importReview';
 import { SketchViewport } from './components/SketchViewport';
 import { SolidViewport } from './components/SolidViewport';
 import './styles.css';
@@ -106,6 +107,8 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const [notification, setNotification] = useState<string | null>(null);
+  const [pendingReplacement, setPendingReplacement] = useState<{ document: Document; label: string; fromFile: boolean } | null>(null);
+  const importGate = useRef(new PreviewImportGate());
   // A previous browser draft must be explicitly accepted or discarded before
   // any new autosave. Otherwise mounting the demo could overwrite recovery.
   const [initialRecovery] = useState(() => {
@@ -184,6 +187,8 @@ export default function App() {
   const rendered = valid ? workspace.document : workspace.lastValid;
   const stale = !valid && rendered !== null;
   const features = useMemo(() => featureStates(workspace.document), [workspace.document]);
+  const replacementReview = pendingReplacement ? inspectReplacement(workspace.document, pendingReplacement.document) : null;
+  const incomingProblems = pendingReplacement ? diagnostics(pendingReplacement.document) : [];
 
   // Validate edits synchronously in the event handler. A functional updater may
   // run later during render, where a thrown journal-capacity error escapes try/catch.
@@ -212,14 +217,40 @@ export default function App() {
     setTimeout(() => URL.revokeObjectURL(href), 1000);
     setNotification('Preview project exported locally. Not an engineering CAD or STEP file.');
   }, [workspace]);
+  // Opening a project is an explicit, non-undoable document replacement, not a
+  // dimension command. Validate before showing a review; never discard the live
+  // document on failed, canceled, or superseded asynchronous reads.
+  const dismissReplacement = () => {
+    importGate.current.invalidate();
+    setPendingReplacement(null);
+  };
+  const confirmReplacement = () => {
+    if (!pendingReplacement) return;
+    importGate.current.invalidate();
+    setWorkspace(newWorkspace(pendingReplacement.document));
+    hasCommittedEdits.current = true; // also retain imports with revision zero
+    setSelected('extrude-plate');
+    setPendingReplacement(null);
+    setNotification(pendingReplacement.fromFile ?
+      'Preview JSON opened. Previous undo/redo was cleared; imported geometry is not exact.' :
+      'New preview example opened. Previous undo/redo was cleared.');
+  };
+  const prepareNew = () => {
+    importGate.current.invalidate();
+    setWorkspace((current) => cancelDimensionGesture(current));
+    setPendingReplacement({ document: newDocument(), label: 'New mounting plate example', fromFile: false });
+  };
   const load = useCallback(async (file: File) => {
+    const ticket = importGate.current.begin();
     try {
       if (file.size > 1024 * 1024) throw new Error('Project exceeds 1 MiB limit');
       const data = parseDocument(await file.text());
-      setWorkspace(newWorkspace(data));
-      setSelected('extrude-plate');
-      setNotification(`Opened ${data.name}. History before this save is not an undo stack.`);
+      if (!importGate.current.isCurrent(ticket)) return;
+      setWorkspace((current) => cancelDimensionGesture(current));
+      setPendingReplacement({ document: data, label: file.name, fromFile: true });
+      setNotification(null);
     } catch (error) {
+      if (!importGate.current.isCurrent(ticket)) return;
       setNotification(error instanceof Error ? `Open failed: ${error.message}` : 'Open failed');
     }
   }, []);
@@ -230,7 +261,7 @@ export default function App() {
     { id: 'redo', name: 'Redo last command', hint: 'Ctrl+Shift+Z', execute: stepRedo },
     { id: 'save', name: 'Export preview project', hint: 'Ctrl+S', execute: save },
     { id: 'open', name: 'Open preview project', hint: 'Ctrl+O', execute: () => fileRef.current?.click() },
-    { id: 'new', name: 'New mounting plate example', hint: 'Project', execute: () => { setWorkspace(newWorkspace(newDocument())); setSelected('extrude-plate'); } },
+    { id: 'new', name: 'New mounting plate example', hint: 'Project', execute: prepareNew },
     { id: 'reference', name: 'Add unresolved forward datum', hint: 'Intent', execute: () => dispatch({ kind: 'pending-reference', enabled: true }) },
   ];
   const matching = actions.filter((item) => item.name.toLowerCase().includes(paletteQuery.toLowerCase()));
@@ -240,6 +271,7 @@ export default function App() {
     const onKey = (event: KeyboardEvent) => {
       // Recovery decision is modal: shortcuts must not mutate the hidden demo.
       if (recovery.kind === 'available' || recovery.kind === 'corrupt') return;
+      if (pendingReplacement) { if (event.key === 'Escape') dismissReplacement(); return; }
       const target = event.target as HTMLElement | null;
       const typing = !!target?.closest('input, textarea, [contenteditable="true"]');
       const ctrl = event.ctrlKey || event.metaKey;
@@ -253,7 +285,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [recovery.kind, save, stepRedo, stepUndo]);
+  }, [recovery.kind, pendingReplacement, save, stepRedo, stepUndo]);
 
   return (
     <div className="app-shell">
@@ -299,7 +331,7 @@ export default function App() {
               onGestureFinish={finishSketchGesture}
               onGestureCancel={cancelSketchGesture}
               canEdit={recovery.kind === 'none' && workspace.document.chronology.length < 1024 &&
-                (valid || workspace.gesture?.key === 'thickness')} /> : <SketchViewport document={workspace.document} onChange={update} onSelect={setSelected} onGestureStart={beginSketchGesture} onGesturePreview={previewSketchGesture} onGestureFinish={finishSketchGesture} onGestureCancel={cancelSketchGesture} canEdit={workspace.document.chronology.length < 1024} />}
+                (valid || workspace.gesture?.key === 'thickness') && !pendingReplacement} /> : <SketchViewport document={workspace.document} onChange={update} onSelect={setSelected} onGestureStart={beginSketchGesture} onGesturePreview={previewSketchGesture} onGestureFinish={finishSketchGesture} onGestureCancel={cancelSketchGesture} canEdit={recovery.kind === 'none' && !pendingReplacement && workspace.document.chronology.length < 1024} />}
             <div className="orientation-widget"><b>Y</b><span>+Z</span><small>X</small></div>
             <div className="viewport-hint">{view === 'solid' ? 'Drag to orbit · Wheel to zoom · Right-drag to pan · Drag ↕ gizmo to change thickness · Shift 0.1 mm · Esc cancels' : 'Drag holes or outline handles to edit dimensions · Shift 0.1 mm · Esc cancels · Arrow keys nudge'}</div>
             {stale && <div className="invalid-overlay"><Glyph name="alert" size={16} /><span>Current intent has invalid geometry. Shown mesh comes from revision {rendered?.revision}; dimensions in the inspector are the current, unresolved values.</span></div>}
@@ -337,6 +369,51 @@ export default function App() {
             <div className="recovery-actions">
               {recovery.kind === 'available' && <button autoFocus onClick={acceptRecovery}>Recover draft</button>}
               <button onClick={rejectRecovery}>Discard local draft</button>
+            </div>
+          </section>
+        </div>
+      )}
+      {pendingReplacement && replacementReview && (
+        <div className="recovery-backdrop">
+          <section className="recovery-dialog replacement-dialog" role="dialog" aria-modal="true"
+            aria-labelledby="replacement-title" aria-describedby="replacement-warning" data-testid="import-review"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); dismissReplacement(); }
+              if (event.key === 'Tab') {
+                const buttons = Array.from(event.currentTarget.querySelectorAll('button'));
+                const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+                if (event.shiftKey && current === 0) { event.preventDefault(); buttons.at(-1)?.focus(); }
+                else if (!event.shiftKey && current === buttons.length - 1) { event.preventDefault(); buttons[0]?.focus(); }
+              }
+            }}>
+            <h2 id="replacement-title">{pendingReplacement.fromFile ? 'Review preview project before opening' : 'Start new preview example?'}</h2>
+            <p>Source: <strong>{pendingReplacement.label}</strong>. Current <strong>{workspace.document.name}</strong>
+              {' '}at revision {workspace.document.revision}; incoming <strong>{pendingReplacement.document.name}</strong>
+              {' '}at saved revision {pendingReplacement.document.revision}.</p>
+            <p>Current authored entries: {replacementReview.currentOperations}; incoming entries:
+              {' '}{replacementReview.incomingOperations}. This is a preview chronology, not replay-validated CAD history.</p>
+            <div className="replacement-comparison">
+              <strong>Dimension changes (mm)</strong>
+              {replacementReview.changedDimensions.length ? (
+                <ul>{replacementReview.changedDimensions.map((change) => (
+                  <li key={change.key}><span>{PARAMETER_LABELS[change.key]}</span>
+                    <span>{Object.is(change.previousMm, -0) ? '-0' : String(change.previousMm)} → {Object.is(change.incomingMm, -0) ? '-0' : String(change.incomingMm)}</span>
+                  </li>
+                ))}</ul>
+              ) : <p>No scalar differences.</p>}
+              <p>{replacementReview.nameChanged ? 'Project identity changes. ' : ''}
+                {replacementReview.referenceChanged ? 'Forward-reference state changes. ' : ''}
+                {replacementReview.chronologyChanged ? 'Authored chronology differs.' : 'Authored chronology matches.'}</p>
+            </div>
+            {incomingProblems.length > 0 && <p className="recovery-caution" role="alert">
+              Incoming preview has {incomingProblems.length} unresolved diagnostic(s): {incomingProblems.map((problem) => problem.message).join('; ')}.
+              It will open for repair with no fabricated last-good geometry.
+            </p>}
+            <p id="replacement-warning" className="recovery-caution">Replacing clears this tab's undo/redo history and current preview document.
+              It cannot be undone. Export the current preview JSON first if needed; neither file contains an exact B-rep or STEP.</p>
+            <div className="recovery-actions">
+              <button autoFocus type="button" onClick={dismissReplacement}>Cancel replacement</button>
+              <button type="button" onClick={confirmReplacement}>Replace preview document</button>
             </div>
           </section>
         </div>

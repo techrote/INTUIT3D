@@ -318,6 +318,45 @@ async function main() {
   await key('ArrowUp', 'ArrowUp', 38);
   await eventually(async () => (await numberValue('Thickness')) === '12', '3D thickness keyboard nudge');
   await screenshot('07-solid-thickness-keyboard.png');
+  // Real local File-input import is a non-undoable replacement. Review and
+  // cancel must preserve edits; explicit acceptance can load invalid intent
+  // without inventing a last-good 3D body or a cross-file undo stack.
+  const injectImport = `(() => {
+    const recovery = JSON.parse(localStorage.getItem('intuit3d.web-preview.recovery.v1.current'));
+    const source = JSON.parse(recovery.previewJson);
+    const incoming = { ...source, id: 'imported-preview-002', name: 'Imported negative plate',
+      revision: 37, params: { ...source.params, width: 160, thickness: -2 },
+      chronology: [...source.chronology, 'Imported fixture with unresolved thickness'] };
+    const input = document.querySelector('input[type=file]');
+    const dt = new DataTransfer();
+    dt.items.add(new File([JSON.stringify(incoming)], 'invalid-plate.i3d-preview.json', { type: 'application/json' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`;
+  check(await evaluate(injectImport), 'Cannot inject local File input');
+  await eventually(() => evaluate("Boolean(document.querySelector('[data-testid=import-review]'))"), 'preview import confirmation');
+  check(await numberValue('Thickness') === '12', 'Import preview silently replaced current dimension before consent');
+  check(await evaluate("document.querySelector('[data-testid=import-review]')?.textContent?.includes('Incoming preview has')"),
+    'Invalid incoming geometry was not diagnosed before replacement');
+  await screenshot('08-import-review.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(e=>e.textContent==='Cancel replacement');b?.click();return !!b})()"),
+    'Cancel preview import button unavailable');
+  await eventually(() => evaluate("!document.querySelector('[data-testid=import-review]')"), 'import review cancellation');
+  check(await numberValue('Thickness') === '12', 'Canceled file import modified current preview');
+  check(await evaluate(injectImport), 'Cannot retry local File input');
+  await eventually(() => evaluate("Boolean(document.querySelector('[data-testid=import-review]'))"), 'import review re-entry');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(e=>e.textContent==='Replace preview document');b?.click();return !!b})()"),
+    'Explicit preview replacement action missing');
+  await eventually(async () => (await numberValue('Thickness')) === '-2' &&
+    (await revision()).includes('revision 37'), 'accepted imported invalid preview');
+  check(await evaluate("document.querySelector('.empty-overlay')?.textContent?.includes('No validated preview')"),
+    'Invalid imported geometry incorrectly inherited a stale last-good mesh');
+  check(await evaluate("document.querySelector('button[title=\"Open preview project\"]') !== null"),
+    'Preview file controls vanished after import');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(e=>e.textContent?.trim()==='Undo');return b?.disabled})()"),
+    'Accepted file replacement retained another document undo history');
+  await screenshot('09-imported-invalid-preview.png');
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -329,11 +368,12 @@ async function main() {
     previewUnitExpressionCommittedAndUndoable: true,
     invalidExpressionRejectedWithoutRevision: true,
     roundedAwayDimensionEditRejectedWithoutRevision: true,
+    explicitProjectImportReviewCancelAndInvalidAcceptance: true,
     expressionEscapeAbandonedUncommittedEdit: true,
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png'],
+    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png'],
     limits: 'Preview only; no SKETCH solver, exact B-rep/OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
