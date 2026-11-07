@@ -39,6 +39,10 @@
     "./rectangular-hole-grid/v1": {
       "types": "./rectangular-hole-grid.d.mts",
       "default": "./src/rectangular-hole-grid.mjs"
+    },
+    "./circular-bolt-orientation/v1": {
+      "types": "./circular-bolt-transform.d.mts",
+      "default": "./src/circular-bolt-transform.mjs"
     }
   },
   "peerDependencies": {
