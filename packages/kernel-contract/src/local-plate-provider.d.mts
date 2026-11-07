@@ -13,7 +13,7 @@ export type LocalPlateResult =
         verification:'same_engine_step_readback';
       }>;
     }>)
-  | (Extract<PlateAssessment, {kind:'unresolved'}> & Readonly<{artifact:null}>)
+  | (Extract<PlateAssessment, {kind:'unresolved'}> & Readonly<{artifact:null; reason?:string}>)
   | Readonly<{
       kind:'unresolved'; code:'cancelled'; artifact:null;
       requestId:string; featureId:string; revision:number;
