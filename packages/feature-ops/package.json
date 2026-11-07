@@ -19,6 +19,10 @@
     "./cut-reassignment/v1": {
       "types": "./cut-reassignment.d.mts",
       "default": "./src/cut-reassignment.mjs"
+    },
+    "./extrusion-reconfiguration/v1": {
+      "types": "./extrusion-reconfiguration.d.mts",
+      "default": "./src/extrusion-reconfiguration.mjs"
     }
   },
   "peerDependencies": {
