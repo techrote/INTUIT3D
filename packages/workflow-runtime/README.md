@@ -394,3 +394,26 @@ single controller to wrap its existing `runtime.editPlateHoles`,
 `runtime.editSketchConstraints`, `runtime.undo`, `runtime.redo` and
 local STEP actions. WORKBENCH owns that UI change; INTEGRATION owns
 cross-package admission and guarded merges.
+
+## Single-call browser edit → native rebuild (live session v1)
+
+`session.applyEditAndEvaluate(edit, {url,token,requestId,exportStep:true})`
+composes the **existing** authoritative synchronous INTENT/SKETCH edit with the
+already-qualified latest-revision local provider lifecycle. No second journal,
+geometry solver, server or STEP cache is created. A refused sketch edit returns
+`{kind:'refused',edit,evaluation:null}`, sends no native job and retains the
+last still-current verified receipt. A committed edit publishes the new history,
+invalidates the old STEP synchronously, starts evaluation, and returns
+`{kind:'submitted',edit,evaluation}`. The nested evaluation may be unresolved
+(`stale_revision`, cancelled, busy, timeout, provider failure); `submitted`
+**does not mean a STEP was generated or that exactness was established**.
+
+WORKBENCH can consume the typed method directly from its existing
+`createLivePlateSession` instance (one caller-owned `historyRef`); use
+`session.currentStep()` at download-click time rather than saving a prior
+result. The real INTENT + SKETCH + localhost HTTP integration test exercises
+refusal, three-hole construction, dependent invalidation, undo, save/reopen
+and rebuilding; its native backend is explicitly synthetic. The separate
+`npm run demo:bridge --workspace @intuit3d/workflow-runtime` exercises actual
+experimental OCP when installed. Neither path substitutes for independent
+external STEP or production OCCT 8.0.1 qualification.
