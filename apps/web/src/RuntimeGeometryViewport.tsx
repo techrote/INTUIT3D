@@ -108,7 +108,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       <polygon points={profile.outer.map(p=>`${p.x},${p.y}`).join(' ')}
         fill="#34758b22" stroke="#76d1e5" strokeWidth=".5" vectorEffect="non-scaling-stroke"/>
       {profile.holes.map(h=><g key={h.id}>
-        <circle cx={h.x} cy={h.y} r={h.radius} fill="#152332"
+        <circle data-testid={`runtime-sketch-outline-hole-${h.id}`} cx={h.x} cy={h.y} r={h.radius} fill="#152332"
           stroke="#e4be81" strokeWidth=".5" vectorEffect="non-scaling-stroke"/>
         {(h.id==='holeA'||h.id==='holeB')&&onHoleMove&&
           <circle data-testid={`runtime-sketch-hole-${h.id}`}
