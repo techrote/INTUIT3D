@@ -141,26 +141,35 @@ export async function runExperimentalPlate(requestInput, {
     // then exclusively hard-link it into its requested final destination.
     // Existing user exports are never overwritten or partially published.
     let stage;
+    let publishOperation = 'begin';
     const destination = resolve(stepOutput);
     try {
+      publishOperation = 'inspect-private-step';
       const stat = await fs.stat(privateStep);
       if (!stat.isFile() || stat.size < 1 || stat.size > MAX_STEP_BYTES)
         return unresolved(request, 'requires_reconciliation', 'missing_or_oversized_step');
+      publishOperation = 'read-private-step';
       const bytes = await fs.readFile(privateStep);
       const sha256 = createHash('sha256').update(bytes).digest('hex');
+      publishOperation = 'mkdir-output-parent';
       await fs.mkdir(dirname(destination), {recursive:true});
       stage = join(dirname(destination), `.intuit3d-${randomUUID()}.tmp`);
+      publishOperation = 'write-stage';
       await fs.writeFile(stage, bytes, {flag:'wx',mode:0o600});
+      publishOperation = 'read-stage';
       const staged = await fs.readFile(stage);
       if (createHash('sha256').update(staged).digest('hex') !== sha256)
         return unresolved(request, 'requires_reconciliation');
+      publishOperation = 'sync-stage';
       const handle = await fs.open(stage, 'r');
       try { await handle.sync(); } finally { await handle.close(); }
       if (signal?.aborted) return unresolved(request, 'cancelled');
       if (revisionOf(readCurrentRevision) !== request.revision)
         return unresolved(request, 'stale_revision');
+      publishOperation = 'link-stage';
       await fs.link(stage, destination);
       if (signal?.aborted || revisionOf(readCurrentRevision) !== request.revision) {
+        publishOperation = 'rollback-stale-export';
         await fs.unlink(destination);
         return unresolved(request, signal?.aborted ? 'cancelled' : 'stale_revision');
       }
@@ -169,7 +178,7 @@ export async function runExperimentalPlate(requestInput, {
         verification:'same_engine_step_readback',
       }};
     } catch (error) {
-      return unresolved(request, 'requires_reconciliation', 'publication_' + (error?.code || error?.name || 'unknown'));
+      return unresolved(request, 'requires_reconciliation', 'publication_' + publishOperation + '_' + (error?.code || error?.name || 'unknown'));
     } finally {
       if (stage) await fs.rm(stage, {force:true});
     }
