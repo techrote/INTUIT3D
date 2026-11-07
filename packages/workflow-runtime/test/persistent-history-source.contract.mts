@@ -31,8 +31,9 @@ const modelEvent:LiveCadCommand={kind:'model.events',projectId:'typed.contract.p
   expectedRevision:0,events:[]};
 // @ts-expect-error consumer must include a source revision fence
 const missingFence:LiveCadCommand={kind:'model.undo',projectId:'typed.contract.project',eventIds:[]};
-// @ts-expect-error the runtime alone injects the authoritative command revision
 const forgedFence:LiveCadCommand={kind:'sketch.holes',projectId:'typed.contract.project',
-  expectedRevision:0,request:{expectedRevision:0,sketchFeatureId:'sketch.plate',
+  expectedRevision:0,
+  // @ts-expect-error the runtime alone injects the authoritative command revision
+  request:{expectedRevision:0,sketchFeatureId:'sketch.plate',
     eventId:'forged',operations:[]}};
 void [format,session,serialized,applied,evaluated,undo,modelEvent,missingFence,forgedFence];
