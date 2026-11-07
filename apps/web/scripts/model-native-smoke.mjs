@@ -222,7 +222,7 @@ async function main(){
   await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:patternButton.x,y:patternButton.y,button:'left',clickCount:1});
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===6"),
     'physical pointer did not commit solver-backed rectangular array');
-  check(await evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-array.]').length===3"),
+  check(await evaluate("Array.from(document.querySelectorAll('[data-testid^=runtime-hole-editor-]')).filter(x=>x.dataset.testid.startsWith('runtime-hole-editor-array.')).length===3"),
     'array did not author three stable copied hole IDs');
   check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('6 circular holes')"),
     'one-shot array not rendered in actual viewport');
