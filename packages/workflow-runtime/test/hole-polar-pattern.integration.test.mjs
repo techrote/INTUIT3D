@@ -124,9 +124,17 @@ test('native provider receives exactly the five new-and-existing authenticated h
   assert.equal(result.code,'provider_unavailable');
   assert.equal(requested.plate.holes.length,5);
   assert.deepEqual(requested.plate.holes.map(h=>h.radius),[6,6,6,6,6]);
+  // KERNEL plate-v1 uses plate-centred XY coordinates, while SKETCH
+  // keeps its authored [0,width] × [0,depth] sketch coordinates. Assert
+  // both the actual provider frame and the source-relative geometry.
   const copies=requested.plate.holes.slice(2);
-  almost(copies[0].x,45);almost(copies[0].y,30);
-  almost(copies[1].x,55);almost(copies[1].y,40);
-  almost(copies[2].x,45);almost(copies[2].y,50);
+  const toSketchXY=h=>({
+    x:h.x+requested.plate.width/2,
+    y:h.y+requested.plate.depth/2,
+  });
+  for(const [i,x,y] of [[0,45,30],[1,55,40],[2,45,50]]) {
+    const converted=toSketchXY(copies[i]);
+    almost(converted.x,x);almost(converted.y,y);
+  }
   assert.equal(requested.exportStep,false,'native test double does not generate real STEP');
 });
