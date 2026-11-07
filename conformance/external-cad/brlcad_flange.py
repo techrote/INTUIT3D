@@ -217,6 +217,18 @@ def sample_rays(c: dict):
         probes.append(('central.material',0,0,'solid'))
     return [(name,px,py,t+5,ex) for name,px,py,ex in probes]
 
+def require_successful_step_g_conversion(output: str, filename: str) -> None:
+    """Zero exit alone is not a valid BRL-CAD B-rep conversion.
+
+    On genuine 7.44.0 the imported .g exists, but stderr contains the
+    exact unsupported 'LoadONBrep ... not implemented for Curve' error.
+    """
+    if re.search(r'(?mi)^\s*Error:\s*', output):
+        raise NotQualified(
+            f'BRL-CAD reported STEP B-rep conversion errors despite exit 0: {filename}; '
+            'inspect original step-g.log')
+
+
 def step_g_argv(executable: str, database: Path, source: Path) -> list[str]:
     """BRL-CAD 7.44.0 actual installed importer CLI (Actions run 42383946537).
 
@@ -243,10 +255,7 @@ def execute(case: dict, root: Path, args, exe: dict) -> dict:
     # "Error: ::LoadONBrep(...) not implemented for Curve" followed by
     # several failed Edge_Curve/Closed_Shell/Manifold_Solid_Brep conversions.
     # A nonempty .g is not solid geometry. Reject even on exit zero.
-    if re.search(r'(?mi)^\s*Error:\s*', importer_output):
-        raise NotQualified(
-            f'BRL-CAD reported STEP B-rep conversion errors despite exit 0: {name}; '
-            f'see {output / "step-g.log"}')
+    require_successful_step_g_conversion(importer_output, name)
     if not database.is_file() or not database.stat().st_size:
         raise NotQualified(f'BRL-CAD importer did not produce a nonempty geometry database: {name}')
     roots = run([exe['mged'][0],'-c',str(database),'tops'],output/'mged-tops.log',args.timeout)
