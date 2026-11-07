@@ -221,6 +221,7 @@ export function previewParameterFreeze(
   if (request.retire !== null) {
     const retire = request.retire;
     if (!plain(retire) || !exact(retire, ['eventId', 'parameterId']) ||
+        typeof retire.eventId !== 'string' || typeof retire.parameterId !== 'string' ||
         !ID.test(retire.eventId) || !ID.test(retire.parameterId)) {
       fail('invalid parameter retirement request');
     }
