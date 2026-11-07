@@ -47,6 +47,16 @@ if(thirdHole.kind==='committed'){
   void notCommitted;
 }
 
+const arrayHoles=runtime.patternPlateHoles(session,{
+  sketchFeatureId:'sketch.plate',eventId:'author.contract.array',
+  expectedRevision:session.document.revision,sourceHoleId:'holeA',
+  idPrefix:'array',columns:2,rows:2,pitchXmm:16,pitchYmm:-18,
+});
+if(arrayHoles.kind==='committed') {
+  const invalidated:readonly string[]=arrayHoles.invalidation.invalidatedFeatureIds;
+  void invalidated;
+}
+
 const delta:WorkflowInvalidation=runtime.diff(session,session);
 const direct:WorkflowInvalidation=diffWorkflowPlans(model.planProject(session.document),model.planProject(session.document));
 const exact:false=delta.exactReuseAllowed;

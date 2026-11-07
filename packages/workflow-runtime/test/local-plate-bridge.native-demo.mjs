@@ -111,7 +111,28 @@ try {
   const afterUndoThirdHole=await evaluate('bridge.native.undo.third.hole');
   assert.deepEqual(afterUndoThirdHole.plate.holes.map(h=>h.radius),[5,5]);
   assert.notEqual(afterUndoThirdHole.sha256,withThirdHole.sha256);
+  // One-shot rectangular hole array: copies the solved source constraint,
+  // authors all three additional bores in one INTENT revision, then produces
+  // a NEW real OCP Boolean/STEP through authenticated local HTTP.
+  const patterned=runtime.patternPlateHoles(current,{
+    sketchFeatureId:'sketch.plate',eventId:'author.bridge.array',
+    expectedRevision:current.document.revision,admission:'require_admissible',
+    sourceHoleId:'holeA',idPrefix:'grid1',
+    columns:2,rows:2,pitchXmm:16,pitchYmm:-18,
+  });
+  assert.equal(patterned.kind,'committed',JSON.stringify(patterned));
+  assert.deepEqual(patterned.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  current=runtime.reopen(runtime.save(patterned.history));
+  const withArray=await evaluate('bridge.native.array');
+  assert.deepEqual(withArray.plate.holes.map(h=>h.radius),[5,5,5,5,5]);
+  assert.ok(withArray.volumeMm3<afterUndoThirdHole.volumeMm3);
+  assert.notEqual(withArray.sha256,afterUndoThirdHole.sha256);
+  current=runtime.reopen(runtime.save(runtime.undo(current,['undo.bridge.array'])));
+  const undoneArray=await evaluate('bridge.native.undo.array');
+  assert.deepEqual(undoneArray.plate.holes.map(h=>h.radius),[5,5]);
+  assert.ok(Math.abs(undoneArray.volumeMm3-afterUndoThirdHole.volumeMm3)<1e-5);
   console.log(JSON.stringify({status:'real_experimental_native_bridge_pass',
     first,second,changedHoles,undoneHoles,withThirdHole,afterUndoThirdHole,
+    withArray,undoneArray,
     redoAdmitted:true,independentStep:false,productionExact:false},null,2));
 } finally {await host.close();}
