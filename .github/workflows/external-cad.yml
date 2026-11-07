@@ -175,7 +175,7 @@ jobs:
           test "$actual" = "$expected" || {
             echo "::error::Original source-matched native L-profile ZIP hash mismatch"; exit 1;
           }
-          printf 'artifact_id=13589327619\\nzip_sha256=%s\\nproducer_kernel=a017a50fa3f97d4ca9de079e5b7f1870c9602d85\\n' \
+          printf 'artifact_id=13589327619\nzip_sha256=%s\nproducer_kernel=a017a50fa3f97d4ca9de079e5b7f1870c9602d85\n' \
             "$actual" > "$root/l-profile-artifact-source.txt"
       - name: Independently import all six L-profile STEP solids and verify 180 geometry rays
         shell: bash
