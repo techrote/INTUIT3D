@@ -375,7 +375,9 @@ test('solver-backed preview does not mutate project or STEP; one-call commit reb
     assert.deepEqual(admitted.invalidation.invalidatedFeatureIds,
       ['sketch.plate','plate','cut']);
     assert.equal(session.save(),originalArchive,'candidate must not enter authoritative journal');
-    assert.equal(session.currentStep(),originalStep,'uncommitted drag must not revoke STEP');
+    assert.deepEqual(session.currentStep(),originalStep,'uncommitted drag must not revoke STEP');
+    assert.notEqual(session.currentStep(),originalStep,
+      'unchanged current STEP must be returned as independent download bytes');
     assert.equal(nativeRequests,1,'preview does not dispatch physical provider');
     const applied=await session.commitPreviewAndEvaluate(admitted,native('preview.physical'));
     assert.equal(applied.kind,'submitted');
