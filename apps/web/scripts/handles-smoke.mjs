@@ -417,7 +417,27 @@ async function main() {
   await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]')"),'model archive reopened');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
     'Save/reopen changed authored unsolved status');
-  await screenshot('13-model-runtime-reopened.png');
+  await screenshot('13-model-runtime-reopened.png', '14-model-runtime-new-plate.png');
+
+  // Create a genuinely new semantic project. Cancel must preserve the
+  // unresolved prior project; accepting resets the journal and project ID.
+  const oldProjectLabel = await evaluate("document.querySelector('.runtime-shell .browser-project')?.textContent");
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-new-plate]');b?.click();return !!b})()"),
+    'New plate sketch command unavailable');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),'new project replacement review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Cancel');b?.click();return !!b})()"),
+    'New project cancellation unavailable');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
+    'Cancelled new project replaced the unresolved original');
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-new-plate]');b?.click();return !!b})()"),
+    'Cannot reopen new project review');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),'new project review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'New model project replacement cannot be confirmed');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),'new sketch and extrude rebuild');
+  check((await evaluate("document.querySelector('.runtime-shell .browser-project')?.textContent")) !== oldProjectLabel,
+    'New project silently reused existing project identity');
+  await screenshot('14-model-runtime-new-plate.png');
 
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
@@ -439,6 +459,7 @@ async function main() {
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
+    newModelProjectRequiresConsentAndFreshIdentity: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
