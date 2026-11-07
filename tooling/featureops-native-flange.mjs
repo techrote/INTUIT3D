@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /** Actual FEATUREOPS→INTENT/SKETCH/RUNTIME→experimental OCP 7.9.3.1 STEP.
- * Four-hole flange, named thickness binding/edit, fifth hole, rectangular array,
- * independent undo steps, archive replay and actual OCP STEP.
+ * Four-hole flange, retrospective named thickness edit, parameter freeze,
+ * fifth hole, rectangular array, independent undo, archive and actual OCP STEP.
  * Real same-engine STEP readback only. No OCCT8 C++ or independent CAD claim. */
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -21,6 +21,7 @@ import {createExperimentalPlateWorkflow} from '@intuit3d/workflow-runtime/experi
 import {authorMountingFlange,FEATURE_OPS_FORMAT,FEATURE_OPS_VERSION} from '@intuit3d/feature-ops';
 import {commitUndoableParameterAuthoring,PARAMETER_AUTHORING_FORMAT} from '@intuit3d/model/parameter-authoring';
 import {commitUndoableParameterEdit} from '@intuit3d/model/parameter-edit';
+import {previewParameterFreeze,commitUndoableParameterFreeze} from '@intuit3d/model/parameter-freeze';
 
 if(!process.argv[2]?.trim()) throw Error('Usage: node tooling/featureops-native-flange.mjs <new-output-basename>');
 const output=resolve(process.argv[2]);
@@ -100,6 +101,45 @@ assert.ok(!parameterInvalidation.invalidatedFeatureIds.includes('sketch.mount'))
 history=runtime.reopen(runtime.save(edited));
 const thicker=await evaluate('thick',16,4);
 assert.ok(thicker.volumeMm3>first.volumeMm3);
+// A physical acceptance for the newly admitted INTENT Make Independent
+// contract. Freeze must retain the CURRENT 16 mm solved dimension, release
+// only binding-introduced dependency edges, and retire its unused parameter.
+// An unchanged physical solid after the semantic edit is essential here.
+const freezeRequest={
+  format:'intuit3d.parameter-freeze',version:1,
+  expectedRevision:history.document.revision,admission:'require_admissible',
+  edits:[{eventId:'freeze.mount.bake',featureId:'extrude.mount',field:'thicknessMm'}],
+  release:[{eventId:'freeze.mount.release',featureId:'extrude.mount',
+    dependencies:['parameter.mount.thickness']}],
+  confirmIndependentIntentReviewed:true,
+  retire:{eventId:'freeze.mount.retire',parameterId:'parameter.mount.thickness'},
+};
+const freezePreview=previewParameterFreeze(history.document,freezeRequest);
+assert.deepEqual(freezePreview.baked,[{featureId:'extrude.mount',field:'thicknessMm',value:16}]);
+assert.ok(freezePreview.invalidation.invalidatedFeatureIds.includes('extrude.mount'));
+assert.ok(freezePreview.invalidation.invalidatedFeatureIds.includes('cut.mount'));
+assert.ok(!freezePreview.invalidation.invalidatedFeatureIds.includes('sketch.mount'));
+history=commitUndoableParameterFreeze(history,freezeRequest);
+assert.equal(model.featuresOf(history.document).some(f=>f.id==='parameter.mount.thickness'),false);
+assert.deepEqual(model.featuresOf(history.document).find(f=>f.id==='extrude.mount').dependsOn,
+  ['sketch.mount']);
+assert.equal(runtime.inspect(history).features.find(f=>f.featureId==='extrude.mount').thicknessMm,16);
+const frozenArchive=runtime.save(history);
+await writeFile(output+'.frozen.intuit3d.json',frozenArchive,{flag:'wx',mode:0o600});
+history=runtime.reopen(await readFile(output+'.frozen.intuit3d.json','utf8'));
+assert.equal(runtime.save(history),frozenArchive);
+const frozen=await evaluate('frozen',16,4);
+assert.ok(Math.abs(frozen.volumeMm3-thicker.volumeMm3)<=
+  Math.max(1e-6,thicker.volumeMm3*1e-9),
+  'freezing resolved dimensional intent cannot silently change the physical solid');
+// One undo frame restores the original parameter; redo reinstates independence.
+history=runtime.undo(history,['undo.freeze.retire','undo.freeze.release','undo.freeze.bake']);
+assert.ok(model.featuresOf(history.document).some(f=>f.id==='parameter.mount.thickness'));
+assert.equal(runtime.inspect(history).features.find(f=>f.featureId==='extrude.mount').thicknessMm,16);
+history=runtime.redo(history,['redo.freeze.bake','redo.freeze.release','redo.freeze.retire']);
+assert.equal(model.featuresOf(history.document).some(f=>f.id==='parameter.mount.thickness'),false);
+assert.equal(runtime.inspect(history).features.find(f=>f.featureId==='extrude.mount').thicknessMm,16);
+history=runtime.reopen(runtime.save(history));
 const added=runtime.editPlateHoles(history,{
   sketchFeatureId:'sketch.mount',eventId:'author.fifth',
   expectedRevision:history.document.revision,admission:'require_admissible',
@@ -138,8 +178,8 @@ assert.ok(Math.abs(patternUndone.volumeMm3-undone.volumeMm3)<=
   Math.max(1e-6,undone.volumeMm3*1e-9));
 assert.equal(runtime.inspect(history).exactGeometryAvailable,false);
 console.log(JSON.stringify({status:'FEATUREOPS_PARAMETER_PATTERN_REAL_EXPERIMENTAL_OCP_PASS',
-  initial:first,retrospectiveParameterThickness:thicker,fifthHole:fifth,
+  initial:first,retrospectiveParameterThickness:thicker,independentFrozenThickness:frozen,fifthHole:fifth,
   undoFifth:undone,sevenHolePattern:patternedStep,undoPattern:patternUndone,
-  archives:[output+'.intuit3d.json',output+'.pattern.intuit3d.json'],
+  archives:[output+'.frozen.intuit3d.json',output+'.intuit3d.json',output+'.pattern.intuit3d.json'],
   exactAuthority:false,independentInteroperability:false,
   productionOcct801CppExecuted:false,externalCADReadback:false},null,2));
