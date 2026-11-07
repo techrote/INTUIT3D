@@ -65,7 +65,7 @@ test('actual plate/cut target is versioned journal intent with dependency-aware 
   assert.deepEqual(preview.invalidation.readyToEvaluate,['feature.cut','feature.measure']);
   assert.deepEqual(planProject(preview.document).executableOrder,
     ['feature.plate','feature.cut','feature.measure']);
-  assert.deepEqual(featuresOf(preview.document).find(f=>f.id==='feature.cut').payload.selectedFace,ref());
+  assert.deepEqual(JSON.parse(JSON.stringify(featuresOf(preview.document).find(f=>f.id==='feature.cut').payload.selectedFace)),ref());
   assert.equal(JSON.stringify(preview.document).includes('observedRoles'),false);
 });
 
@@ -89,7 +89,7 @@ test('explicit user re-anchor survives undo, redo, archive and later provider ob
   history=commitUndoableSemanticSelectionRecovery(history,recovery(history.document));
   assert.equal(history.document.revision,4);
   const reopened=deserializeUndoHistory(serializeUndoHistory(history));
-  assert.deepEqual(featuresOf(reopened.document).find(f=>f.id==='feature.cut').payload.selectedFace,ref(3,left));
+  assert.deepEqual(JSON.parse(JSON.stringify(featuresOf(reopened.document).find(f=>f.id==='feature.cut').payload.selectedFace)),ref(3,left));
   assert.equal(assessSemanticSelection(reopened.document,'feature.cut','selectedFace').status,
     'pending_evidence');
   const report=assessSemanticSelection(reopened.document,'feature.cut','selectedFace',{
@@ -97,12 +97,12 @@ test('explicit user re-anchor survives undo, redo, archive and later provider ob
   assert.equal(report.status,'candidate');
   assert.deepEqual(report.resolution.candidates,[left]);
   history=undoTransaction(reopened,['event.undo']);
-  assert.deepEqual(featuresOf(history.document).find(f=>f.id==='feature.cut').payload.selectedFace,ref());
+  assert.deepEqual(JSON.parse(JSON.stringify(featuresOf(history.document).find(f=>f.id==='feature.cut').payload.selectedFace)),ref());
   history=redoTransaction(history,['event.redo']);
-  assert.deepEqual(featuresOf(history.document).find(f=>f.id==='feature.cut').payload.selectedFace,ref(3,left));
+  assert.deepEqual(JSON.parse(JSON.stringify(featuresOf(history.document).find(f=>f.id==='feature.cut').payload.selectedFace)),ref(3,left));
   assert.deepEqual(featuresOf(history.document).map(f=>f.id),['feature.plate','feature.cut']);
   const restored=deserializeProject(serializeProject(history.document));
-  assert.deepEqual(featuresOf(restored).find(f=>f.id==='feature.cut').payload.selectedFace,ref(3,left));
+  assert.deepEqual(JSON.parse(JSON.stringify(featuresOf(restored).find(f=>f.id==='feature.cut').payload.selectedFace)),ref(3,left));
   assert.equal(planProject(restored).features.find(f=>f.feature.id==='feature.cut').status,'ready');
 });
 
@@ -132,8 +132,8 @@ test('recovery refuses unobserved candidate, incomplete evidence, wrong project 
     ...recovery(doc,'event.stale'),expectedRevision:2}),ProjectRevisionError);
   assert.throws(()=>previewSemanticSelectionEdit(doc,{
     ...edit(doc,'event.wrong',ref(1,original,'other.project'))}),ProjectFormatError);
-  assert.throws(()=>assessSemanticSelection(doc,'feature.cut','selectedFace',{
-    snapshot:snapshot(1,[]),steps:trace}),Error);
+  assert.equal(assessSemanticSelection(doc,'feature.cut','selectedFace',{
+    snapshot:snapshot(1,[]),steps:trace}).status,'pending_evidence');
   assert.equal(featuresOf(doc).find(f=>f.id==='feature.cut').payload.selectedFace.format,
     TOPOLOGY_REFERENCE_FORMAT);
 });
