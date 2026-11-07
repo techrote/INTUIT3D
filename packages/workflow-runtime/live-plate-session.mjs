@@ -127,6 +127,75 @@ export function createLivePlateSession({
       return candidate.kind==='refused'?candidate:publishCandidate(candidate);
     },
     /**
+     * Versioned declarative edit for WORKBENCH. The existing INTENT history
+     * and SKETCH solver are the only authorities; this is not a parallel model.
+     * Each command is project/revision-fenced before invoking the real runtime.
+     * A stale/rejected command sends no native request and leaves STEP intact.
+     */
+    applyCommand(command) {
+      if(!command || typeof command!=='object' ||
+          typeof command.projectId!=='string' || !command.projectId ||
+          !Number.isSafeInteger(command.expectedRevision) ||
+          command.expectedRevision<0 ||
+          ![
+            'model.events','model.undo','model.redo','dimensions.batch',
+            'sketch.constraints','sketch.holes','sketch.holes.rectangular',
+            'sketch.holes.circular','sketch.holes.transform',
+            'sketch.holes.resize',
+          ].includes(command.kind))
+        throw new TypeError('live plate session: unsupported or unversioned CAD command');
+      const commandRefused=(source)=>({
+        kind:'refused',code:'stale_command',notCommitted:true,
+        reason:'command project/revision differs from authoritative CAD history',
+        sourceProjectId:source.document.projectId,
+        sourceRevision:source.document.revision,
+      });
+      return session.applyEdit(history=>{
+        // This guard runs inside the same synchronous edit/commit boundary.
+        // A changed storage value is also refused by publishHistory.
+        if(history.document.projectId!==command.projectId ||
+            history.document.revision!==command.expectedRevision)
+          return commandRefused(history);
+        const revision=command.expectedRevision;
+        if(command.kind==='model.events') {
+          if(!Array.isArray(command.events)||command.events.length<1||command.events.length>64)
+            throw new TypeError('live plate session: model.events requires 1–64 events');
+          return runtime.commit(history,command.events,revision);
+        }
+        if(command.kind==='model.undo'||command.kind==='model.redo') {
+          if(!Array.isArray(command.eventIds)||command.eventIds.length<1||
+              command.eventIds.length>64||
+              command.eventIds.some(id=>typeof id!=='string'||!ID.test(id)))
+            throw new TypeError('live plate session: undo/redo requires 1–64 event IDs');
+          return command.kind==='model.undo'
+            ? runtime.undo(history,command.eventIds,revision)
+            : runtime.redo(history,command.eventIds,revision);
+        }
+        if(!command.request||typeof command.request!=='object'||
+            Array.isArray(command.request)||
+            Object.hasOwn(command.request,'expectedRevision'))
+          throw new TypeError('live plate session: command request must omit expectedRevision');
+        const request={...command.request,expectedRevision:revision};
+        switch(command.kind) {
+          case 'dimensions.batch': return runtime.editDimensions(history,request);
+          case 'sketch.constraints': return runtime.editSketchConstraints(history,request);
+          case 'sketch.holes': return runtime.editPlateHoles(history,request);
+          case 'sketch.holes.rectangular': return runtime.patternPlateHoles(history,request);
+          case 'sketch.holes.circular': return runtime.patternCircularHoles(history,request);
+          case 'sketch.holes.transform': return runtime.transformPlateHoles(history,request);
+          case 'sketch.holes.resize': return runtime.resizePlateHoleLayout(history,request);
+          default: throw new TypeError('live plate session: unsupported CAD command');
+        }
+      });
+    },
+    /** Commit a typed command then request physical evaluation of its revision. */
+    async applyCommandAndEvaluate(command,options={}) {
+      const edit=session.applyCommand(command);
+      if(edit.kind==='refused') return {kind:'refused',edit,evaluation:null};
+      const evaluation=await session.evaluate(options);
+      return {kind:'submitted',edit,evaluation};
+    },
+    /**
      * Solver-backed drag/edit preview without changing the authoritative
      * history, native job, previous STEP receipt, or undo stack.
      * The opaque proposal can be committed once, only if its exact source
