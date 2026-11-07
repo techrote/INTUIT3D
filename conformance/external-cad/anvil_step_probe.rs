@@ -98,7 +98,7 @@ fn main() {
     // bore radius when another radius compensates to preserve removed area.
     // Require empty just inside and full material just outside EACH wall.
     // Four orientations also expose asymmetric or displaced hole contours.
-    for (i, (hx, hy, radius)) in holes.iter().enumerate() {
+    for (i, &(hx, hy, radius)) in holes.iter().enumerate() {
         let delta = (radius * 0.15).min(0.75);
         for (direction, dx, dy) in [
             ("east", 1.0, 0.0), ("west", -1.0, 0.0),
