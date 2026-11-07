@@ -11,6 +11,7 @@ import * as archive from '@intuit3d/model/archive';
 import { moveHistoryFeature } from '@intuit3d/model/history-move';
 import * as lifecycle from '@intuit3d/model/feature-lifecycle';
 import { commitUndoableParameterFreeze, previewParameterFreeze } from '@intuit3d/model/parameter-freeze';
+import { commitUndoableParameterInspectorEdit, PARAMETER_INSPECTOR_FORMAT, PARAMETER_INSPECTOR_VERSION } from '@intuit3d/model/parameter-inspector';
 import * as sketch from '@intuit3d/sketch';
 import * as discovery from '@intuit3d/sketch/profile-discovery/v1';
 import { createWorkflowRuntime } from '@intuit3d/workflow-runtime';
@@ -405,6 +406,48 @@ export function modelThicknessBinding(h: ModelSession): 'named_parameter' | 'ind
     ? 'named_parameter' : 'independent';
 }
 
+/** Read the linked parameter's stable ID, visible label and literal value
+ * directly from the INTENT journal; never maintain duplicate UI authority. */
+export interface NamedThicknessParameter {
+  readonly featureId:string;
+  readonly name:string;
+  readonly valueMm:number;
+  readonly literalEditable:boolean;
+}
+export function inspectNamedThicknessParameter(h:ModelSession):NamedThicknessParameter|null {
+  if(modelThicknessBinding(h)!=='named_parameter')return null;
+  const source=getFeature(h,'parameter.t');
+  const raw=source.payload.parameter;
+  if(source.kind!=='parameter'||!raw||typeof raw!=='object'||Array.isArray(raw))
+    throw Error('Missing authoritative named thickness parameter');
+  const parameter=raw as Record<string,unknown>;
+  if(typeof parameter.name!=='string')throw Error('Authoritative parameter name is invalid');
+  const expression=parameter.expression;
+  const literal=!!expression&&typeof expression==='object'&&!Array.isArray(expression)
+    ?expression as Record<string,unknown>:null;
+  return {
+    featureId:source.id,name:parameter.name,valueMm:modelDimensionValues(h).thickness,
+    literalEditable:literal?.op==='literal'&&literal.unit==='mm'&&
+      typeof literal.value==='number'&&Number.isFinite(literal.value),
+  };
+}
+/** One accepted INTENT revision-fenced event for a name and/or value change. */
+export function editNamedThicknessParameter(h:ModelSession,name:string,valueMm:number):ModelSession {
+  const current=inspectNamedThicknessParameter(h);
+  if(!current||!current.literalEditable)
+    throw Error('No editable literal named thickness parameter is bound to this extrusion.');
+  if(!Number.isFinite(valueMm)||valueMm<=0||valueMm>10000)
+    throw Error('Named thickness must be finite and positive (up to 10,000 mm).');
+  return commitUndoableParameterInspectorEdit(h,{
+    format:PARAMETER_INSPECTOR_FORMAT,version:PARAMETER_INSPECTOR_VERSION,
+    eventId:`workbench.parameter.edit.${h.document.revision}`,
+    featureId:current.featureId,expectedProjectId:h.document.projectId,
+    expectedRevision:h.document.revision,name,
+    expression:{op:'literal',value:valueMm,unit:'mm'},
+    admission:'require_admissible',
+  });
+}
+
 /** Freeze CURRENT resolved thickness, explicitly release the witnessed binding
  * edge and retire the now-unused parameter in ONE undoable INTENT transaction.
  * The model API refuses stale, unresolved or non-owned releases. */
@@ -469,13 +512,10 @@ export function editModelDimension(h: ModelSession, field: ModelDimension, value
   const eventId = `workbench.edit.${field}.${h.document.revision}`;
   if (field === 'thickness') {
     if (modelThicknessBinding(h)==='named_parameter') {
-      const source = getFeature(h, 'parameter.t');
-      return runtime.commit(h, [{
-        eventId, type:'feature.edit', featureId:source.id,
-        patch:{ payload:{ ...source.payload, parameter:{
-          name:'thickness', unit:'mm', expression:{ op:'literal', unit:'mm', value },
-        } } },
-      }]);
+      // 3D handles and scalar inspector must preserve an authored source rename.
+      const source=inspectNamedThicknessParameter(h);
+      if(!source)throw Error('Bound thickness parameter missing');
+      return editNamedThicknessParameter(h,source.name,value);
     }
     const source = getFeature(h,'plate');
     return runtime.commit(h,[{
