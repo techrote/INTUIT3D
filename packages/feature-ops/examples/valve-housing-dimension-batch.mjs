@@ -132,12 +132,12 @@ assert.ok(edit.invalidation.invalidatedFeatureIds.includes('cut.capport'));
 assert.ok(!edit.invalidation.invalidatedFeatureIds.includes('extrude.spacer'));
 assert.equal(edit.nativeHandoffs.length,3);
 const after=edit.history;
-const undo=runtime.undo(after,['undo.dimensions.batch']);
+const undo=runtime.undo(after,request.edits.map((_,i)=>'undo.dimensions.batch.'+i));
 assert.equal(model.featuresOf(undo.document)
   .find(f=>f.id==='extrude.housing').payload.thicknessMm,10);
 assert.equal(cutChain.inspectBodyCutExtent(undo.document,'cut.valve','body.housing')
   .extent.depthMm,2);
-const redo=runtime.redo(undo,['redo.dimensions.batch']);
+const redo=runtime.redo(undo,request.edits.map((_,i)=>'redo.dimensions.batch.'+i));
 assert.equal(model.featuresOf(redo.document)
   .find(f=>f.id==='extrude.housing').payload.thicknessMm,14);
 h=runtime.reopen(runtime.save(redo));
