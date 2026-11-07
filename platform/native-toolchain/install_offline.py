@@ -17,6 +17,8 @@ import sys
 import tarfile
 import tempfile
 
+from abi_compat import ABIError, verify_abi
+
 
 ROOT_NAME = "offline-occt801"
 BUNDLE_SCHEMA = "intuit3d/pinned-occt801-offline-linux-bundle-v1"
@@ -124,6 +126,7 @@ def install(archive: Path, destination: Path, expected_digest: str,
                 "native executable absent, not executable or digest mismatch")
         run_gate([sys.executable, str(root / "verify.py")], root,
                  "archive SHA-256/SONAME verification", 60)
+        abi_record = verify_abi(worker, root / "lib", manifest.get("elfAbiProfile"))
         result = json.loads(run_gate([sys.executable, str(root / "selftest.py")],
                                     root, "extracted native C++/STEP replay", 450))
         require(result.get("status") == "OFFLINE_CXX_REPLAY_PASS"
@@ -145,6 +148,7 @@ def install(archive: Path, destination: Path, expected_digest: str,
         "workerPath": str(destination / "bin/intuit3d_occt8_plate"),
         "runScriptPath": str(destination / "run.sh"),
         "nativeReplayCases": sorted(result["cases"]),
+        "abiPreflight": abi_record,
         "independentCadInteroperability": False,
         "windowsNativeQualified": False,
     }
@@ -160,7 +164,7 @@ def main() -> int:
     try:
         result = install(args.archive, args.destination,
                          args.expected_sha256, args.kernel_sha)
-    except (InstallError, OSError, ValueError, KeyError, TypeError,
+    except (InstallError, ABIError, OSError, ValueError, KeyError, TypeError,
             subprocess.SubprocessError, tarfile.TarError) as exc:
         print("OFFLINE_OCCT8_INSTALL_FAIL:", exc, file=sys.stderr)
         return 2
