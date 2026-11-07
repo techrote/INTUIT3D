@@ -189,3 +189,85 @@ test('superseded noncooperative native reply never becomes downloadable',async()
   assert.equal(session.currentStep(),null,'external undo invalidates receipt');
   assert.equal(session.refresh().hasVerifiedStep,false);
 });
+
+test('same-revision verified STEP survives cancelled, unavailable and STEP-less native refresh; edit revokes it',async()=>{
+  let history=initialProject();
+  let attempts=0;
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>history,publishHistory:h=>{history=h;},
+    evaluateImpl:async options=>{
+      attempts++;
+      if(attempts===2) return {kind:'unresolved',code:'worker_crash',
+        reason:'synthetic provider unavailable',artifact:null,
+        exactAuthority:false,independentInteroperability:false};
+      return {kind:'experimental_plate_evaluated',exactAuthority:false,
+        independentInteroperability:false,
+        source:{projectId:history.document.projectId,revision:history.document.revision},
+        result:{requestId:options.requestId,cutFeatureId:options.cutFeatureId},
+        step:options.exportStep?{filename:'synthetic.step',
+          bytes:new Uint8Array([1,2,3]),sha256:'synthetic-only'}:undefined};
+    }});
+  const initial=await session.evaluate({requestId:'recovery.first',exportStep:true});
+  assert.equal(initial.kind,'experimental_plate_evaluated');
+  assert.ok(session.currentStep());
+  const originalArchive=session.save();
+  session.cancel();
+  assert.equal(session.currentStep()?.sha256,'synthetic-only',
+    'cancelling a job must not revoke verified bytes of the unchanged document');
+  const unavailable=await session.evaluate({requestId:'recovery.unavailable',exportStep:true});
+  assert.equal(unavailable.kind,'unresolved');
+  assert.equal(unavailable.code,'worker_crash');
+  assert.equal(session.refresh().lastResultKind,'unresolved',
+    'the latest provider failure must remain visible alongside a valid older receipt');
+  assert.equal(session.currentStep()?.sha256,'synthetic-only',
+    'failed native refresh does not corrupt a still-current verified STEP');
+  const noExport=await session.evaluate({requestId:'recovery.noexport',exportStep:false});
+  assert.equal(noExport.kind,'experimental_plate_evaluated');
+  assert.equal(noExport.step,undefined);
+  assert.ok(session.currentStep(),
+    'a native evaluation with export disabled must not erase the existing current STEP');
+  const changed=session.applyEdit(h=>runtime.commit(h,[{
+    eventId:'recovery.change.thickness',type:'feature.edit',featureId:'plate',
+    patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:12}},
+  }]));
+  assert.equal(changed.kind,'committed');
+  assert.notEqual(session.save(),originalArchive);
+  assert.equal(session.currentStep(),null,
+    'even a historically valid export must be revoked after a real model revision');
+  assert.equal(session.refresh().lastResultKind,null);
+});
+
+test('one-call reopen and native rebuild refuses unconfirmed replacement; rebuilds confirmed archive over HTTP',async()=>{
+  let history=initialProject();
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>history,publishHistory:h=>{history=h;}});
+  const host=await startLocalPlateBridge({runtime,model,plateContract,
+    runExperimentalPlate:fakeProvider});
+  const native=(requestId,confirmReplacement)=>({
+    url:host.url,token:host.token,requestId,confirmReplacement,exportStep:true,
+  });
+  try {
+    const saved=session.save();
+    const edited=session.applyEdit(h=>runtime.commit(h,[{
+      eventId:'reopen.change.thickness',type:'feature.edit',featureId:'plate',
+      patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:12}},
+    }]));
+    assert.equal(edited.kind,'committed');
+    const before=session.save();
+    const blocked=await session.reopenAndEvaluate(saved,native('reopen.denied',false));
+    assert.equal(blocked.kind,'refused');
+    assert.equal(blocked.evaluation,null);
+    assert.equal(session.save(),before);
+    assert.equal(session.currentStep(),null);
+    const accepted=await session.reopenAndEvaluate(saved,native('reopen.confirmed',true));
+    assert.equal(accepted.kind,'submitted',JSON.stringify(accepted));
+    assert.equal(accepted.reopen.kind,'opened');
+    assert.equal(accepted.evaluation.kind,'experimental_plate_evaluated',
+      JSON.stringify(accepted.evaluation));
+    assert.equal(accepted.evaluation.result.intendedPlate.thickness,8);
+    assert.equal(session.save(),saved);
+    assert.equal(session.currentStep()?.sha256,accepted.evaluation.step.sha256);
+    assert.equal(accepted.evaluation.exactAuthority,false);
+    assert.equal(accepted.evaluation.independentInteroperability,false);
+  } finally {session.cancel();await host.close();}
+});
