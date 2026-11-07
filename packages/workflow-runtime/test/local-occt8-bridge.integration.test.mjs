@@ -17,7 +17,7 @@ import * as plateContract from '@intuit3d/kernel-contract/plate-v1';
 import {createWorkflowRuntime} from '../index.mjs';
 import {createLivePlateSession} from '../live-plate-session.mjs';
 import {startLocalPinnedOcct8Bridge} from '../local-plate-bridge.mjs';
-import {evaluateLocalPlate} from '../local-plate-client.mjs';
+import {evaluateLocalPlate,inspectLocalPlateBridge} from '../local-plate-client.mjs';
 
 const runtime=createWorkflowRuntime({model,transactions,bindings,dimensions,archive,sketch,discovery});
 const created=(eventId,feature)=>({eventId,type:'feature.create',feature});
@@ -247,5 +247,59 @@ test('actual INTENT/SKETCH revision edit revokes obsolete independent STEP sourc
       expectedProbeSha256:'a'.repeat(64),
     }),/stale live CAD revision/);
     assert.equal(calls.length,1,'stale external check never starts a native rebuild');
+  });
+});
+
+test('pinned C++ pairing identifies configured host and guards live session evaluation',async()=>{
+  const calls=[],current=plateProject();
+  const session=createLivePlateSession({
+    runtime,readCurrentHistory:()=>current,publishHistory:()=>{},
+  });
+  await withHost(fakePinnedFactory(calls),async host=>{
+    const identity=await inspectLocalPlateBridge({url:host.url,token:host.token});
+    assert.equal(identity.kind,'paired',JSON.stringify(identity));
+    assert.equal(identity.backend,'OCCT-cxx-8.0.1');
+    assert.equal(identity.occtVersion,'8.0.1');
+    assert.equal(identity.stepVerification,'occt8_part21_plate_subset');
+    const result=await session.evaluate({
+      url:host.url,token:host.token,requestId:'pinned.only.native',
+      exportStep:true,requiredBackend:'OCCT-cxx-8.0.1',
+    });
+    assert.equal(result.kind,'experimental_plate_evaluated',JSON.stringify(result));
+    assert.equal(session.currentStep()?.verification,'occt8_part21_plate_subset');
+    assert.equal(result.exactAuthority,false);
+    assert.equal(calls.length,1);
+    const refused=await session.evaluate({
+      url:host.url,token:host.token,requestId:'wrong.expected.native',
+      exportStep:true,requiredBackend:'OCP-python-prototype',
+    });
+    assert.equal(refused.kind,'unresolved');
+    assert.equal(refused.code,'provider_mismatch');
+    assert.equal(calls.length,1,'wrong backend cannot launch a C++ request');
+    assert.equal(session.currentStep()?.sha256,result.step.sha256,
+      'refused same-revision backend switch preserves already verified bytes');
+  });
+});
+test('a misleading capability handshake cannot override the actual provider reply',async()=>{
+  const current=plateProject(),calls=[];
+  await withHost(fakePinnedFactory(calls),async host=>{
+    const spoof=async(url,options)=>{
+      const response=await fetch(url,options);
+      if(!url.endsWith('/v1/plate/capabilities')) return response;
+      const payload=await response.json();
+      return {
+        ok:response.ok,
+        json:async()=>({...payload,backend:'OCP-python-prototype',
+          occtVersion:'7.9.3.1',stepVerification:'same_engine_step_readback'}),
+      };
+    };
+    const out=await evaluateLocalPlate({
+      url:host.url,token:host.token,runtime,readCurrentHistory:()=>current,
+      cutFeatureId:'cut',requestId:'spoofed.provider',exportStep:true,
+      requiredBackend:'OCCT-cxx-8.0.1',fetchImpl:spoof,
+    });
+    assert.equal(out.kind,'unresolved');
+    assert.equal(out.code,'provider_mismatch');
+    assert.equal(calls.length,0);
   });
 });
