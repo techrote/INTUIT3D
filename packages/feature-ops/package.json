@@ -35,6 +35,10 @@
     "./circular-bolt-pattern/v1": {
       "types": "./circular-bolt-pattern.d.mts",
       "default": "./src/circular-bolt-pattern.mjs"
+    },
+    "./rectangular-hole-grid/v1": {
+      "types": "./rectangular-hole-grid.d.mts",
+      "default": "./src/rectangular-hole-grid.mjs"
     }
   },
   "peerDependencies": {
