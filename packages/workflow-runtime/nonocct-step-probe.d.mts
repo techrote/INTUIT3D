@@ -19,6 +19,6 @@ export declare function runNonOcctPlateProbe(options:Readonly<{
 }>):Promise<Readonly<{
   format:'intuit3d.nonocct-step-sample';version:1;kind:'executed_nonocct_plate_sample';
   source:Readonly<{projectId:string;revision:number;archiveSha256:string}>;
-  stepSha256:string;probeSha256:string;transcriptSha256:string;
+  stepSha256:string;probeSha256:string;transcriptSha256:string;rawTranscript:string;
   sample:NonOcctPlateSample;exactAuthority:false;independentInteroperability:false;note:string;
 }>>;
