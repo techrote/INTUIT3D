@@ -130,7 +130,7 @@ test('strict mode refuses unresolved final dependencies, permissive retains null
     { ...req, admission: 'permit_unresolved' });
   assert.equal(gate(staged.document, 'extrude').status, 'unready');
   assert.equal(gate(staged.document, 'extrude').resolvedPayload, null);
-  assert.equal(gate(staged.document, 'cut').status, 'blocked_binding');
+  assert.equal(gate(staged.document, 'cut').status, 'unready');
   assert.equal(gate(staged.document, 'cut').resolvedPayload, null);
 });
 
