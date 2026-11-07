@@ -630,10 +630,15 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         </div>
         <div className="inspector-section">
           <div className="section-head">EDIT RETROSPECTIVE DIMENSIONS</div>
-          {values?MODEL_DIMENSIONS.map(field=><ScalarInput key={field+':'+history.document.revision} field={field}
-            value={values[field]} onCommit={update}/>):<p data-testid="runtime-removed-extrusion" className="microcopy">
-              Extrusion removed. Plate parameters remain authored in the journal; restore the original extrusion to edit or rebuild it.
-            </p>}
+          {(['width','depth','holeDiameter','holePitch'] as const).map(field=><ScalarInput
+             key={field+':'+history.document.revision} field={field}
+             value={sketchValues[field]} onCommit={update}/>)}
+          {values?<ScalarInput key={'thickness:'+history.document.revision}
+             field="thickness" value={values.thickness} onCommit={update}/>:<p
+             data-testid="runtime-sketch-first-guidance" className="microcopy">
+             No active solid: edit the solved sketch, then choose Extrude sketch and a thickness
+             in the Solid Features toolbar. Cut holes only after extrusion.
+           </p>}
           {plateActive&&<div className="runtime-hole-add" data-testid="runtime-thickness-binding">
             <strong>Extrusion thickness · {thicknessBinding==='named_parameter'?'linked parameter':'independent dimension'}</strong>
             <span data-testid="runtime-thickness-link-state">
@@ -767,12 +772,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           </label>
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-build" onClick={()=>void rebuildNative(false)}
-            disabled={!geom || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}>
+            disabled={!geom || !cutActive || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}>
             {nativeBusy?'Rebuilding experimental solid…':'Rebuild experimental solid + STEP'}
           </button>
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-export" onClick={()=>void rebuildNative(true)}
-            disabled={!geom || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}>
+            disabled={!geom || !cutActive || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}>
             {nativeBusy?'Building verified STEP…':'Build and download experimental STEP'}
           </button>
           <button type="button" className="ribbon-button runtime-native-export"
@@ -787,7 +792,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             <small>Provider-reported metrics when available; host STEP readback is same-engine only. Not production exactness or independent external CAD verification.</small>
           </div>}
           {nativeReport&&<p className="microcopy" role="status" data-testid="runtime-native-result">{nativeReport}</p>}
-          <p className="microcopy">The persistent RUNTIME session invalidates native receipts on every model edit, undo/redo, archive replacement or provider change. Optional live rebuild evaluates only admitted sketch revisions after coalescing edits; invalid profiles remain pending. Build-only keeps same-engine-verified bytes available for the current revision; download rechecks the authoritative journal. No preview tessellation is exported as STEP. <strong>Experimental OCP is not production-qualified CAD.</strong></p>
+          <p className="microcopy">Native build requires an authored extrusion and body-targeted cut; a visible sketch circle alone is not a physical Boolean. The persistent RUNTIME session invalidates native receipts on every model edit, undo/redo, archive replacement or provider change. Optional live rebuild evaluates only admitted sketch revisions after coalescing edits; invalid profiles remain pending. Build-only keeps same-engine-verified bytes available for the current revision; download rechecks the authoritative journal. No preview tessellation is exported as STEP. <strong>Experimental OCP is not production-qualified CAD.</strong></p>
         </div>
         <div className="inspector-section diagnostics">
           <div className="section-head">EVALUATION <span>{faults.length} pending / invalid</span></div>
@@ -795,7 +800,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             <strong>{f.featureId}</strong> <span data-testid={`runtime-status-${f.featureId}`}>{f.status}</span>
             {f.diagnostics.map((d,i)=><small key={i}>{d}</small>)}
           </div>)}
-          <p className="microcopy">Extrude: {plate?.status??'removed'}. Cut: {cut?.status??'removed'}. The viewport is a tessellated preview only. Native STEP, when separately rebuilt, remains experimental with same-engine readback rather than production exactness.</p>
+          <p className="microcopy">Extrude: {plate?.status??'not authored'}. Cut: {cut?.status??'not authored'}. The viewport is a tessellated preview only. Native STEP, when separately rebuilt, remains experimental with same-engine readback rather than production exactness.</p>
         </div>
         {message&&<div className="runtime-message" role="status">{message}</div>}
       </aside>
