@@ -11,8 +11,8 @@ import unittest
 import zipfile
 
 from u_bracket import (ARTIFACT_SHA, CASES, KERNEL_SHA, OCCT_SHA, Rejected,
-                       SOURCE_FIXTURE_SHA, expected_volume, parse_receipt,
-                       rays, sha, verify_native_source)
+                       SOURCE_FIXTURE_SHA, expected_volume, expected_centroid,
+                       parse_receipt, rays, sha, verify_native_source)
 
 
 def synthetic_receipt(thickness: int = 8) -> str:
@@ -21,9 +21,12 @@ def synthetic_receipt(thickness: int = 8) -> str:
         hits, low, high = (0, -1., -1.) if top is None else (2, 0., top)
         lines.append(f"U_RAY {name} {x:.9f} {y:.9f} {hits} {low:.9f} {high:.9f}")
     vol = expected_volume(thickness)
+    cx, cy, cz = expected_centroid(thickness)
     lines.append("U_ACCEPT solids=1 source_unit=millimetre imported_exact=true "
                  f"tris=300 open_edges=0 volume_mm3={vol:.9f} "
-                 f"expected_mm3={vol:.9f} warnings=0")
+                 f"expected_mm3={vol:.9f} "
+                 f"centroid_x_mm={cx:.9f} centroid_y_mm={cy:.9f} "
+                 f"centroid_z_mm={cz:.9f} warnings=0")
     return "\n".join(lines) + "\n"
 
 
@@ -85,6 +88,12 @@ class IndependentUBracketContracts(unittest.TestCase):
     def test_two_thickness_volumes_and_distinct_profile_sample(self):
         self.assertAlmostEqual(expected_volume(8), 47604.380550980765)
         self.assertAlmostEqual(expected_volume(12), 71524.38055098077)
+        self.assertAlmostEqual(expected_centroid(8)[0], -0.7151838864836263)
+        self.assertAlmostEqual(expected_centroid(8)[1], -9.073874914254986)
+        self.assertAlmostEqual(expected_centroid(8)[2], 3.987626167681832)
+        self.assertAlmostEqual(expected_centroid(12)[0], -0.7914208478289264)
+        self.assertAlmostEqual(expected_centroid(12)[1], -9.042457823583678)
+        self.assertAlmostEqual(expected_centroid(12)[2], 5.985175858743288)
         self.assertEqual(len(rays(8)), len(rays(12)))
         self.assertEqual(len(rays(8)), 40)
         names = [r[0] for r in rays(8)]
@@ -103,6 +112,9 @@ class IndependentUBracketContracts(unittest.TestCase):
             self.assertEqual(observed["rayCount"], 40)
             self.assertAlmostEqual(observed["measuredVolumeMm3"], expected_volume(thickness))
             self.assertEqual(len(observed["rays"]), 40)
+            for axis, predicted in zip("xyz", expected_centroid(thickness)):
+                self.assertAlmostEqual(observed["measuredCentroidMm"][axis],
+                                       predicted, places=7)
 
     def test_notch_and_cut_location_floor_radii_fail_closed(self):
         base = synthetic_receipt(8)
@@ -141,6 +153,26 @@ class IndependentUBracketContracts(unittest.TestCase):
             with self.subTest(candidate=candidate[:50]):
                 with self.assertRaises(Rejected):
                     parse_receipt(candidate, 12)
+
+    def test_compensated_cut_displacement_cannot_preserve_mass_centroid(self):
+        # The total material volume and all 40 spot rays can match while a
+        # small off-probe material addition/removal shifts the mass centre.
+        baseline = synthetic_receipt(8)
+        analytic = dict(zip("xyz", expected_centroid(8)))
+        for axis, delta in (("x", 1.0), ("y", -2.0), ("z", 0.5)):
+            with self.subTest(axis=axis):
+                old = f"centroid_{axis}_mm={analytic[axis]:.9f}"
+                changed = baseline.replace(
+                    old, f"centroid_{axis}_mm={analytic[axis]+delta:.9f}")
+                self.assertNotEqual(changed, baseline)
+                with self.assertRaisesRegex(Rejected, "centroid"):
+                    parse_receipt(changed, 8)
+        import re
+        for axis, invalid in (("x", "nan"), ("y", "inf"), ("z", "NotAvailable")):
+            candidate = re.sub(rf"centroid_{axis}_mm=[^ ]+",
+                               f"centroid_{axis}_mm={invalid}", baseline)
+            with self.assertRaises(Rejected):
+                parse_receipt(candidate, 8)
 
     def test_native_sha_and_source_still_not_independent_acceptance(self):
         with zipfile.ZipFile(synthetic_archive()) as z:
