@@ -17,6 +17,7 @@ from analytic_profile_extrude import parse_request, require, nearby, ID
 
 SCHEMA = 'intuit3d/kernel/profile-body-cut-v1'
 POCKET_SCHEMA = 'intuit3d/kernel/profile-body-cut-v2'
+CHAIN_SCHEMA = 'intuit3d/kernel/profile-body-cut-chain-v3'
 
 
 def _face(parsed):
@@ -71,6 +72,8 @@ def _measure(shape):
 
 
 def execute(request, step_path=None):
+    if isinstance(request, dict) and request.get('protocol') == CHAIN_SCHEMA:
+        return execute_chain(request, step_path)
     import OCP
     require(OCP.__version__ == '7.9.3.1', 'requires pinned experimental OCP 7.9.3.1')
     require(isinstance(request, dict), 'body cut request must be an object')
@@ -172,6 +175,136 @@ def execute(request, step_path=None):
             **({'cutDepthMm': cut_depth,
                 'cutKind': 'blind_pocket' if cut_depth < thickness else 'through'}
                if schema == POCKET_SCHEMA else {})}
+
+
+def execute_chain(request, step_path=None):
+    """One semantic body, multiple ordered independently authored cutting features.
+
+    Each cut must physically remove its full analytic area times its own
+    depth. This rejects protruding/overlapping tools rather than claiming
+    an incorrect cumulative mass or silently dropping a cut.
+    """
+    import OCP
+    require(OCP.__version__ == '7.9.3.1', 'requires pinned experimental OCP 7.9.3.1')
+    require(isinstance(request, dict) and set(request) == {
+        'protocol', 'requestId', 'targetBodyId', 'revision', 'units',
+        'baseExtrude', 'cuts', 'exportStep'}, 'invalid cut-chain fields')
+    require(request['protocol'] == CHAIN_SCHEMA and request['units'] == 'mm',
+            'unsupported cut-chain units or protocol')
+    require(all(isinstance(request[k], str) and ID.fullmatch(request[k])
+                for k in ('requestId', 'targetBodyId')),
+            'invalid cut-chain identity')
+    require(type(request['revision']) is int and 0 <= request['revision'] < 2**53,
+            'invalid document revision')
+    require(type(request['exportStep']) is bool, 'exportStep must be boolean')
+    cuts = request['cuts']
+    require(isinstance(cuts, list) and 1 <= len(cuts) <= 16,
+            'cut-chain requires one to sixteen authored cuts')
+    base = request['baseExtrude']
+    require(isinstance(base, dict) and base.get('revision') == request['revision']
+            and base.get('units') == 'mm' and base.get('exportStep') is False,
+            'base extrusion must be same-revision and non-exporting')
+    base_parsed = parse_request(base)
+    thickness = base_parsed[1]
+    seen = {request['requestId'], base['requestId'], base['featureId']}
+    parsed_cuts = []
+    for index, cut in enumerate(cuts):
+        require(isinstance(cut, dict) and set(cut) == {
+            'cutFeatureId', 'cutTool', 'cutDepthMm'},
+            f'cut {index}: invalid fields')
+        feature_id = cut['cutFeatureId']
+        tool = cut['cutTool']
+        require(isinstance(feature_id, str) and ID.fullmatch(feature_id)
+                and isinstance(tool, dict) and tool.get('revision') == request['revision']
+                and tool.get('units') == 'mm' and tool.get('exportStep') is False,
+                f'cut {index}: stale or unrecognized tool')
+        require(all(isinstance(v, str) and ID.fullmatch(v) and v not in seen
+                    for v in (feature_id, tool.get('requestId'), tool.get('featureId')))
+                and len({feature_id, tool.get('requestId'), tool.get('featureId')}) == 3,
+                f'cut {index}: aliased or duplicated IDs')
+        seen.update((feature_id, tool['requestId'], tool['featureId']))
+        depth = cut['cutDepthMm']
+        require(type(depth) in (int, float) and math.isfinite(depth)
+                and 1e-6 <= depth <= thickness,
+                f'cut {index}: depth must be within base thickness')
+        parsed = parse_request(tool)
+        require(nearby(parsed[1], thickness, thickness)
+                and not parsed[3] and 1e-6 < parsed[5] < base_parsed[5],
+                f'cut {index}: invalid independent cutting profile')
+        parsed_cuts.append((feature_id, parsed, float(depth)))
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+    from OCP.STEPControl import STEPControl_Writer, STEPControl_Reader, STEPControl_ManifoldSolidBrep
+    from OCP.IFSelect import IFSelect_RetDone
+    shape = _shape(base_parsed, thickness)
+    initial = _measure(shape)
+    expected = base_parsed[5] * thickness
+    require(nearby(initial['volumeMm3'], expected, expected),
+            'base solid does not have requested physical volume')
+    steps = []
+    for feature_id, parsed, depth in parsed_cuts:
+        start_z = thickness - depth if depth < thickness else -thickness
+        tool = _shape(parsed, 3 * thickness, start_z)
+        cut = BRepAlgoAPI_Cut(shape, tool)
+        cut.SetFuzzyValue(0.0)
+        cut.SetRunParallel(False)
+        cut.Build()
+        require(cut.IsDone() and not cut.Shape().IsNull(),
+                f'{feature_id}: physical cut failed')
+        candidate = cut.Shape()
+        post = _measure(candidate)
+        removed = parsed[5] * depth
+        expected -= removed
+        require(expected > 1e-6 and nearby(post['volumeMm3'], expected, expected),
+                f'{feature_id}: full analytic material not removed (overlap or escape)')
+        shape = candidate
+        steps.append({'cutFeatureId': feature_id,
+                      'cutToolFeatureId': parsed[0]['featureId'],
+                      'cutDepthMm': depth,
+                      'cutKind': 'blind_pocket' if depth < thickness else 'through',
+                      'removedVolumeMm3': removed,
+                      'postCutVolumeMm3': post['volumeMm3']})
+    source = _measure(shape)
+    require(nearby(source['volumeMm3'], expected, expected),
+            'final chain volume does not match authored cuts')
+    artifact = None
+    readback = None
+    if request['exportStep']:
+        require(step_path is not None, 'STEP destination required')
+        dest = Path(step_path)
+        require(not dest.exists(), 'STEP output already exists')
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='.intuit3d-chain-', dir=dest.parent) as tmp:
+            staged = Path(tmp) / 'cut-chain.step'
+            writer = STEPControl_Writer()
+            require(writer.Transfer(shape, STEPControl_ManifoldSolidBrep) == IFSelect_RetDone
+                    and writer.Write(str(staged)) == IFSelect_RetDone,
+                    'cut-chain STEP export failed')
+            reader = STEPControl_Reader()
+            require(reader.ReadFile(str(staged)) == IFSelect_RetDone
+                    and reader.TransferRoots() == 1,
+                    'cut-chain same-engine STEP readback failed')
+            readback = _measure(reader.OneShape())
+            require(nearby(readback['volumeMm3'], expected, expected),
+                    'cut-chain STEP readback has incorrect material volume')
+            data = staged.read_bytes()
+            require(data.startswith(b'ISO-10303-21;') and len(data) > 256,
+                    'invalid cut-chain STEP bytes')
+            digest = hashlib.sha256(data).hexdigest()
+            with staged.open('rb+') as handle:
+                os.fsync(handle.fileno())
+            os.link(staged, dest)
+            artifact = {'path': str(dest), 'bytes': len(data), 'sha256': digest,
+                        'verification': 'OCP-7.9.3.1-same-engine-only'}
+    return {'protocol': CHAIN_SCHEMA, 'requestId': request['requestId'],
+            'targetBodyId': request['targetBodyId'], 'revision': request['revision'],
+            'baseFeatureId': base['featureId'], 'units': 'mm',
+            'backend': 'OCP-python-prototype', 'occtVersion': '7.9.3.1',
+            'status': 'experimental_body_cut_chain_brep',
+            'exactAuthority': False, 'independentInteroperability': False,
+            'baseVolumeMm3': initial['volumeMm3'],
+            'removedVolumeMm3': sum(step['removedVolumeMm3'] for step in steps),
+            'analyticResultVolumeMm3': expected, 'cutResults': steps,
+            'source': source, 'stepReadback': readback, 'artifact': artifact}
 
 
 def main():
