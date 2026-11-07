@@ -111,7 +111,7 @@ owns the workflow installation and immutable archive retention.
 A published \`offline-occt801.tar.gz\` is not itself a deployed worker.
 Use \`install_offline.py\` to install into a **new** destination after verifying
 the exact archive SHA-256 and the immutable source-matched KERNEL commit.
-This requires Linux/Python 3.13+ (for safe tar extraction) and **no network,
+This requires Linux/Python 3.12+ (for safe tar extraction) and **no network,
 OCCT source checkout or build-time prefix**.
 
 \`\`\`bash
@@ -161,7 +161,7 @@ receipt, giving users an actionable ABI diagnosis rather than an opaque
 runtime loader failure.
 
 Installation therefore requires **Linux with \`readelf\` (binutils), \`ldd\`,
-and Python 3.13+**, with the platform repository's \`abi_compat.py\`
+and Python 3.12+**, with the platform repository's \`abi_compat.py\`
 present alongside \`install_offline.py\`. These checks do not bundle the
 host's glibc or libstdc++ and do not claim cross-distro binary
 compatibility. Only actual installed C++ and STEP replay can qualify a
