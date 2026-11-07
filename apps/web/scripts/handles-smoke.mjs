@@ -357,6 +357,88 @@ async function main() {
   check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(e=>e.textContent?.trim()==='Undo');return b?.disabled})()"),
     'Accepted file replacement retained another document undo history');
   await screenshot('09-imported-invalid-preview.png');
+  // Real INTENT/SKETCH/RUNTIME consumer acceptance. This mode is separately
+  // model-backed; only its display mesh remains a disposable tessellation.
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=enter-model-runtime]');b?.click();return !!b})()"),
+    'Cannot open model-backed CAD workspace');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),'model-backed plate evaluated');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'Unimplemented native cut was incorrectly reported exact');
+  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent?.includes('NO EXACT KERNEL')"),
+    'Model-backed exactness warning absent');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-3d-viewport] canvas'))"),'real profile 3D preview');
+  await screenshot('10-model-runtime-solid.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Sketch');b?.click();return !!b})()"),
+    'Model-backed sketch toggle unavailable');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch]')?.querySelectorAll('circle').length===2"),
+    'SKETCH solver profile did not display two holes');
+  await screenshot('11-model-runtime-sketch.png');
+  const modelRevision = await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-dimension-width]');e.focus();e.select();return document.activeElement===e})()"),
+    'Model-backed historical width editor unavailable');
+  await send('Input.insertText', {text:'90'});
+  await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
+    'Crossing hole profile not blocked by real solver/discovery');
+  check(await evaluate("Boolean(document.querySelector('[data-testid=runtime-empty]'))"),
+    'Model-backed invalid sketch retained fabricated current mesh');
+  check((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))!==modelRevision,
+    'Model-backed edit did not append an INTENT revision');
+  await screenshot('12-model-runtime-blocked.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'Model-backed undo missing');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),
+    'Model-backed undo failed to recover accepted sketch');
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent?.includes('2 circular holes')"),
+    'Undo did not restore the admitted profile');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    'Model-backed redo missing');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
+    'Model-backed redo did not restore invalid authored intent');
+  // Save and open an actual browser Blob through File.text(), with explicit
+  // destructive replacement review, rather than pretending preview JSON is CAD.
+  check(await evaluate("(() => {window.__modelArchiveBlobs=[];const prior=URL.createObjectURL.bind(URL);URL.createObjectURL=(blob)=>{window.__modelArchiveBlobs.push(blob);return prior(blob)};return true})()"),
+    'Cannot instrument browser model archive download');
+  // Physical Ctrl+S in model-backed mode must download exactly ONE archive;
+  // the unmounted preview sandbox must never save its separate document.
+  await send('Input.dispatchKeyEvent',{type:'rawKeyDown',key:'Control',code:'ControlLeft',windowsVirtualKeyCode:17,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'s',code:'KeyS',windowsVirtualKeyCode:83,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'s',code:'KeyS',windowsVirtualKeyCode:83,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Control',code:'ControlLeft',windowsVirtualKeyCode:17});
+  await eventually(()=>evaluate("window.__modelArchiveBlobs?.length===1"),'single Ctrl+S model archive Blob');
+  check(await evaluate("window.__modelArchiveBlobs.length===1"),'Preview sandbox also handled model-only save shortcut');
+  check(await evaluate("(async()=>{const content=await window.__modelArchiveBlobs[0].text();const f=JSON.parse(content);return f.format==='intuit3d.model-archive' || content.includes('intuit3d.model-archive')})()"),
+    'Downloaded archive is not model history');
+  check(await evaluate("(async()=>{const data=await window.__modelArchiveBlobs[0].text();const dt=new DataTransfer();dt.items.add(new File([data],'plate.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
+    'Cannot reinject saved model archive into real browser file input');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),'model archive import review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'Model archive replacement confirmation missing');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]')"),'model archive reopened');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
+    'Save/reopen changed authored unsolved status');
+  await screenshot('13-model-runtime-reopened.png');
+
+  // Create a genuinely new semantic project. Cancel must preserve the
+  // unresolved prior project; accepting resets the journal and project ID.
+  const oldProjectLabel = await evaluate("document.querySelector('.runtime-shell .browser-project')?.textContent");
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-new-plate]');b?.click();return !!b})()"),
+    'New plate sketch command unavailable');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),'new project replacement review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Cancel');b?.click();return !!b})()"),
+    'New project cancellation unavailable');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='blocked_dependency'"),
+    'Cancelled new project replaced the unresolved original');
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-new-plate]');b?.click();return !!b})()"),
+    'Cannot reopen new project review');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),'new project review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'New model project replacement cannot be confirmed');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),'new sketch and extrude rebuild');
+  check((await evaluate("document.querySelector('.runtime-shell .browser-project')?.textContent")) !== oldProjectLabel,
+    'New project silently reused existing project identity');
+  await screenshot('14-model-runtime-new-plate.png');
+
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -373,8 +455,12 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png'],
-    limits: 'Preview only; no SKETCH solver, exact B-rep/OCCT, independent STEP or human acceptance.'
+    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png'],
+    modelBackedJournalSketchRuntimeBrowserEvidence: true,
+    modelBackedSaveOpenInvalidIntentPreserved: true,
+    ctrlSScopeIsolatedToModelArchive: true,
+    newModelProjectRequiresConsentAndFreshIdentity: true,
+    limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   console.log('WORKBENCH_HANDLE_BROWSER_PASS ' + JSON.stringify(report));

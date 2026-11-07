@@ -209,3 +209,27 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
 .replacement-comparison li { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #2b4759; padding: 6px 0; }
 .replacement-comparison li span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; color: #b5e5d9; }
 .replacement-comparison p { margin: 6px 0 0; }
+
+/* Authoritative INTENT + SKETCH + RUNTIME mode. Geometry is explicitly disposable. */
+.runtime-shell .identity { min-width: 185px; gap: 6px; flex-direction: column; align-items: flex-start; }
+.runtime-shell .identity strong { letter-spacing: 1.2px; }
+.runtime-shell .identity strong span { color: #6fd3d5; }
+.runtime-shell .identity small { letter-spacing: 1.3px; font-size: 9px; color: #85a7b8; }
+.runtime-shell .ribbon-button { white-space: nowrap; }
+.runtime-shell .runtime-file-input { display: none; }
+.runtime-entry { border-color: #326879; color: #a9e5e5; font-weight: 680; background: #1d3845; margin: 0; }
+.runtime-3d-canvas, .runtime-sketch-svg { display: block; height: 100%; width: 100%; }
+.runtime-3d-canvas canvas { display:block; width:100%; height:100%; }
+.runtime-sketch-svg { background: radial-gradient(ellipse at center, #273e51, #172434); }
+.runtime-mesh-caption { position:absolute;left:14px;top:18px;max-width:60%;
+  color:#c9e5ec;background:#1b3244ed;border:1px solid #375e72;border-radius:5px;padding:8px 11px;font-size:11px;pointer-events:none; }
+.runtime-scalar { display:flex; align-items:center;justify-content:space-between; gap:8px; padding:7px 0; color:#a9c5d4; font-size:11px; }
+.runtime-scalar-control { display:flex;gap:5px;align-items:center; }
+.runtime-scalar input { width:104px;height:30px;background:#101e2a;border:1px solid #395368;border-radius:4px;color:#e9f5fa;padding:5px 8px;text-align:right; }
+.runtime-scalar small { color:#7c9caf; }
+.runtime-diagnostic { display:flex;gap:5px;flex-wrap:wrap;border-bottom:1px solid #2d4150;padding:8px 0;font-size:10px; }
+.runtime-diagnostic strong { color:#c3d7e5;min-width:70px; }
+.runtime-diagnostic span { font:10px ui-monospace,monospace;color:#dfb375; }
+.runtime-diagnostic small { display:block;flex-basis:100%;color:#b6a2a0;line-height:1.5; }
+.runtime-message { margin:14px;padding:9px;border:1px solid #36576b;border-radius:5px;color:#b4dceb;font-size:11px;line-height:1.5; }
+.runtime-shell .inspector-section { flex-shrink:0; }
