@@ -8,6 +8,7 @@ import {
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
 import type { SketchDimensionHandle } from './runtimeSketchHandles';
+import { nextCircleDrawing, type CircleDrawingState } from './circleDrawing';
 import { createLivePlateSession } from '@intuit3d/workflow-runtime/live-plate-session';
 import { experimentalStepFilename } from './localNativeStep';
 
@@ -75,6 +76,9 @@ function HoleScalarInput({hole,field,value,onCommit}:{
 export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [history,setHistory]=useState<ModelSession>(()=>newModelPlateSession());
   const [sketchMode,setSketchMode]=useState(false);
+  // An unfinished circle is presentation-only. The INTENT journal changes
+  // precisely once, after centre AND radius are accepted by RUNTIME/SKETCH.
+  const [circleDrawing,setCircleDrawing]=useState<CircleDrawingState>({phase:'idle'});
   const [holeDraft,setHoleDraft]=useState({x:'60',y:'20',diameter:'10'});
   const [arrayDraft,setArrayDraft]=useState({sourceHoleId:'holeA',rows:'2',columns:'2',pitchXmm:'20',pitchYmm:'20'});
   const [selected,setSelected]=useState('plate');
@@ -119,6 +123,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     liveHistory.current=next;
     invalidateNative();
     setCascadeConfirmation(null);
+    setCircleDrawing({phase:'idle'});
     setHistory(next);
     // An accepted journal change may trigger a new native evaluation, but a
     // burst of sketch drags coalesces and unsupported profiles stay pending.
@@ -177,20 +182,38 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       setMessage(`Revision ${result.history.document.revision}: ${hole} ${field} edited; ${result.invalidation.invalidatedFeatureIds.join(' → ') || 'no structural invalidation'}. ${result.sketchStatus}; no exact geometry reused.`);
     }catch(e){setMessage('Hole edit refused: '+String(e));}
   };
+  const commitNewCircle=(x:number,y:number,diameter:number):boolean=>{
+    try{
+      const id='hole.user.'+crypto.randomUUID().replaceAll('-','');
+      const result=addModelHole(liveHistory.current,id,x,y,diameter);
+      if(result.kind==='refused'){
+        setMessage('Add hole refused by SKETCH: '+(result.candidateFeature.diagnostics.join('; ')||result.reason));
+        return false;
+      }
+      acceptHistory(result.history);setSketchMode(true);
+      setMessage(`Added ${id} in one undoable sketch transaction; invalidated ${result.invalidation.invalidatedFeatureIds.join(' → ')}. Rebuild STEP.`);
+      return true;
+    }catch(e){setMessage('Add hole refused: '+String(e));return false;}
+  };
   const addHole=()=>{
     const x=Number(holeDraft.x),y=Number(holeDraft.y),diameter=Number(holeDraft.diameter);
     if(Object.values(holeDraft).some(v=>!v.trim())||![x,y,diameter].every(Number.isFinite)){
       setMessage('Add hole refused: enter finite X, Y and diameter.');return;
     }
-    try{
-      const id='hole.user.'+crypto.randomUUID().replaceAll('-','');
-      const result=addModelHole(liveHistory.current,id,x,y,diameter);
-      if(result.kind==='refused'){
-        setMessage('Add hole refused: '+result.candidateFeature.diagnostics.join('; '));return;
-      }
-      acceptHistory(result.history);setSketchMode(true);
-      setMessage(`Added ${id} in one undoable sketch transaction; invalidated ${result.invalidation.invalidatedFeatureIds.join(' → ')}. Rebuild STEP.`);
-    }catch(e){setMessage('Add hole refused: '+String(e));}
+    commitNewCircle(x,y,diameter);
+  };
+  const pickCirclePoint=(x:number,y:number)=>{
+    const step=nextCircleDrawing(circleDrawing,{x,y});
+    if(step.phase==='refused'){setMessage(step.reason);return;}
+    if(step.phase==='complete'){
+      // Failed profile admission retains the centre so radius can be retried,
+      // without an invalid partial circle or phantom revision.
+      if(!commitNewCircle(step.circle.x,step.circle.y,step.circle.diameter))
+        setMessage('Circle not admitted. Select a smaller radius or a different centre; Escape cancels.');
+      return;
+    }
+    setCircleDrawing(step);
+    setMessage('Circle centre selected. Click again to set diameter; Escape cancels without editing the model.');
   };
   const patternHoles=()=>{
     const {rows,columns,pitchXmm,pitchYmm}=arrayDraft;
@@ -384,6 +407,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   useEffect(()=>{
     const onKey=(e:KeyboardEvent)=>{
       if(pendingImport)return;
+      if(e.key==='Escape' && circleDrawing.phase!=='idle'){
+        setCircleDrawing({phase:'idle'});
+        setMessage('Circle sketch cancelled. No model revision was created.');
+        e.preventDefault();return;
+      }
       const target=e.target as HTMLElement|null;
       if(target?.closest('input,textarea,[contenteditable=true]'))return;
       if(!(e.ctrlKey||e.metaKey))return;
@@ -419,6 +447,13 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       <div className="ribbon-group"><span className="ribbon-label">GEOMETRY</span>
         <button className={!sketchMode?'ribbon-button active':'ribbon-button'} data-testid="runtime-mode-solid" onClick={()=>setSketchMode(false)}>Solid</button>
         <button className={sketchMode?'ribbon-button active':'ribbon-button'} data-testid="runtime-mode-sketch" onClick={()=>setSketchMode(true)}>Sketch</button>
+        <button type="button" className={circleDrawing.phase!=='idle'?'ribbon-button active':'ribbon-button'}
+          data-testid="runtime-circle-tool" aria-pressed={circleDrawing.phase!=='idle'}
+          disabled={!geom || !!pendingImport}
+          onClick={()=>{
+            if(circleDrawing.phase!=='idle'){setCircleDrawing({phase:'idle'});setMessage('Circle sketch cancelled.');}
+            else{setSketchMode(true);setCircleDrawing({phase:'centre'});setMessage('Circle: click a centre, then click a radius. Escape cancels.');}
+          }}>{circleDrawing.phase!=='idle'?'Cancel circle':'Draw circle · 2 clicks'}</button>
       </div>
       <div className="ribbon-group"><span className="ribbon-label">AUTHORITATIVE HISTORY</span>
         <button className="ribbon-button" disabled={!history.undoStack.length} onClick={undo}>Undo</button>
@@ -454,12 +489,23 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <span className={geom?'preview-tag':'preview-tag stale'}>{geom?'TESSELLATED PREVIEW · NOT EXACT':'NO CURRENT VALID MESH'}</span>
         </div>
         <div className="viewport-stage">
-          {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={sketchMode} onHoleMove={dragHole} onDimensionEdit={dragDimension}/>:
+          {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={sketchMode}
+              onHoleMove={circleDrawing.phase==='idle'?dragHole:undefined}
+              onDimensionEdit={circleDrawing.phase==='idle'?dragDimension:undefined}
+              circleDrawing={circleDrawing}
+              onCirclePick={circleDrawing.phase!=='idle'?pickCirclePoint:undefined}/>:
             <div className="empty-overlay" data-testid="runtime-empty">Current dimensions cannot produce an admitted sketch profile. No previous mesh is represented as current.</div>}
           {geom&&<div className="runtime-mesh-caption" data-testid="runtime-boundary">
             Analytic profile {geom.profile.outer.length} vertices · {geom.profile.holes.length} circular holes · {geom.thickness} mm extrude · no Boolean proof
           </div>}
-          <div className="viewport-hint">{sketchMode?'Drag edge/diameter handles or hole centers; arrow keys nudge focused dimensions (Shift = 0.1 mm)':
+          {sketchMode&&circleDrawing.phase!=='idle'&&<div className="runtime-mesh-caption" data-testid="runtime-circle-stage" role="status">
+            {circleDrawing.phase==='centre'?'CIRCLE · Click a centre inside the plate':
+              `CIRCLE · Centre (${circleDrawing.center.x}, ${circleDrawing.center.y}) mm · Click radius`}
+            {' · Escape to cancel · no journal edit until second click'}
+          </div>}
+          <div className="viewport-hint">{sketchMode?(circleDrawing.phase!=='idle'?
+            'Circle tool: centre click → radius click; profile admission rejects overlaps or outside holes':
+            'Drag edge/diameter handles or hole centers; arrow keys nudge focused dimensions (Shift = 0.1 mm)'):
             'Drag to orbit · Wheel to zoom · Right-drag to pan · edit historical dimensions in inspector'}</div>
         </div>
         <section className="timeline" aria-label="Authoritative history versus dependency schedule">

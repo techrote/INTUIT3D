@@ -262,6 +262,47 @@ async function main(){
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'direct sketch edit incorrectly asserted exact geometry');
   await screenshot('native-00b-direct-dimensions.png');
+  // Two real viewport clicks create a solved circle via one authoritative
+  // RUNTIME/SKETCH transaction. The first click is ephemeral; no dummy cut is
+  // journalled or exported. Pointer coordinates use the actual SVG CTM.
+  await pointerClick('runtime-circle-tool');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-circle-stage]'))"),'circle tool not armed');
+  const beforeCircle=Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
+  const clickSketchPoint=async(x,y)=>{
+    const pos=await evaluate(`(() => {
+      const svg=document.querySelector('[data-testid=runtime-sketch]');
+      if(!svg)return null;
+      const matrix=svg.getScreenCTM();
+      const p=new DOMPoint(${x},81-${y}).matrixTransform(matrix);
+      return {x:p.x,y:p.y};
+    })()`);
+    check(pos&&Number.isFinite(pos.x)&&Number.isFinite(pos.y),'cannot project circle click');
+    await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:pos.x,y:pos.y});
+    await send('Input.dispatchMouseEvent',{type:'mousePressed',x:pos.x,y:pos.y,button:'left',clickCount:1});
+    await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:pos.x,y:pos.y,button:'left',clickCount:1});
+  };
+  await clickSketchPoint(60,65);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-circle-stage]')?.textContent?.includes('Click radius')"),'first circle click did not acquire centre');
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===beforeCircle,
+    'first circle click incorrectly journalled incomplete intent');
+  await screenshot('native-00b-circle-draft.png');
+  await clickSketchPoint(65,65);
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===3"),
+    'two-click circle was not admitted into the authoritative sketch');
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===beforeCircle+1,
+    'two-click circle did not create exactly one undoable document revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'sketch-drawn circle falsely promoted STEP/exact state');
+  await screenshot('native-00b-circle-committed.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Undo');b?.click();return !!b})()"),'cannot undo sketch drawn circle');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===2"),
+    'one undo did not remove drawn circle');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Redo');b?.click();return !!b})()"),'cannot redo sketch drawn circle');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===3"),
+    'redo did not restore drawn circle identity');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent==='Undo');b?.click();return !!b})()"),'cannot clear circle fixture for following regression');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===2"),
+    'cleanup undo did not restore two-hole fixture');
   // Actual Chromium clicks, keyboard-model transactions and rendered circle.
   const beforeAdd=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
   check(await evaluate("(() => {document.querySelector('[data-testid=runtime-add-hole]').click();return true})()"),'cannot add a real sketch hole');
