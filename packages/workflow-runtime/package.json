@@ -16,7 +16,7 @@
   },
   "scripts": {
     "test": "node --experimental-strip-types --test test/*.test.mjs",
-    "typecheck": "tsc --noEmit --strict --module nodenext --moduleResolution nodenext --target es2022 test/contract.mts"
+    "typecheck": "tsc --noEmit --strict --allowImportingTsExtensions --module nodenext --moduleResolution nodenext --target es2022 --typeRoots ../../tooling/contract-type-roots test/contract.mts"
   },
   "engines": {
     "node": ">=22.6.0"
