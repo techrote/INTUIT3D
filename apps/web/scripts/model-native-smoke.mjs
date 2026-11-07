@@ -19,6 +19,8 @@ const artifacts=process.env.INTUIT3D_HANDLE_ARTIFACTS||'apps/web/browser-evidenc
 const home=mkdtempSync(join(tmpdir(),'intuit3d-native-browser-'));
 const children=[];const pending=new Map();const exceptions=[];
 let ws,seq=0,requests=0,host;
+// Deliberately invalid responses are exercised in real Chromium. This is NEVER a native provider.
+let mockReplyMode='valid';
 const check=(ok,why)=>{if(!ok)throw Error(why);};
 const eventually=async(fn,why,tries=90)=>{
   for(let i=0;i<tries;i++){try{const found=await fn();if(found)return found;}catch{}await pause(150);}
@@ -53,13 +55,24 @@ const key=async(name,code,virtualKey)=>{
 async function main(){
   mkdirSync(artifacts,{recursive:true});
   host=createServer(async(req,res)=>{
-    if(req.method==='OPTIONS' && req.url==='/v1/plate/evaluate' && req.headers.origin===origin){
+    if(req.method==='OPTIONS' && ['/v1/plate/evaluate','/v1/plate/capabilities'].includes(req.url) && req.headers.origin===origin){
       res.writeHead(204,{
         'access-control-allow-origin':origin,
         'access-control-allow-methods':'POST, OPTIONS',
         'access-control-allow-headers':'content-type, x-intuit3d-token'
       });
       res.end();return;
+    }
+    if(req.method==='GET' && req.url==='/v1/plate/capabilities' &&
+       req.headers['x-intuit3d-token']===token && req.headers.origin===origin){
+      res.writeHead(200,{'content-type':'application/json','access-control-allow-origin':origin});
+      res.end(JSON.stringify({
+        format:'intuit3d.local-plate-bridge-capability',version:1,
+        backend:'OCP-python-prototype',occtVersion:'7.9.3.1',
+        stepVerification:'same_engine_step_readback',exactAuthority:false,
+        independentInteroperability:false,
+        note:'TEST DOUBLE only: no OCP, CAD kernel, real STEP or independent check was executed',
+      }));return;
     }
     const chunks=[];for await(const part of req)chunks.push(part);
     if(req.method!=='POST'||req.url!=='/v1/plate/evaluate'||
@@ -77,9 +90,19 @@ async function main(){
       source:{projectId:model.projectId,revision:model.revision,archiveSha256:sha(raw.archive)},
       result:{kind:'experimental_plate_evaluated',projectId:model.projectId,revision:model.revision,
         cutFeatureId:raw.cutFeatureId,requestId:raw.requestId,
-        backend:'synthetic-browser-ui-test-only',exactAuthority:false,independentInteroperability:false},
-      step:{filename:'plate.step',bytes:bytes.length,sha256:sha(bytes),base64:bytes.toString('base64'),
-        verification:'same_engine_step_readback'},
+        // The envelope follows the pinned OCP 7.9.3.1 *schema* solely so this
+        // synthetic interaction test can exercise RUNTIME's actual validation.
+        // No OCP was executed; bytes below are intentionally non-STEP.
+        backend:mockReplyMode==='wrong-provider'?'synthetic-browser-ui-test-only':'OCP-python-prototype',
+        occtVersion:'7.9.3.1',exactAuthority:false,independentInteroperability:false,
+        artifact:raw.exportStep?{
+          bytes:bytes.length,sha256:sha(bytes),verification:'same_engine_step_readback',
+          testFixture:'synthetic-browser-ui-test-only',
+        }:null},
+      step:raw.exportStep?{filename:'plate.step',bytes:bytes.length,
+        sha256:mockReplyMode==='bad-step-digest'?'0'.repeat(64):sha(bytes),
+        base64:bytes.toString('base64'),
+        verification:'same_engine_step_readback'}:null,
     }));
   });
   await new Promise(resolve=>host.listen(0,'127.0.0.1',resolve));
@@ -180,6 +203,71 @@ async function main(){
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
     'undo of 3D pointer gesture did not restore original thickness');
+  // Real Chromium click + keyboard on the authoritative INTENT named-parameter
+  // editor: both changes must be one journal revision, undoable and not exact.
+  const parameterRevision=Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-parameter-name]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'named parameter field cannot receive keyboard input');
+  await send('Input.insertText',{text:'plateThickness'});
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-parameter-value]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'named parameter value field cannot receive keyboard input');
+  await send('Input.insertText',{text:'12'});
+  await pointerClick('runtime-parameter-apply');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
+    'parameter rename + 8-to-12 mm edit did not reach the authoritative model');
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===parameterRevision+1,
+    'named parameter edit did not produce exactly one authored revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'named parameter edit fabricated exact B-rep evidence');
+  await screenshot('native-00c-named-thickness-parameter.png');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='thickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
+    'undo did not restore both parameter fields');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Z',code:'KeyZ',modifiers:10,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Z',code:'KeyZ',modifiers:10,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
+    'redo did not restore the named parameter edit');
+  // Real browser save -> OS file picker -> isolated #188 validation Worker ->
+  // explicit Replace -> same authoritative named source and undo journal.
+  // No private owner archive or browser-local model serializer is involved.
+  check(await evaluate(`(() => {
+    window.__namedArchiveBlobs=[];
+    const prior=URL.createObjectURL.bind(URL);
+    URL.createObjectURL=blob=>{window.__namedArchiveBlobs.push(blob);return prior(blob)};
+    const save=[...document.querySelectorAll('button')].find(b=>b.textContent==='Save model archive');
+    save?.click();return !!save;
+  })()`),'named parameter archive cannot be saved by real browser');
+  await eventually(()=>evaluate('window.__namedArchiveBlobs.length===1'),
+    'named parameter browser Save did not create exactly one model archive');
+  const namedArchive=await evaluate("(async()=>await window.__namedArchiveBlobs[0].text())()");
+  check(namedArchive.includes('plateThickness'),
+    'browser Save omitted the authoritative renamed parameter');
+  const namedPath=resolve(artifacts,'native-browser-named-parameter.i3d-model.json');
+  writeFileSync(namedPath,namedArchive);
+  const namedDoc=await send('DOM.getDocument',{depth:1});
+  const namedInput=await send('DOM.querySelector',{
+    nodeId:namedDoc.root.nodeId,selector:'input[aria-label="Open INTUIT model archive"]'
+  });
+  check(namedInput.nodeId>0,'browser model file picker input missing');
+  await send('DOM.setFileInputFiles',{nodeId:namedInput.nodeId,files:[namedPath]});
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'isolated archive Worker did not reach import confirmation');
+  check(await evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness'"),
+    'import validation mutated the live model before confirmation');
+  check(await evaluate(`(() => {
+    const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')]
+      .find(x=>x.textContent==='Replace with model archive');
+    b?.click();return !!b;
+  })()`),'browser refused to confirm named-parameter archive replacement');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]') && document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
+    'browser Worker reopen lost the renamed source or edited thickness');
+  await screenshot('native-00e-named-parameter-reopened.png');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-parameter-name]')?.value==='thickness' && document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='8'"),
+    'second undo failed to restore the 8 mm plate for downstream workflows');
   await pointerClick('runtime-feature-plate');
   await pointerClick('runtime-feature-remove');
   await eventually(()=>evaluate(
@@ -656,6 +744,22 @@ async function main(){
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-evidence]')) && !document.querySelector('[data-testid=runtime-native-download-cached]').disabled"),
     'layout edit failed to auto rebuild current native session revision');
   await screenshot('native-08-retrospective-hole-layout-rebuild.png');
+  // Negative end-to-end checks: an unrecognized provider and corrupt binary
+  // must produce explicit refused states, without replacing previously verified
+  // same-revision bytes. The live RUNTIME intentionally retains that valid cache.
+  mockReplyMode='wrong-provider';
+  await pointerClick('runtime-native-build');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('invalid_host_reply')"),
+    'RUNTIME did not refuse the unrecognized provider');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'failed provider refresh incorrectly discarded earlier verified same-revision STEP');
+  mockReplyMode='bad-step-digest';
+  await pointerClick('runtime-native-build');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('invalid_step')"),
+    'RUNTIME did not refuse mismatched STEP SHA-256');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'bad-digest refresh incorrectly discarded earlier verified same-revision STEP');
+  mockReplyMode='valid';
   // Actual Chromium Ctrl+N creates a sketch-only project, with an Escape-safe
   // replacement gate. The existing model must survive cancellation.
   const projectBeforeNew=await evaluate("document.querySelector('.browser-project')?.textContent");
@@ -683,10 +787,10 @@ async function main(){
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
-    provider:'synthetic HTTP responder, NOT OCP/native/STEP interoperability',
-    downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,realPhysicalGeometry:false,
+    provider:'synthetic HTTP responder with schema-compatible OCP identity, NOT OCP/native/STEP interoperability',
+    downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,realPhysicalGeometry:false,
     retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png'
+      'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
