@@ -33,6 +33,20 @@ if(atomicSketchEdit.kind==='committed') {
   void [candidateOnly,candidateStatus];
 }
 
+const thirdHole=runtime.editPlateHoles(session,{
+  sketchFeatureId:'sketch.plate',eventId:'author.contract.hole',
+  expectedRevision:session.document.revision,admission:'require_admissible',
+  operations:[{kind:'add',id:'holeC',x:60,y:20,radius:4}],
+});
+if(thirdHole.kind==='committed'){
+  const sourceRevision:number=thirdHole.invalidation.previousRevision;
+  const createdRevision:number=thirdHole.history.document.revision;
+  void [sourceRevision,createdRevision];
+} else {
+  const notCommitted:true=thirdHole.notCommitted;
+  void notCommitted;
+}
+
 const delta:WorkflowInvalidation=runtime.diff(session,session);
 const direct:WorkflowInvalidation=diffWorkflowPlans(model.planProject(session.document),model.planProject(session.document));
 const exact:false=delta.exactReuseAllowed;
