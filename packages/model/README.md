@@ -397,3 +397,59 @@ kernel geometry, browser UX, STEP exchange or operator authorship
 authentication is attested. Other kinds of dependency must be reconciled
 through explicit general-purpose semantic editing; this v1 adapter does not
 claim they are dimension-owned.
+
+
+## Retrospective parameter expression editing — v1 authoring API
+
+The additive \`@intuit3d/model/parameter-edit\` package export provides
+\`previewParameterEdit(document, request)\` and
+\`commitUndoableParameterEdit(undoHistory, request)\`. Both accept a
+\`intuit3d.parameter-edit\` version-1 request with fresh \`eventId\`, stable
+\`featureId\`, \`expectedRevision\`, replacement scalar \`expression\` and
+\`admission\` (\`require_admissible\` or \`permit_unresolved\`).
+
+A valid reauthoring operation changes the existing parameter feature's source
+expression as **one append-only journal event** and (on commit) one durable undo
+frame, without overwriting authored numeric geometry fields or changing IDs.
+References to a newly used parameter gain explicit dependency edges; previous
+edges are intentionally retained and require explicit reconciliation if they
+cease to be semantically necessary. The preview returns a revision-fenced
+dimension evaluation and old/new-DAG invalidation frontier. Strict admission
+also protects previously admitted dependent scalar bindings from becoming
+unready or invalid. Permissive edits retain pending/cyclic/invalid intent with
+null resolved payloads: **a previous numeric value must not be reused as a
+current solved dimension**. Scalar admission does not validate that an extrusion
+thickness is positive or that any solid is exact; those are RUNTIME/SKETCH/KERNEL
+responsibilities.
+
+Example:
+
+\`\`\`ts
+import { commitUndoableParameterEdit, PARAMETER_EDIT_FORMAT } from
+  '@intuit3d/model/parameter-edit';
+
+const next = commitUndoableParameterEdit(history, {
+  format: PARAMETER_EDIT_FORMAT,
+  version: 1,
+  eventId: 'edit.thickness.2',
+  featureId: 'parameter.thickness',
+  expectedRevision: history.document.revision,
+  expression: { op: 'literal', value: 12, unit: 'mm' },
+  admission: 'require_admissible',
+});
+\`\`\`
+
+To execute a representative real-public-package consumer workflow with an
+actual SKETCH solver and accepted WORKFLOW RUNTIME (sketch with two holes,
+extrude preview, retrospective 8→12 mm edit, dependent invalidation, undo/redo
+and archive save/reopen):
+
+\`\`\`sh
+npm ci
+node --experimental-strip-types packages/model/examples/plate-parameter-lifecycle.mjs
+\`\`\`
+
+The example explicitly reports \`cutStatus: "pending_exact_provider"\` and
+\`exactGeometryAvailable: false\`. It does not generate a native B-rep, export
+STEP or establish browser/human acceptance. These require independent
+qualification and must never be inferred from successful model replay.
