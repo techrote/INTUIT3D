@@ -18,6 +18,7 @@ import {
   previewParameterFormulaTableEdit, commitUndoableParameterFormulaTableEdit,
 } from '@intuit3d/model/parameter-formula-table';
 import { formatParameterFormula } from '@intuit3d/model/parameter-formula';
+import { parameterSheetRequest, inspectParameterSheet, previewParameterSheetEdit } from '@intuit3d/model/parameter-sheet';
 
 const runtime = createWorkflowRuntime({
   model, transactions, bindings, dimensions, archive, sketch, discovery,
@@ -75,7 +76,14 @@ export function runParameterFormulaTablePlate() {
         name:'margin',formula:'8'},
     ],
   };
+  const sheetBefore=inspectParameterSheet(h.document,parameterSheetRequest(h.document));
+  const sheetEdit=previewParameterSheetEdit(h.document,req);
   const preview=previewParameterFormulaTableEdit(h.document,req);
+  assert.equal(sheetBefore.rows.find(r=>r.featureId==='parameter.thickness').value,8);
+  assert.equal(sheetEdit.after.rows.find(r=>r.featureId==='parameter.thickness').value,12);
+  assert.ok(sheetEdit.invalidatedFeatureIds.includes('cut.holes'));
+  assert.ok(sheetEdit.unaffectedReadyFeatureIds.includes('extrude.spacer'));
+  assert.equal(sheetEdit.exactGeometryAuthority,false);
   const edited=commitUndoableParameterFormulaTableEdit(h,req);
   assert.equal(edited.undoStack.length,h.undoStack.length+1);
   assert.equal(edited.undoStack.at(-1).length,3);
@@ -95,6 +103,10 @@ export function runParameterFormulaTablePlate() {
   assert.ok(preview.invalidation.unchangedReady.includes('extrude.spacer'));
   const saved=runtime.save(edited);
   const reopened=runtime.reopen(saved);
+  const reopenedSheet=inspectParameterSheet(reopened.document,
+    parameterSheetRequest(reopened.document));
+  assert.equal(reopenedSheet.rows.find(r=>r.featureId==='parameter.thickness').formulaText,
+    '(holePitch - margin)');
   const undone=runtime.undo(reopened,['undo.web','undo.pitch','undo.margin']);
   assert.equal(observed(runtime.inspect(undone),'extrude.plate').thicknessMm,8);
   const redone=runtime.redo(undone,['redo.web','redo.pitch','redo.margin']);
