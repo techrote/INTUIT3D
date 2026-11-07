@@ -63,6 +63,36 @@ try {
   assert.equal(second.plate.thickness,10);
   assert.notEqual(first.sha256,second.sha256);
   assert.ok(second.volumeMm3>first.volumeMm3);
+
+  // An actual user edit to BOTH hole constraints is now one revision-fenced,
+  // undoable INTENT event via the public SKETCH-backed runtime API.
+  const edited=runtime.editSketchConstraints(current,{
+    sketchFeatureId:'sketch.plate',eventId:'edit.bridge.holes',
+    expectedRevision:current.document.revision,
+    admission:'require_admissible',
+    edits:[
+      {constraintId:'holeA:diameter',patch:{value:5}},
+      {constraintId:'holeB:diameter',patch:{value:5}},
+    ],
+  });
+  assert.equal(edited.kind,'committed',JSON.stringify(edited));
+  assert.deepEqual(edited.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  current=runtime.reopen(runtime.save(edited.history));
+  const changedHoles=await evaluate('bridge.native.changed.holes');
+  assert.deepEqual(changedHoles.plate.holes.map(h=>h.radius),[5,5]);
+  assert.notEqual(changedHoles.sha256,second.sha256);
+  assert.ok(changedHoles.volumeMm3>second.volumeMm3);
+
+  // Undo the hole edit through the durable model archive, then rebuild a
+  // REAL native solid rather than reusing an old same-revision STEP artifact.
+  current=runtime.reopen(runtime.save(runtime.undo(current,['undo.bridge.holes'])));
+  const undoneHoles=await evaluate('bridge.native.undo.holes');
+  assert.deepEqual(undoneHoles.plate.holes.map(h=>h.radius),[6,6]);
+  assert.ok(Math.abs(undoneHoles.volumeMm3-second.volumeMm3)<1e-5);
+  current=runtime.reopen(runtime.save(runtime.redo(current,['redo.bridge.holes'])));
+  assert.deepEqual(runtime.inspect(current).features
+    .find(f=>f.featureId==='plate').profile.holes.map(h=>h.radius),[5,5]);
   console.log(JSON.stringify({status:'real_experimental_native_bridge_pass',
-    first,second,independentStep:false,productionExact:false},null,2));
+    first,second,changedHoles,undoneHoles,
+    redoAdmitted:true,independentStep:false,productionExact:false},null,2));
 } finally {await host.close();}

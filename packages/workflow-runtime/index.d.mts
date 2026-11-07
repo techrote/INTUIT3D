@@ -60,6 +60,24 @@ export interface RuntimeReport {
   features: RuntimeFeature[];
   exactGeometryAvailable: false;
 }
+/** One journal event for an atomic batch of actual SKETCH constraint edits. */
+export interface SketchConstraintBatchRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  admission?:'require_admissible' | 'preserve_unresolved';
+  edits:ReadonlyArray<Readonly<{
+    constraintId:string;
+    patch:Partial<{value:number;x:number;y:number}>,
+  }>>;
+}
+export type SketchConstraintBatchResult =
+  | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
+      sketchStatus:RuntimeStatus;invalidation:WorkflowInvalidation}>
+  | Readonly<{kind:'refused';code:'inadmissible_sketch';
+      sourceRevision:number;candidateRevision:number;notCommitted:true;
+      candidateFeature:RuntimeFeature;reason:string}>;
+
 export interface RuntimeServices {
   model: { planProject(document: ProjectDocument): EvaluationPlan };
   transactions: {
@@ -75,7 +93,8 @@ export interface RuntimeServices {
     serializeModelArchive(archive: any): string;
     deserializeModelArchive(data: string): {history: UndoHistory};
   };
-  sketch: {validateSketch(source: unknown): SketchDocument;solveSketch(source: SketchDocument): SketchSolution};
+  sketch: {validateSketch(source: unknown): SketchDocument;solveSketch(source: SketchDocument): SketchSolution;
+    editConstraint?(source: SketchDocument, id: string, patch: Partial<{value:number;x:number;y:number}>): SketchDocument};
   discovery: {
     discoverPlateProfiles(source: SketchDocument): ProfileDiscoveryResponse;
     admitDiscoveredPlateProfile(source: SketchDocument, proposal: ProfileDiscoveryResponse, candidateId: string): PlateProfile;
@@ -87,6 +106,8 @@ export interface WorkflowRuntime {
   diff(previousHistory: UndoHistory, nextHistory: UndoHistory): WorkflowInvalidation;
   commit(history: UndoHistory, events: readonly JournalEvent[], expectedRevision?: number): UndoHistory;
   editDimensions(history: UndoHistory, request: DimensionBatchEditRequest): UndoHistory;
+  /** One revision-fenced, undoable model event; optional refusal before commit. */
+  editSketchConstraints(history: UndoHistory, request: SketchConstraintBatchRequest): SketchConstraintBatchResult;
   undo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   redo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   save(history: UndoHistory): string;

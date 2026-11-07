@@ -16,6 +16,23 @@ if(result?.status==='preview_only') {
   void body;
 }
 
+const atomicSketchEdit=runtime.editSketchConstraints(session,{
+  sketchFeatureId:'sketch.plate',eventId:'edit.contract.sketch',
+  expectedRevision:session.document.revision,
+  edits:[{constraintId:'width',patch:{value:140}}],
+  admission:'require_admissible',
+});
+if(atomicSketchEdit.kind==='committed') {
+  const documentRevision:number=atomicSketchEdit.history.document.revision;
+  const invalidated:readonly string[]=atomicSketchEdit.invalidation.invalidatedFeatureIds;
+  const status:string=atomicSketchEdit.sketchStatus;
+  void [documentRevision,invalidated,status];
+} else {
+  const candidateOnly:true=atomicSketchEdit.notCommitted;
+  const candidateStatus:string=atomicSketchEdit.candidateFeature.status;
+  void [candidateOnly,candidateStatus];
+}
+
 const delta:WorkflowInvalidation=runtime.diff(session,session);
 const direct:WorkflowInvalidation=diffWorkflowPlans(model.planProject(session.document),model.planProject(session.document));
 const exact:false=delta.exactReuseAllowed;
