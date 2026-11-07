@@ -70,8 +70,13 @@ export function createLivePlateSession({
   }
   function publish(next,expectedArchive) {
     retirePreview();
-    discard();
+    // Do NOT revoke a verified still-current receipt before a synchronous
+    // durable writer has accepted the new authoritative history. Storage
+    // quota/disk failures can reject the edit without touching the journal.
+    // This call must remain synchronous: synchronize() is the commit fence.
     publishHistory(next);
+    // No await occurs between publication and the archive check. The changed
+    // archive immediately aborts all older native jobs and revokes old STEP.
     const actual=synchronize();
     if (actual.archive!==expectedArchive)
       throw new Error('live plate session: publishHistory must update readCurrentHistory synchronously');
