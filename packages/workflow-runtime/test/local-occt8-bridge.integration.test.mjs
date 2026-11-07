@@ -52,6 +52,9 @@ function fakePinnedFactory(log,mutate=report=>report){
         path:options.stepOutput,bytes:bytes.length,sha256:hash(bytes),
         verification:'occt8_part21_plate_subset',
       }:null,
+      part21Audit:request.exportStep?{
+        kind:'part21-plate-structural-v1',sha256:hash(bytes),
+      }:null,
       observed:{source:{valid:true,volumeMm3:request.plate.width*
         request.plate.depth*request.plate.thickness}},
     });
@@ -76,6 +79,9 @@ test('authoritative plate/hole edit -> pinned Part21 receipt -> undo/save/reopen
     assert.equal(before.result.backend,'OCCT-cxx-8.0.1');
     assert.equal(before.result.occtVersion,'8.0.1');
     assert.equal(before.step.verification,'occt8_part21_plate_subset');
+    assert.deepEqual(before.result.part21Audit,{
+      kind:'part21-plate-structural-v1',sha256:before.step.sha256,
+    });
     assert.equal(before.exactAuthority,false);
     assert.equal(before.independentInteroperability,false);
     assert.equal(session.currentStep()?.sha256,before.step.sha256);
@@ -114,6 +120,8 @@ test('authoritative plate/hole edit -> pinned Part21 receipt -> undo/save/reopen
 test('backend impersonation, missing Part21 evidence and replaced STEP digests are refused',async()=>{
   for(const change of [
     r=>({...r,backend:'OCP-python-prototype'}),
+    r=>({...r,part21Audit:null}),
+    r=>({...r,part21Audit:{...r.part21Audit,sha256:'0'.repeat(64)}}),
     r=>({...r,artifact:{...r.artifact,verification:'occt8_same_engine_step_readback'}}),
     r=>({...r,artifact:{...r.artifact,sha256:'0'.repeat(64)}}),
   ]){
