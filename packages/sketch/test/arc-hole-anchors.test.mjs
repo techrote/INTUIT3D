@@ -8,6 +8,10 @@ import {createArcHoleSelection,serializeArcHoleSelection} from '../arc-hole-auth
 import {inspectArcHoleAnchor,proposeArcHoleAnchor} from '../arc-hole-anchors.mjs';
 import {inspectArcProfileTools,editArcProfileWithTool} from '../arc-profile-tools.mjs';
 
+// Compare solved world coordinates at consumer display precision without changing
+// the solver's own stricter residual or acceptance policy.
+const near=(actual,expected)=>assert.ok(Number.isFinite(actual)&&
+  Math.abs(actual-expected)<1e-6,`${actual} differs from ${expected}`);
 const select=()=>createArcHoleSelection({
   format:'intuit3d.arc-hole-selection',version:1,profileId:'plate:main',
   boundaryIds:['bottom','arc1','right','arc2','top','arc3','left','arc0'],
@@ -30,28 +34,28 @@ test('binding right-edge hole preserves solved location, follows retrospective w
   assert.equal(serializeArcSketch(sketch),original);
   assert.equal(r.binding.mode,'anchored');
   assert.equal(r.binding.binding.anchorPointId,'p1');
-  assert.equal(r.binding.binding.offsetXMm,-35);
-  assert.equal(r.binding.binding.offsetYMm,40);
-  assert.equal(point(r.sketch,'holeB:center').x,85);
+  near(r.binding.binding.offsetXMm,-35);
+  near(r.binding.binding.offsetYMm,40);
+  near(point(r.sketch,'holeB:center').x,85);
   assert.equal(r.profile.id,'plate:main');
   assert.equal(r.sketch.constraints.some(c=>c.id==='holeB:fixed'&&c.kind==='distanceX'),true);
   const widened=editArcConstraint(r.sketch,'plate:width',{value:150});
   const current=inspectArcHoleAnchor(widened,selection,'holeB');
   assert.equal(current.mode,'anchored');
-  assert.equal(current.position.xMm,115);
+  near(current.position.xMm,115);
   const ui=inspectArcProfileTools(widened,selection);
   assert.equal(ui.status,'solved');
-  assert.equal(ui.controls.find(h=>h.id==='hole-center:holeB').position.x,115);
+  near(ui.controls.find(h=>h.id==='hole-center:holeB').position.x,115);
   assert.equal(ui.controls.find(h=>h.id==='hole-center:holeB').canMove,true);
   const reopened=parseArcSketch(serializeArcSketch(widened));
-  assert.equal(inspectArcHoleAnchor(reopened,selection,'holeB').position.xMm,115);
+  near(inspectArcHoleAnchor(reopened,selection,'holeB').position.xMm,115);
   const d=accept(apply(reopened,selection,{kind:'detach',circleId:'holeB'}));
   assert.equal(d.binding.mode,'fixed');
-  assert.equal(point(d.sketch,'holeB:center').x,115);
+  near(point(d.sketch,'holeB:center').x,115);
   assert.equal(d.sketch.constraints.some(c=>c.id==='holeB:fixed'&&c.kind==='fixed'),true);
   assert.equal(d.sketch.constraints.some(c=>c.id==='holeB:anchorY'),false);
   const wider=editArcConstraint(d.sketch,'plate:width',{value:160});
-  assert.equal(point(wider,'holeB:center').x,115);
+  near(point(wider,'holeB:center').x,115);
   assert.equal(d.profile.id,r.profile.id);
 });
 test('real profile tool binds a hole and drags its semantic handle by editing its offsets',()=>{
@@ -63,16 +67,16 @@ test('real profile tool binds a hole and drags its semantic handle by editing it
   const drag=editArcProfileWithTool(resized,sel,
     {kind:'drag-handle',handleId:'hole-center:holeB',xMm:119,yMm:45},stamp(resized,sel));
   assert.equal(drag.kind,'accepted',drag.reason);
-  assert.equal(point(drag.sketch,'holeB:center').x,119);
-  assert.equal(point(drag.sketch,'holeB:center').y,45);
-  assert.equal(inspectArcHoleAnchor(drag.sketch,sel,'holeB').binding.offsetXMm,-31);
+  near(point(drag.sketch,'holeB:center').x,119);
+  near(point(drag.sketch,'holeB:center').y,45);
+  near(inspectArcHoleAnchor(drag.sketch,sel,'holeB').binding.offsetXMm,-31);
   assert.equal(drag.gesture.handleId,'hole-center:holeB');
   assert.equal(ui.profile.id,drag.profile.id);
   const updated=editArcProfileWithTool(drag.sketch,sel,
     {kind:'hole-offset',circleId:'holeB',offsetXMm:-32,offsetYMm:38},
     stamp(drag.sketch,sel));
   assert.equal(updated.kind,'accepted',updated.reason);
-  assert.equal(point(updated.sketch,'holeB:center').x,118);
+  near(point(updated.sketch,'holeB:center').x,118);
   const unbound=editArcProfileWithTool(updated.sketch,sel,
     {kind:'unbind-hole',circleId:'holeB'},stamp(updated.sketch,sel));
   assert.equal(unbound.kind,'accepted',unbound.reason);
@@ -87,10 +91,10 @@ test('mixed fixed/anchored multi-hole drag is one accepted profile revision',()=
     circleIds:['holeA','holeB'],deltaXMm:3,deltaYMm:2},stamp(wider,sel));
   assert.equal(moved.kind,'accepted',moved.reason);
   assert.deepEqual(moved.movedHoleIds,['holeA','holeB']);
-  assert.equal(point(moved.sketch,'holeA:center').x,38);
-  assert.equal(point(moved.sketch,'holeB:center').x,118);
-  assert.equal(point(moved.sketch,'holeB:center').y,42);
-  assert.equal(inspectArcHoleAnchor(moved.sketch,sel,'holeB').binding.offsetXMm,-32);
+  near(point(moved.sketch,'holeA:center').x,38);
+  near(point(moved.sketch,'holeB:center').x,118);
+  near(point(moved.sketch,'holeB:center').y,42);
+  near(inspectArcHoleAnchor(moved.sketch,sel,'holeB').binding.offsetXMm,-32);
   assert.equal(serializeArcSketch(wider),source);
 });
 test('invalid collision, stale revision and foreign constraints refuse without mutating sketch',()=>{
