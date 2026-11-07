@@ -175,3 +175,35 @@ not claim execution of pinned C++ OCCT 8.0.1, independent external STEP,
 live browser multi-cut authoring or persisted semantic topology.
 RUNTIME/FEATUREOPS should consume v3 only with explicit authored per-cut
 dependencies and native receipts fenced against the current model revision.
+
+## Real perimeter-notch cutting (experimental v4)
+
+`intuit3d/kernel/profile-body-notch-v4` is an **additive** extension of the
+existing local-body-cut provider. It accepts an explicitly selected, named
+single body, an independent rectangle sketch tool crossing the plate's
+outer edge, and a specified blind/through cut depth. The bounded supported
+domain is an axis-aligned rectangular plate and rectangular cutting profile.
+Circular base bores are accepted if disjoint from the tool footprint.
+Nonrectangular/curved intersections and intersected bores fail closed, rather
+than pretending a whole cutter fits inside the plate.
+
+The provider uses rectangle intersection area (not complete tool area) as an
+independently derived material-volume oracle, measures actual OCP Boolean
+geometry, exports genuine STEP bytes, reimports through the same OCP engine,
+and revision-fences exclusive artifact publication. Earlier v1-v3
+full-footprint semantics are unchanged.
+
+Run the executed fixture on an OCP 7.9.3.1 host with a **fresh** destination:
+
+```sh
+node packages/kernel-contract/examples/perimeter-notch-native.mjs /tmp/unique-notch-demo
+```
+
+The three records cover a two-bore 120×80×8 mm plate with a right-edge
+20×20 mm through notch, the same design after retrospective width edit
+120→130 mm, and a 3 mm blind notch. Expected removed intersections are
+200×8, 300×8 and 200×3 mm³, respectively. All outputs retain the named
+body, use separate STEP artifacts and declare `exactAuthority:false` and
+`independentInteroperability:false`. This feature is **not** production
+OCCT 8.0.1 or a general arbitrary-profile Boolean intersection oracle.
+
