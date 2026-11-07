@@ -4,6 +4,12 @@
 # qualification. Optional KERNEL-002 operators remain a separate gate.
 name: Pinned OCCT 8.0.1 C++ execution qualification
 on:
+  # A bounded, source-pinned physical KERNEL-002 candidate is checked from
+  # this existing workflow whenever INTEGRATION changes its acceptance gate.
+  # Do not trust ordinary Node/experimental OCP checks as OCCT8 evidence.
+  pull_request:
+    paths:
+      - '.github/workflows/occt8-native.yml'
   push:
     branches: [main]
     paths:
@@ -46,7 +52,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ (github.event_name == 'push' && github.sha) || inputs.kernel_ref || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
+          ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && 'a017a50fa3f97d4ca9de079e5b7f1870c9602d85') || inputs.kernel_ref || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
           path: kernel-repo
           persist-credentials: false
       - name: Install native build dependencies
@@ -147,6 +153,65 @@ jobs:
             "$(git -C kernel-repo rev-parse HEAD)" \
             "$(sha256sum "$INTUIT3D_OCCT8_WORKER" | cut -d' ' -f1)" \
             > "$output/source-and-worker.txt"
+      # Real RUNTIME + INTENT + SKETCH L-profile source and C++ output gates.
+      # A source-matched OCCT 8.0.1 binary is REQUIRED, not simulated or OCP.
+      # On the workflow-change PR this run is pinned to immutable KERNEL-002
+      # source a017a50fa3f97d4ca9de079e5b7f1870c9602d85; accepted-main KERNEL-001 push keeps its own SHA.
+      - name: Check authored L-profile physical fixture availability
+        id: lprofile
+        shell: bash
+        run: |
+          set -euo pipefail
+          examples=kernel-repo/packages/kernel-contract/examples
+          if test -f "$examples/runtime-occt8-l-profile-native.mjs" && \
+             test -f "$examples/runtime-occt8-l-profile-width-edit-native.mjs" && \
+             test -f "$examples/runtime-occt8-l-profile-pocket-edit-native.mjs"; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            echo '::error::Pinned KERNEL-002 candidate lacks required L profile demonstrations'
+            exit 1
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'Original KERNEL-001 plate baseline: generalized L-v3 not present'
+          fi
+
+      - name: Execute compiled OCCT8 C++ L-bracket thickness, width and blind-pocket edits with six STEP outputs
+        if: steps.lprofile.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker="$RUNNER_TEMP/intuit3d-native-evidence/qualification/worker-build/intuit3d_occt8_plate"
+          test -x "$worker"
+          candidate="$(git -C kernel-repo rev-parse HEAD)"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            test "$candidate" = "a017a50fa3f97d4ca9de079e5b7f1870c9602d85" || {
+              echo "::error::KERNEL-002 source moved: $candidate"; exit 1;
+            }
+          fi
+          npm ci --prefix kernel-repo
+          output="$RUNNER_TEMP/intuit3d-native-evidence/l-profile-consumer"
+          mkdir -p "$output/thickness" "$output/width" "$output/pocket"
+          node kernel-repo/packages/kernel-contract/examples/runtime-occt8-l-profile-native.mjs \
+            "$worker" "$output/thickness" 2>&1 | tee "$output/thickness/native-execution.log"
+          node kernel-repo/packages/kernel-contract/examples/runtime-occt8-l-profile-width-edit-native.mjs \
+            "$worker" "$output/width" 2>&1 | tee "$output/width/native-execution.log"
+          node kernel-repo/packages/kernel-contract/examples/runtime-occt8-l-profile-pocket-edit-native.mjs \
+            "$worker" "$output/pocket" 2>&1 | tee "$output/pocket/native-execution.log"
+          for path in \
+            "$output/thickness/initial-8.step" "$output/thickness/edited-12.step" \
+            "$output/width/l-width-120.step" "$output/width/l-width-140.step" \
+            "$output/pocket/pocket-3.step" "$output/pocket/pocket-5.step"; do
+            test -s "$path" || { echo "::error::Missing real native STEP: $path"; exit 1; }
+          done
+          for scenario in thickness width pocket; do
+            test -s "$output/$scenario/manifest.json"
+            test -s "$output/$scenario/authoritative-document.json"
+          done
+          sha256sum "$output/"{thickness,width,pocket}/*.step > "$output/six-step-files.sha256"
+          sha256sum "$worker" > "$output/worker.sha256"
+          printf 'kernel_sha=%s\nworkflow_sha=%s\n' \
+            "$candidate" "$GITHUB_SHA" > "$output/source-provenance.txt"
+
       - name: Remove only huge intermediate build directory before artifact upload
         if: always()
         run: |
