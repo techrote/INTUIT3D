@@ -156,6 +156,41 @@ async function main(){
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'hole drag falsely promoted cut to exact');
   await screenshot('native-00-hole-drag-timeline.png');
+  // Real physical Chromium pointer and keyboard operations, not DOM-dispatched input.
+  const dragDimensionHandle=async(testid,millimetres)=>{
+    const pos=await evaluate(`(() => {
+      const e=document.querySelector('[data-testid=${testid}]');
+      if(!e)return null;
+      const rect=e.getBoundingClientRect(),m=e.ownerSVGElement.getScreenCTM();
+      const p0=new DOMPoint(0,0).matrixTransform(m);
+      const p1=new DOMPoint(${millimetres},0).matrixTransform(m);
+      return {x:rect.left+rect.width/2,y:rect.top+rect.height/2,dx:p1.x-p0.x};
+    })()`);
+    check(pos&&Number.isFinite(pos.dx)&&Math.abs(pos.dx)>3,'dimension handle cannot be projected: '+testid);
+    await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:pos.x,y:pos.y});
+    await send('Input.dispatchMouseEvent',{type:'mousePressed',x:pos.x,y:pos.y,button:'left',clickCount:1});
+    await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:pos.x+pos.dx,y:pos.y,button:'left',buttons:1});
+    await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:pos.x+pos.dx,y:pos.y,button:'left',clickCount:1});
+  };
+  const beforeResize=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  await dragDimensionHandle('runtime-sketch-dimension-width',12);
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)===132"),
+    'physical plate-width handle did not edit the authoritative sketch');
+  await dragDimensionHandle('runtime-sketch-dimension-holeB.diameter',2);
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-hole-holeB-diameter]')?.value)===16"),
+    'physical hole-B diameter handle did not edit the correct constraint');
+  check(await evaluate("document.querySelector('[data-testid=runtime-hole-holeA-diameter]')?.value==='16'"),
+    'diameter gesture disturbed hole A');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-sketch-dimension-depth]');e.focus();return document.activeElement===e})()"),
+    'keyboard-accessible depth dimension could not focus');
+  await key('ArrowUp','ArrowUp',38);
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-dimension-depth]')?.value)===81"),
+    'depth keyboard nudge did not edit authoritative sketch');
+  check((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))!==beforeResize,
+    'direct sketch gestures created no journal revisions');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'direct sketch edit incorrectly asserted exact geometry');
+  await screenshot('native-00b-direct-dimensions.png');
   check(await evaluate("(() => {document.querySelector('[data-testid=runtime-mode-solid]').click();return true})()"),'cannot return to solid viewport');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-3d-viewport]'))"),'3D preview after sketch drag');
 
@@ -212,9 +247,9 @@ async function main(){
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder, NOT OCP/native/STEP interoperability',
-    downloadedFiles:2,staleDownloadRefused:true,holeDrag:true,timelineUndo:true,realPhysicalGeometry:false,
+    downloadedFiles:2,staleDownloadRefused:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,realPhysicalGeometry:false,
     independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00-hole-drag-timeline.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png'
+      'native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
