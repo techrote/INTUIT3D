@@ -4,6 +4,7 @@
  * Services MUST be accepted public package modules; no parallel CAD policy here.
  */
 import {diffWorkflowPlans} from './invalidation.mjs';
+import {applyPlateHoleOperations} from './hole-edit.mjs';
 export {WORKFLOW_INVALIDATION_FORMAT, WORKFLOW_INVALIDATION_VERSION, diffWorkflowPlans} from './invalidation.mjs';
 
 export const WORKFLOW_RUNTIME_FORMAT = 'intuit3d.workflow-runtime-evaluation';
@@ -238,6 +239,47 @@ export function createWorkflowRuntime(services) {
       sketchStatus:state.status,invalidation:diff(previous,candidate)};
   }
 
+  /**
+   * Add or delete one or more circular through-holes as one undoable INTENT
+   * sketch edit. A real SKETCH solve/profile gate decides admission; no
+   * unqualified preview, alternative journal, or native Boolean is created.
+   */
+  function editPlateHoles(history,request) {
+    const {sketchFeatureId,eventId,expectedRevision,operations,
+      admission='require_admissible'}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if(!Number.isSafeInteger(expectedRevision)||
+        expectedRevision!==previous.document.revision)
+      throw new Error('runtime holes: stale or missing expectedRevision');
+    if(typeof sketchFeatureId!=='string'||!sketchFeatureId||
+        typeof eventId!=='string'||!eventId||
+        !['require_admissible','preserve_unresolved'].includes(admission))
+      throw new TypeError('runtime holes: sketch/event identity and admission required');
+    const entry=model.planProject(previous.document).features.find(
+      x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      throw new TypeError('runtime holes: authoritative sketch feature required');
+    const original=sketch.validateSketch(entry.feature.payload.sketch);
+    const authored=applyPlateHoleOperations(original,operations);
+    const nextSketch=sketch.validateSketch(authored);
+    const candidate=commit(previous,[{
+      eventId,type:'feature.edit',featureId:sketchFeatureId,
+      patch:{payload:{...entry.feature.payload,sketch:nextSketch}},
+    }],expectedRevision);
+    const report=inspect(candidate);
+    const state=report.features.find(f=>f.featureId===sketchFeatureId);
+    if(!state) throw new Error('runtime holes: edited sketch was not retained');
+    const hasAdmittedHoles=state.status==='analytic_profile_only' &&
+      state.profile?.holes?.length===nextSketch.circles.length;
+    if(admission==='require_admissible'&&!hasAdmittedHoles)
+      return {kind:'refused',code:'inadmissible_sketch',
+        sourceRevision:expectedRevision,candidateRevision:report.revision,
+        notCommitted:true,candidateFeature:state,
+        reason:'SKETCH did not admit every circular through-hole; authoritative history unchanged'};
+    return {kind:'committed',history:candidate,report,
+      sketchStatus:state.status,invalidation:diff(previous,candidate)};
+  }
+
   /** Explicitly delegated, revision-fenced authoritative commands. */
   function commit(history, events, expectedRevision = history.document.revision) {
     return transactions.commitUndoableTransaction(history, events, expectedRevision);
@@ -258,5 +300,5 @@ export function createWorkflowRuntime(services) {
   function reopen(serialized) {
     return archive.deserializeModelArchive(serialized).history;
   }
-  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, undo, redo, save, reopen});
+  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, undo, redo, save, reopen});
 }
