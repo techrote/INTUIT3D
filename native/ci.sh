@@ -20,6 +20,6 @@ import OCP
 assert OCP.__version__ == '7.9.3.1', f'unqualified OCCT version: {OCP.__version__}'
 print('EXPERIMENTAL_OCCT_OCP_VERSION:', OCP.__version__)
 PY
-"$python_cmd" -m unittest discover -s native/tests -p 'test_*.py' -v
+INTUIT3D_OCP_PYTHON="$python_cmd" "$python_cmd" -m unittest discover -s native/tests -p 'test_*.py' -v
 printf '\nNATIVE_EXPERIMENTAL_EXECUTED: OCP plate B-rep and STEP internal read-back only.\n'
 printf 'NOT QUALIFIED: pinned OCCT 8.0.1 C++ worker, external STEP consumer, cross-platform deployment.\n'
