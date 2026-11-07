@@ -80,3 +80,43 @@ export declare function editMultipleBodyDimensions(
   }[];
   exactAuthority:false;independentInteroperability:false
 }>;
+
+
+/** Read-only authoritative source selection for a multi-row Dimensions inspector. */
+export type FeatureDimensionSelectionRequest = Readonly<{
+  expectedProjectId:string;expectedRevision:number;
+  selections:readonly Readonly<{featureId:string;targetBodyId:string}>[];
+}>;
+export type FeatureDimensionSelectionRow = Readonly<{
+  kind:'extrusion_depth';featureId:string;targetBodyId:string;
+  sourceSketchId:string;profileCandidateId:string;
+  currentDepthMm:number;status:'preview_only';
+} | {
+  kind:'cut_extent';featureId:string;targetBodyId:string;
+  afterBodyWriterId:string;sourceSketchId:string;profileCandidateId:string;
+  currentExtent:FeatureDimensionExtent;
+  status:'pending_exact_provider'|'blocked_dependency';
+}>;
+export type FeatureDimensionSelectionSnapshot = Readonly<{
+  kind:'editable_dimension_selection';
+  format:typeof MULTI_FEATURE_DIMENSIONS_FORMAT;
+  version:typeof MULTI_FEATURE_DIMENSIONS_VERSION;
+  expectedProjectId:string;expectedRevision:number;
+  units:'mm';frame:'local_xy';
+  rows:readonly FeatureDimensionSelectionRow[];
+  exactAuthority:false;independentInteroperability:false;
+}>;
+export type ProposedFeatureDimensionChange = Readonly<
+  {featureId:string;eventId:string;toDepthMm:number} |
+  {featureId:string;eventId:string;toExtent:FeatureDimensionExtent}
+>;
+/** Inspect only; returns one immutable-style value snapshot, not an authority token. */
+export declare function inspectSelectedFeatureDimensions(
+  history:UndoHistory,request:FeatureDimensionSelectionRequest,
+  services:MultiFeatureDimensionsServices
+):FeatureDimensionSelectionSnapshot;
+/** Build full expected-value fences. editMultipleBodyDimensions re-admits the source. */
+export declare function prepareSelectedFeatureDimensionEdits(
+  snapshot:FeatureDimensionSelectionSnapshot,
+  proposed:readonly ProposedFeatureDimensionChange[]
+):MultiFeatureDimensionsRequest;

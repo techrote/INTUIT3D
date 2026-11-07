@@ -18,7 +18,8 @@ import {authorProfileExtrusion,PROFILE_OPS_FORMAT,PROFILE_OPS_VERSION}
   from '../src/index.mjs';
 import {appendOrderedProfileCut,ORDERED_CUT_FORMAT,ORDERED_CUT_VERSION}
   from '../src/ordered-cut.mjs';
-import {editMultipleBodyDimensions,
+import {editMultipleBodyDimensions,inspectSelectedFeatureDimensions,
+  prepareSelectedFeatureDimensionEdits,
   MULTI_FEATURE_DIMENSIONS_FORMAT as FORMAT,
   MULTI_FEATURE_DIMENSIONS_VERSION as VERSION}
   from '../src/multi-feature-dimensions.mjs';
@@ -121,7 +122,22 @@ for(const change of [
   assert.throws(()=>editMultipleBodyDimensions(h,change(request),services));
   assert.deepEqual(h.document,initial.document);
 }
-const edit=editMultipleBodyDimensions(h,request,services);
+// WORKBENCH-facing path: read current selected rows, enter only new values,
+ // derive all source/body/profile/old-value fences from authoritative services.
+ const selection=inspectSelectedFeatureDimensions(h,{
+   expectedProjectId:h.document.projectId,expectedRevision:h.document.revision,
+   selections:request.edits.map(e=>({
+     featureId:e.kind==='extrusion_depth'?e.extrudeFeatureId:e.cutFeatureId,
+     targetBodyId:e.targetBodyId
+   }))
+ },services);
+ const apply=prepareSelectedFeatureDimensionEdits(selection,request.edits.map(e=>({
+   featureId:e.kind==='extrusion_depth'?e.extrudeFeatureId:e.cutFeatureId,
+   eventId:e.eventId,
+   ...(e.kind==='extrusion_depth'?{toDepthMm:e.toDepthMm}:{toExtent:e.toExtent})
+ })));
+ assert.deepEqual(apply,request,'inspected UI Apply matches manually selected current semantic IDs');
+ const edit=editMultipleBodyDimensions(h,apply,services);
 assert.equal(edit.history.undoStack.length,h.undoStack.length+1);
 assert.equal(edit.history.document.revision,h.document.revision+5);
 assert.equal(edit.undoFramesAdded,1);

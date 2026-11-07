@@ -255,3 +255,7 @@ export function editMultipleBodyDimensions(history,request,services){
     exactAuthority:false,independentInteroperability:false
   };
 }
+
+// Read-only, revision-fenced multi-select inspection and WORKBENCH Apply adapter.
+export {inspectSelectedFeatureDimensions,prepareSelectedFeatureDimensionEdits}
+  from './multi-feature-dimension-inspector.mjs';

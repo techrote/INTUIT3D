@@ -55,3 +55,41 @@ guarded merge only when qualified.
 
 The existing #97 product issue was already closed/accepted; this incremental
 extension does not reopen it or claim independent CAD geometry acceptance.
+
+
+## Direct WORKBENCH consumer: inspect → edit rows → Apply
+
+The same `multi-feature-dimensions/v1` entry now exposes two read-only
+consumer helpers, both usable without browser-side CAD authority:
+
+1. `inspectSelectedFeatureDimensions(history, {expectedProjectId,
+   expectedRevision, selections:[{featureId,targetBodyId}, ...]}, services)`
+   returns 2–16 currently admissible, explicitly selected dimension rows.
+   Rows contain SKETCH-selected profile identity, body and predecessor IDs,
+   current depth/extent, exact source revision and truthful RUNTIME status.
+   A stale or ambiguous source is refused rather than guessed.
+2. `prepareSelectedFeatureDimensionEdits(snapshot, proposed)` takes only
+   the selected feature ID, a fresh user event ID and proposed depth/extent for
+   each row; it builds the complete expected-value edit request. The caller
+   passes that to `editMultipleBodyDimensions(history, request, services)`.
+
+```js
+const snapshot=inspectSelectedFeatureDimensions(history,{
+  expectedProjectId:history.document.projectId,
+  expectedRevision:history.document.revision,
+  selections:[{featureId:'extrude.housing',targetBodyId:'body.housing'},
+              {featureId:'cut.inlet',targetBodyId:'body.housing'}]
+},services);
+const request=prepareSelectedFeatureDimensionEdits(snapshot,[
+  {featureId:'extrude.housing',eventId:'ui.depth.1',toDepthMm:14},
+  {featureId:'cut.inlet',eventId:'ui.pocket.1',
+    toExtent:{kind:'blind',depthMm:5}}
+]);
+const result=editMultipleBodyDimensions(history,request,services);
+```
+
+The snapshot is **not** an authorization or native geometry result: the
+commit API independently rechecks every feature, body chain, SKETCH profile
+and old value against the authoritative history. A subsequent revision
+invalidates old Apply requests. No root/workspace, RUNTIME, model or browser
+modification is required for the versioned API itself.
