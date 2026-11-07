@@ -27,6 +27,8 @@ export function createDimensionedPlateSheet(request:PlateDrawingRequest):{
 export type RoundedPlateDrawingMeasurement=PlateDrawingMeasurement & {
   outlineKind:'rounded_plate';
   cornerRadiusMm:number;
+  perimeterMm:number;
+  boundaryLengths:Array<{id:string;kind:'line'|'arc';lengthMm:number}>;
   boundaryCurves:Array<
     | {kind:'line';id:string;sourceEdgeId:string;
       start:{x:number;y:number};end:{x:number;y:number}}
