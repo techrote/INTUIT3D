@@ -4,9 +4,9 @@ import {
   solveVariableRoundedPlate,inspectVariableRoundedPlateHandles,
   dragVariableRoundedPlateCorner,serializeVariableRoundedPlateIntent,
   parseVariableRoundedPlateIntent
-} from '../rounded-plate.mjs';
+} from '@intuit3d/sketch/rounded-plate/v2';
 import type {VariableRoundedPlateIntent,VariableRoundedPlateEdit,
-  VariableRoundedPlateProfile,VariableRoundedPlateInspection} from '../rounded-plate.mjs';
+  VariableRoundedPlateProfile,VariableRoundedPlateInspection} from '@intuit3d/sketch/rounded-plate/v2';
 
 const sketch=plateSketchFixture();
 const authored:VariableRoundedPlateIntent=createVariableRoundedPlateIntent({
