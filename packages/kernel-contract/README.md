@@ -111,3 +111,32 @@ the verified STEP destination exclusively. Its result remains
 yet. INTEGRATION should first admit #94, then authorize RUNTIME's typed
 profile-to-extrusion consumer. A separately provisioned C++ 8.0.1 execution
 and full **non-OCCT** CAD reader remain independent blockers under #3/#81/#74.
+
+## Actual blind obround pocket from a versioned native profile cut
+
+The additive `intuit3d/kernel/profile-body-cut-v2` request adds mandatory
+`cutDepthMm` (positive and no greater than selected extrusion thickness) to
+the existing explicitly targeted v1 Boolean cut. The depth is downward from
+the top face. Smaller values leave a physically measured blind pocket floor;
+a value equal to the thickness cuts through. The original v1 protocol is
+unchanged and remains supported.
+
+The real example uses one dimensioned L bracket with a pre-existing bore and
+an analytically authored four-curve rounded mounting slot; OCP builds a
+single solid and subtracts a 3 mm pocket, then independently performs an
+8 mm through version. It exports distinct true STEP files, compares actual
+B-rep/readback volume with the explicit analytic area and depth, and writes
+byte counts and SHA-256 manifest:
+
+```sh
+node packages/kernel-contract/examples/obround-pocket-native.mjs /tmp/fresh-intuit3d-pocket
+python3 -m unittest discover -s native/tests -p 'test_obround_pocket.py' -v
+python3 -m unittest discover -s native/tests -p 'test_node_obround_pocket.py' -v
+```
+
+This is a real **experimental OCP 7.9.3.1** Boolean and same-engine STEP
+round-trip, not yet OCCT 8.0.1 C++, a native-platform certificate, an
+independent external CAD STEP reconstruction, or a browser/RUNTIME slot
+editing workflow. A distinct consumer integration is needed for SKETCH's
+obround tool and FEATUREOPS pocket authoring. No claim of semantic
+authoritative exactness is made.
