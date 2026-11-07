@@ -22,3 +22,20 @@ if(edited.kind==='accepted'){
   const error:string=edited.reason;
   void error;
 }
+
+const handleChange:ArcProfileToolChange={
+  kind:'drag-handle',handleId:'hole-center:holeA',xMm:31,yMm:40
+};
+const groupChange:ArcProfileToolChange={
+  kind:'translate-holes',circleIds:['holeA','holeB'],deltaXMm:5,deltaYMm:2
+};
+for(const command of [handleChange,groupChange]){
+  const result=editArcProfileWithTool(doc,selection,command,{
+    sourceSignature:inspected.sourceSignature,
+    selectionSignature:inspected.selectionSignature});
+  if(result.kind==='accepted'){
+    const applied:number|undefined=result.gesture?.deviationMm;
+    const affected:string[]|undefined=result.movedHoleIds;
+    void [applied,affected,result.profile.id];
+  }
+}

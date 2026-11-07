@@ -93,6 +93,82 @@ export function editArcProfileWithTool(source,selected,command,expected){
   if(!command||typeof command!=='object'||Array.isArray(command))
     return refuse('invalid tool command');
   try{
+    if(command.kind==='drag-handle'){
+      if(!exact(command,['kind','handleId','xMm','yMm'])||
+         !validId(command.handleId)||!finite(command.xMm)||!finite(command.yMm))
+        return refuse('invalid pointer handle or target');
+      // Resolve stable semantic handles against this revision, never an old
+      // pointer index or renderer-owned geometry. One gesture commits once.
+      const inspection=inspectArcProfileTools(doc,selection);
+      if(inspection.status!=='solved')
+        return refuse('handle drag requires a solved, admissible profile');
+      const handle=inspection.controls.find(h=>h.id===command.handleId);
+      if(!handle)return refuse('unknown or unavailable sketch handle');
+      const target={x:command.xMm,y:command.yMm};
+      let result,appliedPoint;
+      if(handle.kind==='dimension'){
+        result=editArcProfileWithTool(doc,selection,{
+          kind:'drag-dimension',constraintId:handle.constraintId,
+          xMm:target.x,yMm:target.y
+        },stamp);
+        if(result.kind==='accepted'){
+          // For dimensional handles the requested point is a gesture input;
+          // the solver, not the cursor, owns the final constrained geometry.
+          const next=inspectArcProfileTools(result.sketch,result.selection);
+          appliedPoint=next.controls.find(h=>h.id===handle.id)?.position||target;
+        }
+      }else if(handle.kind==='hole_center'){
+        if(!handle.canMove)return refuse('hole centre has other authored dependencies');
+        result=editArcProfileWithTool(doc,selection,{
+          kind:'hole',change:{kind:'move',circleId:handle.circleId,
+            xMm:target.x,yMm:target.y}
+        },stamp);
+        appliedPoint=target;
+      }else if(handle.kind==='hole_diameter'){
+        const center=inspection.controls.find(h=>
+          h.kind==='hole_center'&&h.circleId===handle.circleId);
+        if(!center)return refuse('hole centre handle missing');
+        const radius=Math.hypot(target.x-center.position.x,
+          target.y-center.position.y),diameterMm=radius*2;
+        if(!finite(diameterMm)||diameterMm<=0)
+          return refuse('hole diameter drag requires a positive finite radius');
+        result=editArcProfileWithTool(doc,selection,{
+          kind:'hole',change:{kind:'resize',circleId:handle.circleId,
+            diameterMm}
+        },stamp);
+        appliedPoint={x:center.position.x+radius,y:center.position.y};
+      }else return refuse('unsupported pointer handle');
+      if(result.kind!=='accepted')return result;
+      return {...result,gesture:{
+        handleId:handle.id,target,appliedPoint,
+        deviationMm:Math.hypot(appliedPoint.x-target.x,appliedPoint.y-target.y)
+      }};
+    }
+    if(command.kind==='translate-holes'){
+      if(!exact(command,['kind','circleIds','deltaXMm','deltaYMm'])||
+         !Array.isArray(command.circleIds)||command.circleIds.length<1||
+         command.circleIds.length>32||!command.circleIds.every(validId)||
+         new Set(command.circleIds).size!==command.circleIds.length||
+         !finite(command.deltaXMm)||!finite(command.deltaYMm))
+        return refuse('invalid selected-hole translation');
+      // Update all authored fixed dimensions before solving. Unlike repeated
+      // single-hole transactions, intermediate overlaps cannot prevent a
+      // valid group translation and the operation is one journal edit.
+      const controls=inspectArcHoleControls(doc,selection).controls;
+      const chosen=command.circleIds.map(id=>controls.find(c=>c.id===id));
+      if(chosen.some(c=>!c||!c.canMove||!c.centerConstraintId))
+        return refuse('selected hole missing or constrained by other geometry');
+      const next=structuredClone(doc);
+      for(const control of chosen){
+        const x=control.xMm+command.deltaXMm,y=control.yMm+command.deltaYMm;
+        if(!finite(x)||!finite(y))return refuse('hole translation overflows coordinates');
+        const fixed=next.constraints.find(c=>c.id===control.centerConstraintId);
+        const center=next.points.find(p=>p.id===control.centerPointId);
+        if(!fixed||!center)return refuse('missing authored hole centre dimension');
+        fixed.x=x;fixed.y=y;center.x=x;center.y=y;
+      }
+      return {...evaluate(next,selection),movedHoleIds:command.circleIds.slice()};
+    }
     if(command.kind==='hole'){
       if(!exact(command,['kind','change']))
         return refuse('invalid hole tool command');
