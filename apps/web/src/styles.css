@@ -255,3 +255,13 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
   overflow-wrap:anywhere;max-height:150px;overflow:auto;
   padding:8px;border:1px solid #567282;border-radius:5px;
 }
+
+/* Authoritative authored-order controls; dependency order is deliberately read-only. */
+.runtime-shell .timeline-event { position:relative;min-width:142px;height:93px;padding-bottom:22px; }
+.runtime-shell .timeline-move-actions {display:flex;gap:5px;position:absolute;right:7px;bottom:6px;}
+.runtime-shell .timeline-move-actions button {padding:1px 9px;background:#29495c;border:1px solid #53778d;border-radius:4px;font-size:10px;}
+.runtime-shell .timeline-move-actions button:hover:not(:disabled){background:#35677b;}
+.runtime-shell .runtime-hole-editor {border-top:1px solid #30485b;padding:10px 0 12px;}
+.runtime-shell .runtime-hole-editor > strong {color:#e4be81;font-size:11px;letter-spacing:.35px;}
+.runtime-shell .runtime-hole-editor .runtime-scalar {padding:3px 0;}
+.runtime-shell .runtime-hole-editor .runtime-scalar input {width:94px;}
