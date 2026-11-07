@@ -79,3 +79,13 @@ const runtimeExecution=runExperimentalRuntimeProfile(currentReport,'extrude.brac
 void runtimeMapped;void runtimeExecution;
 // @ts-expect-error runtime profile provider must be revision-fenced
 runExperimentalRuntimeProfile(currentReport,'extrude.bracket',{requestId:'runtime.native'});
+
+import {runExperimentalBodyCut, type ProfileBodyCutRequest, type BodyCutResult}
+  from '../src/local-body-cut-provider.mjs';
+declare const bodyCut: ProfileBodyCutRequest;
+const cutResult: Promise<BodyCutResult> = runExperimentalBodyCut(bodyCut,{
+  readCurrentRevision:()=>bodyCut.revision
+});
+void cutResult;
+// @ts-expect-error body-cut provider requires an authoritative revision fence
+runExperimentalBodyCut(bodyCut,{});
