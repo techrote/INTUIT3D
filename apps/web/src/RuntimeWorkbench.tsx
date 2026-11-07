@@ -416,6 +416,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       setMessage(null);
     }catch(e){if(ticket===loadTicket.current)setMessage('Open rejected: '+String(e));}
   };
+  const prepareNewSketch=()=>{
+    ++loadTicket.current;
+    setPendingImport({file:'New sketch-first CAD project',
+      history:newModelSketchSession('workbench.sketch.'+crypto.randomUUID())});
+  };
   const useIncoming=()=>{
     if(!pendingImport)return;
     ++loadTicket.current;
@@ -489,7 +494,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   };
   useEffect(()=>{
     const onKey=(e:KeyboardEvent)=>{
-      if(pendingImport)return;
+      if(pendingImport){
+        if(e.key==='Escape'){e.preventDefault();++loadTicket.current;setPendingImport(null);}
+        return;
+      }
       if(e.key==='Escape' && featureCombo){
         e.preventDefault();setFeatureCombo(null);return;
       }
@@ -499,15 +507,20 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         e.preventDefault();return;
       }
       const target=e.target as HTMLElement|null;
+      const command=e.ctrlKey||e.metaKey;
+      const letter=e.key.toLowerCase();
+      // Project shortcuts stay active even with a focused dimension field.
+      if(command&&!e.altKey&&letter==='s'){e.preventDefault();save();return;}
+      if(command&&!e.altKey&&letter==='o'){e.preventDefault();fileInput.current?.click();return;}
+      if(command&&!e.altKey&&letter==='n'){e.preventDefault();prepareNewSketch();return;}
       if(target?.closest('input,textarea,select,[contenteditable=true]'))return;
-      if(!e.ctrlKey&&!e.metaKey&&!e.altKey&&!e.shiftKey && e.key.toLowerCase()==='e' &&
+      if(!command&&!e.altKey&&!e.shiftKey && letter==='e' &&
           circleDrawing.phase==='idle'){
         e.preventDefault();openFeatureCombo();return;
       }
-      if(!(e.ctrlKey||e.metaKey))return;
-      if(e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();}
-      if(e.key.toLowerCase()==='y'){e.preventDefault();redo();}
-      if(e.key.toLowerCase()==='s'){e.preventDefault();save();}
+      if(!command)return;
+      if(letter==='z'){e.preventDefault();e.shiftKey?redo():undo();}
+      if(letter==='y'){e.preventDefault();redo();}
     };
     window.addEventListener('keydown',onKey);
     return()=>window.removeEventListener('keydown',onKey);
@@ -516,7 +529,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     <header className="titlebar">
       <div className="identity"><strong>INTUIT<span>3D</span></strong><small>MODEL-BACKED CAD</small></div>
       <div className="title-divider"/>
-      <div className="project-title">Mounting plate · <span data-testid="runtime-revision">revision {report.revision}</span></div>
+      <div className="project-title">{plateAuthored?'Mounting plate':'Sketch project'} · <span data-testid="runtime-revision">revision {report.revision}</span></div>
       <div className="title-actions">
         <button className="ribbon-button" data-testid="runtime-new-plate"
           onClick={()=>{++loadTicket.current;setPendingImport({
@@ -525,11 +538,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           New plate sketch
         </button>
         <button className="ribbon-button" data-testid="runtime-new-sketch"
-          onClick={()=>{++loadTicket.current;setPendingImport({
-            file:'New sketch-first CAD project',history:newModelSketchSession('workbench.sketch.'+crypto.randomUUID()),
-          });}}>New sketch-first project</button>
-        <button className="ribbon-button" onClick={save}>Save model archive</button>
-        <button className="ribbon-button" onClick={()=>fileInput.current?.click()}>Open model archive</button>
+          title="New sketch-first project (Ctrl+N); replacement confirmation required"
+          onClick={prepareNewSketch}>New sketch-first project</button>
+        <button className="ribbon-button" title="Save authoritative model archive (Ctrl+S)" onClick={save}>Save model archive</button>
+        <button className="ribbon-button" title="Open authoritative model archive (Ctrl+O)" onClick={()=>fileInput.current?.click()}>Open model archive</button>
         <button className="ribbon-button" onClick={()=>{
           if(window.confirm('Leave the model-backed editor? Export your model archive first; the model session will close.'))onClose();
         }}>Preview sandbox</button>

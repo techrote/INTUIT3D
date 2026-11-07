@@ -5,6 +5,9 @@ on:
   pull_request:
     paths:
       - '.github/workflows/external-cad.yml'
+      # Real conformance source changes must execute the independent CAD
+      # importer; ordinary Node CI is insufficient for physical STEP claims.
+      - 'conformance/external-cad/**'
   workflow_dispatch:
     inputs:
       cad_ref:
