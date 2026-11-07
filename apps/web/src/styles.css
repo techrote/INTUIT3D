@@ -233,3 +233,25 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
 .runtime-diagnostic small { display:block;flex-basis:100%;color:#b6a2a0;line-height:1.5; }
 .runtime-message { margin:14px;padding:9px;border:1px solid #36576b;border-radius:5px;color:#b4dceb;font-size:11px;line-height:1.5; }
 .runtime-shell .inspector-section { flex-shrink:0; }
+
+/* Native provider is a distinct opt-in experimental action, not B-rep viewport authority. */
+.runtime-shell .runtime-native { border-top:1px solid #3e6172; background:#142b39; }
+.runtime-shell .runtime-native-field { display:grid;gap:5px;margin:9px 0;color:#bad4df;font-size:11px; }
+.runtime-shell .runtime-native-field input {
+  width:100%;min-width:0;box-sizing:border-box;height:32px;
+  padding:6px 9px;border-radius:5px;border:1px solid #45697b;
+  background:#0b1b29;color:#ecf9fd;font:11px ui-monospace,monospace;
+}
+.runtime-shell .runtime-native-field input:focus-visible {
+  outline:2px solid #68d4d0;outline-offset:2px;
+}
+.runtime-shell .runtime-native-export {
+  width:100%;height:auto;min-height:36px;padding:7px 10px;
+  white-space:normal;text-align:center;border:1px solid #4b9b9e;
+  background:#1f5058;color:#d3f4ee;
+}
+.runtime-shell .runtime-native-export:disabled { opacity:.48;cursor:not-allowed; }
+.runtime-shell .runtime-native [data-testid="runtime-native-result"] {
+  overflow-wrap:anywhere;max-height:150px;overflow:auto;
+  padding:8px;border:1px solid #567282;border-radius:5px;
+}

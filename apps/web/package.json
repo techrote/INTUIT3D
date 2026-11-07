@@ -8,8 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test src/*.test.ts",
-    "test:browser:handles": "node scripts/handles-smoke.mjs",
-    "preview": "vite preview --host 127.0.0.1"
+    "test:browser:handles": "node scripts/handles-smoke.mjs && node scripts/model-native-smoke.mjs",
+    "preview": "vite preview --host 127.0.0.1",
+    "dev:experimental-native-host": "node scripts/local-native-host.mjs"
   },
   "dependencies": {
     "@intuit3d/model": "0.1.0",
