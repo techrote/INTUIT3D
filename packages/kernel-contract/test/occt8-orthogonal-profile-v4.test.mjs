@@ -11,7 +11,7 @@ import {buildAuthoredLBracket,editAuthoredLBracketThickness,MODEL_L_BODY_ID,
   MODEL_L_CUT_IDS} from '../examples/runtime-occt8-l-profile-document.mjs';
 import {buildAuthoredUBracket,editAuthoredUBracketThickness,
   editAuthoredUBracketRightFlange,editAuthoredUBracketPocketDepth,
-  MODEL_U_BODY_ID,MODEL_U_CUT_IDS}
+  MODEL_U_BODY_ID,MODEL_U_CUT_IDS,MODEL_PARTNER_BODY_ID,MODEL_PARTNER_CUT_IDS}
   from '../examples/runtime-occt8-u-profile-document.mjs';
 
 const FIXTURE=JSON.parse(await readFile(
@@ -179,4 +179,56 @@ test('authored U right flange and blind pocket edits preserve body identity and 
   assert.throws(()=>editAuthoredUBracketRightFlange(original,110));
   assert.equal(requestFromRuntimeOcct8Orthogonal(
     original.history,MODEL_U_BODY_ID,opts(original)).profile.vertices[1].x,60);
+});
+
+test('two named bodies: independent solved profiles, ordered targeted cuts, and unchanged nondependent solid',()=>{
+  const original=buildAuthoredUBracket();
+  const opts=f=>({runtime:f.runtime,model:f.model,
+    requestId:'two.body.qualification',exportStep:true});
+  const u=requestFromRuntimeOcct8Orthogonal(
+    original.history,MODEL_U_BODY_ID,opts(original));
+  const partner=requestFromRuntimeOcct8Orthogonal(
+    original.history,MODEL_PARTNER_BODY_ID,opts(original));
+  assert.equal(u.featureId,MODEL_U_BODY_ID);
+  assert.equal(partner.featureId,MODEL_PARTNER_BODY_ID);
+  assert.notEqual(u.profile.profileId,partner.profile.profileId);
+  assert.notEqual(u.profile.vertices.length,partner.profile.vertices.length);
+  assert.deepEqual(partner.cuts.map(c=>c.featureId),MODEL_PARTNER_CUT_IDS);
+  assert.deepEqual(partner.cuts.map(c=>c.kind),['rectangle','rectangle']);
+  assert.deepEqual(partner.cuts.map(c=>c.cutDepthMm),[6,2]);
+  assert.equal(partner.profile.thickness,6);
+  assert.equal(expectedOcct8OrthogonalMetrics(partner).volumeMm3,10156);
+  assert.equal(expectedOcct8OrthogonalMetrics(u).volumeMm3,47600);
+
+  // One original authoritative project and a physically independent body
+  // writer DAG: editing the U changes neither partner sketch nor its cutters.
+  const changes=[
+    editAuthoredUBracketThickness(original,12),
+  ];
+  changes.push(editAuthoredUBracketRightFlange(changes.at(-1),130));
+  changes.push(editAuthoredUBracketPocketDepth(changes.at(-1),5));
+  for(const changed of changes){
+    for(const id of ['sketch.partner','extrude.partner',...MODEL_PARTNER_CUT_IDS])
+      assert.ok(!changed.invalidation.invalidatedFeatureIds.includes(id),
+        'U edit dirtied unrelated named body '+id);
+    const other=requestFromRuntimeOcct8Orthogonal(
+      changed.history,MODEL_PARTNER_BODY_ID,opts(changed));
+    assert.deepEqual(other.profile,partner.profile);
+    assert.deepEqual(other.cuts,partner.cuts);
+    assert.equal(expectedOcct8OrthogonalMetrics(other).volumeMm3,10156);
+  }
+  const final=changes.at(-1);
+  const snapshot=final.runtime.save(final.history);
+  const reopened=final.runtime.reopen(snapshot);
+  const restored=requestFromRuntimeOcct8Orthogonal(
+    reopened,MODEL_PARTNER_BODY_ID,opts(final));
+  assert.deepEqual(restored.profile,partner.profile);
+  assert.deepEqual(restored.cuts,partner.cuts);
+  assert.equal(expectedOcct8OrthogonalMetrics(
+    requestFromRuntimeOcct8Orthogonal(
+      reopened,MODEL_U_BODY_ID,opts(final))).volumeMm3,80960);
+  // v4 deliberately excludes a four-vertex rectangular base: no implicit
+  // conversion of the independent spacer into an arbitrary target solid.
+  assert.throws(()=>requestFromRuntimeOcct8Orthogonal(
+    reopened,'body.spacer',opts(final)));
 });
