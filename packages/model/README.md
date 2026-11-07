@@ -606,3 +606,49 @@ Consumer demonstration:
 after workspace dependencies are linked. It exercises the accepted SKETCH and
 RUNTIME modules, 8→12 mm retrospective parameter editing, partial invalidation,
 undo/redo and archive roundtrip, with the cut kept `pending_exact_provider`.
+
+
+## Freeze resolved dimensions into independent authored values (v1)
+
+`@intuit3d/model/parameter-freeze` exports `previewParameterFreeze` and
+`commitUndoableParameterFreeze`. A user can unbind a dimension after
+retrospectively editing a parameter **without reverting to its stale fallback**.
+Only the current finite, model-admitted scalar is written to the journal; a
+pending or invalid binding refuses the operation. This is scalar-intent
+admission, not a 2D solver, native B-rep or STEP validation.
+
+The command is one optimistic-revision-fenced undo frame and can (a) bake
+several bound fields, (b) release explicitly user-reviewed edges only when
+`dimension-dependency-reconcile` proves their binding-introduction witnesses,
+and (c) retire a parameter **only after no living feature depends on it**.
+Unproven or independently meaningful edges remain authored and visible, not
+silently deleted. Omit `release` and `retire` to keep that conservative state.
+
+```js
+const proposal=previewParameterFreeze(history.document,{
+  format:'intuit3d.parameter-freeze',version:1,
+  expectedRevision:history.document.revision,admission:'require_admissible',
+  edits:[{eventId:'freeze.thickness',featureId:'extrude.plate',field:'thicknessMm'}],
+  release:[{eventId:'release.thickness.edge',featureId:'extrude.plate',
+    dependencies:['parameter.thickness']}],
+  confirmIndependentIntentReviewed:true,
+  retire:{eventId:'retire.thickness',parameterId:'parameter.thickness'},
+});
+const next=commitUndoableParameterFreeze(history,sameRequest);
+```
+
+`confirmIndependentIntentReviewed` is a deliberate author confirmation, not
+an inference from co-occurrence. Consumers should show which edges will be
+released and obtain explicit approval before commit.
+
+Executable public INTENT/SKETCH/RUNTIME plate demonstration:
+
+```sh
+node --experimental-strip-types packages/model/examples/freeze-parametric-plate.mjs
+```
+
+It builds a two-hole plate, retrospectively binds its extrusion thickness,
+edits 8→12 mm, freezes the current 12 mm value, releases the reviewed
+parameter-only dependency, retires the parameter and verifies undo/redo plus
+save/reopen. RUNTIME deliberately retains `preview_only` extrusion and
+`pending_exact_provider` cut; there is no STEP or production-exact claim.

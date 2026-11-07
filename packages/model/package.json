@@ -60,6 +60,10 @@
       "types": "./src/selection-inventory.ts",
       "default": "./src/selection-inventory.ts"
     },
+    "./parameter-freeze": {
+      "types": "./src/parameter-freeze.ts",
+      "default": "./src/parameter-freeze.ts"
+    },
     "./parameter-authoring": {
       "types": "./src/parameter-authoring.ts",
       "default": "./src/parameter-authoring.ts"
