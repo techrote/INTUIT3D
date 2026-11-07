@@ -5,6 +5,24 @@ import type {DimensionBatchEditRequest} from '@intuit3d/model/dimension-batch-ed
 import type {SketchDocument, SketchSolution, PlateProfile} from '@intuit3d/sketch';
 import type {ProfileDiscoveryResponse} from '@intuit3d/sketch/profile-discovery/v1';
 
+
+export const WORKFLOW_INVALIDATION_FORMAT: 'intuit3d.workflow-invalidation';
+export const WORKFLOW_INVALIDATION_VERSION: 1;
+/** Structural change cut only; NEVER proof of exact B-rep / STEP reuse. */
+export interface WorkflowInvalidation {
+  format: typeof WORKFLOW_INVALIDATION_FORMAT;
+  version: typeof WORKFLOW_INVALIDATION_VERSION;
+  projectId: string;
+  previousRevision: number;
+  revision: number;
+  changedFeatureIds: string[];
+  invalidatedFeatureIds: string[];
+  removedFeatureIds: string[];
+  unchangedFeatureIds: string[];
+  exactReuseAllowed: false;
+}
+export function diffWorkflowPlans(previous: EvaluationPlan, current: EvaluationPlan): WorkflowInvalidation;
+
 export const WORKFLOW_RUNTIME_FORMAT: 'intuit3d.workflow-runtime-evaluation';
 export const WORKFLOW_RUNTIME_VERSION: 1;
 export type RuntimeStatus =
@@ -65,6 +83,8 @@ export interface RuntimeServices {
 }
 export interface WorkflowRuntime {
   inspect(history: UndoHistory): RuntimeReport;
+  /** Compare authoritative project revisions without reusing stale solids or STEP. */
+  diff(previousHistory: UndoHistory, nextHistory: UndoHistory): WorkflowInvalidation;
   commit(history: UndoHistory, events: readonly JournalEvent[], expectedRevision?: number): UndoHistory;
   editDimensions(history: UndoHistory, request: DimensionBatchEditRequest): UndoHistory;
   undo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
