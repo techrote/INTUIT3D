@@ -4,18 +4,22 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { PlateProfile } from '@intuit3d/sketch';
 import { handleDimensionAtPoint, nudgeSketchHandle, type SketchDimensionHandle } from './runtimeSketchHandles';
+import { circleDrawingPreview, type CircleDrawingState } from './circleDrawing';
 
 /** A visually useful, disposable tessellation of the ACTUAL admitted SKETCH
  * profile. Never used as document state, a STEP source, or geometric proof. */
 type HoleId = string;
-export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit }: {
+export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, circleDrawing, onCirclePick }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
   onHoleMove?: (id: HoleId,x:number,y:number)=>void;
   onDimensionEdit?: (id: SketchDimensionHandle, millimetres:number)=>void;
+  circleDrawing?: CircleDrawingState;
+  onCirclePick?: (x:number,y:number)=>void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const moving = useRef<{id:HoleId;pointerId:number}|null>(null);
   const [dragPreview,setDragPreview] = useState<{id:HoleId;x:number;y:number}|null>(null);
+  const [circleHover,setCircleHover]=useState<{x:number;y:number}|null>(null);
   const dimensionMove=useRef<{id:SketchDimensionHandle;pointerId:number;source:PlateProfile;original:number}|null>(null);
   const [dimensionPreview,setDimensionPreview]=useState<{id:SketchDimensionHandle;value:number}|null>(null);
   const xs = profile.outer.map(p => p.x), ys = profile.outer.map(p => p.y);
@@ -39,16 +43,20 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       {x:(holeB?.x??NaN)+(holeB?.radius??NaN),y:holeB?.y??NaN};
   // Actual DOM pointer conversion: viewBox scaling and letterboxing are handled
   // by the root SVG CTM, before undoing the sketch's vertical axis flip.
-  const pointerPosition=(event:ReactPointerEvent<SVGCircleElement>)=>{
-    try {
-      const screen=event.currentTarget.ownerSVGElement?.getScreenCTM();
+  const pointFromScreen=(svg:SVGSVGElement|null,xScreen:number,yScreen:number)=>{
+    try{
+      const screen=svg?.getScreenCTM();
       if(!screen)return null;
-      const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(screen.inverse());
+      const point=new DOMPoint(xScreen,yScreen).matrixTransform(screen.inverse());
       const x=point.x,y=minY+maxY-point.y;
       if(!Number.isFinite(x)||!Number.isFinite(y))return null;
       return {x,y};
     }catch{return null;}
   };
+  const pointerPosition=(event:ReactPointerEvent<SVGCircleElement>)=>
+    pointFromScreen(event.currentTarget.ownerSVGElement,event.clientX,event.clientY);
+  const ghost=onCirclePick&&circleDrawing&&circleHover
+    ?circleDrawingPreview(circleDrawing,circleHover):null;
 
   useEffect(() => {
     if (sketchMode || !host.current) return;
@@ -103,8 +111,19 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   },[profile,thickness,sketchMode,minX,maxX,minY,maxY,width,height]);
 
   return sketchMode ? <svg data-testid="runtime-sketch" className="runtime-sketch-svg"
-    viewBox={frame} aria-label="Solved SKETCH boundary and circular holes in millimetres">
-    <g transform={`translate(0 ${minY+maxY}) scale(1 -1)`}>
+    viewBox={frame} aria-label="Solved SKETCH boundary and circular holes in millimetres"
+    style={onCirclePick?{cursor:'crosshair'}:undefined}
+    onPointerMove={event=>{
+      if(onCirclePick)setCircleHover(pointFromScreen(event.currentTarget,event.clientX,event.clientY));
+    }}
+    onPointerLeave={()=>setCircleHover(null)}
+    onClick={event=>{
+      if(!onCirclePick||event.button!==0)return;
+      const point=pointFromScreen(event.currentTarget,event.clientX,event.clientY);
+      if(point)onCirclePick(point.x,point.y);
+    }}>
+    <g transform={`translate(0 ${minY+maxY}) scale(1 -1)`}
+       pointerEvents={onCirclePick?'none':undefined}>
       <polygon points={profile.outer.map(p=>`${p.x},${p.y}`).join(' ')}
         fill="#34758b22" stroke="#76d1e5" strokeWidth=".5" vectorEffect="non-scaling-stroke"/>
       {profile.holes.map(h=><g key={h.id}>
@@ -198,6 +217,10 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
             r={dimensionPreview.value/2} fill="none" stroke="#6af0cd"
             strokeDasharray="2 2" strokeWidth=".55" pointerEvents="none"/>}
       </>}
+      {ghost&&<circle data-testid="runtime-sketch-circle-preview"
+        cx={ghost.x} cy={ghost.y} r={ghost.radius || Math.max(1.5,Math.min(width,height)/60)}
+        fill="#6af0cd24" stroke="#6af0cd" strokeDasharray="2 1"
+        strokeWidth=".55" pointerEvents="none"/>}
       {dragPreview&&<circle cx={dragPreview.x} cy={dragPreview.y}
         r={Math.max(2.5,Math.min(width,height)/30)}
         fill="#6af0cd55" stroke="#84f2d3" strokeDasharray="1 1"
