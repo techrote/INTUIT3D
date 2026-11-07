@@ -51,3 +51,23 @@ export function createRoundedPlateSheet(request:PlateDrawingRequest):{
   format:'intuit3d.engineering.plate-sheet';version:1;mimeType:'image/svg+xml';
   filename:string;measurement:RoundedPlateDrawingMeasurement;svg:string;
 };
+
+
+/** One independently authored radius for each rectangle vertex, from SKETCH v2. */
+export type VariableRoundedPlateDrawingMeasurement=PlateDrawingMeasurement & {
+  outlineKind:'rounded_plate';
+  cornerRadiiMm:Record<string,number>;
+  perimeterMm:number;
+  boundaryLengths:Array<{id:string;kind:'line'|'arc';lengthMm:number}>;
+  boundaryCurves:RoundedPlateDrawingMeasurement['boundaryCurves'];
+  provenance:PlateDrawingMeasurement['provenance'] & {
+    variableIntentId:string;variableIntentSignature:string
+  };
+};
+export function measureVariableRoundedPlateFromProject(
+  source:Pick<PlateDrawingRequest,'projectJson'|'sketchFeatureId'|'profileId'>
+):VariableRoundedPlateDrawingMeasurement;
+export function createVariableRoundedPlateSheet(request:PlateDrawingRequest):{
+  format:'intuit3d.engineering.plate-sheet';version:1;mimeType:'image/svg+xml';
+  filename:string;measurement:VariableRoundedPlateDrawingMeasurement;svg:string;
+};

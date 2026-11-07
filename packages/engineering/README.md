@@ -43,3 +43,34 @@ node --experimental-strip-types packages/engineering/examples/create-rounded-pla
 The example creates a real INTENT+SKETCH project with R8 source fillets, changes width 120→150 mm and fillet radius R8→R12, commits the edit, saves and reopens the authoritative project, then generates the updated curved SVG. The source project must contain the fillet intent; missing, structurally invalid or geometrically unadmitted fillets are rejected rather than silently drawn as sharp corners. Variable per-corner v2 fillets and arbitrary profiled sections are not yet part of this narrow drawing API.
 
 **Consumer integration request:** WORKBENCH can offer a 'Dimensioned drawing (rounded)' action for a selected saved sketch when `payload.roundedPlateIntent` is present, presenting `createRoundedPlateSheet(...).svg` and the perimeter/curve table as strictly derived inspection. INTEGRATION alone changes root lockfile, lane registration and shared CI. This implementation PR never writes those shared paths.
+
+
+## Four independently editable corner radii — SKETCH v2
+
+The separate \`createVariableRoundedPlateSheet(request)\` and
+\`measureVariableRoundedPlateFromProject(request)\` API reads the saved
+\`payload.variableRoundedPlateIntent\` string (made with SKETCH's
+\`serializeVariableRoundedPlateIntent\`), alongside the source
+\`payload.sketchDocument\` and authentic INTENT journal. It checks the
+accepted SKETCH v2 solver, the four vertex/radius identities, unchanged
+hole material and area before drawing anything.
+
+The resulting A3 SVG displays four actual circular arcs and a named
+radius annotation for **each** authored vertex, as well as the analytic
+perimeter and original width/height/hole measurements. A radius edit
+or earlier width edit regenerates derived geometry from the saved project;
+the original project remains authoritative. No SVG rounding approximation,
+implicit uniform-radius fallback, native B-rep or certified STEP claim.
+
+Run:
+
+\`\`\`sh
+node --experimental-strip-types packages/engineering/examples/create-variable-rounded-plate.mjs ./variable-rounded-plate.svg
+npm run test --workspace @intuit3d/engineering
+npm run typecheck --workspace @intuit3d/engineering
+\`\`\`
+
+Consumer: WORKBENCH should offer this drawing action for a selected
+authored sketch with a valid \`variableRoundedPlateIntent\`; leave the
+uniform v1 action available for \`roundedPlateIntent\`. INTEGRATION owns
+the actual browser preview/download and root workspace/check qualification.
