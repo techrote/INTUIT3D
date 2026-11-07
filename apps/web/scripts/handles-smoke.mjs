@@ -445,7 +445,9 @@ async function main() {
   await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]')"),'drop cancellation');
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===beforeDrop,
     'cancelling dropped model changed journal');
-  check(await evaluate("(() => {const dt=new DataTransfer();dt.items.add(new File(['{}'],'1.json'));dt.items.add(new File(['{}'],'2.json'));document.querySelector('.runtime-shell').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));return document.querySelector('.runtime-message')?.textContent?.includes('exactly one')})()"),
+  check(await evaluate("(() => {const dt=new DataTransfer();dt.items.add(new File(['{}'],'1.json'));dt.items.add(new File(['{}'],'2.json'));document.querySelector('.runtime-shell').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));return true})()"),
+    'cannot dispatch multiple-file drop');
+  await eventually(()=>evaluate("document.querySelector('.runtime-message')?.textContent?.includes('exactly one')"),
     'multiple-file drop was not refused');
 
   // Create a genuinely new semantic project. Cancel must preserve the
