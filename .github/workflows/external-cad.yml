@@ -259,6 +259,63 @@ jobs:
           assert sum(c['rayCount'] for c in r['cases']) == 156, r
           print('NON_OCCT_SOURCE_MATCHED_CUT_CHAINS_ACCEPTED four pinned C++ STEP solids, 156 rays')
           PY
+      # Independent physical U-bracket gate: preserve the original compiled
+      # OCCT8 C++ producer and STEP bytes, reuse this job's actual non-OCCT
+      # AnvilCAD executable and execute the newly admitted world-space probe.
+      # This is NOT an OCCT self-readback or a static STEP text check.
+      - name: Acquire original immutable pinned-C++ U-bracket STEP artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          curl --fail --location --retry 3 --connect-timeout 20 --max-time 600 \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --output "$root/original-native-u-bracket.zip" \
+            "https://api.github.com/repos/techrote/INTUIT3D/actions/artifacts/13593058907/zip"
+          actual="$(sha256sum "$root/original-native-u-bracket.zip" | cut -d' ' -f1)"
+          expected='9f6ee1b45a9db925eaa941876bb399835232fa7c0f3667f905165386b3046ba9'
+          test "$actual" = "$expected" || {
+            echo '::error::Original pinned C++ U-bracket artifact SHA-256 mismatch'; exit 1;
+          }
+          printf 'artifact_id=13593058907\narchive_sha256=%s\nproducer_kernel=7e893a6deb4ca7d88c7bd92ec42fb828cfc87a5c\n' \
+            "$actual" > "$root/u-bracket-artifact-source.txt"
+      - name: Independently reconstruct two original U-bracket STEP solids and 80 physical rays
+        shell: bash
+        working-directory: cad-source
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          probe="$(cat "$root/independent-probe.path")"
+          test -x "$probe"
+          probe_sha="$(sha256sum "$probe" | cut -d' ' -f1)"
+          python3 conformance/external-cad/u_bracket.py \
+            --bundle "$root/original-native-u-bracket.zip" \
+            --artifact-sha256 9f6ee1b45a9db925eaa941876bb399835232fa7c0f3667f905165386b3046ba9 \
+            --kernel-sha 7e893a6deb4ca7d88c7bd92ec42fb828cfc87a5c \
+            --anvil-source-sha 50c053840933c92d598976e837e63ccd7626c312 \
+            --probe "$probe" --probe-sha256 "$probe_sha" \
+            --output-dir "$root/u-bracket-physical" \
+            2>&1 | tee "$root/u-bracket-execution.log"
+          python3 - "$root/u-bracket-physical/qualification.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as f:
+              r = json.load(f)
+          assert r['status'] == 'NON_OCCT_SOURCE_MATCHED_U_BRACKET_ACCEPTED', r
+          assert r['independentCadInteroperability'] is True, r
+          assert r['nativeArtifactSha256'] == '9f6ee1b45a9db925eaa941876bb399835232fa7c0f3667f905165386b3046ba9', r
+          assert r['kernelSourceCommit'] == '7e893a6deb4ca7d88c7bd92ec42fb828cfc87a5c', r
+          assert r['anvilSourceCommit'] == '50c053840933c92d598976e837e63ccd7626c312', r
+          assert len(r['cases']) == 2, r
+          assert [case['label'] for case in r['cases']] == ['u-8', 'u-12'], r
+          assert all(case['importedExactBRep'] and case['rayCount'] == 40
+                     and len(case['rays']) == 40 for case in r['cases']), r
+          assert sum(case['rayCount'] for case in r['cases']) == 80, r
+          assert r['cases'][0]['nativeStepSha256'] != r['cases'][1]['nativeStepSha256'], r
+          print('NON_OCCT_SOURCE_MATCHED_U_BRACKET_ACCEPTED two original STEP solids, 80 real material/void/floor rays')
+          PY
       - name: Exclude distributor binary and extraction tree from evidence upload
         if: always()
         shell: bash
