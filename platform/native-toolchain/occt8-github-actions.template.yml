@@ -15,6 +15,10 @@ on:
         type: string
         required: true
         default: c46d02847468b69a106fbfa6fad715c10399ff2c
+      runtime_ref:
+        description: "Immutable accepted RUNTIME consumer source SHA; do not pass floating main"
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -43,6 +47,20 @@ jobs:
           ref: ${{ inputs.kernel_ref }}
           path: kernel-repo
           persist-credentials: false
+      - name: Checkout immutable RUNTIME product consumer
+        uses: actions/checkout@v4
+        with:
+          repository: techrote/INTUIT3D
+          ref: ${{ inputs.runtime_ref }}
+          path: runtime-repo
+          persist-credentials: false
+      - name: Install Node 22 for real native product consumer
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install accepted RUNTIME workspace dependencies
+        working-directory: runtime-repo
+        run: npm ci
       - name: Install native build dependencies
         run: |
           sudo apt-get update
@@ -114,6 +132,23 @@ jobs:
              "$RUNNER_TEMP/intuit3d-native-evidence/offline-occt801.tar.gz"
           sha256sum "$RUNNER_TEMP/intuit3d-native-evidence/offline-occt801.tar.gz" \
             > "$RUNNER_TEMP/intuit3d-native-evidence/offline-archive.sha256"
+      # Platform source is a template: INTEGRATION owns actual .github adoption.
+      # Verify both the native bundle and seven real local RUNTIME C++/STEP
+      # stages before a host can publish a working installed product consumer.
+      - name: Execute source-matched real RUNTIME local-bridge demo from installed OCCT8 archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/intuit3d-native-work/offline-occt801.tar.gz"
+          python3 platform-repo/platform/native-toolchain/qualify_runtime_delivery.py \
+            --archive "$ARCHIVE" \
+            --archive-sha256 "$(sha256sum "$ARCHIVE" | cut -d' ' -f1)" \
+            --kernel-sha "$(git -C kernel-repo rev-parse HEAD)" \
+            --platform-sha "$(git -C platform-repo rev-parse HEAD)" \
+            --runtime-tree "$GITHUB_WORKSPACE/runtime-repo" \
+            --runtime-sha "$(git -C runtime-repo rev-parse HEAD)" \
+            --destination "$RUNNER_TEMP/intuit3d-native-work/occt801-runtime-installed" \
+            2>&1 | tee "$RUNNER_TEMP/intuit3d-native-evidence/runtime-delivery.log"
       - name: Remove only huge intermediate build directory before artifact upload
         if: always()
         run: |
