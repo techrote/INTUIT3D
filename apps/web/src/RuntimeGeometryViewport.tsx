@@ -10,19 +10,20 @@ import { radialHoleDiameter, nudgeHoleDiameter } from './holeDiameterDrag';
 /** A visually useful, disposable tessellation of the ACTUAL admitted SKETCH
  * profile. Never used as document state, a STEP source, or geometric proof. */
 type HoleId = string;
-export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, circleDrawing, onCirclePick }: {
+export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
-  onHoleMove?: (id: HoleId,x:number,y:number)=>void;
+  onHoleMove?: (id: HoleId,x:number,y:number,selectedIds?:readonly HoleId[])=>void;
   onDimensionEdit?: (id: SketchDimensionHandle, millimetres:number)=>void;
   /** Commits only after SKETCH/RUNTIME has admitted the edited circle. */
   onHoleDiameterEdit?: (id: HoleId,diameterMm:number)=>void;
-  onHoleSelect?: (id:HoleId)=>void;
+  onHoleSelect?: (id:HoleId,additive?:boolean)=>void;
   selectedHoleId?: string|null;
+  selectedHoleIds?: readonly HoleId[];
   circleDrawing?: CircleDrawingState;
   onCirclePick?: (x:number,y:number)=>void;
 }) {
   const host = useRef<HTMLDivElement>(null);
-  const moving = useRef<{id:HoleId;pointerId:number}|null>(null);
+  const moving = useRef<{id:HoleId;pointerId:number;groupIds:readonly HoleId[]}|null>(null);
   const [dragPreview,setDragPreview] = useState<{id:HoleId;x:number;y:number}|null>(null);
   const radialMove=useRef<{id:HoleId;pointerId:number;source:PlateProfile;original:number}|null>(null);
   const [radialPreview,setRadialPreview]=useState<{id:HoleId;diameter:number}|null>(null);
@@ -138,8 +139,9 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         fill="#34758b22" stroke="#76d1e5" strokeWidth=".5" vectorEffect="non-scaling-stroke"/>
       {profile.holes.map(h=><g key={h.id}>
         <circle data-testid={`runtime-sketch-outline-hole-${h.id}`} cx={h.x} cy={h.y} r={h.radius} fill="#152332"
-          stroke={selectedHoleId===h.id?'#6af0cd':'#e4be81'} strokeWidth={selectedHoleId===h.id?'.9':'.5'} vectorEffect="non-scaling-stroke"
-          onClick={()=>onHoleSelect?.(h.id)}/>
+          stroke={(selectedHoleIds?selectedHoleIds.includes(h.id):selectedHoleId===h.id)?'#6af0cd':'#e4be81'}
+          strokeWidth={(selectedHoleIds?selectedHoleIds.includes(h.id):selectedHoleId===h.id)?'.9':'.5'} vectorEffect="non-scaling-stroke"
+          onClick={event=>{event.stopPropagation();onHoleSelect?.(h.id,event.ctrlKey||event.metaKey);}}/>
         {onHoleMove&&
           <circle data-testid={`runtime-sketch-hole-${h.id}`}
             aria-label={`Drag ${h.id} center`}
@@ -149,9 +151,16 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
             onPointerDown={event=>{
               if(event.button!==0)return;
               event.preventDefault();
+              if(event.ctrlKey||event.metaKey){
+                event.stopPropagation();
+                onHoleSelect?.(h.id,true);
+                return;
+              }
+              const groupIds=selectedHoleIds?.includes(h.id)&&selectedHoleIds.length>1
+                ?[...selectedHoleIds]:[h.id];
+              if(groupIds.length===1)onHoleSelect?.(h.id,false);
               event.currentTarget.setPointerCapture(event.pointerId);
-              onHoleSelect?.(h.id);
-              moving.current={id:h.id as HoleId,pointerId:event.pointerId};
+              moving.current={id:h.id as HoleId,pointerId:event.pointerId,groupIds};
               setDragPreview({id:h.id as HoleId,x:h.x,y:h.y});
             }}
             onPointerMove={event=>{
@@ -162,10 +171,11 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
             onPointerUp={event=>{
               if(moving.current?.id!==h.id||moving.current.pointerId!==event.pointerId)return;
               const point=pointerPosition(event);
+              const groupIds=moving.current.groupIds;
               moving.current=null;setDragPreview(null);
               if(point){
                 const x=Math.round(point.x*2)/2,y=Math.round(point.y*2)/2;
-                if(x!==h.x||y!==h.y)onHoleMove(h.id as HoleId,x,y);
+                if(x!==h.x||y!==h.y)onHoleMove(h.id as HoleId,x,y,groupIds);
               }
             }}
             onPointerCancel={()=>{moving.current=null;setDragPreview(null);}}

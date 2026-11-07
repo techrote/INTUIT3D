@@ -346,7 +346,7 @@ async function main(){
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=runtime-hole-editor-]').length===3"),'added hole did not reach React inspector');
   const addedId=await evaluate("Array.from(document.querySelectorAll('[data-testid^=runtime-hole-editor-]')).map(x=>x.getAttribute('data-testid')?.slice(20)).find(x=>x?.startsWith('hole.user.'))");
   check(typeof addedId==='string'&&addedId.startsWith('hole.user.'),'new hole identity missing');
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('3 circular holes')"),'added circle not shown in solved profile');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('3 displayed circular holes')"),'added circle not shown in solved profile');
   check(await evaluate(`Boolean(document.querySelector('[data-testid="runtime-sketch-hole-${addedId}"]'))`),'added circle has no drag affordance');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),'new cut falsely labelled exact');
   await screenshot('native-00c-added-hole.png');
@@ -373,7 +373,7 @@ async function main(){
     'physical pointer did not commit solver-backed rectangular array');
   check(await evaluate("Array.from(document.querySelectorAll('[data-testid^=runtime-hole-editor-]')).filter(x=>x.dataset.testid.startsWith('runtime-hole-editor-array.')).length===3"),
     'array did not author three stable copied hole IDs');
-  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('6 circular holes')"),
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('6 displayed circular holes')"),
     'one-shot array not rendered in actual viewport');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'array incorrectly promoted preview geometry to exact');
@@ -583,8 +583,15 @@ async function main(){
     return {a:val('holeA-x'),b:val('holeB-x'),
       da:val('holeA-diameter'),db:val('holeB-diameter')};
   })()`);
-  check(await evaluate("document.querySelector('[data-testid=runtime-layout-select-holeA]')?.checked && document.querySelector('[data-testid=runtime-layout-select-holeB]')?.checked"),
-    'seed holes were not selected for retrospective layout edit');
+  // A new project starts with one selected circle to prevent accidental
+  // whole-group drags. Explicitly Ctrl/checkbox-select both before committing
+  // a two-hole dimensional layout edit; do not rely on a hidden default.
+  for (const hole of ['holeA','holeB']) {
+    if (!await evaluate(`document.querySelector('[data-testid=runtime-layout-select-${hole}]')?.checked`))
+      await pointerClick(`runtime-layout-select-${hole}`);
+  }
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-layout-select-holeA]')?.checked && document.querySelector('[data-testid=runtime-layout-select-holeB]')?.checked"),
+    'explicit two-hole selection for retrospective layout edit');
   check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-layout-scaleX]');e.focus();e.select();return document.activeElement===e})()"),
     'cannot focus combined layout pitch dimension');
   await send('Input.insertText',{text:'120'});

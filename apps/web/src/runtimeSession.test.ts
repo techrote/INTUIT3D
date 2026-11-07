@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelFeature, removeModelHole,
+  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelHoleGroup, moveModelFeature, removeModelHole,
   makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, patternModelHoles, previewModelProfile, redoModelSession, resizeModelHoleLayout,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
 } from './runtimeSession.ts';
@@ -332,4 +332,32 @@ test('selected retrospective hole-layout resize is one admitted journal event an
   assert.throws(()=>resizeModelHoleLayout(original,{
     holeIds:['holeA','holeB'],scaleX:0,scaleY:1,radiusScale:1,
   }),/scaling must be finite/);
+});
+
+test('Ctrl-selected hole centres translate together as one admitted journal edit and survive archive/undo',()=>{
+  const initial=newModelPlateSession('workbench.group-drag.test');
+  const before=modelHoleValues(initial);
+  const selected=['holeA','holeB'];
+  const moved=moveModelHoleGroup(initial,selected,4,2);
+  assert.equal(moved.kind,'committed',moved.kind==='refused'?moved.reason:'group should be admitted');
+  if(moved.kind!=='committed') return;
+  const after=modelHoleValues(moved.history);
+  for(const id of selected){
+    assert.equal(after[id].x,before[id].x+4);
+    assert.equal(after[id].y,before[id].y+2);
+    assert.equal(after[id].diameter,before[id].diameter);
+  }
+  assert.deepEqual(Object.keys(after),Object.keys(before),'stable circle identities');
+  assert.equal(moved.history.undoStack.length,initial.undoStack.length+1,'exactly one undo frame');
+  assert.ok(moved.invalidation.invalidatedFeatureIds.includes('plate'));
+  assert.ok(moved.invalidation.invalidatedFeatureIds.includes('cut'));
+  const undone=undoModelSession(moved.history);
+  assert.deepEqual(modelHoleValues(undone),before);
+  const redone=redoModelSession(undone);
+  assert.deepEqual(modelHoleValues(redone),after);
+  assert.deepEqual(modelHoleValues(reopenModelSession(serializeModelSession(redone))),after);
+  assert.throws(()=>moveModelHoleGroup(initial,selected,200,0),/invalidate the solved SKETCH profile/,
+    'an analytically solved but out-of-plate group is not a usable cutting profile');
+  assert.deepEqual(modelHoleValues(initial),before,'rejected group move cannot corrupt source');
+  assert.throws(()=>moveModelHoleGroup(initial,['holeA','holeA'],3,0),/distinct/);
 });
