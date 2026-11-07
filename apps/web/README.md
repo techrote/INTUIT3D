@@ -329,3 +329,32 @@ circle while drawing; it is never B-rep or exact geometry.
 Regression: `node --experimental-strip-types --test src/circleDrawing.test.ts`
 and the real Chromium `npm run test:browser:handles --workspace @intuit3d/web`
 (two actual pointer clicks, one journal revision, undo/redo and screenshots).
+
+## Model archive lifecycle: project-aware save and safe drop-to-open
+
+The model-backed CAD editor now gives JSON archive downloads a basename derived
+from the authoritative INTENT project ID and revision. A save request refuses
+archives over the same **4 MiB** byte limit that the isolated Worker import
+enforces, rather than generating an archive this app cannot reopen. The browser
+can confirm that a download was *requested*, not that it reached persistent
+filesystem storage: verify the JSON exists in Downloads. A visible export-state
+chip flags unexported journal edits, and a browser-native unload guard warns
+while such edits remain. Edits after undo/redo conservatively count as changes
+until another download request.
+
+Use Ctrl+O, Open model archive, or drag and drop **exactly one** local model JSON
+onto the model-backed workbench. All paths use the same bounded file-read,
+isolated Worker validation, cancellation fence, and explicit replacement modal.
+The modal compares incoming/current authoritative project IDs, revisions and
+undo/redo frame counts, and warns if the current in-memory model has not been
+exported. Cancel leaves the journal untouched; confirming a newly created
+project leaves it unsaved. No preview geometry or STEP receipt is treated as
+the archive's source of truth.
+
+Tests: `npm test --workspace @intuit3d/web`; `npm run typecheck --workspace
+@intuit3d/web`; `npm run build --workspace @intuit3d/web`;
+`npm run test:browser:handles --workspace @intuit3d/web`. Chromium acceptance
+exercises real file input, browser drag/drop, multi-file refusal, project-aware
+download name and cancel-before-replacement. Neither these tests nor Worker
+isolation establish that the owner's original 40 KiB Windows/Firefox model
+no longer hangs; issue #177 still requires actual private-file replay.
