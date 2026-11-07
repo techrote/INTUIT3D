@@ -33,6 +33,9 @@ def canonical_request(request: dict) -> str:
 def execute(request_input: object, *, worker: Path, step_output: Path | None = None,
             timeout: float = 30.0) -> dict:
     request = validate_request(request_input)
+    # Normalize relative output paths before changing the subprocess cwd.
+    if step_output is not None:
+        step_output = step_output.resolve()
     if request["exportStep"] != (step_output is not None):
         raise ValueError("step_output required if and only if exportStep is true")
     if not 0 < timeout <= 3600:
@@ -70,6 +73,9 @@ def execute(request_input: object, *, worker: Path, step_output: Path | None = N
                 with stage.open("rb") as stream:
                     if b"ISO-10303-21" not in stream.read(256):
                         raise ValueError("not STEP Part 21")
+                    stream.seek(max(0, size - 256))
+                    if b"END-ISO-10303-21;" not in stream.read():
+                        raise ValueError("truncated STEP Part 21")
                 # The caller owns the destination. Atomic exclusive publication:
                 # no overwrite of files created during the C++ worker's lifetime.
                 digest = hashlib.sha256(stage.read_bytes()).hexdigest()
