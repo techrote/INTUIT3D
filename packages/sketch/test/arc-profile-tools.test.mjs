@@ -76,7 +76,6 @@ test('array and dimension edits fail atomically for real clearance or identity f
   const cases=[
     {...pattern,spacingXmm:0,spacingYmm:0},
     {...pattern,spacingXmm:60},
-    {...pattern,patternId:'holeA'},
     {kind:'dimension',constraintId:'corner1:radius',valueMm:90},
     {kind:'drag-dimension',constraintId:'plate:width',xMm:8,yMm:0},
     {kind:'hole',change:{kind:'resize',circleId:'holeA',diameterMm:200}},
@@ -84,8 +83,6 @@ test('array and dimension edits fail atomically for real clearance or identity f
   ];
   for(const command of cases) {
     const result=edit(doc,sel,command);
-    // Pattern ID holeA creates new names, not a collision by itself.
-    if(command.patternId==='holeA')continue;
     assert.equal(result.kind,'refused',JSON.stringify(command));
     assert.equal(serializeArcSketch(doc),before);
     assert.deepEqual(sel.holeIds,['holeA','holeB']);
@@ -125,4 +122,19 @@ test('one absent corner equation remains underconstrained and cannot fabricate a
   assert.equal(edit(doc,sel,pattern).kind,'refused');
   assert.equal(edit(doc,sel,
     {kind:'drag-dimension',constraintId:'plate:width',xMm:140,yMm:0}).kind,'refused');
+});
+
+test('actual public ESM package consumer demonstration executes and reports non-exact status',async()=>{
+  const {execFileSync}=await import('node:child_process');
+  const {fileURLToPath}=await import('node:url');
+  const demo=fileURLToPath(new URL('../examples/arc-profile-tools.mjs',import.meta.url));
+  const stdout=execFileSync(process.execPath,[demo],{encoding:'utf8',timeout:30000});
+  const steps=stdout.trim().split('\n').map(line=>JSON.parse(line));
+  assert.deepEqual(steps.map(s=>s.step),[
+    'original','drag-width-to-150','create-2x2-pattern',
+    'retrospective-corner-radius','resize-patterned-hole','reopened','invalid-array']);
+  assert.equal(steps[2].holeIds.length,5);
+  assert.equal(steps[5].nativeExact,false);
+  assert.equal(steps[5].stepQualified,false);
+  assert.equal(steps[6].result,'refused');
 });
