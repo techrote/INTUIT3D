@@ -34,8 +34,8 @@ test('real 3-position bolt circle preserves selected analytic plate and IDs',()=
   assert.deepEqual(x.createdIds,['boltCircle:i1','boltCircle:i2']);
   assert.equal(x.profile.holes.length,4);
   assert.equal(x.profile.holes[2].radiusMm,6);
-  assert.equal(x.profile.holes[2].x,35-15*Math.sqrt(3)/2);
-  assert.equal(x.profile.holes[2].y,17.5);
+  assert.ok(Math.abs(x.profile.holes[2].x-(35-15*Math.sqrt(3)/2))<1e-10);
+  assert.ok(Math.abs(x.profile.holes[2].y-17.5)<1e-10);
   assert.equal(inspectArcBoltCircle(x.sketch,x.selection,x.pattern).status,'synchronized');
   assert.equal(serializeArcSketch(original),copy);
   assert.deepEqual(sel.holeIds,['holeA','holeB']);
@@ -46,9 +46,12 @@ test('polar count/centre reconfigure preserves member identity and changes real 
     kind:'reconfigure',count:4,centerXMm:35,centerYMm:28}));
   assert.deepEqual(x.createdIds,['boltCircle:i3']);
   assert.deepEqual(x.preservedIds,['boltCircle:i1','boltCircle:i2']);
-  assert.deepEqual(x.profile.holes.find(h=>h.id==='boltCircle:i2'),
-    {id:'boltCircle:i2',centerId:'hole.boltCircle:i2.center',
-      x:35,y:16,radiusMm:6});
+  const far=x.profile.holes.find(h=>h.id==='boltCircle:i2');
+  assert.equal(far.id,'boltCircle:i2');
+  assert.equal(far.centerId,'hole.boltCircle:i2.center');
+  assert.ok(Math.abs(far.x-35)<1e-10);
+  assert.ok(Math.abs(far.y-16)<1e-10);
+  assert.equal(far.radiusMm,6);
   const smaller=accepted(apply(x.sketch,x.selection,x.pattern,{
     kind:'reconfigure',count:2,centerXMm:35,centerYMm:28}));
   assert.deepEqual(smaller.removedIds,['boltCircle:i2','boltCircle:i3']);
