@@ -36,6 +36,8 @@ export type ExperimentalPlateWorkflowResult = Readonly<{
     backend:string;occtVersion:string;
     observed:unknown;
     artifact:unknown;
+    /** Separate pinned native Part21 structural receipt bound to the STEP SHA. */
+    part21Audit?:Readonly<{kind:'part21-plate-structural-v1';sha256:string}>;
     note:string;
   }>
 );
