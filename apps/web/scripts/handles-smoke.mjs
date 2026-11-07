@@ -583,6 +583,36 @@ async function main() {
     'archive reopening lost selected group constraints');
   await screenshot('21-multi-hole-archive-reopened.png');
 
+  // Actual model-first Ctrl+N keyboard regression on the CI-executed Chromium
+  // path. Cancellation must retain the existing journal and STEP state;
+  // confirmation must replace it with a solved sketch, not a fabricated solid.
+  const projectBeforeCtrlN=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  const sendCtrlN=async()=>{
+    const shortcut={key:'n',code:'KeyN',windowsVirtualKeyCode:78,modifiers:2};
+    await send('Input.dispatchKeyEvent',{type:'keyDown',...shortcut});
+    await send('Input.dispatchKeyEvent',{type:'keyUp',...shortcut});
+  };
+  await sendCtrlN();
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'Ctrl+N did not present a project replacement review');
+  await key('Escape','Escape',27);
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]')"),
+    'Escape failed to cancel Ctrl+N');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===projectBeforeCtrlN &&
+    await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'Cancel Ctrl+N changed the current model or its pending native state');
+  await sendCtrlN();
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'Ctrl+N could not reopen the project replacement review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'Cannot confirm fresh sketch-only project');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-create-extrusion]')?.disabled===false && !document.querySelector('[data-testid=runtime-feature-plate]')"),
+    'Confirmed Ctrl+N did not create an editable solved sketch without a solid');
+  check(await evaluate("document.querySelector('.project-title')?.textContent?.includes('Sketch project') &&
+      document.querySelector('[data-testid=runtime-status-cut]')===null"),
+    'New sketch project inherited a former native cut or incorrect title');
+  await screenshot('22-ctrl-n-new-sketch.png');
+
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -599,7 +629,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -609,6 +639,7 @@ async function main() {
     stagedCutUndoRedoAndArchiveReopen: true,
     keyboardEComboExtrusionAndCut: true,
     physicalCtrlClickMultiHoleAtomicDragAndArchive: true,
+    actualChromiumCtrlNCancelAndSolvedNewSketch: true,
     comboEscapeLeavesJournalUnchanged: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
