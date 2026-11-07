@@ -82,6 +82,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [holeDraft,setHoleDraft]=useState({x:'60',y:'20',diameter:'10'});
   const [arrayDraft,setArrayDraft]=useState({sourceHoleId:'holeA',rows:'2',columns:'2',pitchXmm:'20',pitchYmm:'20'});
   const [selected,setSelected]=useState('plate');
+  const [activeHole,setActiveHole]=useState<string|null>(null);
   const [layoutSelected,setLayoutSelected]=useState<string[]>(['holeA','holeB']);
   const [layoutDraft,setLayoutDraft]=useState({scaleX:'120',scaleY:'100',radiusScale:'100'});
   const [cascadeConfirmation,setCascadeConfirmation]=useState<string|null>(null);
@@ -147,6 +148,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const values=useMemo(()=>plateActive?modelDimensionValues(history):null,[history,plateActive]);
   const thicknessBinding=useMemo(()=>plateActive?modelThicknessBinding(history):'independent',[history,plateActive]);
   const holes=useMemo(()=>modelHoleValues(history),[history]);
+  const displayedActiveHole=activeHole&&Object.hasOwn(holes,activeHole)?activeHole:null;
   const layoutIds=layoutSelected.filter(id=>Object.hasOwn(holes,id));
   const layoutPoints=layoutIds.map(id=>holes[id]);
   const layoutSpan=layoutPoints.length?{
@@ -190,7 +192,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         setMessage('Add hole refused by SKETCH: '+(result.candidateFeature.diagnostics.join('; ')||result.reason));
         return false;
       }
-      acceptHistory(result.history);setSketchMode(true);
+      acceptHistory(result.history);setSketchMode(true);setActiveHole(id);
       setMessage(`Added ${id} in one undoable sketch transaction; invalidated ${result.invalidation.invalidatedFeatureIds.join(' → ')}. Rebuild STEP.`);
       return true;
     }catch(e){setMessage('Add hole refused: '+String(e));return false;}
@@ -268,9 +270,20 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     try{
       const result=moveModelHoleCenter(liveHistory.current,hole,x,y);
       if(result.kind==='refused'){setMessage(`Drag refused: ${result.candidateFeature.diagnostics.join('; ') || result.reason}`);return;}
-      acceptHistory(result.history);
+      acceptHistory(result.history);setActiveHole(hole);
       setMessage(`Moved ${hole} center to (${x}, ${y}) mm in one undoable sketch transaction; native STEP requires rebuild.`);
     }catch(e){setMessage('Hole drag refused: '+String(e));}
+  };
+  const dragHoleDiameter=(hole:ModelHole,diameterMm:number)=>{
+    try{
+      const result=editModelHole(liveHistory.current,hole,'diameter',diameterMm,'require_admissible');
+      if(result.kind==='refused'){
+        setMessage('Diameter resize refused by SKETCH: '+
+          (result.candidateFeature.diagnostics.join('; ')||result.reason));return;
+      }
+      acceptHistory(result.history);setActiveHole(hole);
+      setMessage(`Revision ${result.history.document.revision}: resized ${hole} circular cut to Ø${diameterMm} mm in one admitted RUNTIME/SKETCH transaction. Dependent plate/cut invalidated; old STEP revoked.`);
+    }catch(e){setMessage('Diameter resize refused: '+(e instanceof Error?e.message:String(e)));}
   };
   const dragDimension=(id:SketchDimensionHandle,value:number)=>{
     try{
@@ -342,7 +355,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const useIncoming=()=>{
     if(!pendingImport)return;
     ++loadTicket.current;
-    acceptHistory(pendingImport.history);setSelected('plate');setPendingImport(null);
+    acceptHistory(pendingImport.history);setSelected('plate');setActiveHole(null);setPendingImport(null);
     setMessage('Model archive reopened with durable feature IDs, undo/redo and no cached meshes.');
   };
   // STEP stays in the RUNTIME live session until the very moment the user
@@ -491,6 +504,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         <div className="viewport-stage">
           {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={sketchMode}
               onHoleMove={circleDrawing.phase==='idle'?dragHole:undefined}
+              onHoleDiameterEdit={circleDrawing.phase==='idle'?dragHoleDiameter:undefined}
+              onHoleSelect={setActiveHole} selectedHoleId={displayedActiveHole}
               onDimensionEdit={circleDrawing.phase==='idle'?dragDimension:undefined}
               circleDrawing={circleDrawing}
               onCirclePick={circleDrawing.phase!=='idle'?pickCirclePoint:undefined}/>:
@@ -583,6 +598,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         </div>
         <div className="inspector-section" data-testid="runtime-hole-inspector">
           <div className="section-head">CIRCULAR HOLES · {Object.keys(holes).length}</div>
+          <p className="microcopy" data-testid="runtime-active-hole">
+            {displayedActiveHole?`Selected circular cut: ${displayedActiveHole}`:'Select a sketch hole centre or amber radial handle to edit it.'}
+            {' '}Drag the amber handle to resize a real constrained diameter; arrow keys change by 1 mm (Shift = 0.1 mm).
+          </p>
           <div className="runtime-hole-add" data-testid="runtime-hole-authoring">
             <strong>Add a through-hole</strong>
             {(['x','y','diameter'] as const).map(field=><label key={field} className="runtime-scalar">
@@ -667,7 +686,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               key={`${hole}.${field}.${history.document.revision}`}
               hole={hole} field={field} value={holes[hole][field]} onCommit={editHole}/>)}
           </div>)}
-          <p className="microcopy">Every added circle has a stable authored ID and fixed-centre/radius constraints. Drag its centre, edit its diameter here, undo/redo, or save and reopen the authoritative model. The base A/B diameter handles also drag. Add/remove requires SKETCH admission; preview and native STEP must rebuild after edits.</p>
+          <p className="microcopy">Every added circle has a stable authored ID and fixed-centre/radius constraints. Drag its centre or amber diameter handle, edit its diameter here, undo/redo, or save and reopen the authoritative model. The base A/B diameter handles also drag. Add/remove requires SKETCH admission; preview and native STEP must rebuild after edits.</p>
         </div>
         <div className="inspector-section runtime-native" data-testid="runtime-native-panel">
           <div className="section-head">LOCAL NATIVE STEP · EXPERIMENTAL</div>
