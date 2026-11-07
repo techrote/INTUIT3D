@@ -4,7 +4,7 @@ import {
   requestFromRuntimeOcct8LProfile,runPinnedRuntimeOcct8LProfile,
 } from '../src/runtime-occt8-l-profile-provider.mjs';
 import {
-  buildAuthoredLBracket,editAuthoredLBracketThickness,
+  buildAuthoredLBracket,editAuthoredLBracketThickness,editAuthoredLBracketWidth,
   MODEL_L_BODY_ID,MODEL_L_CUT_IDS,
 } from '../examples/runtime-occt8-l-profile-document.mjs';
 import {expectedOcct8LProfileMetrics} from '../src/occt8-l-profile-v3.mjs';
@@ -87,4 +87,38 @@ test('missing pinned binary remains unresolved, never exact or exported',async()
   assert.equal(r.exactAuthority,false);
   assert.equal(r.independentInteroperability,false);
   assert.equal(r.runtimeOcct8LProfileVersion,1);
+});
+
+test('real constrained SKETCH width edit physically changes the pending native L request',()=>{
+  const start=buildAuthoredLBracket();
+  const before=requestFromRuntimeOcct8LProfile(
+    start.history,MODEL_L_BODY_ID,options(start,'native.width.before'));
+  const resized=editAuthoredLBracketWidth(start,140);
+  const after=requestFromRuntimeOcct8LProfile(
+    resized.history,MODEL_L_BODY_ID,options(resized,'native.width.after'));
+  assert.equal(before.profile.width,120);
+  assert.equal(after.profile.width,140);
+  assert.deepEqual([after.profile.legWidth,after.profile.footHeight,
+    after.profile.thickness],[30,20,8]);
+  assert.equal(expectedOcct8LProfileMetrics(before).volumeMm3,32720);
+  assert.equal(expectedOcct8LProfileMetrics(after).volumeMm3,35860);
+  assert.equal(after.profile.profileId,before.profile.profileId);
+  assert.deepEqual(after.cuts.map(c=>c.featureId),before.cuts.map(c=>c.featureId));
+  assert.deepEqual(after.cuts.map(c=>c.cutDepthMm),[8,3]);
+  for(const id of ['sketch.bracket','extrude.bracket',...MODEL_L_CUT_IDS])
+    assert.ok(resized.invalidation.invalidatedFeatureIds.includes(id),id);
+  assert.ok(!resized.invalidation.invalidatedFeatureIds.includes('extrude.spacer'));
+  const undo=resized.runtime.undo(resized.history,['undo.width']);
+  const redo=resized.runtime.redo(undo,['redo.width']);
+  assert.equal(requestFromRuntimeOcct8LProfile(
+    undo,MODEL_L_BODY_ID,options(resized,'native.width.undo')).profile.width,120);
+  assert.equal(requestFromRuntimeOcct8LProfile(
+    redo,MODEL_L_BODY_ID,options(resized,'native.width.redo')).profile.width,140);
+  const reopened=resized.runtime.reopen(resized.runtime.save(resized.history));
+  assert.equal(requestFromRuntimeOcct8LProfile(
+    reopened,MODEL_L_BODY_ID,options(resized,'native.width.reopen')).profile.width,140);
+  assert.equal(start.history.document.revision,before.revision,
+    'authoritative input was not mutated by an edit');
+  assert.throws(()=>editAuthoredLBracketWidth(start,25),/exceed the solved leg/);
+  assert.throws(()=>editAuthoredLBracketWidth(start,Infinity),/finite millimetre/);
 });

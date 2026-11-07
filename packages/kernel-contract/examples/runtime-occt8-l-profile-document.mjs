@@ -93,6 +93,52 @@ export function buildAuthoredLBracket() {
   return {history,runtime,model,services};
 }
 
+
+/**
+ * Retrospectively edit the actual solved source SKETCH's overall X extent,
+ * preserving the six semantic vertex/edge IDs, the vertical leg width,
+ * all cut features and the original journal. Unlike a direct native request
+ * this remains one real RUNTIME/INTENT transaction and solver-admitted edit.
+ *
+ * The centred-L restriction is explicit: all other profile poses stay
+ * unsupported by OCCT8 v3 rather than being silently reshaped.
+ */
+export function editAuthoredLBracketWidth(fixture,widthMm) {
+  if (!Number.isFinite(widthMm)||widthMm<=0||widthMm>1e6)
+    throw new TypeError('L bracket width must be a positive finite millimetre dimension');
+  const feature=fixture.model.featuresOf(fixture.history.document)
+    .find(f=>f.id==='sketch.bracket');
+  if (feature?.kind!=='sketch'||!feature.payload?.sketch)
+    throw new TypeError('missing authoritative L bracket sketch');
+  const fixed=feature.payload.sketch.constraints;
+  const byId=new Map(fixed.map(c=>[c.id,c]));
+  const left=byId.get('fixed.bracket.p0');
+  const inside=byId.get('fixed.bracket.p3');
+  if (left?.kind!=='fixed'||inside?.kind!=='fixed')
+    throw new TypeError('source L sketch no longer uses fixed vertex dimensions');
+  const legWidth=inside.x-left.x;
+  if (!(legWidth>0&&widthMm>legWidth+1e-6))
+    throw new RangeError('L bracket width must exceed the solved leg width');
+  const xmin=-widthMm/2,xmax=widthMm/2,xi=xmin+legWidth;
+  const values=[xmin,xmax,xmax,xi,xi,xmin];
+  const edits=values.map((x,i)=>{
+    const constraintId='fixed.bracket.p'+i;
+    if(byId.get(constraintId)?.kind!=='fixed')
+      throw new TypeError('missing dimension constraint '+constraintId);
+    return {constraintId,patch:{x}};
+  });
+  const result=fixture.runtime.editSketchConstraints(fixture.history,{
+    sketchFeatureId:'sketch.bracket',
+    eventId:'edit.bracket.width.r'+fixture.history.document.revision,
+    expectedRevision:fixture.history.document.revision,
+    admission:'require_admissible',
+    edits,
+  });
+  if(result.kind!=='committed')
+    throw new RangeError('new L sketch is not solver-admitted: '+result.code);
+  return {...fixture,history:result.history,invalidation:result.invalidation};
+}
+
 export function editAuthoredLBracketThickness(fixture,thicknessMm) {
   const result=editExtrudeThickness(fixture.history,{
     eventId:'edit.thickness.'+thicknessMm,
