@@ -5,6 +5,7 @@ export type SketchConstraint =
   | { id: string; kind: 'fixed'; point: string; x: number; y: number }
   | { id: string; kind: 'horizontal' | 'vertical'; line: string }
   | { id: string; kind: 'coincident'; a: string; b: string }
+  | { id: string; kind: 'midpoint'; point: string; a: string; b: string }
   | { id: string; kind: 'distanceX' | 'distanceY'; a: string; b: string; value: number }
   | { id: string; kind: 'radius'; circle: string; value: number }
   | { id: string; kind: 'equalRadius'; a: string; b: string };

@@ -57,6 +57,7 @@ export function validateSketch(source) {
       fixed: ['id', 'kind', 'point', 'x', 'y'],
       horizontal: ['id', 'kind', 'line'], vertical: ['id', 'kind', 'line'],
       coincident: ['id', 'kind', 'a', 'b'],
+      midpoint: ['id', 'kind', 'point', 'a', 'b'],
       distanceX: ['id', 'kind', 'a', 'b', 'value'],
       distanceY: ['id', 'kind', 'a', 'b', 'value'],
       radius: ['id', 'kind', 'circle', 'value'],
@@ -74,6 +75,10 @@ export function validateSketch(source) {
         break;
       case 'coincident':
         if (!pointPair(c)) fail(`bad coincident constraint ${c.id}`);
+        break;
+      case 'midpoint':
+        if (!pointPair(c) || !points.has(c.point) || c.point === c.a || c.point === c.b)
+          fail(`bad midpoint constraint ${c.id}`);
         break;
       case 'distanceX':
       case 'distanceY':
@@ -148,6 +153,10 @@ export function solveSketch(source, options = {}) {
       }
       case 'coincident':
         for (const axis of ['x', 'y']) equation(c.id, [[coord(c.a, axis), 1], [coord(c.b, axis), -1]], 0);
+        break;
+      case 'midpoint':
+        for (const axis of ['x', 'y']) equation(c.id,
+          [[coord(c.point, axis), 1], [coord(c.a, axis), -0.5], [coord(c.b, axis), -0.5]], 0);
         break;
       case 'distanceX':
       case 'distanceY': {
