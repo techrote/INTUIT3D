@@ -6,6 +6,7 @@ Run from an extracted verified bundle using: python3 selftest.py
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -96,6 +97,59 @@ def validate_response(request: dict, response: dict, step: Path, known_volume: o
             "stepBytes": step.stat().st_size, "holes": len(source_holes)}
 
 
+def dimension_edit_request(original: dict) -> dict:
+    """Return a REAL new plate-v1 request for an executable dimensional edit.
+
+    This is a bounded first-foundation fixture, not an INTENT journal replay.
+    Keep semantic feature identity while changing geometry and source revision.
+    """
+    require(original.get("protocol") == "intuit3d/kernel/plate-v1"
+            and original.get("units") == "mm", "unsupported edit fixture protocol/units")
+    plate = original.get("plate")
+    require(isinstance(plate, dict) and
+            plate.get("width") == 120 and plate.get("depth") == 80
+            and plate.get("thickness") == 8, "unsupported edited plate fixture")
+    holes = plate.get("holes")
+    require(isinstance(holes, list) and len(holes) == 2
+            and holes[0] == {"x": -30, "y": 0, "radius": 6}
+            and holes[1] == {"x": 30, "y": 0, "radius": 6},
+            "edited fixture hole layout differs from pinned KERNEL-001 geometry")
+    require(type(original.get("revision")) is int, "invalid source revision")
+    changed = copy.deepcopy(original)
+    changed["requestId"] = original["requestId"] + ".dimension-edit"
+    changed["revision"] = original["revision"] + 1
+    changed["plate"]["width"] = 150
+    changed["plate"]["holes"][0]["radius"] = 7
+    changed["plate"]["holes"][1]["x"] = 35
+    return changed
+
+
+def analytic_volume(request: dict) -> float:
+    plate = request["plate"]
+    return plate["thickness"] * (
+        plate["width"] * plate["depth"]
+        - sum(math.pi * hole["radius"] ** 2 for hole in plate["holes"]))
+
+
+def execute_case(root: Path, temp: str, label: str, request: dict,
+                 expected_volume: float) -> dict:
+    """Run the actual extracted worker and verify fresh, audited STEP bytes."""
+    step = Path(temp) / f"fresh-{label}.step"
+    command = [str(root / "run.sh"), "--timeout", "60",
+               "--part21-step-audit", "--step-output", str(step)]
+    completed = subprocess.run(command, input=json.dumps(request).encode("utf-8"),
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               cwd=temp, timeout=90, check=False)
+    require(completed.returncode == 0,
+            f"extracted C++ {label} failed: "
+            + completed.stderr.decode(errors="replace")[-1500:])
+    try:
+        response = json.loads(completed.stdout)
+    except (UnicodeError, ValueError) as exc:
+        raise ReplayError(f"extracted C++ {label} returned invalid JSON") from exc
+    return validate_response(request, response, step, expected_volume)
+
+
 def replay(root: Path) -> dict:
     require(sys.platform == "linux", "this archived worker is Linux ELF only")
     verified = subprocess.run([sys.executable, str(root / "verify.py")],
@@ -118,24 +172,35 @@ def replay(root: Path) -> dict:
             request = json.loads(source.read_text(encoding="utf-8"))
             require(request.get("plate", {}).get("thickness") == thickness,
                     "request thickness does not match attested case")
-            step = Path(temp) / f"fresh-{thickness}mm.step"
-            command = [str(root / "run.sh"), "--timeout", "60",
-                       "--part21-step-audit", "--step-output", str(step)]
-            result = subprocess.run(command, input=source.read_bytes(),
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                    cwd=temp, timeout=90, check=False)
-            require(result.returncode == 0,
-                    f"extracted C++ {thickness}mm failed: "
-                    + result.stderr.decode(errors="replace")[-1500:])
-            try:
-                response = json.loads(result.stdout)
-            except (UnicodeError, ValueError) as exc:
-                raise ReplayError(f"extracted C++ {thickness}mm returned invalid JSON") from exc
-            observations[str(thickness)] = validate_response(
-                request, response, step, evidence[str(thickness)]["volumeMm3"])
+            observations[str(thickness)] = execute_case(
+                root, temp, str(thickness), request, evidence[str(thickness)]["volumeMm3"])
+
+        # Distinct real C++ and Part 21 invocations must respond to a
+        # *geometric* edit, not just the already-qualified thickness change.
+        original = json.loads((root / "requests/plate-8mm.json").read_text(encoding="utf-8"))
+        edited = dimension_edit_request(original)
+        restored = copy.deepcopy(original)
+        restored["requestId"] = original["requestId"] + ".restore-dimensions"
+        restored["revision"] = original["revision"] + 2
+        observations["edited8"] = execute_case(
+            root, temp, "edited8", edited, analytic_volume(edited))
+        observations["restored8"] = execute_case(
+            root, temp, "restored8", restored, evidence["8"]["volumeMm3"])
+        require(not math.isclose(observations["8"]["volumeMm3"],
+                                 observations["edited8"]["volumeMm3"],
+                                 rel_tol=1e-8, abs_tol=1e-6),
+                "dimensional edit did not change real C++ material volume")
+        require(observations["8"]["stepSha256"] != observations["edited8"]["stepSha256"],
+                "dimensional edit did not produce changed STEP bytes")
+        close(observations["restored8"]["volumeMm3"],
+              observations["8"]["volumeMm3"], "restored 8mm plate volume")
+        require(observations["restored8"]["holes"] == observations["8"]["holes"] == 2,
+                "restoration lost plate hole inventory")
+
     return {"status": "OFFLINE_CXX_REPLAY_PASS", "occtVersion": "8.0.1",
             "kernelSourceCommit": manifest["kernelSourceCommit"],
             "workerSha256": manifest["workerSha256"], "cases": observations,
+            "dimensionEditExecuted": True, "dimensionsRestored": True,
             "independentCadInteroperability": False}
 
 
