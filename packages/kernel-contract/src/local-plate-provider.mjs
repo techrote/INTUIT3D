@@ -12,9 +12,9 @@ const DEFAULT_SUPERVISOR = fileURLToPath(new URL('../../../native/run_plate.py',
 const MAX_REPLY_BYTES = 65536;
 const MAX_STEP_BYTES = 32 * 1024 * 1024;
 
-function unresolved(request, code) {
+function unresolved(request, code, reason) {
   return {kind:'unresolved', code, requestId:request.requestId,
-    featureId:request.featureId, revision:request.revision, artifact:null};
+    featureId:request.featureId, revision:request.revision, artifact:null, ...(reason ? {reason} : {})};
 }
 function revisionOf(readCurrentRevision) {
   const revision = readCurrentRevision();
@@ -135,7 +135,7 @@ export async function runExperimentalPlate(requestInput, {
       stepReadback:raw.stepReadback === null ? null : structuredClone(raw.stepReadback)};
     if (!request.exportStep) return {...assessment, observed, artifact:null};
     if (resolve(raw.stepPath || '') !== resolve(privateStep))
-      return unresolved(request, 'requires_reconciliation');
+      return unresolved(request, 'requires_reconciliation', 'native_step_path_mismatch');
 
     // Copy authenticated same-engine artifact into same-filesystem staging,
     // then exclusively hard-link it into its requested final destination.
@@ -145,7 +145,7 @@ export async function runExperimentalPlate(requestInput, {
     try {
       const stat = await fs.stat(privateStep);
       if (!stat.isFile() || stat.size < 1 || stat.size > MAX_STEP_BYTES)
-        return unresolved(request, 'requires_reconciliation');
+        return unresolved(request, 'requires_reconciliation', 'missing_or_oversized_step');
       const bytes = await fs.readFile(privateStep);
       const sha256 = createHash('sha256').update(bytes).digest('hex');
       await fs.mkdir(dirname(destination), {recursive:true});
@@ -168,8 +168,8 @@ export async function runExperimentalPlate(requestInput, {
         path:destination, bytes:bytes.length, sha256,
         verification:'same_engine_step_readback',
       }};
-    } catch {
-      return unresolved(request, 'requires_reconciliation');
+    } catch (error) {
+      return unresolved(request, 'requires_reconciliation', 'publication_' + (error?.code || error?.name || 'unknown'));
     } finally {
       if (stage) await fs.rm(stage, {force:true});
     }
