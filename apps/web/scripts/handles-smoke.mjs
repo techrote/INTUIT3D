@@ -439,6 +439,67 @@ async function main() {
     'New project silently reused existing project identity');
   await screenshot('14-model-runtime-new-plate.png');
 
+  // Sketch-first authoring: actual browser click + keyboard control.
+  // No extrusion or cut exists in the project until its user command.
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-new-sketch]');b?.click();return !!b})()"),
+    'New sketch-first project command unavailable');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'sketch-first replacement review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'sketch-first replacement confirmation unavailable');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-sketch.plate]')?.textContent==='analytic_profile_only' && !document.querySelector('[data-testid=runtime-feature-plate]')"),
+    'new project fabricated an already-extruded plate');
+  check(await evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch]')) && document.querySelector('[data-testid=runtime-create-cut]')?.disabled"),
+    'sketch-first profile or cutting command state wrong');
+  await screenshot('15-sketch-first-solved.png');
+
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-dimension-width]');e.focus();e.select();return document.activeElement===e})()"),
+    'cannot dimension unextruded sketch');
+  await send('Input.insertText',{text:'140'});
+  await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-width]')?.value==='140'"),
+    'sketch-first retrospective width dimension not applied');
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-create-extrusion]');b?.click();return !!b})()"),
+    'cannot author extrusion from admitted sketch');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),
+    'native-independent semantic extrusion missing');
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('0 displayed circular holes') && !document.querySelector('[data-testid=runtime-feature-cut]')"),
+    'uncut extrusion falsely visualized already-Boolean holes');
+  await screenshot('16-sketch-extruded-uncut.png');
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-create-cut]');b?.click();return !!b})()"),
+    'cannot author explicitly target-body cut');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'user-created cut missing or erroneously exact');
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('2 displayed circular holes')"),
+    'cut-intent viewport failed to show intended hole locations');
+  await screenshot('17-sketch-through-cut-pending-native.png');
+
+  // Undo and redo the entire cut command; extrusion and sketch survive.
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'cut undo control missing');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-feature-cut]') && document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),
+    'undo did not remove only the through-cut');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    'cut redo control missing');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'redo did not restore the same target-body cut');
+
+  // Save and reopen the genuinely authored staged history through browser File.
+  const countBeforeSketchSave=await evaluate('window.__modelArchiveBlobs.length');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Save model archive');b?.click();return !!b})()"),
+    'cannot save sketch-first authored model');
+  await eventually(()=>evaluate('window.__modelArchiveBlobs.length==='+String(countBeforeSketchSave+1)),
+    'sketch-first model archive was not downloaded');
+  check(await evaluate("((async()=>{const data=await window.__modelArchiveBlobs.at(-1).text();const dt=new DataTransfer();dt.items.add(new File([data],'staged.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})())"),
+    'cannot reopen real staged model archive');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'staged project open review absent');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'staged archive replacement confirmation missing');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider' && document.querySelector('[data-testid=runtime-dimension-width]')?.value==='140'"),
+    'reopened staged project lost dimension or semantic cut');
+  await screenshot('18-sketch-cut-archive-reopened.png');
+
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -455,11 +516,14 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png'],
+    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '16-sketch-extruded-uncut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
     newModelProjectRequiresConsentAndFreshIdentity: true,
+    actualSketchFirstExtrudeCutInteraction: true,
+    uncutExtrusionHonestPreview: true,
+    stagedCutUndoRedoAndArchiveReopen: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
