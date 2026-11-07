@@ -58,6 +58,8 @@ test('user adds and removes holes in authoritative sketch; undo/reopen restores 
   assert.equal(sk.points.some(p=>p.id==='holeA:center'),false);
   assert.equal(sk.constraints.some(c=>c.id==='holeA:fixed'||c.id==='holeA:diameter'),false);
   assert.ok(sk.constraints.some(c=>c.id==='holeB:fixed'),'other hole identity survived');
+  assert.ok(sk.constraints.some(c=>c.id==='holeC:diameter'&&c.kind==='radius'&&c.value===4),
+    'new radius uses the existing consumer constraint naming convention');
   now=runtime.reopen(runtime.save(removed.history));
   now=runtime.undo(now,['undo.remove']);
   assert.deepEqual(item(runtime.inspect(now),'plate').profile.holes.map(h=>h.id),
