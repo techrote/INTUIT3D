@@ -5,6 +5,7 @@ import {
 } from '../src/runtime-occt8-l-profile-provider.mjs';
 import {
   buildAuthoredLBracket,editAuthoredLBracketThickness,editAuthoredLBracketWidth,
+  editAuthoredLBracketPocketDepth,
   MODEL_L_BODY_ID,MODEL_L_CUT_IDS,
 } from '../examples/runtime-occt8-l-profile-document.mjs';
 import {expectedOcct8LProfileMetrics} from '../src/occt8-l-profile-v3.mjs';
@@ -121,4 +122,52 @@ test('real constrained SKETCH width edit physically changes the pending native L
     'authoritative input was not mutated by an edit');
   assert.throws(()=>editAuthoredLBracketWidth(start,25),/exceed the solved leg/);
   assert.throws(()=>editAuthoredLBracketWidth(start,Infinity),/finite millimetre/);
+});
+
+test('retrospective blind pocket depth 3 -> 5 mm is one authored undo frame and changes native request',()=>{
+  const original=buildAuthoredLBracket();
+  const before=requestFromRuntimeOcct8LProfile(
+    original.history,MODEL_L_BODY_ID,options(original,'pocket.before'));
+  assert.equal(before.cuts[1].cutDepthMm,3);
+  const edited=editAuthoredLBracketPocketDepth(original,5);
+  const after=requestFromRuntimeOcct8LProfile(
+    edited.history,MODEL_L_BODY_ID,options(edited,'pocket.after'));
+  assert.equal(edited.history.document.revision,original.history.document.revision+1);
+  assert.deepEqual(after.cuts.map(c=>c.cutDepthMm),[8,5]);
+  assert.equal(expectedOcct8LProfileMetrics(before).volumeMm3,32720);
+  assert.equal(expectedOcct8LProfileMetrics(after).volumeMm3,32560);
+  assert.equal(after.profile.profileId,before.profile.profileId);
+  assert.deepEqual(after.cuts.map(c=>c.featureId),before.cuts.map(c=>c.featureId));
+  assert.ok(edited.invalidation.invalidatedFeatureIds.includes('cut.pocket'));
+  for(const id of ['extrude.bracket','cut.window','extrude.spacer'])
+    assert.ok(!edited.invalidation.invalidatedFeatureIds.includes(id),id);
+  const undo=edited.runtime.undo(edited.history,['undo.pocket.depth']);
+  const redo=edited.runtime.redo(undo,['redo.pocket.depth']);
+  assert.equal(requestFromRuntimeOcct8LProfile(
+    undo,MODEL_L_BODY_ID,options(edited,'pocket.undo')).cuts[1].cutDepthMm,3);
+  assert.equal(requestFromRuntimeOcct8LProfile(
+    redo,MODEL_L_BODY_ID,options(edited,'pocket.redo')).cuts[1].cutDepthMm,5);
+  const reopened=edited.runtime.reopen(edited.runtime.save(edited.history));
+  assert.equal(requestFromRuntimeOcct8LProfile(
+    reopened,MODEL_L_BODY_ID,options(edited,'pocket.reopen')).cuts[1].cutDepthMm,5);
+  assert.equal(original.history.document.revision,before.revision);
+  for(const invalid of [0,8,9,NaN,Infinity,-1])
+    assert.throws(()=>editAuthoredLBracketPocketDepth(original,invalid),
+      /blind pocket depth/);
+  assert.throws(()=>editAuthoredLBracketPocketDepth(original,3),
+    /must change|body cut chain/);
+  // An old source revision cannot silently overwrite a newer authored edit.
+  assert.throws(()=>editAuthoredLBracketPocketDepth(edited,5),
+    /must change|body cut chain/);
+});
+
+test('source extrusion edit composes with a retrospective pocket-depth change',()=>{
+  const resized=editAuthoredLBracketThickness(buildAuthoredLBracket(),12);
+  const pocket=editAuthoredLBracketPocketDepth(resized,5);
+  const q=requestFromRuntimeOcct8LProfile(
+    pocket.history,MODEL_L_BODY_ID,options(pocket,'pocket.combined'));
+  assert.equal(q.profile.thickness,12);
+  assert.deepEqual(q.cuts.map(c=>c.cutDepthMm),[12,5]);
+  assert.equal(expectedOcct8LProfileMetrics(q).volumeMm3,49040);
+  assert.ok(!pocket.invalidation.invalidatedFeatureIds.includes('extrude.spacer'));
 });
