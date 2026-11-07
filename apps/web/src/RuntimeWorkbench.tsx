@@ -403,7 +403,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           {MODEL_DIMENSIONS.map(field=><ScalarInput key={field+':'+history.document.revision} field={field}
             value={values[field]} onCommit={update}/>)}
           <div className="runtime-hole-add" data-testid="runtime-thickness-binding">
-            <strong>Extrusion thickness · named parameter</strong>
+            <strong>Extrusion thickness · {thicknessBinding==='named_parameter'?'linked parameter':'independent dimension'}</strong>
             <span data-testid="runtime-thickness-link-state">
               {thicknessBinding==='named_parameter'
                 ? 'Linked: thickness (parameter.t) → plate.thicknessMm'
