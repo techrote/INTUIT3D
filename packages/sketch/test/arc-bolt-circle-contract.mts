@@ -1,6 +1,6 @@
 import {roundedPlateArcFixture} from '../arc-constraints.mjs';
 import {createArcHoleSelection} from '../arc-hole-authoring.mjs';
-import {proposeArcBoltCircle,inspectArcBoltCircle,
+import {proposeArcBoltCircle,inspectArcBoltCircle,inspectArcBoltCircleControls,
   type ArcBoltCircleStamp,type ArcBoltCircleCommand}
   from '../arc-bolt-circle.mjs';
 const sketch=roundedPlateArcFixture();
@@ -17,4 +17,16 @@ if(result.kind==='accepted'){
   const inspection=inspectArcBoltCircle(result.sketch,result.selection,result.pattern);
   const status:'synchronized'|'seed_changed'|'unresolved'=inspection.status;
   void status;
+}
+
+const pitchEdit:ArcBoltCircleCommand={kind:'edit-layout',count:4,centerXMm:35,
+  centerYMm:25,pitchDiameterMm:32,phaseDeg:45,holeDiameterMm:8};
+const drag:ArcBoltCircleCommand={kind:'drag-handle',handleId:'boltCircle:pitch',
+  xMm:45,yMm:40};
+void pitchEdit;void drag;
+if(result.kind==='accepted'){
+  const controls=inspectArcBoltCircleControls(result.sketch,result.selection,result.pattern);
+  const pitch:number=controls.dimensions.pitchDiameterMm;
+  const type:'pitch'|'center'=controls.handles[0].kind;
+  void pitch;void type;
 }

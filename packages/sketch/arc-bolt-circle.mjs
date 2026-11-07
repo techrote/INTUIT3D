@@ -132,6 +132,29 @@ export function inspectArcBoltCircle(source,selected,recordSource){
  * reconfigure{centerXMm,centerYMm,count}, refresh{}, edit-seed{xMm,yMm,diameterMm}.
  * One accepted result = one journal transaction. No partial writes on refusal.
  */
+/** Public semantic pitch/centre handles; numerical dimensions are analytic 2D. */
+export function inspectArcBoltCircleControls(source,selected,recordSource){
+  const state=inspectArcBoltCircle(source,selected,recordSource);
+  const p=state.pattern,s=p.seedSnapshot;
+  const dx=s.xMm-p.centerXMm,dy=s.yMm-p.centerYMm;
+  const pitchDiameterMm=2*Math.hypot(dx,dy);
+  let sourceEditable=false;
+  try{editableSeed(createArcSketch(source),p.sourceCircleId);sourceEditable=true;}catch{}
+  return {
+    format:'intuit3d.arc-bolt-circle-controls',version:1,
+    sourceSignature:state.sourceSignature,selectionSignature:state.selectionSignature,
+    patternSignature:state.patternSignature,profileId:createArcHoleSelection(selected).profileId,
+    patternId:p.id,sourceCircleId:p.sourceCircleId,
+    status:state.status,reason:state.reason,
+    canEdit:state.status==='synchronized'&&sourceEditable&&pitchDiameterMm>0,
+    dimensions:{count:p.count,centerXMm:p.centerXMm,centerYMm:p.centerYMm,
+      pitchDiameterMm,phaseDeg:(Math.atan2(dy,dx)*180/Math.PI+360)%360,
+      holeDiameterMm:s.radiusMm*2},
+    handles:[{id:p.id+':center',kind:'center',xMm:p.centerXMm,yMm:p.centerYMm},
+      {id:p.id+':pitch',kind:'pitch',xMm:s.xMm,yMm:s.yMm}],
+    previewOnly:true,nativeExact:false
+  };
+}
 export function proposeArcBoltCircle(source,selected,existing,command,expected){
   const sketch=createArcSketch(source),selection=createArcHoleSelection(selected),
     old=existing===null?null:createArcBoltCircle(existing),stamp=stamps(sketch,selection,old);
@@ -143,7 +166,7 @@ export function proposeArcBoltCircle(source,selected,existing,command,expected){
       reject('stale sketch, profile selection or bolt circle');
     if(!command||typeof command!=='object'||Array.isArray(command))
       reject('invalid bolt-circle command');
-    let config;
+    let config,layoutSeed=null;
     if(old===null){
       if(!exact(command,['kind',...configKeys])||command.kind!=='create')
         reject('create command required');
@@ -158,20 +181,52 @@ export function proposeArcBoltCircle(source,selected,existing,command,expected){
       else if(command.kind==='refresh'&&exact(command,['kind'])){}
       else if(command.kind==='edit-seed'&&
               exact(command,['kind','xMm','yMm','diameterMm'])){}
+      else if(command.kind==='edit-layout'&&
+              exact(command,['kind','count','centerXMm','centerYMm','pitchDiameterMm','phaseDeg','holeDiameterMm'])){
+        config=settings({...config,count:command.count,centerXMm:command.centerXMm,
+          centerYMm:command.centerYMm});
+        if(!finite(command.pitchDiameterMm)||command.pitchDiameterMm<=0||
+           !finite(command.phaseDeg)||!finite(command.holeDiameterMm)||
+           command.holeDiameterMm<=0)reject('invalid layout dimensions');
+        const radius=command.pitchDiameterMm/2,
+          a=(command.phaseDeg%360)*Math.PI/180;
+        layoutSeed={xMm:config.centerXMm+radius*Math.cos(a),
+          yMm:config.centerYMm+radius*Math.sin(a),diameterMm:command.holeDiameterMm};
+      }else if(command.kind==='drag-handle'&&
+                exact(command,['kind','handleId','xMm','yMm'])){
+        if(!finite(command.xMm)||!finite(command.yMm))reject('invalid pointer target');
+        if(command.handleId===old.id+':pitch')
+          layoutSeed={xMm:command.xMm,yMm:command.yMm,
+            diameterMm:old.seedSnapshot.radiusMm*2};
+        else if(command.handleId===old.id+':center'){
+          const dx=command.xMm-old.centerXMm,dy=command.yMm-old.centerYMm;
+          config=settings({...config,centerXMm:command.xMm,centerYMm:command.yMm});
+          layoutSeed={xMm:old.seedSnapshot.xMm+dx,yMm:old.seedSnapshot.yMm+dy,
+            diameterMm:old.seedSnapshot.radiusMm*2};
+        }else reject('unknown semantic drag handle');
+      }
       else reject('invalid bolt-circle edit command');
     }
     if(!selection.holeIds.includes(config.sourceCircleId))
       reject('source circle must be selected as an analytic hole');
     const next=structuredClone(sketch),selectedNext=structuredClone(selection);
-    if(command.kind==='edit-seed'){
-      if(!finite(command.xMm)||!finite(command.yMm)||
-         !finite(command.diameterMm)||command.diameterMm<=0||
-         !finite(command.diameterMm/2)||command.diameterMm/2<=0)
+    if(layoutSeed){
+      const before=solveArcSketch(sketch);
+      if(before.status!=='solved')reject('source sketch is '+before.status);
+      const seed=seedFrom(sketch,before,config.sourceCircleId);
+      if(Object.keys(seed).some(k=>seed[k]!==old.seedSnapshot[k]))
+        reject('source hole changed; refresh pattern before editing layout');
+    }
+    if(command.kind==='edit-seed'||layoutSeed){
+      const edit=layoutSeed||command;
+      if(!finite(edit.xMm)||!finite(edit.yMm)||
+         !finite(edit.diameterMm)||edit.diameterMm<=0||
+         !finite(edit.diameterMm/2)||edit.diameterMm/2<=0)
         reject('invalid source position or diameter');
       const seed=editableSeed(next,config.sourceCircleId);
-      seed.point.x=seed.fixed.x=command.xMm;
-      seed.point.y=seed.fixed.y=command.yMm;
-      seed.circle.radiusMm=command.diameterMm/2;
+      seed.point.x=seed.fixed.x=edit.xMm;
+      seed.point.y=seed.fixed.y=edit.yMm;
+      seed.circle.radiusMm=edit.diameterMm/2;
     }
     // Geometry is always solved before deriving member placements.
     const solution=solveArcSketch(next);

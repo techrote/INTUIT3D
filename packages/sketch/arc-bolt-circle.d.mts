@@ -17,7 +17,10 @@ export type ArcBoltCircleCommand =
  | ({kind:'create'} & ArcBoltCircleSettings)
  | {kind:'reconfigure';centerXMm:number;centerYMm:number;count:number}
  | {kind:'refresh'}
- | {kind:'edit-seed';xMm:number;yMm:number;diameterMm:number};
+ | {kind:'edit-seed';xMm:number;yMm:number;diameterMm:number}
+ | {kind:'edit-layout';count:number;centerXMm:number;centerYMm:number;
+     pitchDiameterMm:number;phaseDeg:number;holeDiameterMm:number}
+ | {kind:'drag-handle';handleId:string;xMm:number;yMm:number};
 export interface ArcBoltCircleInspection extends ArcBoltCircleStamp {
   format:'intuit3d.arc-bolt-circle';version:1;pattern:ArcBoltCircle;
   memberIds:string[];status:'synchronized'|'seed_changed'|'unresolved';
@@ -40,3 +43,15 @@ export function inspectArcBoltCircle(sketch:ArcSketchDocument,selection:ArcHoleS
 export function proposeArcBoltCircle(sketch:ArcSketchDocument,selection:ArcHoleSelection,
   pattern:ArcBoltCircle|null,command:ArcBoltCircleCommand,
   expected:ArcBoltCircleStamp):ArcBoltCircleResult;
+
+export interface ArcBoltCircleControls extends ArcBoltCircleStamp {
+  format:'intuit3d.arc-bolt-circle-controls';version:1;
+  profileId:string;patternId:string;sourceCircleId:string;
+  status:'synchronized'|'seed_changed'|'unresolved';reason:string|null;canEdit:boolean;
+  dimensions:{count:number;centerXMm:number;centerYMm:number;
+    pitchDiameterMm:number;phaseDeg:number;holeDiameterMm:number};
+  handles:Array<{id:string;kind:'center'|'pitch';xMm:number;yMm:number}>;
+  previewOnly:true;nativeExact:false;
+}
+export function inspectArcBoltCircleControls(sketch:ArcSketchDocument,
+  selection:ArcHoleSelection,pattern:ArcBoltCircle):ArcBoltCircleControls;
