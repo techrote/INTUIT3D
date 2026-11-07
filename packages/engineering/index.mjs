@@ -106,9 +106,21 @@ export function measureRoundedPlateFromProject(source) {
   required(finite(curved.areaMm2) && curved.areaMm2>0 &&
     curved.areaMm2<base.analyticAreaMm2,
     'invalid analytic rounded material area');
+  const boundaryLengths=curved.boundary.map(curve=>({
+    id:curve.id,kind:curve.kind,
+    lengthMm:curve.kind==='arc'?
+      Math.abs(curve.sweepRad)*curve.radiusMm:
+      Math.hypot(curve.end.x-curve.start.x,curve.end.y-curve.start.y)
+  }));
+  const perimeterMm=boundaryLengths.reduce((sum,curve)=>sum+curve.lengthMm,0);
+  required(boundaryLengths.length===8 &&
+    boundaryLengths.every(c=>finite(c.lengthMm)&&c.lengthMm>0) &&
+    finite(perimeterMm)&&perimeterMm>0,
+    'invalid analytic rounded boundary lengths');
   return {
     ...base,outlineKind:'rounded_plate',
     boundaryCurves:structuredClone(curved.boundary),
+    boundaryLengths,perimeterMm,
     cornerRadiusMm:intent.radiusMm,
     analyticAreaMm2:curved.areaMm2,
     provenance:{...base.provenance,roundedIntentId:intent.id,
@@ -179,6 +191,7 @@ export function renderPlateDrawingSvg(measurement,{title='MOUNTING PLATE', drawi
     detail.push('<path class="outline" data-outline="rounded-plate" d="'+
       commands.join(' ')+' Z"/>');
     detail.push(T(right-11,top+14,'4 × R'+fmt(m.cornerRadiusMm),'small'));
+    detail.push(T(291,187,'OUTLINE: '+fmt(m.perimeterMm)+' mm','tiny','start'));
   }else{
     required(m.outlineKind===undefined,'unsupported outline geometry');
     const vertices=m.boundary.map(p=>fmt(X(p.xMm))+','+fmt(Y(p.yMm))).join(' ');
