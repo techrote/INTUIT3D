@@ -389,7 +389,7 @@ async function main() {
     'Model-backed undo missing');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),
     'Model-backed undo failed to recover accepted sketch');
-  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent?.includes('2 circular holes')"),
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent?.includes('2 displayed circular holes')"),
     'Undo did not restore the admitted profile');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Redo');b?.click();return !!b})()"),
     'Model-backed redo missing');
