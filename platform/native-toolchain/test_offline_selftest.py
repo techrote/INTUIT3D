@@ -26,7 +26,9 @@ class OfflineReplayTests(unittest.TestCase):
                    "cylindricalHoles": holes}
         digest = replay.sha256(self.step)
         self.response = {"requestId": "plate.check", "featureId": "plate.1",
-                         "revision": 8, "source": dict(metrics),
+                         "revision": 8, "status": "validated_exact",
+                         "backend": "OCCT-cxx-8.0.1", "occtVersion": "8.0.1",
+                         "source": dict(metrics),
                          "stepReadback": dict(metrics), "stepSha256": digest,
                          "part21Audit": {"sha256": digest}}
 
@@ -54,6 +56,16 @@ class OfflineReplayTests(unittest.TestCase):
         altered["source"]["valid"] = False
         with self.assertRaisesRegex(replay.ReplayError, "validated solid"):
             replay.validate_response(self.request, altered, self.step, self.volume)
+
+    def test_refuses_unqualified_backend_even_with_matching_measurements(self):
+        modified = json.loads(json.dumps(self.response))
+        modified["backend"] = "approximate-mesh"
+        with self.assertRaisesRegex(replay.ReplayError, "exact OCCT"):
+            replay.validate_response(self.request, modified, self.step, self.volume)
+        modified = json.loads(json.dumps(self.response))
+        modified["status"] = "stale_last_good"
+        with self.assertRaisesRegex(replay.ReplayError, "exact OCCT"):
+            replay.validate_response(self.request, modified, self.step, self.volume)
 
     def test_real_plate_edit_request_changes_mechanical_dimensions(self):
         # The actual pinned KERNEL-001 plate-v1 fixture has centred holes.
