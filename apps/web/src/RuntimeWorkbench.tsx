@@ -17,6 +17,8 @@ function ScalarInput({ field, value, onCommit }: {
   field: ModelDimension; value:number; onCommit:(field:ModelDimension,n:number)=>void;
 }) {
   const [text,setText]=useState(String(value));
+  // Escape causes blur before React commits setText: fence it synchronously.
+  const cancelledBlur = useRef(false);
   return <label className="runtime-scalar">
     <span>{LABEL[field]}</span>
     <span className="runtime-scalar-control">
@@ -25,9 +27,9 @@ function ScalarInput({ field, value, onCommit }: {
         onChange={e=>setText(e.target.value)}
         onKeyDown={e=>{
           if(e.key==='Enter')e.currentTarget.blur();
-          if(e.key==='Escape'){setText(String(value));e.currentTarget.blur();}
+          if(e.key==='Escape'){cancelledBlur.current=true;setText(String(value));e.currentTarget.blur();}
         }}
-        onBlur={()=>{const next=Number(text);if(text.trim()!=='' && Number.isFinite(next) && next>0){
+        onBlur={()=>{if(cancelledBlur.current){cancelledBlur.current=false;return;}const next=Number(text);if(text.trim()!=='' && Number.isFinite(next) && next>0){
           if(!Object.is(next,value))onCommit(field,next);
         }else setText(String(value));}}/>
       <small>mm</small>
