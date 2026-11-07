@@ -112,6 +112,39 @@ test('a dependent hole moves with parent; explicitly targeting both uses future 
   assert.deepEqual(control(replay,'demo:child').position,{x:108,y:18});
 });
 
+test('retrospective width exposes a no-longer-selected hole until intent is explicitly reanchored',()=>{
+  const {sketch,selection}=start();
+  const edits=[
+    {holeId:'L:holeLower',xMm:20,yMm:60,radiusMm:4},
+    {holeId:'L:holeUpper',xMm:90,yMm:15,radiusMm:6}
+  ];
+  const swapped=change(sketch,selection,edits);
+  const invalidWidth=editConstraint(swapped.sketch,'L:length',{value:150});
+  const invalidSelection={candidateId:selection.candidateId,
+    sourceSignature:serializeSketch(invalidWidth)};
+  const view=inspect(invalidWidth,invalidSelection);
+  // The lower hole's existing dimension references the right-hand length
+  // endpoint; length+30 moves it from x=20 to x=50 outside the 40-mm web.
+  assert.deepEqual(view.holes.map(h=>h.holeId),['L:holeUpper']);
+  assert.equal(invalidWidth.circles.length,2); // intent remains intact
+  const reanchored=editSelectedProfileHole(swapped.sketch,swapped.selection,{
+    kind:'reanchor-hole',sourceSignature:swapped.nextSourceSignature,
+    holeId:'L:holeLower',anchorPointId:'L:a'
+  });
+  assert.equal(reanchored.kind,'accepted',reanchored.reason);
+  assert.deepEqual(reanchored.beforePosition,{x:20,y:60});
+  assert.deepEqual(reanchored.afterPosition,{x:20,y:60});
+  const fixedWidth=editConstraint(reanchored.sketch,'L:length',{value:150});
+  const fixedSelection={candidateId:selection.candidateId,
+    sourceSignature:serializeSketch(fixedWidth)};
+  const restored=inspect(fixedWidth,fixedSelection);
+  assert.equal(restored.holes.length,2);
+  assert.deepEqual(control(restored,'L:holeLower').position,{x:20,y:60});
+  assert.deepEqual(control(restored,'L:holeUpper').position,{x:90,y:15});
+  assert.deepEqual(restored.holes.map(h=>h.holeId),[
+    'L:holeLower','L:holeUpper']);
+});
+
 test('implicitly moved intermediary cannot silently change an explicit target',()=>{
   let {sketch,selection}=start();
   for(const [id,anchor,x,r] of [
@@ -166,12 +199,20 @@ test('stale, duplicate, foreign, invalid and no-op layout edits are non-mutating
     {id:'L:conflict',kind:'distanceX',a:'L:a',b:'L:b',value:121}]});
   const under=editConstraint(sketch,'L:length',{value:120});
   under.constraints=under.constraints.filter(c=>c.id!=='L:length');
-  for(const invalid of [contradictory,under]){
+  for(const [invalid,status] of [
+    [contradictory,'conflicted'],[under,'underconstrained']
+  ]){
     const s={candidateId:selection.candidateId,sourceSignature:serializeSketch(invalid)};
-    assert.equal(inspectSelectedProfileHoleLayout(invalid,s).kind,'refused');
-    assert.equal(editSelectedProfileHoleLayout(invalid,s,{
+    const inspection=inspectSelectedProfileHoleLayout(invalid,s);
+    assert.equal(inspection.kind,'refused');
+    assert.equal(inspection.sourceStatus,status);
+    assert.equal(inspection.reason,'source_not_profile_ready');
+    const proposed=editSelectedProfileHoleLayout(invalid,s,{
       kind:'set-hole-layout',sourceSignature:s.sourceSignature,edits:[lower]
-    }).kind,'refused');
+    });
+    assert.equal(proposed.kind,'refused');
+    assert.equal(proposed.sourceStatus,status);
+    assert.equal(Object.hasOwn(proposed,'sketch'),false);
   }
 });
 
