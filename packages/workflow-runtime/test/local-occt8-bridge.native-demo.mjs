@@ -35,14 +35,8 @@ current=runtime.commit(current,[
   create('create.cut',{id:'cut',kind:'cut',dependsOn:['plate'],
     writeTargets:['body.plate'],payload:{sourceSketchId:'sketch.plate',targetBodyId:'body.plate'}}),
 ]);
-const host=await startLocalPinnedOcct8Bridge({
-  runtime,model,plateContract,runPinnedOcct8Plate,workerExecutable:worker,
-  pythonExecutable:process.env.PYTHON||(process.platform==='win32'?'python':'python3'),
-  timeoutMs:120000,
-});
-const session=createLivePlateSession({
-  runtime,readCurrentHistory:()=>current,publishHistory:h=>{current=h;},
-});
+// Fail before opening a localhost listener when an external verification run
+// cannot possibly proceed. Do not leave a live process behind on misconfiguration.
 const independentRequired=process.argv.includes('--require-independent');
 const probeExecutable=process.env.INTUIT3D_ANVIL_STEP_PROBE;
 const expectedProbeSha256=process.env.INTUIT3D_ANVIL_PROBE_SHA256;
@@ -51,6 +45,14 @@ if(independentRequired && (!probeExecutable||!expectedProbeSha256))
 if(Boolean(probeExecutable)!==Boolean(expectedProbeSha256))
   throw new Error('Provide both AnvilCAD probe path and pinned binary SHA-256');
 const runIndependent=Boolean(probeExecutable);
+const host=await startLocalPinnedOcct8Bridge({
+  runtime,model,plateContract,runPinnedOcct8Plate,workerExecutable:worker,
+  pythonExecutable:process.env.PYTHON||(process.platform==='win32'?'python':'python3'),
+  timeoutMs:120000,
+});
+const session=createLivePlateSession({
+  runtime,readCurrentHistory:()=>current,publishHistory:h=>{current=h;},
+});
 const results=[];
 const options=(id)=>({
   url:host.url,token:host.token,requestId:id,exportStep:true,deadlineMs:120000,
@@ -79,10 +81,11 @@ async function record(out,stage){
     : null;
   results.push({stage,revision:out.source.revision,
     volumeMm3:volume,sha256:out.step.sha256,bytes:out.step.bytes.length,
+    holes:out.result.intendedPlate.holes.map(h=>({x:h.x,y:h.y,radius:h.radius})),
     ...(sample?{externalCadSample:sample}:{})});
 }
 try{
-  const saved=session.save();
+  const initialArchive=session.save();
   await record(await session.evaluate(options('pinned.real.8mm')),'plate-8mm-two-bores');
   const changed=await session.applyEditAndEvaluate(h=>{
     const plate=model.featuresOf(h.document).find(f=>f.id==='plate');
@@ -94,17 +97,59 @@ try{
   await record(changed.evaluation,'retrospective-12mm-rebuild');
   assert.ok(results[1].volumeMm3>results[0].volumeMm3);
   assert.notEqual(results[1].sha256,results[0].sha256);
-  const undone=await session.applyEditAndEvaluate(
-    h=>runtime.undo(h,['pinned.real.undo.12mm']),options('pinned.real.undo'));
-  assert.equal(undone.kind,'submitted');
-  await record(undone.evaluation,'undo-rebuild-8mm');
-  assert.ok(Math.abs(results[2].volumeMm3-results[0].volumeMm3)<1e-7);
-  const reopened=await session.reopenAndEvaluate(saved,{
-    ...options('pinned.real.reopen'),confirmReplacement:true,
+
+  // This is a *real solved-sketch change* to the two existing bores, not just
+  // another thickness setting. It must survive native Boolean/STEP reconstruction
+  // and a separate non-OCCT importer when the independent executable is supplied.
+  const resized=await session.applyEditAndEvaluate(h=>runtime.resizePlateHoleLayout(h,{
+    sketchFeatureId:'sketch.plate',eventId:'pinned.real.hole.layout.resize',
+    expectedRevision:h.document.revision,admission:'require_admissible',
+    holeIds:['holeA','holeB'],pivotXmm:60,pivotYmm:40,
+    scaleX:0.8,scaleY:1,radiusScale:0.75,
+  }),options('pinned.real.holes.resized'));
+  assert.equal(resized.kind,'submitted',JSON.stringify(resized));
+  assert.deepEqual(resized.edit.invalidation.invalidatedFeatureIds,
+    ['sketch.plate','plate','cut']);
+  await record(resized.evaluation,'solved-hole-spacing-and-bore-resize');
+  assert.deepEqual(results[2].holes.map(h=>[h.x,h.y,h.radius]),
+    [[-20,0,4.5],[20,0,4.5]]);
+  assert.ok(results[2].volumeMm3>results[1].volumeMm3);
+  assert.notEqual(results[2].sha256,results[1].sha256);
+  const editedArchive=session.save();
+
+  const undoneHoles=await session.applyEditAndEvaluate(
+    h=>runtime.undo(h,['pinned.real.undo.hole.layout']),
+    options('pinned.real.undo.holes'));
+  assert.equal(undoneHoles.kind,'submitted');
+  await record(undoneHoles.evaluation,'undo-hole-layout-rebuild');
+  assert.deepEqual(results[3].holes,results[1].holes);
+  assert.ok(Math.abs(results[3].volumeMm3-results[1].volumeMm3)<1e-7);
+
+  const undoneThickness=await session.applyEditAndEvaluate(
+    h=>runtime.undo(h,['pinned.real.undo.thickness']),
+    options('pinned.real.undo.thickness'));
+  assert.equal(undoneThickness.kind,'submitted');
+  await record(undoneThickness.evaluation,'undo-thickness-rebuild');
+  assert.deepEqual(results[4].holes,results[0].holes);
+  assert.ok(Math.abs(results[4].volumeMm3-results[0].volumeMm3)<1e-7);
+
+  const reopenedEdited=await session.reopenAndEvaluate(editedArchive,{
+    ...options('pinned.real.reopen.edited'),confirmReplacement:true,
   });
-  assert.equal(reopened.kind,'submitted');
-  await record(reopened.evaluation,'archive-reopen-rebuild');
-  assert.equal(session.save(),saved);
+  assert.equal(reopenedEdited.kind,'submitted');
+  await record(reopenedEdited.evaluation,'archive-reopen-edited-hole-layout');
+  assert.deepEqual(results[5].holes,results[2].holes);
+  assert.ok(Math.abs(results[5].volumeMm3-results[2].volumeMm3)<1e-7);
+  assert.equal(session.save(),editedArchive);
+
+  const reopenedInitial=await session.reopenAndEvaluate(initialArchive,{
+    ...options('pinned.real.reopen.initial'),confirmReplacement:true,
+  });
+  assert.equal(reopenedInitial.kind,'submitted');
+  await record(reopenedInitial.evaluation,'archive-reopen-original-plate');
+  assert.deepEqual(results[6].holes,results[0].holes);
+  assert.ok(Math.abs(results[6].volumeMm3-results[0].volumeMm3)<1e-7);
+  assert.equal(session.save(),initialArchive);
   console.log(JSON.stringify({kind:runIndependent?'RUNTIME_REAL_PINNED_OCCT8_EXTERNAL_SAMPLE_EXECUTED':'RUNTIME_REAL_PINNED_OCCT8_LOCAL_BRIDGE_PASS',
     source:'actual INTENT/SKETCH and native C++ worker',
     exactAuthority:false,independentInteroperability:false,
