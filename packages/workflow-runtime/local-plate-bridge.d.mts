@@ -19,3 +19,16 @@ export declare function startLocalPlateBridge(
     timeoutMs?:number;
   }>
 ):Promise<LocalPlateBridge>;
+
+/** Trusted Node-only bridge for pinned OCCT 8.0.1 C++ with mandatory Part21 audit.
+ * The existing browser client and live session are unchanged.
+ */
+export declare function startLocalPinnedOcct8Bridge(
+  options:Omit<Parameters<typeof startLocalPlateBridge>[0],
+    'runExperimentalPlate'|'providerKind'> & Readonly<{
+      workerExecutable:string;
+      runPinnedOcct8Plate:typeof import('@intuit3d/kernel-contract/local-occt8-provider').runPinnedOcct8Plate;
+      pythonExecutable?:string;
+      crossVersionStepAudit?:boolean;
+    }>
+):Promise<LocalPlateBridge>;
