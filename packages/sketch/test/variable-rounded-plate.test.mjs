@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {plateSketchFixture,editConstraint,serializeSketch,parseSketch} from '../index.mjs';
 import {
   createVariableRoundedPlateIntent,editVariableRoundedPlateRadius,
@@ -142,4 +144,24 @@ test('strict schema and v1 compatibility survive v2 addition',()=>{
   close(v1.geometry.areaMm2,v2.geometry.areaMm2);
   assert.deepEqual(v1.geometry.boundary,v2.geometry.boundary);
   assert.deepEqual(v1.geometry.holes,v2.geometry.holes);
+});
+
+test('the public package-importing user example actually runs through archive replay',()=>{
+  const path=fileURLToPath(new URL('../examples/variable-corner-fillets.mjs',import.meta.url));
+  const r=spawnSync(process.execPath,[path],{encoding:'utf8',timeout:15000});
+  assert.equal(r.status,0,r.stderr);
+  const steps=r.stdout.trim().split(/\r?\n/).map(line=>JSON.parse(line));
+  assert.deepEqual(steps.map(x=>x.step),
+    ['initial','drag-p1-only','width-and-p2','reopened']);
+  assert.equal(steps[0].cornerRadiiMm.p1,8);
+  assert.equal(steps[1].cornerRadiiMm.p1,15);
+  assert.equal(steps[1].cornerRadiiMm.p2,12);
+  assert.equal(steps[2].cornerRadiiMm.p2,10);
+  assert.deepEqual({...steps[2],step:'reopened'},steps[3]);
+  for(const step of steps){
+    assert.equal(step.status,'solved');
+    assert.equal(step.previewOnly,true);
+    assert.equal(step.arcIds.length,4);
+    assert.deepEqual(step.holeIds,['holeA','holeB']);
+  }
 });
