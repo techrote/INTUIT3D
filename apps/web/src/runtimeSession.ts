@@ -217,13 +217,20 @@ export function moveModelHoleGroup(
       throw Error('Group drag target lies outside the supported coordinate range.');
     return {constraintId: id + ':fixed', patch: {x, y}};
   });
-  return runtime.editSketchConstraints(h, {
+  const result = runtime.editSketchConstraints(h, {
     sketchFeatureId: 'sketch.plate',
     eventId: `workbench.drag.group.${h.document.revision}`,
     expectedRevision: h.document.revision,
     admission: 'require_admissible',
     edits,
   });
+  // The runtime may accept solved constraints while profile discovery finds
+  // that a circle has crossed the plate boundary. A drag must be usable, not
+  // just solvable: refuse that candidate before exposing its new history.
+  if (result.kind === 'committed' &&
+      !previewModelSketchProfile(runtime.inspect(result.history)))
+    throw Error('Group translation would invalidate the solved SKETCH profile; no edit committed.');
+  return result;
 }
 
 /** A two-axis drag is one undoable constraint transaction, not two moves. */

@@ -356,8 +356,8 @@ test('Ctrl-selected hole centres translate together as one admitted journal edit
   const redone=redoModelSession(undone);
   assert.deepEqual(modelHoleValues(redone),after);
   assert.deepEqual(modelHoleValues(reopenModelSession(serializeModelSession(redone))),after);
-  const crossed=moveModelHoleGroup(initial,selected,200,0);
-  assert.equal(crossed.kind,'refused','outside-plate translation must not be partially committed');
-  assert.deepEqual(modelHoleValues(initial),before,'refused group move cannot corrupt source');
+  assert.throws(()=>moveModelHoleGroup(initial,selected,200,0),/invalidate the solved SKETCH profile/,
+    'an analytically solved but out-of-plate group is not a usable cutting profile');
+  assert.deepEqual(modelHoleValues(initial),before,'rejected group move cannot corrupt source');
   assert.throws(()=>moveModelHoleGroup(initial,['holeA','holeA'],3,0),/distinct/);
 });
