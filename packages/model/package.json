@@ -79,6 +79,10 @@
     "./cut-reattachment": {
       "types": "./src/cut-reattachment.ts",
       "default": "./src/cut-reattachment.ts"
+    },
+    "./body-cut-chain": {
+      "types": "./src/body-cut-chain.ts",
+      "default": "./src/body-cut-chain.ts"
     }
   },
   "scripts": {
