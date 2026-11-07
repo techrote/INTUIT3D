@@ -174,6 +174,8 @@ export function editSelectedProfileHole(source,selection,command) {
   const profile=admitSelectedPlateProfile(validated,proposal);
   if(profile.semanticProfileId!==view.semanticProfileId)
     return refusal(stamp,'semantic_profile_changed',solved.status);
+  if(command.kind==='add-hole'&&!profile.holeIds.includes(command.holeId))
+    return refusal(stamp,'hole_not_in_selected_profile',solved.status);
   const expected=view.profile.holeIds.filter(id=>command.kind!=='remove-hole'||id!==command.holeId);
   if(command.kind==='add-hole')expected.push(command.holeId);
   if(JSON.stringify([...expected].sort())!==JSON.stringify([...profile.holeIds].sort()))

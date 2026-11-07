@@ -141,7 +141,7 @@ test('invalid, stale, colliding, off-profile and no-op edits fail atomically',()
     [{...base,holeId:'L:a'},'hole_id_collision'],
     [{...base,holeId:'7bad'},'invalid_command'],
     [{...base,anchorPointId:'outside'},'unknown_selected_anchor'],
-    [{...base,xMm:150},'profile_rejected_after_edit'],
+    [{...base,xMm:150},'hole_not_in_selected_profile'],
     [{...base,xMm:90},'profile_rejected_after_edit'],
     [{...base,radiusMm:0},'invalid_hole_dimensions'],
     [{...base,xMm:Infinity},'invalid_hole_dimensions'],
