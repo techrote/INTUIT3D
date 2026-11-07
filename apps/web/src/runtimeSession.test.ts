@@ -283,7 +283,10 @@ test('Make Independent bakes resolved 12 mm and permits later direct edits, undo
   const undoFreeze=undoModelSession(undoDirect);
   assert.equal(modelDimensionValues(undoFreeze).thickness,12);
   assert.equal(modelThicknessBinding(undoFreeze),'named_parameter');
-  assert.deepEqual(undoFreeze.document,changed.document,'undo must restore the original authoritative document');
+  assert.deepEqual(inspectModelSession(undoFreeze).features.map(f=>[f.featureId,f.status,f.thicknessMm]),
+    inspectModelSession(changed).features.map(f=>[f.featureId,f.status,f.thicknessMm]),
+    'undo restores equivalent live features but retains the append-only journal');
+  assert.ok(undoFreeze.document.revision>changed.document.revision,'undo never truncates the event journal');
   const redone=redoModelSession(redoModelSession(undoFreeze));
   assert.equal(modelThicknessBinding(redone),'independent');
   assert.equal(modelDimensionValues(redone).thickness,15);
