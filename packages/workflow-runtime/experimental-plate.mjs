@@ -142,12 +142,23 @@ export function createExperimentalPlateWorkflow({
         result.exactAuthority!==false || result.independentInteroperability!==false ||
         (exportStep ? result.artifact?.verification!==provider.verification:result.artifact!==null))
       return unresolved('requires_reconciliation','invalid or nonexperimental provider reply',context);
+    // A labelled artifact is not itself Part21 evidence. Require the trusted
+    // pinned provider to bind its separate structural audit to the same STEP.
+    if(providerKind==='occt8' && exportStep &&
+       (result.part21Audit?.kind!=='part21-plate-structural-v1' ||
+        !/^[a-f0-9]{64}$/.test(result.artifact?.sha256||'') ||
+        result.part21Audit.sha256!==result.artifact.sha256))
+      return unresolved('requires_reconciliation',
+        'pinned OCCT8 response lacks artifact-bound Part21 audit',context);
     return {format:EXPERIMENTAL_PLATE_WORKFLOW_FORMAT,
       version:EXPERIMENTAL_PLATE_WORKFLOW_VERSION, kind:'experimental_plate_evaluated',
       ...context, extrudeFeatureId:extrude.id,sourceSketchId:sketchId,bodyId,
       intendedPlate:request.plate,requestId,
       backend:result.backend,occtVersion:result.occtVersion,
       observed:result.observed,artifact:result.artifact,
+      ...(providerKind==='occt8' && exportStep
+        ? {part21Audit:{kind:result.part21Audit.kind,sha256:result.part21Audit.sha256}}
+        : {}),
       exactAuthority:false,independentInteroperability:false,
       note:providerKind==='occt8'
         ? 'Pinned OCCT 8.0.1 C++ plate; separate Part 21 plate-subset audit only, not general STEP interoperability or production exact authority'
