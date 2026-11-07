@@ -710,19 +710,20 @@ async function main(){
     'layout edit failed to auto rebuild current native session revision');
   await screenshot('native-08-retrospective-hole-layout-rebuild.png');
   // Negative end-to-end checks: an unrecognized provider and corrupt binary
-  // must produce explicit refused states and NEVER leave a cached STEP.
+  // must produce explicit refused states, without replacing previously verified
+  // same-revision bytes. The live RUNTIME intentionally retains that valid cache.
   mockReplyMode='wrong-provider';
   await pointerClick('runtime-native-build');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('invalid_host_reply')"),
     'RUNTIME did not refuse the unrecognized provider');
-  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
-    'invalid provider incorrectly retained a downloadable STEP');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'failed provider refresh incorrectly discarded earlier verified same-revision STEP');
   mockReplyMode='bad-step-digest';
   await pointerClick('runtime-native-build');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('invalid_step')"),
     'RUNTIME did not refuse mismatched STEP SHA-256');
-  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
-    'mismatched STEP digest incorrectly left a downloadable STEP');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'bad-digest refresh incorrectly discarded earlier verified same-revision STEP');
   mockReplyMode='valid';
   // Actual Chromium Ctrl+N creates a sketch-only project, with an Escape-safe
   // replacement gate. The existing model must survive cancellation.
