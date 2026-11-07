@@ -7,7 +7,7 @@ import {createServer} from 'node:http';
 import {createHash, randomBytes} from 'node:crypto';
 import {mkdtemp, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,isAbsolute} from 'node:path';
 import {createExperimentalPlateWorkflow} from './experimental-plate.mjs';
 
 export const LOCAL_PLATE_BRIDGE_FORMAT = 'intuit3d.local-plate-bridge';
@@ -42,7 +42,7 @@ function validBody(value) {
  * after the request before exposing any result or STEP bytes.
  */
 export async function startLocalPlateBridge({
-  runtime, model, plateContract, runExperimentalPlate,
+  runtime, model, plateContract, runExperimentalPlate, providerKind='ocp',
   origin = 'http://127.0.0.1:5173', port = 0, timeoutMs = 25000,
 } = {}) {
   if (typeof runtime?.reopen !== 'function' || typeof runtime?.save !== 'function' ||
@@ -54,7 +54,11 @@ export async function startLocalPlateBridge({
       !Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 600000)
     throw new TypeError('bridge: loopback origin, port and bounded timeout required');
 
-  const workflow=createExperimentalPlateWorkflow({runtime,model,plateContract,runExperimentalPlate});
+  const workflow=createExperimentalPlateWorkflow({
+    runtime,model,plateContract,runExperimentalPlate,providerKind,
+  });
+  const requiredVerification=providerKind==='occt8'
+    ? 'occt8_part21_plate_subset' : 'same_engine_step_readback';
   const token=randomBytes(32).toString('hex');
   let active=null;
   let boundPort=0;
@@ -150,7 +154,7 @@ export async function startLocalPlateBridge({
         if (!info || info.path!==output || !Number.isSafeInteger(info.bytes) ||
             info.bytes<1 || info.bytes>MAX_STEP_BYTES ||
             !/^[a-f0-9]{64}$/.test(info.sha256||'') ||
-            info.verification!=='same_engine_step_readback') {
+            info.verification!==requiredVerification) {
           publicResult=unresolved('invalid_step','invalid native artifact report');
         } else {
           const bytes=await readFile(output);
@@ -158,7 +162,7 @@ export async function startLocalPlateBridge({
             publicResult=unresolved('invalid_step','STEP bytes failed host digest verification');
           } else {
             step={filename:'plate.step',bytes:info.bytes,sha256:info.sha256,
-              verification:'same_engine_step_readback',base64:bytes.toString('base64')};
+              verification:requiredVerification,base64:bytes.toString('base64')};
           }
         }
       }
@@ -194,5 +198,30 @@ export async function startLocalPlateBridge({
       active?.abort();
       await new Promise((resolve,reject)=>server.close(err=>err?reject(err):resolve()));
     },
+  });
+}
+
+// Explicit, trusted Node-only path to the real KERNEL OCCT 8.0.1 provider.
+// The browser never supplies worker paths, native settings or backend identity.
+export async function startLocalPinnedOcct8Bridge({
+  workerExecutable,runPinnedOcct8Plate,pythonExecutable,
+  crossVersionStepAudit=false,...options
+}={}) {
+  if(typeof workerExecutable!=='string'||!isAbsolute(workerExecutable)||
+      typeof runPinnedOcct8Plate!=='function'||
+      (pythonExecutable!==undefined&&
+        (typeof pythonExecutable!=='string'||!pythonExecutable))||
+      typeof crossVersionStepAudit!=='boolean')
+    throw new TypeError('pinned OCCT8 bridge needs an absolute worker path and native provider');
+  if(Object.hasOwn(options,'runExperimentalPlate')||
+      Object.hasOwn(options,'providerKind'))
+    throw new TypeError('pinned OCCT8 bridge must not override provider identity');
+  return startLocalPlateBridge({
+    ...options,providerKind:'occt8',
+    runExperimentalPlate:(request,nativeOptions)=>runPinnedOcct8Plate(request,{
+      ...nativeOptions,workerExecutable,part21StepAudit:true,
+      crossVersionStepAudit,
+      ...(pythonExecutable?{pythonExecutable}:{}),
+    }),
   });
 }

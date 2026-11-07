@@ -563,3 +563,56 @@ previous receipt. For a real saved file, use a fresh copy from
 not production-certified STEP. The real-INTENT/SKETCH localhost regression
 exercises both mutation paths; native OCP and independent CAD qualifications
 remain separate gates.
+
+
+## Local pinned OCCT 8.0.1 C++ → authoritative browser CAD bridge
+
+`startLocalPinnedOcct8Bridge` is the **Node-only** pinned native alternative
+to `startLocalPlateBridge`. It reuses the already accepted authenticated
+loopback route, INTENT/SKETCH source admission, revision/abort fencing and
+browser-safe `evaluateLocalPlate` / `createLivePlateSession` consumers.
+The browser supplies only authoritative archive, semantic cut/request IDs and
+an export flag, never a native executable or filesystem destination.
+
+```js
+import * as plateContract from '@intuit3d/kernel-contract/plate-v1';
+import {runPinnedOcct8Plate} from '@intuit3d/kernel-contract/local-occt8-provider';
+import {startLocalPinnedOcct8Bridge} from '@intuit3d/workflow-runtime/local-plate-bridge';
+const host=await startLocalPinnedOcct8Bridge({
+  runtime,model,plateContract,runPinnedOcct8Plate,
+  workerExecutable:'/absolute/path/to/intuit3d_occt8_plate',
+  crossVersionStepAudit:false, // optional pinned OCP readback is distinct
+});
+// WORKBENCH continues to use host.url, host.token and the normal live session.
+```
+
+The pinned adapter **requires** KERNEL's separate Part 21 plate-subset
+structural audit and labels its browser verified bytes
+`occt8_part21_plate_subset`. A mismatched provider backend or version,
+absent audit, archive digest disagreement, native artifact substitution and
+corrupted STEP byte transport are rejected. The original OCP 7.9.3.1 path
+still returns `same_engine_step_readback`. **Both paths always report
+`exactAuthority:false` and `independentInteroperability:false`.** Real
+OCCT 8.0.1 plus a narrow Part 21 audit is not production exact authority
+or arbitrary STEP interoperation certification.
+
+`npm test --workspace @intuit3d/workflow-runtime` executes real INTENT and
+SKETCH through HTTP with an explicitly **synthetic** pinned native provider,
+including edit/undo/save/reopen, wrong backend, wrong audit, artifact mutation
+and mismatched serialized archive negative cases.
+
+On a machine with an *actual provisioned pinned C++ binary*, run:
+
+```sh
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+  npm run demo:occt8:bridge --workspace @intuit3d/workflow-runtime
+```
+
+That command uses the real KERNEL `runPinnedOcct8Plate` provider, builds
+an 8 mm through-hole plate, retrospectively changes thickness to 12 mm,
+rebuilds, undoes, saves/reopens and rebuilds through the same production-facing
+HTTP/browser-safe API. It validates actual STEP bytes, independent plate-subset
+audit receipts, model revision, analytic volume and SHA-256. It **fails** if
+the pinned binary is missing. This command is not a claim it ran on every
+CI runner. WORKBENCH pointer/browser use and the external AnvilCAD/BRL-CAD
+STEP checks still require their own executed integration qualification.

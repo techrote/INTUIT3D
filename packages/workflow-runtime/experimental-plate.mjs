@@ -51,12 +51,24 @@ export function rectanglePlateFromProfile(profile, thicknessMm) {
  * The client owns readCurrentHistory and (optionally) STEP destination. No
  * synthetic result can become a validated exact or independent STEP claim.
  */
-export function createExperimentalPlateWorkflow({runtime, model, plateContract, runExperimentalPlate}) {
+export function createExperimentalPlateWorkflow({
+  runtime, model, plateContract, runExperimentalPlate, providerKind='ocp',
+}) {
   if (typeof runtime?.inspect !== 'function' || typeof model?.featuresOf !== 'function' ||
       typeof plateContract?.parsePlateRequest !== 'function' ||
       typeof plateContract?.PLATE_PROTOCOL !== 'string' ||
       typeof runExperimentalPlate !== 'function')
     throw new TypeError('runtime plate: actual runtime, model, plate contract and host provider required');
+
+  if(!['ocp','occt8'].includes(providerKind))
+    throw new TypeError('runtime plate: unsupported pinned provider kind');
+  // Both are experimental even if a real pinned OCCT 8.0.1 C++ binary executes.
+  const provider=providerKind==='occt8'
+    ? {backend:'OCCT-cxx-8.0.1',version:'8.0.1',
+       verification:'occt8_part21_plate_subset'}
+    : {backend:plateContract.EXPERIMENTAL_BACKEND,
+       version:plateContract.EXPERIMENTAL_OCCT_VERSION,
+       verification:'same_engine_step_readback'};
 
   async function evaluate(history,{cutFeatureId,requestId,readCurrentHistory,exportStep=false,
     stepOutput,timeoutMs=25000,signal}={}) {
@@ -125,19 +137,32 @@ export function createExperimentalPlateWorkflow({runtime, model, plateContract, 
     // evidence. Its reported status is NOT product exactness or STEP conformance.
     if (result?.kind!=='experimental_report' || result.requestId!==requestId ||
         result.featureId!==cutFeatureId || result.revision!==report.revision ||
-        result.backend!==plateContract.EXPERIMENTAL_BACKEND ||
-        result.occtVersion!==plateContract.EXPERIMENTAL_OCCT_VERSION ||
+        result.backend!==provider.backend ||
+        result.occtVersion!==provider.version ||
         result.exactAuthority!==false || result.independentInteroperability!==false ||
-        (exportStep ? result.artifact?.verification!=='same_engine_step_readback':result.artifact!==null))
+        (exportStep ? result.artifact?.verification!==provider.verification:result.artifact!==null))
       return unresolved('requires_reconciliation','invalid or nonexperimental provider reply',context);
+    // A labelled artifact is not itself Part21 evidence. Require the trusted
+    // pinned provider to bind its separate structural audit to the same STEP.
+    if(providerKind==='occt8' && exportStep &&
+       (result.part21Audit?.kind!=='part21-plate-structural-v1' ||
+        !/^[a-f0-9]{64}$/.test(result.artifact?.sha256||'') ||
+        result.part21Audit.sha256!==result.artifact.sha256))
+      return unresolved('requires_reconciliation',
+        'pinned OCCT8 response lacks artifact-bound Part21 audit',context);
     return {format:EXPERIMENTAL_PLATE_WORKFLOW_FORMAT,
       version:EXPERIMENTAL_PLATE_WORKFLOW_VERSION, kind:'experimental_plate_evaluated',
       ...context, extrudeFeatureId:extrude.id,sourceSketchId:sketchId,bodyId,
       intendedPlate:request.plate,requestId,
       backend:result.backend,occtVersion:result.occtVersion,
       observed:result.observed,artifact:result.artifact,
+      ...(providerKind==='occt8' && exportStep
+        ? {part21Audit:{kind:result.part21Audit.kind,sha256:result.part21Audit.sha256}}
+        : {}),
       exactAuthority:false,independentInteroperability:false,
-      note:'Real experimental OCP plate+bores only; no independent STEP or production exact authority'};
+      note:providerKind==='occt8'
+        ? 'Pinned OCCT 8.0.1 C++ plate; separate Part 21 plate-subset audit only, not general STEP interoperability or production exact authority'
+        : 'Real experimental OCP plate+bores only; no independent STEP or production exact authority'};
   }
   return Object.freeze({evaluate});
 }
