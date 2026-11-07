@@ -104,3 +104,41 @@ owns the workflow installation and immutable archive retention.
 - Actual pinned OCCT8 C++ plate/STEP PASS is still **experimental** pending independent non-OCCT CAD reconstruction in the separate STEP lane. Python OCP 7.9.3.1 is never a substitute for C++ execution.
 - If the real build exposes a genuine `native/**` defect, provide the exact compiler output to KERNEL #67. Do not change another lane's source here.
 - INTEGRATION alone copies the workflow into `.github/**`, runs the actual hosted job, decides qualified admission, preserves original evidence beyond Actions retention, and updates shared steering docs.
+
+
+## Install a verified offline bundle for the real RUNTIME bridge
+
+A published \`offline-occt801.tar.gz\` is not itself a deployed worker.
+Use \`install_offline.py\` to install into a **new** destination after verifying
+the exact archive SHA-256 and the immutable source-matched KERNEL commit.
+This requires Linux/Python 3.13+ (for safe tar extraction) and **no network,
+OCCT source checkout or build-time prefix**.
+
+\`\`\`bash
+python3 platform/native-toolchain/install_offline.py \
+  --archive /path/to/offline-occt801.tar.gz \
+  --expected-sha256 <64-hex-digest-from-native-job> \
+  --kernel-sha <40-hex-commit-actually-built> \
+  --destination "$HOME/.local/share/intuit3d/occt801-<source-shortsha>"
+\`\`\`
+
+The command fails closed without publishing the destination on archive-hash,
+source, full inventory/SONAME or **four actual extracted C++/STEP replay**
+failures. It rejects unsafe tar paths, non-library symlinks, existing targets
+and non-Linux hosts. A successful JSON result includes \`workerPath\`,
+\`runScriptPath\`, both exact source pins and the verified replay cases.
+The caller may then set \`INTUIT3D_OCCT8_WORKER\` to the returned
+\`workerPath\` for the real \`@intuit3d/workflow-runtime\` local pinned
+bridge; preserve the ordinary browser/worker security boundary.
+
+This does **not** prove Windows compatibility, cross-distribution
+glibc/libstdc++ portability, or independent CAD interoperability.
+Only a real pinned-hosted generated archive followed by the actual extracted
+C++ selftest is an \`OFFLINE_OCCT8_INSTALL_PASS\`; test fixtures which compile
+a small ELF are explicitly *installer logic tests, not native geometry*.
+
+Focused local installer tests (Linux with a C compiler):
+
+\`\`\`bash
+python3 -m unittest discover -s platform/native-toolchain -p test_install_offline.py -v
+\`\`\`
