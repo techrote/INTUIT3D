@@ -20,7 +20,9 @@ import {authorProfileExtrusion,authorProfileBodyCut,editExtrudeThickness,
 
 export const MODEL_U_BODY_ID='body.u';
 export const MODEL_U_CUT_IDS=['cut.right.window','cut.left.pocket'];
-export const MODEL_U_FIXTURE_VERSION=1;
+export const MODEL_PARTNER_BODY_ID='body.partner';
+export const MODEL_PARTNER_CUT_IDS=['cut.partner.window','cut.partner.pocket'];
+export const MODEL_U_FIXTURE_VERSION=2;
 
 function polygon(key,coordinates) {
   const points=coordinates.map(([x,y],i)=>({id:key+'.p'+i,x,y}));
@@ -51,6 +53,15 @@ export function buildAuthoredUBracket() {
       [-51,5],[-43,5],[-43,15],[-51,15]])],
     ['sketch.spacer',polygon('spacer',[
       [0,0],[40,0],[40,20],[0,20]])],
+    // A second separately targeted six-edge solid is authored in the SAME
+    // project. It has its own ordered physical cuts and never inherits the
+    // U-bracket's edit, selected sketch, feature IDs or native STEP output.
+    ['sketch.partner',polygon('partner',[
+      [100,-30],[150,-30],[150,-15],[140,-15],[140,10],[100,10]])],
+    ['sketch.partner.window',polygon('partnerWindow',[
+      [103,-27],[109,-27],[109,-21],[103,-21]])],
+    ['sketch.partner.pocket',polygon('partnerPocket',[
+      [105,-2],[113,-2],[113,6],[105,6]])],
   ]);
   const candidate=id=>{
     const result=discovery.discoverPlateProfiles(source.get(id));
@@ -67,6 +78,7 @@ export function buildAuthoredUBracket() {
   for(const [sourceSketchId,extrudeFeatureId,outputBodyId,depthMm] of [
     ['sketch.u','extrude.u',MODEL_U_BODY_ID,8],
     ['sketch.spacer','extrude.spacer','body.spacer',5],
+    ['sketch.partner','extrude.partner',MODEL_PARTNER_BODY_ID,6],
   ]) {
     history=authorProfileExtrusion(history,{...fmt,
       eventId:'make.'+extrudeFeatureId,
@@ -92,6 +104,32 @@ export function buildAuthoredUBracket() {
   });
   assert.equal(append.semanticStatus,'ready');
   history=runtime.commit(history,[append.event],history.document.revision);
+  // Give the independent named body its own explicitly ordered chain:
+  // a 6 x 6 mm through window and an 8 x 8 x 2 mm blind pocket.
+  history=authorProfileBodyCut(history,{...fmt,
+    eventId:'make.cut.partner.window',
+    expectedRevision:history.document.revision,
+    sourceSketchId:'sketch.partner.window',
+    profileCandidateId:candidate('sketch.partner.window'),
+    extrudeFeatureId:'extrude.partner',
+    cutFeatureId:MODEL_PARTNER_CUT_IDS[0],
+    targetBodyId:MODEL_PARTNER_BODY_ID,
+  },services).history;
+  const partnerAppend=cutChain.previewBodyCutAppend(history.document,{
+    format:cutChain.BODY_CUT_CHAIN_FORMAT,
+    version:cutChain.BODY_CUT_CHAIN_VERSION,
+    expectedProjectId:history.document.projectId,
+    expectedRevision:history.document.revision,
+    eventId:'make.cut.partner.pocket',
+    sourceSketchId:'sketch.partner.pocket',
+    profileCandidateId:candidate('sketch.partner.pocket'),
+    afterBodyWriterId:MODEL_PARTNER_CUT_IDS[0],
+    cutFeatureId:MODEL_PARTNER_CUT_IDS[1],
+    targetBodyId:MODEL_PARTNER_BODY_ID,
+    extent:{kind:'blind',depthMm:2},admission:'require_ready',
+  });
+  assert.equal(partnerAppend.semanticStatus,'ready');
+  history=runtime.commit(history,[partnerAppend.event],history.document.revision);
   return {history,runtime,model,services};
 }
 
