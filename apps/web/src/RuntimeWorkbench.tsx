@@ -96,12 +96,17 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [nativeUrl,setNativeUrl]=useState('');
   const [nativeToken,setNativeToken]=useState('');
   const [nativeBusy,setNativeBusy]=useState(false);
+  const [autoNative,setAutoNative]=useState(false);
+  const autoNativeTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const [nativeReport,setNativeReport]=useState<string|null>(null);
   const [nativeEvidence,setNativeEvidence]=useState<{
     revision:number;solidCount:number|null;volumeMm3:number|null;holeCount:number;
   }|null>(null);
   const invalidateNative=()=>{
     ++nativeTicket.current;
+    if(autoNativeTimer.current!==null){
+      clearTimeout(autoNativeTimer.current);autoNativeTimer.current=null;
+    }
     nativeSession.current?.cancel();
     setNativeBusy(false);
     setNativeReport(null);
@@ -111,8 +116,18 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     liveHistory.current=next;
     invalidateNative();
     setHistory(next);
+    // An accepted journal change may trigger a new native evaluation, but a
+    // burst of sketch drags coalesces and unsupported profiles stay pending.
+    if(autoNative && nativeUrl.trim() && /^[a-f0-9]{64}$/.test(nativeToken.trim()) &&
+        previewModelProfile(inspectModelSession(next))){
+      const expectedTicket=nativeTicket.current;
+      autoNativeTimer.current=setTimeout(()=>{
+        autoNativeTimer.current=null;
+        if(expectedTicket===nativeTicket.current)void rebuildNative(false);
+      },250);
+    }
   };
-  useEffect(()=>()=>{nativeSession.current?.cancel();},[]);
+  useEffect(()=>()=>{if(autoNativeTimer.current!==null)clearTimeout(autoNativeTimer.current);nativeSession.current?.cancel();},[]);
   const report=useMemo(()=>inspectModelSession(history),[history]);
   const values=useMemo(()=>modelDimensionValues(history),[history]);
   const thicknessBinding=useMemo(()=>modelThicknessBinding(history),[history]);
@@ -503,6 +518,15 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               placeholder="64 hexadecimal characters" autoComplete="off" spellCheck={false}
               value={nativeToken} onChange={e=>{invalidateNative();setNativeToken(e.target.value);}}/>
           </label>
+          <label className="runtime-native-field">
+            <span><input type="checkbox" data-testid="runtime-native-auto-rebuild"
+              checked={autoNative} onChange={e=>{
+                setAutoNative(e.target.checked);
+                if(!e.target.checked && autoNativeTimer.current!==null){
+                  clearTimeout(autoNativeTimer.current);autoNativeTimer.current=null;
+                }
+              }}/> Live rebuild after each accepted edit (experimental, 250 ms coalescing)</span>
+          </label>
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-build" onClick={()=>void rebuildNative(false)}
             disabled={!geom || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}>
@@ -525,7 +549,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             <small>Provider-reported metrics when available; host STEP readback is same-engine only. Not production exactness or independent external CAD verification.</small>
           </div>}
           {nativeReport&&<p className="microcopy" role="status" data-testid="runtime-native-result">{nativeReport}</p>}
-          <p className="microcopy">The persistent RUNTIME session invalidates native receipts on every model edit, undo/redo, archive replacement or provider change. Build-only keeps same-engine-verified bytes available for the current revision; download rechecks the authoritative journal. No preview tessellation is exported as STEP. <strong>Experimental OCP is not production-qualified CAD.</strong></p>
+          <p className="microcopy">The persistent RUNTIME session invalidates native receipts on every model edit, undo/redo, archive replacement or provider change. Optional live rebuild evaluates only admitted sketch revisions after coalescing edits; invalid profiles remain pending. Build-only keeps same-engine-verified bytes available for the current revision; download rechecks the authoritative journal. No preview tessellation is exported as STEP. <strong>Experimental OCP is not production-qualified CAD.</strong></p>
         </div>
         <div className="inspector-section diagnostics">
           <div className="section-head">EVALUATION <span>{faults.length} pending / invalid</span></div>
