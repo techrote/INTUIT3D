@@ -142,3 +142,35 @@ Focused local installer tests (Linux with a C compiler):
 \`\`\`bash
 python3 -m unittest discover -s platform/native-toolchain -p test_install_offline.py -v
 \`\`\`
+
+
+### ABI compatibility record and preflight
+
+The Platform bundle now records \`elfAbiProfile\` in \`manifest.json\` for the
+real copied C++ executable **and every physical bundled OCCT toolkit**. It
+captures exact ELF machine, per-object \`DT_NEEDED\` inventory, and symbol
+version *requirements* (the maximum actually required \`GLIBC\`,
+\`GLIBCXX\` and \`CXXABI\`, without confusing provider definitions with
+requirements). After the existing SHA/SONAME manifest verification and
+**before executing C++**, \`install_offline.py\` recomputes the record
+against the extracted ELF, requires an exact match, checks all resolved
+\`libTK*.so\` paths stay in the bundle, and runs the host loader's
+\`ldd -v\` version compatibility check. The resulting
+\`HOST_ELF_ABI_PREFLIGHT_PASS\` is attached to the successful installation
+receipt, giving users an actionable ABI diagnosis rather than an opaque
+runtime loader failure.
+
+Installation therefore requires **Linux with \`readelf\` (binutils), \`ldd\`,
+and Python 3.13+**, with the platform repository's \`abi_compat.py\`
+present alongside \`install_offline.py\`. These checks do not bundle the
+host's glibc or libstdc++ and do not claim cross-distro binary
+compatibility. Only actual installed C++ and STEP replay can qualify a
+consumer host. A new test suite compiles a real versioned transitive ELF
+library and exercises positive/negative ABI records:
+
+\`\`\`bash
+python3 -m unittest discover -s platform/native-toolchain \
+  -p 'test_abi_compat.py' -v
+python3 -m unittest discover -s platform/native-toolchain \
+  -p 'test_install_offline.py' -v
+\`\`\`
