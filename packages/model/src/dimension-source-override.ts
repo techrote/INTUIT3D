@@ -56,7 +56,7 @@ export interface DimensionSourceOverridePreview {
 }
 
 const ID = /^[A-Za-z][A-Za-z0-9._:-]{0,127}$/;
-const fail = (message: string): never => { throw new ProjectFormatError('dimension source override: ' + message); };
+function fail(message: string): never { throw new ProjectFormatError('dimension source override: ' + message); }
 function plain(v: unknown): v is Record<string, unknown> {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
   const p = Object.getPrototypeOf(v);
