@@ -13,6 +13,7 @@ import { nextCircleDrawing, type CircleDrawingState } from './circleDrawing';
 import { createLivePlateSession } from '@intuit3d/workflow-runtime/live-plate-session';
 import { experimentalStepFilename } from './localNativeStep';
 import { MAX_MODEL_ARCHIVE_BYTES, validateModelArchiveInWorker } from './modelArchiveImport';
+import { checkedModelArchiveSize, modelArchiveDownloadName, modelArchiveSummary } from './modelFileLifecycle';
 
 const LABEL: Record<ModelDimension,string> = {
   width:'Plate width', depth:'Plate depth', holeDiameter:'Hole diameter',
@@ -93,7 +94,9 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [cascadeConfirmation,setCascadeConfirmation]=useState<string|null>(null);
   const [timeline,setTimeline]=useState<'authored'|'evaluated'>('authored');
   const [message,setMessage]=useState<string|null>(null);
-  const [pendingImport,setPendingImport]=useState<{file:string;history:ModelSession}|null>(null);
+  const [pendingImport,setPendingImport]=useState<{file:string;history:ModelSession;origin:'file'|'new'}|null>(null);
+  // The browser cannot prove that a requested file download reached the OS.
+  const [needsArchiveExport,setNeedsArchiveExport]=useState(true);
   const fileInput=useRef<HTMLInputElement>(null);
   const loadTicket=useRef(0);
   const importAbort=useRef<AbortController|null>(null);
@@ -140,6 +143,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     setCircleDrawing({phase:'idle'});
     setFeatureCombo(null);
     setHistory(next);
+    setNeedsArchiveExport(true);
     // An accepted journal change may trigger a new native evaluation, but a
     // burst of sketch drags coalesces and unsupported profiles stay pending.
     if(autoNative && nativeUrl.trim() && /^[a-f0-9]{64}$/.test(nativeToken.trim()) &&
@@ -153,6 +157,13 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     }
   };
   useEffect(()=>()=>{if(autoNativeTimer.current!==null)clearTimeout(autoNativeTimer.current);nativeSession.current?.cancel();importAbort.current?.abort();},[]);
+  // Browser-native unload guard for changes since last requested archive export.
+  useEffect(()=>{
+    if(!needsArchiveExport)return;
+    const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue='';};
+    window.addEventListener('beforeunload',warn);
+    return()=>window.removeEventListener('beforeunload',warn);
+  },[needsArchiveExport]);
   const report=useMemo(()=>inspectModelSession(history),[history]);
   const featureRows=useMemo(()=>modelFeatureTimeline(history),[history]);
   const plateActive=featureRows.some(row=>row.featureId==='plate'&&row.active);
@@ -417,19 +428,19 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   };
   const save=()=>{
     try{
-      const data=serializeModelSession(history);
+      const data=serializeModelSession(liveHistory.current);
+      // Refuse files larger than the same workbench's 4 MiB import limit.
+      checkedModelArchiveSize(data);
       const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
       const anchor=document.createElement('a');
-      anchor.href=url; anchor.download='intuit3d-plate.i3d-model.json';
-      document.body.appendChild(anchor);anchor.click();anchor.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
-      setMessage('Authoritative INTENT journal + undo archive saved locally. Exact geometry and STEP are not included.');
+      anchor.href=url;anchor.download=modelArchiveDownloadName(liveHistory.current);
+      try{document.body.appendChild(anchor);anchor.click();}
+      finally{anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+      setNeedsArchiveExport(false);
+      setMessage('Model archive download requested. Verify the file exists in Downloads before leaving. The INTENT journal and undo history are included; exact solid/STEP are not.');
     }catch(e){setMessage('Save failed: '+String(e));}
   };
-  const load=async(event:ChangeEvent<HTMLInputElement>)=>{
-    const file=event.target.files?.[0];
-    event.target.value='';
-    if(!file)return;
+  const openModelFile=async(file:File)=>{
     cancelActiveImport();
     const ticket=loadTicket.current;
     const abort=new AbortController();
@@ -446,7 +457,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       // bounded worker, not synchronously on Firefox's main/UI thread.
       const incoming=await validateModelArchiveInWorker(source,{signal:abort.signal});
       if(ticket!==loadTicket.current||abort.signal.aborted)return;
-      setPendingImport({file:file.name,history:incoming});
+      setPendingImport({file:file.name,history:incoming,origin:'file'});
     }catch(e){
       if(ticket===loadTicket.current&&!abort.signal.aborted)
         setMessage('Open rejected (current model retained): '+String(e));
@@ -457,15 +468,22 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       }
     }
   };
+  const load=(event:ChangeEvent<HTMLInputElement>)=>{
+    const file=event.target.files?.[0];
+    event.target.value=''; // Allow retrying the same rejected file.
+    if(file)void openModelFile(file);
+  };
   const prepareNewSketch=()=>{
     cancelActiveImport();
     setPendingImport({file:'New sketch-first CAD project',
-      history:newModelSketchSession('workbench.sketch.'+crypto.randomUUID())});
+      history:newModelSketchSession('workbench.sketch.'+crypto.randomUUID()),origin:'new'});
   };
   const useIncoming=()=>{
     if(!pendingImport)return;
     cancelActiveImport();
     acceptHistory(pendingImport.history);
+    // Imported archives already exist on disk; newly created projects do not.
+    setNeedsArchiveExport(pendingImport.origin==='new');
     const plateRows=modelFeatureTimeline(pendingImport.history).filter(row=>row.featureId==='plate');
     const hasPlate=plateRows.some(row=>row.active);
     // A removed extrusion remains the selected recoverable tombstone after
@@ -566,7 +584,20 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     window.addEventListener('keydown',onKey);
     return()=>window.removeEventListener('keydown',onKey);
   });
-  return <div className="app-shell runtime-shell" data-testid="runtime-panel">
+  return <div className="app-shell runtime-shell" data-testid="runtime-panel"
+    onDragOver={event=>{
+      if(Array.from(event.dataTransfer.types).includes('Files')){
+        event.preventDefault();event.dataTransfer.dropEffect='copy';
+      }
+    }}
+    onDrop={event=>{
+      if(!Array.from(event.dataTransfer.types).includes('Files')&&!event.dataTransfer.files.length)return;
+      event.preventDefault();
+      if(event.dataTransfer.files.length!==1){
+        setMessage('Open rejected: drop exactly one local model archive. Current model retained.');return;
+      }
+      void openModelFile(event.dataTransfer.files[0]);
+    }}>
     <header className="titlebar">
       <div className="identity"><strong>INTUIT<span>3D</span></strong><small>MODEL-BACKED CAD</small></div>
       <div className="title-divider"/>
@@ -574,7 +605,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       <div className="title-actions">
         <button className="ribbon-button" data-testid="runtime-new-plate"
           onClick={()=>{cancelActiveImport();setPendingImport({
-            file:'New mounting plate (fresh project)',history:newModelPlateSession('workbench.plate.'+crypto.randomUUID()),
+            file:'New mounting plate (fresh project)',history:newModelPlateSession('workbench.plate.'+crypto.randomUUID()),origin:'new',
           });}}>
           New plate sketch
         </button>
@@ -582,11 +613,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           title="New sketch-first project (Ctrl+N); replacement confirmation required"
           onClick={prepareNewSketch}>New sketch-first project</button>
         <button className="ribbon-button" title="Save authoritative model archive (Ctrl+S)" onClick={save}>Save model archive</button>
-        <button className="ribbon-button" title="Open authoritative model archive (Ctrl+O)" onClick={()=>fileInput.current?.click()}>Open model archive</button>
+        <button className="ribbon-button" title="Open authoritative model archive (Ctrl+O), or drop one JSON archive on the workbench" onClick={()=>fileInput.current?.click()}>Open model archive</button>
         <button className="ribbon-button" onClick={()=>{
           if(window.confirm('Leave the model-backed editor? Export your model archive first; the model session will close.'))onClose();
         }}>Preview sandbox</button>
-        <input ref={fileInput} type="file" accept=".json" className="runtime-file-input" onChange={load}
+        <input ref={fileInput} type="file" accept=".json,.i3d-model.json,application/json" className="runtime-file-input" onChange={load}
           aria-label="Open INTUIT model archive" />
       </div>
     </header>
@@ -623,7 +654,9 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         <button className="ribbon-button" disabled={!history.undoStack.length} onClick={undo}>Undo</button>
         <button className="ribbon-button" disabled={!history.redoStack.length} onClick={redo}>Redo</button>
       </div>
-      <div className="toolstrip-right"><span className="stage-chip" data-testid="runtime-exact-state">
+      <div className="toolstrip-right"><span className="stage-chip" data-testid="runtime-archive-state">
+        {needsArchiveExport?'UNEXPORTED MODEL CHANGES':'ARCHIVE DOWNLOAD REQUESTED / FILE OPENED'}</span>
+        <span className="stage-chip" data-testid="runtime-exact-state">
         REAL INTENT + SKETCH · NO EXACT KERNEL</span></div>
     </nav>
     <div className="workspace-grid">
@@ -937,7 +970,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         {message&&<div className="runtime-message" role="status">{message}</div>}
       </aside>
     </div>
-    <footer className="statusbar">LOCAL MODEL + SKETCH · INTENT JOURNAL · PREVIEW ONLY
+    <footer className="statusbar">LOCAL MODEL + SKETCH · INTENT JOURNAL · PREVIEW ONLY · DROP MODEL JSON TO OPEN
       <span className="status-spacer"/> {report.revision} accepted journal events · Exact geometry: unavailable</footer>
     {featureCombo&&!pendingImport&&<div className="recovery-backdrop"><form
       className="recovery-dialog runtime-feature-combo" role="dialog" aria-modal="true"
@@ -982,8 +1015,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     {pendingImport&&<div className="recovery-backdrop"><section className="recovery-dialog" role="dialog"
       aria-modal="true" aria-label="Review incoming model archive" data-testid="runtime-import-review">
       <h2>Replace model session?</h2>
-      <p>{pendingImport.file}: {pendingImport.history.document.revision} durable events.
-        Accepting replaces the in-memory undo history. No native B-rep/STEP is imported.</p>
+      <p data-testid="runtime-import-identity">Current: {modelArchiveSummary(history).projectId} · revision {modelArchiveSummary(history).revision} · {modelArchiveSummary(history).undoFrames} undo / {modelArchiveSummary(history).redoFrames} redo frames.</p>
+      <p data-testid="runtime-import-incoming">Incoming: {modelArchiveSummary(pendingImport.history).projectId} · revision {modelArchiveSummary(pendingImport.history).revision} · {modelArchiveSummary(pendingImport.history).undoFrames} undo / {modelArchiveSummary(pendingImport.history).redoFrames} redo frames. Source: {pendingImport.file}.</p>
+      {needsArchiveExport&&<p data-testid="runtime-import-unexported"><strong>Current model has changes not exported since the last download request.</strong> Cancel and save its archive first to retain them.</p>}
+      <p>Replace discards the current in-memory undo/redo journal. The incoming archive was validated in an isolated worker; no cached B-rep, STEP or exact-solid authority is imported.</p>
       <div className="recovery-actions">
         <button onClick={()=>{cancelActiveImport();setPendingImport(null);}}>Cancel</button>
         <button onClick={useIncoming}>Replace with model archive</button>
