@@ -15,6 +15,10 @@ npm run ci:native
 output="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/intuit3d-model-native-evidence"
 mkdir -p "$output"
 node tooling/model-native-plate.mjs "$output/model" 12
+# New accepted RUNTIME #61: independently execute its actual trusted-provider
+# coordinator against this same pinned OCP environment. This is the admission
+# test that #61's exact-head source-only hosted CI did NOT perform.
+npm run demo:native --workspace @intuit3d/workflow-runtime
 test -s "$output/model.initial.step"
 test -s "$output/model.edited.step"
 test -s "$output/model.intuit3d.json"
