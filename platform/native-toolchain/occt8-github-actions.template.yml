@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: intuit3d-occt8-native-\${{ github.event.pull_request.number || github.ref }}
+  group: intuit3d-occt8-native-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -99,6 +99,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: occt801-cxx-and-step-evidence
-          path: \${{ runner.temp }}/intuit3d-native-evidence/
+          path: ${{ runner.temp }}/intuit3d-native-evidence/
           if-no-files-found: warn
           retention-days: 14
