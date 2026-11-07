@@ -92,7 +92,26 @@ try {
   current=runtime.reopen(runtime.save(runtime.redo(current,['redo.bridge.holes'])));
   assert.deepEqual(runtime.inspect(current).features
     .find(f=>f.featureId==='plate').profile.holes.map(h=>h.radius),[5,5]);
+  // Real third-hole creation: one model transaction, full SKETCH admission,
+  // then a fresh OCP Boolean and STEP over authenticated localhost HTTP.
+  const added=runtime.editPlateHoles(current,{
+    sketchFeatureId:'sketch.plate',eventId:'author.bridge.third.hole',
+    expectedRevision:current.document.revision,admission:'require_admissible',
+    operations:[{kind:'add',id:'holeC',x:60,y:20,radius:4}],
+  });
+  assert.equal(added.kind,'committed',JSON.stringify(added));
+  assert.deepEqual(added.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  current=runtime.reopen(runtime.save(added.history));
+  const withThirdHole=await evaluate('bridge.native.three.holes');
+  assert.deepEqual(withThirdHole.plate.holes.map(h=>h.radius),[5,5,4]);
+  assert.ok(withThirdHole.volumeMm3<changedHoles.volumeMm3);
+  assert.notEqual(withThirdHole.sha256,changedHoles.sha256);
+  // Undo is an authoritative journal action, not reusing an old STEP receipt.
+  current=runtime.reopen(runtime.save(runtime.undo(current,['undo.third.hole'])));
+  const afterUndoThirdHole=await evaluate('bridge.native.undo.third.hole');
+  assert.deepEqual(afterUndoThirdHole.plate.holes.map(h=>h.radius),[5,5]);
+  assert.notEqual(afterUndoThirdHole.sha256,withThirdHole.sha256);
   console.log(JSON.stringify({status:'real_experimental_native_bridge_pass',
-    first,second,changedHoles,undoneHoles,
+    first,second,changedHoles,undoneHoles,withThirdHole,afterUndoThirdHole,
     redoAdmitted:true,independentStep:false,productionExact:false},null,2));
 } finally {await host.close();}
