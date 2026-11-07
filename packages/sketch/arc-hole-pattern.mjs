@@ -183,7 +183,9 @@ export function proposeArcHolePattern(source,selected,existing,command,expected)
       if(command.kind==='reconfigure'&&
          exact(command,['kind','rows','columns','spacingXmm','spacingYmm'])){
         settings=validateSettings({...Object.fromEntries(
-          settingsKeys.map(k=>[k,pattern[k]])),...command,kind:undefined},true);
+          settingsKeys.map(k=>[k,pattern[k]])),
+          rows:command.rows,columns:command.columns,
+          spacingXmm:command.spacingXmm,spacingYmm:command.spacingYmm},true);
       }else if(command.kind==='refresh'&&exact(command,['kind'])){
         settings=Object.fromEntries(settingsKeys.map(k=>[k,pattern[k]]));
       }else if(command.kind==='edit-seed'&&
