@@ -333,7 +333,8 @@ function isBatchRequest(value: unknown): value is CutProfileSourceBatchRequest {
     .every((key) => Object.hasOwn(value, key))) return false;
   if (value.format !== CUT_PROFILE_SOURCE_BATCH_FORMAT || value.version !== 1 ||
       !isId(value.expectedProjectId) ||
-      !Number.isSafeInteger(value.expectedRevision) || (value.expectedRevision as number) < 0 ||
+      typeof value.expectedRevision !== 'number' ||
+      !Number.isSafeInteger(value.expectedRevision) || value.expectedRevision < 0 ||
       (value.admission !== 'require_ready' && value.admission !== 'permit_unresolved') ||
       !Array.isArray(value.edits) || value.edits.length < 1 ||
       value.edits.length > 32 || !value.edits.every(isBatchEdit)) return false;
