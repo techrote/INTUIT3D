@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
   addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelHoleValues, moveModelFeature, moveModelHoleCenter, patternModelHoles, removeModelHole,
-  MODEL_DIMENSIONS, newModelPlateSession, previewModelProfile, redoModelSession,
+  MODEL_DIMENSIONS, makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, previewModelProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
 } from './runtimeSession';
@@ -106,6 +106,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   useEffect(()=>()=>{nativeOperation.current?.abort();},[]);
   const report=useMemo(()=>inspectModelSession(history),[history]);
   const values=useMemo(()=>modelDimensionValues(history),[history]);
+  const thicknessBinding=useMemo(()=>modelThicknessBinding(history),[history]);
   const holes=useMemo(()=>modelHoleValues(history),[history]);
   const geom=useMemo(()=>previewModelProfile(report),[report]);
   const faults=useMemo(()=>modelDiagnostics(report),[report]);
@@ -118,6 +119,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       acceptHistory(next);
       setMessage(`Revision ${next.document.revision}: changed ${field}; invalidated ${invalidation.invalidatedFeatureIds.join(' → ') || 'none'} (no exact geometry reused).`);
     } catch(error) {setMessage(error instanceof Error?error.message:'Dimension edit failed');}
+  };
+  const makeIndependent=()=>{
+    try{
+      const prior=liveHistory.current;
+      const result=makeModelThicknessIndependent(prior);
+      acceptHistory(result.history);
+      setMessage(`Extrusion thickness frozen at ${result.bakedThicknessMm} mm. Named parameter and witnessed dependency retired as ONE undoable operation; invalidated ${result.invalidatedFeatureIds.join(' → ') || 'none'}. Preview and STEP must rebuild.`);
+    }catch(e){setMessage('Make Independent refused: '+(e instanceof Error?e.message:String(e)));}
   };
   const editHole=(hole:ModelHole,field:ModelHoleField,value:number)=>{
     try{
@@ -393,7 +402,20 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <div className="section-head">EDIT RETROSPECTIVE DIMENSIONS</div>
           {MODEL_DIMENSIONS.map(field=><ScalarInput key={field+':'+history.document.revision} field={field}
             value={values[field]} onCommit={update}/>)}
-          <p className="microcopy">Values edit actual SKETCH constraints or the retrospective INTENT thickness parameter. Every edit is a revision-fenced undoable journal transaction.</p>
+          <div className="runtime-hole-add" data-testid="runtime-thickness-binding">
+            <strong>Extrusion thickness · {thicknessBinding==='named_parameter'?'linked parameter':'independent dimension'}</strong>
+            <span data-testid="runtime-thickness-link-state">
+              {thicknessBinding==='named_parameter'
+                ? 'Linked: thickness (parameter.t) → plate.thicknessMm'
+                : 'Independent: plate.thicknessMm is an authored numeric dimension'}
+            </span>
+            <button type="button" className="ribbon-button runtime-native-export"
+              data-testid="runtime-freeze-thickness"
+              disabled={thicknessBinding!=='named_parameter' || !!pendingImport}
+              onClick={makeIndependent}>Make thickness independent</button>
+            <p className="microcopy">Freeze the current resolved value, release only the witnessed parameter dependency, and retire the unused parameter. One reversible INTENT transaction; later edits change the extrusion directly. This is not a native geometry operation.</p>
+          </div>
+          <p className="microcopy">Values edit actual SKETCH constraints or the authoritative INTENT extrusion dimension. The thickness link/independent state is read from the model's binding manifest, never a separate browser flag. Every edit is a revision-fenced undoable journal transaction.</p>
         </div>
         <div className="inspector-section" data-testid="runtime-hole-inspector">
           <div className="section-head">CIRCULAR HOLES · {Object.keys(holes).length}</div>

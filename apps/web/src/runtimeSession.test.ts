@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelFeature, removeModelHole,
-  newModelPlateSession, patternModelHoles, previewModelProfile, redoModelSession,
+  makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, patternModelHoles, previewModelProfile, redoModelSession,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
 } from './runtimeSession.ts';
 
@@ -252,4 +252,48 @@ test('one-shot rectangular hole array authors solved circular cuts, retains IDs 
   assert.throws(()=>patternModelHoles(h,{
     sourceHoleId:'holeA',rows:9,columns:2,pitchXmm:20,pitchYmm:20,
   }),/Array requires/);
+});
+
+test('Make Independent bakes resolved 12 mm and permits later direct edits, undo, replay and reopen',()=>{
+  const start=newModelPlateSession('workbench.freeze.plate');
+  assert.equal(modelThicknessBinding(start),'named_parameter');
+  assert.equal(modelDimensionValues(start).thickness,10);
+  const changed=editModelDimension(start,'thickness',12);
+  assert.equal(modelDimensionValues(changed).thickness,12);
+  const baselineArchive=serializeModelSession(changed);
+  const before=inspectModelSession(changed);
+  const frozen=makeModelThicknessIndependent(changed);
+  assert.equal(modelThicknessBinding(frozen.history),'independent');
+  assert.equal(modelDimensionValues(frozen.history).thickness,12,'must bake resolved value, not old 8 mm fallback');
+  assert.equal(previewModelProfile(inspectModelSession(frozen.history))?.thickness,12);
+  assert.deepEqual(frozen.invalidatedFeatureIds.includes('plate'),true);
+  assert.equal(frozen.history.undoStack.length,changed.undoStack.length+1,'single undo frame');
+  assert.equal(frozen.history.document.journal.some(e=>e.type==='feature.remove'&&e.featureId==='parameter.t'),true);
+  assert.equal(inspectModelSession(frozen.history).features.find(f=>f.featureId==='cut')?.status,'pending_exact_provider');
+  const edited=editModelDimension(frozen.history,'thickness',15);
+  assert.equal(modelDimensionValues(edited).thickness,15);
+  assert.equal(previewModelProfile(inspectModelSession(edited))?.thickness,15);
+  assert.equal(modelThicknessBinding(edited),'independent');
+  const reopened=reopenModelSession(serializeModelSession(edited));
+  assert.equal(modelDimensionValues(reopened).thickness,15);
+  assert.equal(modelThicknessBinding(reopened),'independent');
+  const undoDirect=undoModelSession(reopened);
+  assert.equal(modelDimensionValues(undoDirect).thickness,12);
+  assert.equal(modelThicknessBinding(undoDirect),'independent');
+  const undoFreeze=undoModelSession(undoDirect);
+  assert.equal(modelDimensionValues(undoFreeze).thickness,12);
+  assert.equal(modelThicknessBinding(undoFreeze),'named_parameter');
+  assert.deepEqual(inspectModelSession(undoFreeze).features.map(f=>[f.featureId,f.status,f.thicknessMm]),
+    inspectModelSession(changed).features.map(f=>[f.featureId,f.status,f.thicknessMm]),
+    'undo restores equivalent live features but retains the append-only journal');
+  assert.ok(undoFreeze.document.revision>changed.document.revision,'undo never truncates the event journal');
+  const redone=redoModelSession(redoModelSession(undoFreeze));
+  assert.equal(modelThicknessBinding(redone),'independent');
+  assert.equal(modelDimensionValues(redone).thickness,15);
+  assert.deepEqual(inspectModelSession(redone).features.map(x=>x.featureId),
+    inspectModelSession(edited).features.map(x=>x.featureId));
+  assert.equal(before.exactGeometryAvailable,false);
+  assert.equal(inspectModelSession(redone).exactGeometryAvailable,false);
+  assert.throws(()=>makeModelThicknessIndependent(redone),/already independent/);
+  assert.equal(serializeModelSession(changed),baselineArchive,'refused/detached edits never mutate source');
 });
