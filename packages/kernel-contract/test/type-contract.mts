@@ -56,3 +56,13 @@ async function consumeNative() {
 void consumeNative;
 // @ts-expect-error pinned C++ executable is mandatory
 runPinnedOcct8Plate(raw, {readCurrentRevision: () => 1});
+
+import {runExperimentalArcExtrude, type ArcExtrudeRequest, type ArcExtrudeResult}
+  from '../src/local-arc-profile-provider.mjs';
+declare const curved: ArcExtrudeRequest;
+const curvedExecution: Promise<ArcExtrudeResult> = runExperimentalArcExtrude(curved, {
+  readCurrentRevision: () => 1,
+});
+void curvedExecution;
+// @ts-expect-error revision fence mandatory for experimental curved native provider
+runExperimentalArcExtrude(curved, {});
