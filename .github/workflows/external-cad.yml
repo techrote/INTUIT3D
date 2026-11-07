@@ -206,6 +206,59 @@ jobs:
           assert sum(len(c['rays']) for c in result['cases']) == 180
           print('NON_OCCT_SOURCE_MATCHED_L_PROFILE_ACCEPTED six real STEP solids, 180 material/void rays')
           PY
+      # This is a new permanent physical gate: four ORIGINAL pinned OCCT8 C++
+      # STEP files, reconstructed by the independently compiled non-OCCT probe.
+      # Existing OCP/L-profile checks do NOT substitute for this check.
+      - name: Acquire immutable pinned-C++ ordered and mixed cut-chain artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          curl --fail --location --retry 3 --connect-timeout 20 --max-time 600 \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --output "$root/original-native-cut-chains.zip" \
+            "https://api.github.com/repos/techrote/INTUIT3D/actions/artifacts/13590844544/zip"
+          expected="8fc4672185012fac4adae2dd0546435b78e94d31b8fee36014be724e536cbd65"
+          actual="$(sha256sum "$root/original-native-cut-chains.zip" | cut -d' ' -f1)"
+          test "$actual" = "$expected" || {
+            echo '::error::Original pinned C++ cut-chain ZIP SHA-256 mismatch'; exit 1;
+          }
+          printf 'artifact_id=13590844544\narchive_sha256=%s\nproducer_kernel=ad60d1d5a05031c8ce63ee280fd1f34d9c51ecd9\n' \
+            "$actual" > "$root/cut-chain-source.txt"
+      - name: Independently import four original cut chains and verify 156 physical rays
+        shell: bash
+        working-directory: cad-source
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          probe="$(cat "$root/independent-probe.path")"
+          test -x "$probe"
+          probe_sha="$(sha256sum "$probe" | cut -d' ' -f1)"
+          python3 conformance/external-cad/cut_chains.py \
+            --bundle "$root/original-native-cut-chains.zip" \
+            --artifact-sha256 8fc4672185012fac4adae2dd0546435b78e94d31b8fee36014be724e536cbd65 \
+            --kernel-sha ad60d1d5a05031c8ce63ee280fd1f34d9c51ecd9 \
+            --anvil-source-sha 50c053840933c92d598976e837e63ccd7626c312 \
+            --probe "$probe" --probe-sha256 "$probe_sha" \
+            --output-dir "$root/cut-chains-physical" \
+            2>&1 | tee "$root/cut-chains-execution.log"
+          python3 - "$root/cut-chains-physical/qualification.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as f:
+              r = json.load(f)
+          assert r['status'] == 'NON_OCCT_SOURCE_MATCHED_CUT_CHAINS_ACCEPTED', r
+          assert r['independentCadInteroperability'] is True, r
+          assert r['kernelSourceCommit'] == 'ad60d1d5a05031c8ce63ee280fd1f34d9c51ecd9', r
+          assert r['nativeArtifactSha256'] == '8fc4672185012fac4adae2dd0546435b78e94d31b8fee36014be724e536cbd65', r
+          assert r['anvilSourceCommit'] == '50c053840933c92d598976e837e63ccd7626c312', r
+          assert len(r['cases']) == 4, r
+          assert all(c['importedExactBRep'] and c['rayCount'] == 39 and len(c['rays']) == 39 for c in r['cases']), r
+          assert sum(c['rayCount'] for c in r['cases']) == 156, r
+          print('NON_OCCT_SOURCE_MATCHED_CUT_CHAINS_ACCEPTED four pinned C++ STEP solids, 156 rays')
+          PY
       - name: Exclude distributor binary and extraction tree from evidence upload
         if: always()
         shell: bash
