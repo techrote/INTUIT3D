@@ -74,3 +74,16 @@ test('stale revision, bogus archive and invalid dimension cannot mutate original
   assert.throws(()=>runtime.commit(after,[{eventId:'edit.stale',type:'feature.remove',featureId:'cut'}],h.document.revision),/stale/i);
   assert.equal(modelDimensionValues(after).depth,95);
 });
+
+
+test('new plate projects cannot silently reuse an existing semantic project identity',()=>{
+  const first=newModelPlateSession('workbench.plate.first');
+  const second=newModelPlateSession('workbench.plate.second');
+  assert.equal(first.document.projectId,'workbench.plate.first');
+  assert.equal(second.document.projectId,'workbench.plate.second');
+  assert.notEqual(first.document.projectId,second.document.projectId);
+  assert.deepEqual(inspectModelSession(first).authoredOrder,inspectModelSession(second).authoredOrder);
+  assert.equal(previewModelProfile(inspectModelSession(second))?.profile.holes.length,2);
+  const reopened=reopenModelSession(serializeModelSession(second));
+  assert.equal(reopened.document.projectId,'workbench.plate.second');
+});
