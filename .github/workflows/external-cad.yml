@@ -153,6 +153,59 @@ jobs:
           assert data['kernelSha']==__import__('os').environ['KERNEL_EXPECTED_SHA'], data
           assert len(data['cases'])==2 and all(c['importedExactBRep'] for c in data['cases']),data
           PY
+      # Independent physical verification of actual pinned C++ KERNEL-002
+      # selected L-profile solids. Reuse the same already-built AnvilCAD binary
+      # from the flange/plate checks; do NOT rebuild OCCT or vendor toolchains.
+      # Source and bytes are immutable original Actions artifacts, never a
+      # same-engine OCCT echo or text-only STEP validator.
+      - name: Acquire original pinned-C++ L-profile STEP artifact with immutable hash
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          curl --fail --location --retry 3 --connect-timeout 20 --max-time 600 \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'Accept: application/vnd.github+json' \
+            --output "$root/original-native-l-profile.zip" \
+            "https://api.github.com/repos/techrote/INTUIT3D/actions/artifacts/13589327619/zip"
+          actual="$(sha256sum "$root/original-native-l-profile.zip" | cut -d' ' -f1)"
+          expected="087559d17805cb6a900193e8d9ad6aa9c408570e763b78b117caa5074e2ba399"
+          test "$actual" = "$expected" || {
+            echo "::error::Original source-matched native L-profile ZIP hash mismatch"; exit 1;
+          }
+          printf 'artifact_id=13589327619\\nzip_sha256=%s\\nproducer_kernel=a017a50fa3f97d4ca9de079e5b7f1870c9602d85\\n' \
+            "$actual" > "$root/l-profile-artifact-source.txt"
+      - name: Independently import all six L-profile STEP solids and verify 180 geometry rays
+        shell: bash
+        working-directory: cad-source
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          probe="$(cat "$root/independent-probe.path")"
+          test -x "$probe"
+          probe_sha="$(sha256sum "$probe" | cut -d' ' -f1)"
+          python3 conformance/external-cad/l_profile.py \
+            --bundle "$root/original-native-l-profile.zip" \
+            --artifact-sha256 087559d17805cb6a900193e8d9ad6aa9c408570e763b78b117caa5074e2ba399 \
+            --kernel-sha a017a50fa3f97d4ca9de079e5b7f1870c9602d85 \
+            --anvil-source-sha 50c053840933c92d598976e837e63ccd7626c312 \
+            --probe "$probe" --probe-sha256 "$probe_sha" \
+            --output-dir "$root/l-profile-physical" \
+            2>&1 | tee "$root/l-profile-execution.log"
+          python3 - "$root/l-profile-physical/qualification.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as f:
+              result = json.load(f)
+          assert result['status'] == 'NON_OCCT_SOURCE_MATCHED_L_PROFILE_ACCEPTED', result
+          assert result['independentCadInteroperability'] is True
+          assert result['kernelSourceCommit'] == 'a017a50fa3f97d4ca9de079e5b7f1870c9602d85'
+          assert len(result['cases']) == 6, result
+          assert all(c['importedExactBRep'] and len(c['rays']) == 30 for c in result['cases']), result
+          assert sum(len(c['rays']) for c in result['cases']) == 180
+          print('NON_OCCT_SOURCE_MATCHED_L_PROFILE_ACCEPTED six real STEP solids, 180 material/void rays')
+          PY
       - name: Exclude distributor binary and extraction tree from evidence upload
         if: always()
         shell: bash
