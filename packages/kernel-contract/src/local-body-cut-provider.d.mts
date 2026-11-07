@@ -35,7 +35,7 @@ export type BodyCutChainResult = {
   stepReadback:null|{valid:true;solidCount:1;shellCount:1;faceCount:number;volumeMm3:number};
   artifact:null|{path:string;bytes:number;sha256:string;verification:'same_engine_only'};
 };
-export type BodyCutResult = {
+export type BodyCutResult = BodyCutChainResult | {
   kind:'unresolved';code:string;reason?:string;requestId:string;
   cutFeatureId?:string;cutFeatureIds?:string[];targetBodyId:string;revision:number;artifact:null;
 } | {
@@ -54,4 +54,4 @@ export declare function validateBodyCutRequest<T extends ProfileBodyCutRequest>(
 export declare function runExperimentalBodyCut(request:ProfileBodyCutRequest,options:{
   readCurrentRevision:()=>number;stepOutput?:string;pythonExecutable?:string;
   workerScript?:string;timeoutMs?:number;signal?:AbortSignal;
-}):Promise<BodyCutResult|BodyCutChainResult>;
+}):Promise<BodyCutResult>;
