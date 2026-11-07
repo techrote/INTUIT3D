@@ -1,0 +1,104 @@
+# INTEGRATION ONLY: install as .github/workflows/occt8-native.yml after exact-source
+# review. This executable workflow is located in Platform's exclusive tree to
+# avoid cross-lane mutation; shared .github/** belongs to INTEGRATION.
+name: Pinned OCCT 8.0.1 C++ execution qualification
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'platform/native-toolchain/**'
+      - 'native/occt8/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: intuit3d-occt8-native-\${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Ubuntu / real pinned OCCT C++ and STEP
+    runs-on: ubuntu-24.04
+    timeout-minutes: 115
+    steps:
+      - name: Checkout proposed Platform source
+        uses: actions/checkout@v4
+        with:
+          path: platform-repo
+          persist-credentials: false
+      - name: Checkout audited KERNEL #67 source at immutable commit
+        uses: actions/checkout@v4
+        with:
+          repository: techrote/INTUIT3D
+          # Refresh only after inspecting live KERNEL PR #67.
+          ref: 0ba2c1dce08c453563e7ce772d6807dd2f74fce2
+          path: kernel-repo
+          persist-credentials: false
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends git cmake ninja-build g++ python3
+      - name: Run source and qualification contract regressions (not geometry acceptance)
+        run: |
+          python3 -m unittest discover -s platform-repo/platform/native-toolchain \
+            -p 'test_*.py' -v
+      - name: Record host/compiler/kernel provenance
+        run: |
+          mkdir -p "$RUNNER_TEMP/intuit3d-native-evidence"
+          {
+            echo "platform=$(git -C platform-repo rev-parse HEAD)"
+            echo "kernel=$(git -C kernel-repo rev-parse HEAD)"
+            echo "host=$(uname -a)"
+            g++ --version | head -n 1
+            cmake --version | head -n 1
+            ninja --version
+            python3 --version
+          } > "$RUNNER_TEMP/intuit3d-native-evidence/versions.txt"
+      - name: Fetch and verify official immutable OCCT 8.0.1 source
+        run: |
+          mkdir -p "$RUNNER_TEMP/intuit3d-native-work"
+          python3 platform-repo/platform/native-toolchain/fetch_pinned_occt.py \
+            --destination "$RUNNER_TEMP/intuit3d-native-work/occt-source" \
+            --evidence "$RUNNER_TEMP/intuit3d-native-evidence/source-fetch" --timeout 1200
+      - name: Compile genuine OCCT C++ worker and execute 8/12 mm Boolean + STEP
+        run: |
+          python3 platform-repo/platform/native-toolchain/qualify.py \
+            --kernel-tree "$GITHUB_WORKSPACE/kernel-repo" \
+            --source "$RUNNER_TEMP/intuit3d-native-work/occt-source" \
+            --prefix "$RUNNER_TEMP/intuit3d-native-work/occt-prefix" \
+            --output "$RUNNER_TEMP/intuit3d-native-evidence/qualification" \
+            --jobs 2 --timeout 5400 --native-timeout 60
+      - name: Verify genuine C++ result and exercise KERNEL native bridge tests
+        run: |
+          python3 - "$RUNNER_TEMP/intuit3d-native-evidence/qualification/qualification.json" <<'PY'
+          import json,sys
+          with open(sys.argv[1], encoding='utf-8') as f: report=json.load(f)
+          assert report.get('status')=='NATIVE_EXPERIMENTAL_PASS', report
+          assert report.get('nativeCppExecuted') is True, report
+          assert {case['thicknessMm'] for case in report['artifacts']}=={8,12}, report
+          PY
+          export INTUIT3D_OCCT8_WORKER="$RUNNER_TEMP/intuit3d-native-evidence/qualification/worker-build/intuit3d_occt8_plate"
+          test -x "$INTUIT3D_OCCT8_WORKER"
+          python3 -m unittest discover -s "$GITHUB_WORKSPACE/kernel-repo/native/tests" \
+            -p test_occt8_bridge.py -v 2>&1 | tee "$RUNNER_TEMP/intuit3d-native-evidence/native-tests.log"
+          sha256sum "$INTUIT3D_OCCT8_WORKER" \
+            "$RUNNER_TEMP/intuit3d-native-evidence/qualification/plate-8mm.step" \
+            "$RUNNER_TEMP/intuit3d-native-evidence/qualification/plate-12mm.step" \
+            > "$RUNNER_TEMP/intuit3d-native-evidence/native-files.sha256"
+      - name: Remove only huge intermediate build directory before artifact upload
+        if: always()
+        run: |
+          BUILD="$RUNNER_TEMP/intuit3d-native-evidence/qualification/occt-build"
+          if test -f "$BUILD/CMakeFiles/CMakeConfigureLog.yaml"; then
+            cp "$BUILD/CMakeFiles/CMakeConfigureLog.yaml" "$RUNNER_TEMP/intuit3d-native-evidence/occt-configure.yaml"
+          fi
+          rm -rf -- "$BUILD"
+      - name: Preserve native build, genuine worker and STEP evidence on failure too
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: occt801-cxx-and-step-evidence
+          path: \${{ runner.temp }}/intuit3d-native-evidence/
+          if-no-files-found: warn
+          retention-days: 14
