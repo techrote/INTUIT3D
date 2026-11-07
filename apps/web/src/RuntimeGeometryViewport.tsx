@@ -3,32 +3,51 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { PlateProfile } from '@intuit3d/sketch';
+import { handleDimensionAtPoint, nudgeSketchHandle, type SketchDimensionHandle } from './runtimeSketchHandles';
 
 /** A visually useful, disposable tessellation of the ACTUAL admitted SKETCH
  * profile. Never used as document state, a STEP source, or geometric proof. */
 type HoleId = 'holeA' | 'holeB';
-export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove }: {
+export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
   onHoleMove?: (id: HoleId,x:number,y:number)=>void;
+  onDimensionEdit?: (id: SketchDimensionHandle, millimetres:number)=>void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const moving = useRef<{id:HoleId;pointerId:number}|null>(null);
   const [dragPreview,setDragPreview] = useState<{id:HoleId;x:number;y:number}|null>(null);
+  const dimensionMove=useRef<{id:SketchDimensionHandle;pointerId:number;source:PlateProfile;original:number}|null>(null);
+  const [dimensionPreview,setDimensionPreview]=useState<{id:SketchDimensionHandle;value:number}|null>(null);
   const xs = profile.outer.map(p => p.x), ys = profile.outer.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
   const width = Math.max(1, maxX-minX), height = Math.max(1,maxY-minY);
   const frame = `${minX-width*.12} ${minY-height*.12} ${width*1.24} ${height*1.24}`;
+  const bounds={minX,minY,maxX,maxY};
+  const holeA=profile.holes.find(h=>h.id==='holeA');
+  const holeB=profile.holes.find(h=>h.id==='holeB');
+  // Unknown/missing semantic holes never acquire synthetic editable handles.
+  const centers={holeA:{x:holeA?.x??NaN,y:holeA?.y??NaN},
+                 holeB:{x:holeB?.x??NaN,y:holeB?.y??NaN}};
+  const dimensionValue=(id:SketchDimensionHandle):number=>
+    id==='width'?maxX-minX:id==='depth'?maxY-minY:
+      id==='holeA.diameter'?2*(holeA?.radius??NaN):2*(holeB?.radius??NaN);
+  const dimensionAnchor=(id:SketchDimensionHandle)=>
+    id==='width'?{x:maxX,y:(minY+maxY)/2}:
+    id==='depth'?{x:(minX+maxX)/2,y:maxY}:
+    id==='holeA.diameter'?{x:(holeA?.x??NaN)+(holeA?.radius??NaN),y:holeA?.y??NaN}:
+      {x:(holeB?.x??NaN)+(holeB?.radius??NaN),y:holeB?.y??NaN};
   // Actual DOM pointer conversion: viewBox scaling and letterboxing are handled
   // by the root SVG CTM, before undoing the sketch's vertical axis flip.
   const pointerPosition=(event:ReactPointerEvent<SVGCircleElement>)=>{
-    const screen=event.currentTarget.ownerSVGElement?.getScreenCTM();
-    if(!screen)return null;
-    const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(screen.inverse());
-    const snap=(value:number)=>Math.round(value*2)/2; // 0.5 mm for editable preview
-    const x=snap(point.x),y=snap(minY+maxY-point.y);
-    if(!Number.isFinite(x)||!Number.isFinite(y))return null;
-    return {x,y};
+    try {
+      const screen=event.currentTarget.ownerSVGElement?.getScreenCTM();
+      if(!screen)return null;
+      const point=new DOMPoint(event.clientX,event.clientY).matrixTransform(screen.inverse());
+      const x=point.x,y=minY+maxY-point.y;
+      if(!Number.isFinite(x)||!Number.isFinite(y))return null;
+      return {x,y};
+    }catch{return null;}
   };
 
   useEffect(() => {
@@ -107,24 +126,93 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
             onPointerMove={event=>{
               if(moving.current?.id!==h.id||moving.current.pointerId!==event.pointerId)return;
               const point=pointerPosition(event);
-              if(point)setDragPreview({id:h.id as HoleId,...point});
+              if(point)setDragPreview({id:h.id as HoleId,x:Math.round(point.x*2)/2,y:Math.round(point.y*2)/2});
             }}
             onPointerUp={event=>{
               if(moving.current?.id!==h.id||moving.current.pointerId!==event.pointerId)return;
               const point=pointerPosition(event);
               moving.current=null;setDragPreview(null);
-              if(point&&(point.x!==h.x||point.y!==h.y))onHoleMove(h.id as HoleId,point.x,point.y);
+              if(point){
+                const x=Math.round(point.x*2)/2,y=Math.round(point.y*2)/2;
+                if(x!==h.x||y!==h.y)onHoleMove(h.id as HoleId,x,y);
+              }
             }}
             onPointerCancel={()=>{moving.current=null;setDragPreview(null);}}
           />}
       </g>)}
+      {onDimensionEdit&&(['width','depth','holeA.diameter','holeB.diameter'] as const)
+        .filter(id=>Number.isFinite(dimensionValue(id)))
+        .map(id=>{
+          const at=dimensionAnchor(id),current=dimensionValue(id);
+          return <circle key={id} data-testid={`runtime-sketch-dimension-${id}`}
+            role="slider" tabIndex={0} aria-label={`Edit ${id.replace('.', ' ')} in millimetres`}
+            aria-valuemin={0.1} aria-valuemax={10000} aria-valuenow={current}
+            cx={at.x} cy={at.y} r={Math.max(2.2,Math.min(width,height)/40)}
+            fill="#6af0cd" stroke="#103d4a" strokeWidth=".8"
+            style={{cursor:id==='depth'?'ns-resize':'ew-resize',touchAction:'none'}}
+            onPointerDown={event=>{
+              if(event.button!==0||moving.current)return;
+              event.preventDefault();event.currentTarget.setPointerCapture(event.pointerId);
+              dimensionMove.current={id,pointerId:event.pointerId,source:profile,original:current};
+              setDimensionPreview({id,value:current});
+            }}
+            onPointerMove={event=>{
+              const active=dimensionMove.current;
+              if(!active||active.id!==id||active.pointerId!==event.pointerId||active.source!==profile)return;
+              const point=pointerPosition(event);
+              const value=point&&handleDimensionAtPoint(id,point,bounds,centers,event.shiftKey);
+              if(value!==null&&value!==undefined)setDimensionPreview({id,value});
+            }}
+            onPointerUp={event=>{
+              const active=dimensionMove.current;
+              if(!active||active.id!==id||active.pointerId!==event.pointerId)return;
+              dimensionMove.current=null;setDimensionPreview(null);
+              if(active.source!==profile)return;
+              const point=pointerPosition(event);
+              const value=point&&handleDimensionAtPoint(id,point,bounds,centers,event.shiftKey);
+              if(value!==null&&value!==undefined&&value!==active.original)onDimensionEdit(id,value);
+            }}
+            onPointerCancel={()=>{dimensionMove.current=null;setDimensionPreview(null);}}
+            onLostPointerCapture={()=>{dimensionMove.current=null;setDimensionPreview(null);}}
+            onKeyDown={event=>{
+              if(event.key==='Escape'){
+                dimensionMove.current=null;setDimensionPreview(null);event.preventDefault();return;
+              }
+              if(event.key.startsWith('Arrow')){
+                event.preventDefault();
+                const value=nudgeSketchHandle(id,current,event.key,event.shiftKey);
+                if(value!==null&&value!==current)onDimensionEdit(id,value);
+              }
+            }}/>;
+        })}
+      {dimensionPreview&&<>
+        {dimensionPreview.id==='width'&&<line x1={minX+dimensionPreview.value} y1={minY}
+          x2={minX+dimensionPreview.value} y2={maxY} stroke="#6af0cd"
+          strokeDasharray="2 2" strokeWidth=".55" pointerEvents="none"/>}
+        {dimensionPreview.id==='depth'&&<line x1={minX} y1={minY+dimensionPreview.value}
+          x2={maxX} y2={minY+dimensionPreview.value} stroke="#6af0cd"
+          strokeDasharray="2 2" strokeWidth=".55" pointerEvents="none"/>}
+        {dimensionPreview.id.endsWith('.diameter')&&
+          <circle cx={centers[dimensionPreview.id.startsWith('holeA')?'holeA':'holeB'].x}
+            cy={centers[dimensionPreview.id.startsWith('holeA')?'holeA':'holeB'].y}
+            r={dimensionPreview.value/2} fill="none" stroke="#6af0cd"
+            strokeDasharray="2 2" strokeWidth=".55" pointerEvents="none"/>}
+      </>}
       {dragPreview&&<circle cx={dragPreview.x} cy={dragPreview.y}
         r={Math.max(2.5,Math.min(width,height)/30)}
         fill="#6af0cd55" stroke="#84f2d3" strokeDasharray="1 1"
         strokeWidth=".6" pointerEvents="none"/>}
     </g>
     <text x={minX+2} y={minY+8} fontSize={Math.max(2,width/30)} fill="#d1e5f1">
-      `SKETCH solver · analytic profile only`
+      SKETCH solver · analytic profile only
     </text>
+    {onDimensionEdit&&<text x={maxX-2} y={(minY+maxY)/2-6} textAnchor="end"
+      fontSize={Math.max(2,width/43)} fill="#a5f2de" pointerEvents="none">
+      W {dimensionPreview?.id==='width'?dimensionPreview.value:width} mm
+    </text>}
+    {onDimensionEdit&&<text x={(minX+maxX)/2-3} y={minY+14} textAnchor="end"
+      fontSize={Math.max(2,width/43)} fill="#a5f2de" pointerEvents="none">
+      D {dimensionPreview?.id==='depth'?dimensionPreview.value:height} mm
+    </text>}
   </svg> : <div ref={host} className="runtime-3d-canvas" data-testid="runtime-3d-viewport" />;
 }
