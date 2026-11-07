@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {authorMountingFlange,editExtrudeThickness,mountingFlangeSketch,FEATURE_OPS_FORMAT,FEATURE_OPS_VERSION} from '../src/index.mjs';
+import {authorMountingFlange,editExtrudeThickness,mountingFlangeSketch,reconfigureMountingFlange,FEATURE_OPS_FORMAT,FEATURE_OPS_VERSION} from '../src/index.mjs';
 const spec = (holes=[{id:'northA',xMm:-45,yMm:20,radiusMm:5},{id:'northB',xMm:45,yMm:20,radiusMm:5},{id:'southA',xMm:-45,yMm:-20,radiusMm:5},{id:'southB',xMm:45,yMm:-20,radiusMm:5}]) => ({widthMm:140,depthMm:80,units:'mm',frame:'local_centered_xy',holes});
 const services = () => {
   const fakeSketch = {
@@ -88,4 +88,64 @@ test('target identity collision is refused without journal mutation',()=>{
   const h=history(); const s=services(); h.document.features.push({id:'cut.flange',kind:'cut',dependsOn:[],writeTargets:[],payload:{}});
   assert.throws(()=>authorMountingFlange(h,request(),s),/already exists/);
   assert.equal(h.document.revision,0);
+});
+
+
+test('reconfiguration atomically changes outline, named holes and extrusion while retaining body lineage',()=>{
+  const s=services(), first=authorMountingFlange(history(),request(),s);
+  const second=reconfigureMountingFlange(first.history,{
+    eventId:'reconfigure.flange',expectedRevision:3,
+    sketchFeatureId:'sketch.flange',extrudeFeatureId:'extrude.flange',
+    cutFeatureId:'cut.flange',targetBodyId:'body.flange',thicknessMm:16,
+    spec:{...spec([
+      {id:'northA',xMm:-60,yMm:20,radiusMm:6},
+      {id:'northB',xMm:60,yMm:20,radiusMm:6},
+      {id:'southC',xMm:0,yMm:-25,radiusMm:8}
+    ]),widthMm:180,depthMm:100}
+  },s);
+  assert.equal(second.history.document.revision,5);
+  assert.deepEqual(second.history.events.slice(-2).map(e=>e.type),['feature.edit','feature.edit']);
+  assert.deepEqual(second.holeChanges,{added:['hole.southC'],removed:['hole.southA','hole.southB'],
+    retained:['hole.northA','hole.northB']});
+  assert.equal(second.history.document.features.length,3);
+  assert.equal(second.history.document.features[1].payload.thicknessMm,16);
+  assert.deepEqual(second.history.document.features[2].writeTargets,['body.flange']);
+  assert.deepEqual(second.history.document.features[2].dependsOn,['extrude.flange']);
+  assert.ok(second.invalidation.invalidatedFeatureIds.includes('cut.flange'));
+  assert.equal(first.history.document.features[1].payload.thicknessMm,10);
+  assert.equal(first.history.document.features[0].payload.sketch.circles.length,4);
+  assert.equal(second.nativeHandoff.sourceRevision,5);
+  assert.equal(second.exactAuthority,false);
+});
+
+test('reconfiguration refuses stale revision, no-op, invalid specs and unrelated body or sketch without mutation',()=>{
+  const s=services(), first=authorMountingFlange(history(),request(),s);
+  const r={eventId:'edit.flange',expectedRevision:3,
+    sketchFeatureId:'sketch.flange',extrudeFeatureId:'extrude.flange',
+    cutFeatureId:'cut.flange',targetBodyId:'body.flange',thicknessMm:10,spec:spec()};
+  assert.throws(()=>reconfigureMountingFlange(first.history,{...r,expectedRevision:2},s),/stale/);
+  assert.throws(()=>reconfigureMountingFlange(first.history,r,s),/no change/);
+  assert.throws(()=>reconfigureMountingFlange(first.history,{
+    ...r,spec:{...spec(),widthMm:-4}},s),/positive finite/);
+  const wrong=structuredClone(first.history);
+  wrong.document.features[2].payload.targetBodyId='body.other';
+  assert.throws(()=>reconfigureMountingFlange(wrong,{...r,thicknessMm:11},s),/lineage/);
+  const writer=structuredClone(first.history);
+  writer.document.features.push({id:'extraneous',kind:'cut',dependsOn:[],
+    writeTargets:['body.flange'],payload:{}});
+  assert.throws(()=>reconfigureMountingFlange(writer,{...r,thicknessMm:11},s),/additional writer/);
+  assert.equal(first.history.document.revision,3);
+  assert.equal(first.history.document.features.length,3);
+});
+
+test('reconfiguration refuses unadmitted profiles and retains original journal',()=>{
+  const s=services(), first=authorMountingFlange(history(),request(),s);
+  s.discovery.discoverPlateProfiles=()=>({status:'ambiguous',candidates:[]});
+  assert.throws(()=>reconfigureMountingFlange(first.history,{
+    eventId:'bad.config',expectedRevision:3,
+    sketchFeatureId:'sketch.flange',extrudeFeatureId:'extrude.flange',
+    cutFeatureId:'cut.flange',targetBodyId:'body.flange',thicknessMm:12,
+    spec:{...spec(),depthMm:110}
+  },s),/discovery/);
+  assert.equal(first.history.document.revision,3);
 });
