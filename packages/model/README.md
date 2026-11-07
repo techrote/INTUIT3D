@@ -752,3 +752,36 @@ RUNTIME/KERNEL/PLATFORM responsibilities.
 node packages/model/examples/retrospective-pocket-depth.mjs
 node --experimental-strip-types --test packages/model/test/body-cut-extent-edit.test.mjs
 ```
+
+
+## Retarget an existing cut to a new sketch/profile — v1
+
+Import `inspectCutProfileSource`, `previewCutProfileSourceEdit` and
+`commitUndoableCutProfileSourceEdit` from
+`@intuit3d/model/cut-profile-source`. This is a concrete user command:
+replace the selected hole-cut loop, or restore an earlier cut after its
+source sketch was removed by selecting a different authored sketch.
+
+The `intuit3d.cut-profile-source` v1 request fences project/revision,
+cut ID, target body ID, previous source sketch and previous profile candidate.
+It specifies the new source sketch and discovered `cycle:` profile ID.
+`releasePreviousSketchDependency: true` explicitly transfers the old sketch
+edge; `false` preserves any independent dependency and can leave the
+cut pending. No other dependency edge, body writer, downstream feature ID,
+cut extent or authored chronology changes. `require_ready` checks **model
+structural readiness only**, never SKETCH profile solution or native Boolean
+validity; `permit_unresolved` makes future/missing source selections pending
+and re-evaluable once authored. Preview exposes the exact invalidation frontier.
+
+Execute the representative plate + two cuts + revised Ø14 hole + retired
+old sketch + undo/redo + archive example:
+
+```bash
+node --experimental-strip-types packages/model/examples/retarget-cut-profile.mjs
+node --experimental-strip-types --test packages/model/test/cut-profile-source.test.mjs
+```
+
+**RUNTIME/WORKBENCH consumer requirement:** admit the selected `cycle:`
+against the current SKETCH solver, invalidate previous native/STEP receipts
+and run new native geometry before marking a result exact. MODEL preserves
+the cut/body semantics but cannot certify that the selected loop cuts material.
