@@ -23,3 +23,30 @@ Commands `commit`, `editDimensions`, `undo` and `redo` delegate to the model's r
 **INTEGRATION dependency:** adding this workspace to the root lockfile and exact-head Ubuntu/Windows CI is integration-owned. The RUNTIME branch intentionally does not edit `package-lock.json`, shared `tooling/**` or `.github/**`. Once the lockfile is reconciled, use `npm ci && npm run ci`, verify real integration fixtures, qualify the candidate and only then merge. **WORKBENCH dependency:** consume `@intuit3d/workflow-runtime` as a model-backed adapter in its own branch; preserve preview labels and do not infer exact geometry. **KERNEL dependency:** a future versioned/native exact provider must carry independent correctness/STEP evidence before any exact status can be added.
 
 **v1 non-goals:** interactive browser wiring, physical STEP, asynchronous native cancellation/timeout, 3D topology lineage, arbitrary sketch features, physically exact holes, human acceptance. These remain tracked in #49 and must not be claimed as implemented by this package.
+
+## Revision-aware invalidation (additive v1)
+
+`runtime.diff(previousUndoHistory, nextUndoHistory)` re-plans **both** immutable
+INTENT histories and calls `diffWorkflowPlans(previousPlan, nextPlan)`. This is a
+derived structural change cut, not a replacement graph, solver or cached
+geometry evaluator. It compares authoritative feature records/status/diagnostics,
+includes dependencies from **both** revisions, and traverses affected descendants
+iteratively, including deleted and reparented branches, future dependencies,
+cycles and long chains. It rejects cross-project, reversed revisions,
+same-revision state changes, malformed/duplicate IDs and incomplete authored
+orders. It returns deterministic `changedFeatureIds`,
+`invalidatedFeatureIds`, `removedFeatureIds`, `unchangedFeatureIds`,
+project/revision fences and **`exactReuseAllowed: false`**.
+
+`unchangedFeatureIds` means *structurally unaffected according to these INTENT
+plans*, NOT B-rep equivalence, current numeric validity or permission to retain a
+previous STEP/geometry receipt. Consumers must treat any previous exact or
+approximate geometry as unverified against a new revision unless their own
+qualified provider performs the appropriate revalidation. No last-good state
+is stored, and runtime inspection still reports `exactGeometryAvailable:false`.
+
+The dependency-free `test/invalidation.unit.test.mjs` covers revised
+parameters, reparented/deleted ancestors, newly satisfied future targets, cycles,
+12,000-feature iterative closure, and unsafe revision/cross-project inputs.
+`test/runtime.integration.test.mjs` additionally exercises actual model-backed
+sketch edits, dependent plate/cut invalidation and archive replay.
