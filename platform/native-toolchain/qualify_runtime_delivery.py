@@ -21,8 +21,8 @@ import subprocess
 import sys
 import tempfile
 
-SHA = re.compile(r"[0-9a-f]{40}\\Z")
-SHA256 = re.compile(r"[0-9a-f]{64}\\Z")
+SHA = re.compile(r"[0-9a-f]{40}\Z")
+SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 EXPECTED_STAGES = (
     "plate-8mm-two-bores",
     "retrospective-12mm-rebuild",
@@ -145,7 +145,7 @@ def run_consumer(root: Path, source_sha: str, worker: Path,
             "source-matched native worker SHA-256 mismatch")
     version = subprocess.run([node, "--version"], capture_output=True,
                              text=True, timeout=15, check=False)
-    match = re.fullmatch(r"v(\\d+)\\.(\\d+)\\.(\\d+)\\s*", version.stdout)
+    match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)\s*", version.stdout)
     require(version.returncode == 0 and match is not None and
             (int(match[1]), int(match[2])) >= (22, 6),
             "real native RUNTIME demo requires Node.js 22.6+")
