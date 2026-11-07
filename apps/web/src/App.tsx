@@ -14,7 +14,6 @@ import { evaluateDimensionExpression } from './dimensionExpression';
 import { inspectReplacement, PreviewImportGate } from './importReview';
 import { SketchViewport } from './components/SketchViewport';
 import { SolidViewport } from './components/SolidViewport';
-import { RuntimeWorkbench } from './RuntimeWorkbench';
 import './styles.css';
 
 type ViewMode = 'solid' | 'sketch';
@@ -100,9 +99,8 @@ interface Action {
   execute: () => void;
 }
 
-export default function App() {
+export default function App({ onEnterModel }: { onEnterModel: () => void }) {
   const [workspace, setWorkspace] = useState<Workspace>(() => newWorkspace());
-  const [modelBacked, setModelBacked] = useState(false);
   const [view, setView] = useState<ViewMode>('solid');
   const [bottomTab, setBottomTab] = useState<BottomTab>('chronology');
   const [selected, setSelected] = useState('extrude-plate');
@@ -271,9 +269,6 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      // The authoritative model editor owns its own shortcuts. The hidden
-      // preview sandbox must never save/undo/open a second document.
-      if (modelBacked) return;
       // Recovery decision is modal: shortcuts must not mutate the hidden demo.
       if (recovery.kind === 'available' || recovery.kind === 'corrupt') return;
       if (pendingReplacement) { if (event.key === 'Escape') dismissReplacement(); return; }
@@ -290,9 +285,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [modelBacked, recovery.kind, pendingReplacement, save, stepRedo, stepUndo]);
-
-  if (modelBacked) return <RuntimeWorkbench onClose={() => setModelBacked(false)} />;
+  }, [recovery.kind, pendingReplacement, save, stepRedo, stepUndo]);
 
   return (
     <div className="app-shell">
@@ -310,7 +303,7 @@ export default function App() {
         <div className="ribbon-group"><span className="ribbon-label">WORKSPACE</span><button className={view === 'solid' ? 'ribbon-button active' : 'ribbon-button'} onClick={() => setView('solid')}><Glyph name="cube" /> Solid</button><button className={view === 'sketch' ? 'ribbon-button active' : 'ribbon-button'} onClick={() => setView('sketch')}><Glyph name="sketch" /> Sketch</button></div>
         <div className="ribbon-group"><span className="ribbon-label">HISTORY</span><button className="ribbon-button" onClick={stepUndo} disabled={!workspace.past.length}><Glyph name="undo" /> Undo</button><button className="ribbon-button" onClick={stepRedo} disabled={!workspace.future.length}><Glyph name="redo" /> Redo</button></div>
         <div className="ribbon-group advanced"><span className="ribbon-label">EXPERIMENT</span><button className="ribbon-button" onClick={() => dispatch({ kind: 'pending-reference', enabled: !workspace.document.futureReference })}><Glyph name="plus" /> {workspace.document.futureReference ? 'Remove datum' : 'Future datum'}</button></div>
-        <div className="toolstrip-right"><button className="ribbon-button runtime-entry" data-testid="enter-model-runtime" onClick={() => setModelBacked(true)}>Model-backed CAD editor</button><span className="stage-chip">ALPHA · PREVIEW ONLY</span><span className="avatar">I3</span></div>
+        <div className="toolstrip-right"><button className="ribbon-button runtime-entry" data-testid="enter-model-runtime" onClick={onEnterModel}>Model-backed CAD editor</button><span className="stage-chip">ALPHA · PREVIEW ONLY</span><span className="avatar">I3</span></div>
       </nav>
       <div className="workspace-grid">
         <aside className="sidepanel browser-panel" aria-label="Model browser">

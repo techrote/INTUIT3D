@@ -103,7 +103,12 @@ async function main() {
   await send('Runtime.enable');
   await send('Page.enable');
   await send('Page.navigate', { url: origin });
-  await eventually(async () => evaluate("Boolean(document.querySelector('canvas') && document.querySelector('.ribbon-button'))"), 'hydrated 3D workbench');
+  await eventually(() => evaluate("Boolean(document.querySelector('[data-testid=runtime-panel]') && document.querySelector('[data-testid=runtime-exact-state]'))"), 'model-backed CAD is the default startup');
+  check(await evaluate("document.querySelector('[data-testid=enter-model-runtime]')===null"), 'Legacy preview mounted alongside the model authority');
+  await screenshot('00-model-first-start.png');
+  // Legacy preview regression remains available only by explicit opt-in.
+  await send('Page.navigate', { url: origin + '/?mode=preview' });
+  await eventually(async () => evaluate("Boolean(document.querySelector('canvas') && document.querySelector('[data-testid=enter-model-runtime]'))"), 'explicit preview mode');
   await screenshot('01-solid.png');
 
   check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(el=>el.textContent?.trim()==='Sketch');b?.click();return !!b})()"),
@@ -594,7 +599,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,

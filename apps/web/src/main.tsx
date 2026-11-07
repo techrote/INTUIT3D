@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App';
+import { WorkbenchEntry } from './WorkbenchEntry';
 
 const target = document.getElementById('root');
 if (!target) throw new Error('Workbench root element missing');
-createRoot(target).render(<StrictMode><App /></StrictMode>);
+createRoot(target).render(<StrictMode><WorkbenchEntry /></StrictMode>);
