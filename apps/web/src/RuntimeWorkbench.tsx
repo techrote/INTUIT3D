@@ -390,8 +390,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     if(!pendingImport)return;
     ++loadTicket.current;
     acceptHistory(pendingImport.history);
-    const hasPlate=modelFeatureTimeline(pendingImport.history).some(row=>row.featureId==='plate'&&row.active);
-    setSketchMode(!hasPlate);setSelected(hasPlate?'plate':'sketch.plate');
+    const plateRows=modelFeatureTimeline(pendingImport.history).filter(row=>row.featureId==='plate');
+    const hasPlate=plateRows.some(row=>row.active);
+    // A removed extrusion remains the selected recoverable tombstone after
+    // reopening; only a never-extruded sketch selects the source sketch.
+    setSketchMode(!hasPlate);setSelected(plateRows.length?'plate':'sketch.plate');
     setActiveHole(null);setPendingImport(null);
     setMessage('Model archive reopened with durable feature IDs, undo/redo and no cached meshes.');
   };
