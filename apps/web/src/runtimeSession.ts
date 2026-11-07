@@ -23,10 +23,11 @@ export const MODEL_DIMENSIONS: readonly ModelDimension[] = ['width', 'depth', 'h
 const feature = (id: string, kind: string, dependsOn: string[], writeTargets: string[], payload: model.JsonRecord): model.Feature =>
   ({ id, kind, dependsOn, writeTargets, payload });
 const created = (eventId: string, f: model.Feature): model.JournalEvent => ({ eventId, type:'feature.create', feature:f });
-const initial = () => transactions.startUndoHistory(model.newProject('workbench.plate.one'));
+const initial = (projectId: string) => transactions.startUndoHistory(model.newProject(projectId));
 
-export function newModelPlateSession(): ModelSession {
-  const h = runtime.commit(initial(), [
+/** A new plate is a fresh semantic project, not a reset of the previous journal. */
+export function newModelPlateSession(projectId = 'workbench.plate.one'): ModelSession {
+  const h = runtime.commit(initial(projectId), [
     created('create.sketch', feature('sketch.plate', 'sketch', [], [], { sketch: sketch.plateSketchFixture() as unknown as model.JsonValue })),
     created('create.extrude', feature('plate', 'extrude', ['sketch.plate'], ['body.plate'],
       { sourceSketchId:'sketch.plate', thicknessMm:8 })),
