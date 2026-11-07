@@ -8,6 +8,7 @@ export type Occt8Assessment =
      backend: typeof OCCT8_BACKEND;
      occtVersion: typeof OCCT8_VERSION;
      artifactSha256: string | null;
+     stepVerification: 'occt-8.0.1-same-engine' | 'occt-7.9.3.1-separate-process' | null;
   }>);
 export declare function assessOcct8PlateResponse(
   request: unknown, response: unknown,
