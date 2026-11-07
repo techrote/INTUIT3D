@@ -1,10 +1,14 @@
 # INTEGRATION acceptance: execute genuine unmerged KERNEL/PLATFORM candidates on hosted Linux.
-# KERNEL-001 source-matched hosted qualification. Optional KERNEL-002 operators remain a separate gate.
+# KERNEL-001 source-matched hosted qualification. The accepted-main push gate
+# builds precisely github.sha; workflow_dispatch permits explicit candidate
+# qualification. Optional KERNEL-002 operators remain a separate gate.
 name: Pinned OCCT 8.0.1 C++ execution qualification
 on:
-  pull_request:
+  push:
+    branches: [main]
     paths:
-      - '.github/workflows/occt8-native.yml'
+      - 'native/**'
+      - 'packages/kernel-contract/**'
   workflow_dispatch:
     inputs:
       platform_ref:
@@ -42,7 +46,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ inputs.kernel_ref || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
+          ref: ${{ (github.event_name == 'push' && github.sha) || inputs.kernel_ref || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
           path: kernel-repo
           persist-credentials: false
       - name: Install native build dependencies
