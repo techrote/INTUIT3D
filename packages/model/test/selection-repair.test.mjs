@@ -83,8 +83,12 @@ function request(doc){
 }
 function targets(doc){
   const features=featuresOf(doc);
-  return [features.find(f=>f.id==='feature.cut').payload.sourceFace.anchor,
-    features.find(f=>f.id==='feature.measure').payload.sourceEdge.anchor];
+  // Model JSON clone deliberately uses null-prototype payload records.
+  // Compare semantic values, not object prototype implementation details.
+  return JSON.parse(JSON.stringify([
+    features.find(f=>f.id==='feature.cut').payload.sourceFace.anchor,
+    features.find(f=>f.id==='feature.measure').payload.sourceEdge.anchor,
+  ]));
 }
 
 test('split and deleted references are offered as explicit, distinct repair actions',()=>{
