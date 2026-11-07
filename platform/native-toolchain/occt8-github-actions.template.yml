@@ -6,15 +6,15 @@ on:
   workflow_dispatch:
     inputs:
       platform_ref:
-        description: "Platform source ref (default current PR #122, or exact 40-char SHA)"
+        description: "Platform source ref; supply immutable PR #159 candidate SHA"
         type: string
         required: true
-        default: refs/pull/122/head
+        default: refs/pull/159/head
       kernel_ref:
-        description: "Kernel source ref (default current PR #67, or exact 40-char SHA)"
+        description: "Kernel source ref; use admitted KERNEL-001 exact SHA"
         type: string
         required: true
-        default: refs/pull/67/head
+        default: c46d02847468b69a106fbfa6fad715c10399ff2c
 
 permissions:
   contents: read
@@ -29,14 +29,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 115
     steps:
-      - name: Checkout scoped Platform candidate (PR #122 by default)
+      - name: Checkout scoped Platform candidate (exact source preferred)
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
           ref: ${{ inputs.platform_ref }}
           path: platform-repo
           persist-credentials: false
-      - name: Checkout current KERNEL #67 candidate (or supplied immutable SHA)
+      - name: Checkout KERNEL admitted source (immutable SHA)
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
@@ -46,7 +46,7 @@ jobs:
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends git cmake ninja-build g++ python3
+          sudo apt-get install -y --no-install-recommends git cmake ninja-build g++ python3 patchelf binutils
       - name: Run source and qualification contract regressions (not geometry acceptance)
         run: |
           python3 -m unittest discover -s platform-repo/platform/native-toolchain \
@@ -96,6 +96,24 @@ jobs:
             "$RUNNER_TEMP/intuit3d-native-evidence/qualification/plate-8mm.step" \
             "$RUNNER_TEMP/intuit3d-native-evidence/qualification/plate-12mm.step" \
             > "$RUNNER_TEMP/intuit3d-native-evidence/native-files.sha256"
+      # INTEGRATION-owned workflow install is required before this can execute.
+      # Fail the hosted job if the *actual extracted published archive* cannot
+      # run both pinned C++ plates, a geometric edit and its restoration.
+      - name: Publish source-matched offline C++ bundle and replay edited STEP after extraction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 platform-repo/platform/native-toolchain/bundle_offline.py \
+            --qualification "$RUNNER_TEMP/intuit3d-native-evidence/qualification" \
+            --prefix "$RUNNER_TEMP/intuit3d-native-work/occt-prefix" \
+            --kernel-tree "$GITHUB_WORKSPACE/kernel-repo" \
+            --output "$RUNNER_TEMP/intuit3d-native-work/offline-occt801" \
+            | tee "$RUNNER_TEMP/intuit3d-native-evidence/offline-bundle-execution.json"
+          test -s "$RUNNER_TEMP/intuit3d-native-work/offline-occt801.tar.gz"
+          cp "$RUNNER_TEMP/intuit3d-native-work/offline-occt801.tar.gz" \
+             "$RUNNER_TEMP/intuit3d-native-evidence/offline-occt801.tar.gz"
+          sha256sum "$RUNNER_TEMP/intuit3d-native-evidence/offline-occt801.tar.gz" \
+            > "$RUNNER_TEMP/intuit3d-native-evidence/offline-archive.sha256"
       - name: Remove only huge intermediate build directory before artifact upload
         if: always()
         run: |
