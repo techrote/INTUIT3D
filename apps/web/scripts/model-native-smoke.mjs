@@ -99,7 +99,7 @@ async function main(){
   ],{stdio:['ignore','pipe','pipe'],detached:process.platform!=='win32'});
   children.push(chrome);
   const p=await eventually(()=>existsSync(join(home,'DevToolsActivePort')) &&
-    readFileSync(join(home,'DevToolsActivePort'),'utf8'),'CDP port');
+    readFileSync(join(home,'DevToolsActivePort'),'utf8'),'CDP port',240);
   const endpoint='http://127.0.0.1:'+Number(p.split('\n')[0]);
   const target=await eventually(async()=>{
     const reply=await fetch(endpoint+'/json/list');const all=await reply.json();
