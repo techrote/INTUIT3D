@@ -27,3 +27,40 @@ test('refuses nonexact importer, open topology and missing rays',()=>{
 test('refuses independently reported volume incompatible with authored dimensions',()=>{
   assert.throws(()=>parseNonOcctPlateTranscript(accepted().replace('volume_mm3='+volume,'volume_mm3=3000'),plate),/volume/);
 });
+
+test('POSIX-only synthetic executable exercises source-matched STEP bytes, subprocess, provenance fences', {skip:process.platform==='win32'}, async()=>{
+  const {runNonOcctPlateProbe}=await import('../nonocct-step-probe.mjs');
+  const {mkdtemp,writeFile,rm}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os');
+  const {join}=await import('node:path');
+  const {createHash}=await import('node:crypto');
+  const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+  const folder=await mkdtemp(join(tmpdir(),'intuit-runtime-probe-double-'));
+  try {
+    // An intentionally synthetic executable. It is NOT an AnvilCAD qualification.
+    const fake=join(folder,'synthetic-nonocct-standin');
+    const reply=accepted().trim().split('\n');
+    const script='#!/bin/sh\nset -eu\n[ "$#" -eq 5 ]\ngrep -q SYNTHETIC_TEST_STEP "$1"\nprintf "%s\\n" '+
+      reply.map(line=>"'"+line+"'").join(' ')+'\n';
+    await writeFile(fake,script,{mode:0o700});
+    const stepBytes=Uint8Array.from(Buffer.from('SYNTHETIC_TEST_STEP'));
+    const step={bytes:stepBytes,sha256:hash(stepBytes),
+      verification:'occt8_part21_plate_subset'};
+    const source={projectId:'synthetic.project',revision:3,
+      archiveSha256:'a'.repeat(64)};
+    const opts={probeExecutable:fake,expectedProbeSha256:hash(Buffer.from(script)),
+      step,plate,source};
+    const result=await runNonOcctPlateProbe(opts);
+    assert.equal(result.kind,'executed_nonocct_plate_sample');
+    assert.equal(result.stepSha256,step.sha256);
+    assert.equal(result.probeSha256,opts.expectedProbeSha256);
+    assert.equal(result.source.revision,3);
+    assert.equal(result.exactAuthority,false);
+    assert.equal(result.independentInteroperability,false);
+    assert.equal(result.sample.rays.length,8);
+    await assert.rejects(()=>runNonOcctPlateProbe({
+      ...opts,expectedProbeSha256:'0'.repeat(64)}),/binary digest/);
+    stepBytes[0]^=1;
+    await assert.rejects(()=>runNonOcctPlateProbe(opts),/STEP changed/);
+  } finally {await rm(folder,{recursive:true,force:true});}
+});
