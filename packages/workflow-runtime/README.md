@@ -609,9 +609,11 @@ INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
 ```
 
 That command uses the real KERNEL `runPinnedOcct8Plate` provider, builds
-an 8 mm through-hole plate, retrospectively changes thickness to 12 mm,
-rebuilds, undoes, saves/reopens and rebuilds through the same production-facing
-HTTP/browser-safe API. It validates actual STEP bytes, independent plate-subset
+an 8 mm two-hole plate, retrospectively changes thickness to 12 mm, then
+resizes the two *solved SKETCH* bore radii and centre spacing in one admitted
+journal edit. It physically rebuilds the new cut, undoes both edits separately,
+reopens both the edited and original archives, and rebuilds through the same
+production-facing HTTP/browser-safe API. It validates actual STEP bytes, independent plate-subset
 audit receipts, model revision, analytic volume and SHA-256. It **fails** if
 the pinned binary is missing. This command is not a claim it ran on every
 CI runner. WORKBENCH pointer/browser use and the external AnvilCAD/BRL-CAD
@@ -640,9 +642,11 @@ private temporary path, executes the non-OCCT importer without a shell, and
 requires one source-matched solid, mm units, exact B-rep import, closed mesh,
 volume within the already-declared 1% sampled-mesh budget, zero warnings,
 two material Z intersections and correctly located bore/exterior rays.
-Each of **four real user states** (8 mm, retrospective 12 mm, undo to 8 mm,
-archive reopen) produces a source-archive/STEP/probe/transcript-SHA-bound
-receipt. Neither STEP bytes nor binaries are committed.
+Each of **seven real user states** (8 mm, retrospective 12 mm, resized
+hole centres/radii at 12 mm, undo hole layout, undo thickness, edited-project
+archive reopen, and original-project archive reopen) produces a source-archive/
+STEP/probe/transcript-SHA-bound receipt. The independent reader checks the
+new bore coordinates and material rays, not merely the extrusion volume. Neither STEP bytes nor binaries are committed.
 
 **Evidence boundary:** ordinary package tests use *synthetic text transcripts*
 to exercise refusal of mislocated holes, bad units/topology, and false volume.
