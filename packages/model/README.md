@@ -720,3 +720,11 @@ repair, undo/redo, archive reopen, a retrospective width edit and a
 dependency-aware partial rebuild preserving an unrelated body. Its
 geometry state is **semantic only**: fresh native B-rep reconstruction
 and independent STEP validation remain separate provider gates.
+
+## Sequential same-body cuts (v1 additive contract)
+
+Import `inspectBodyCutChain`, `previewBodyCutAppend`, and `commitUndoableBodyCutAppend` from `@intuit3d/model/body-cut-chain`. The caller explicitly chooses an existing semantic body, the last dependency-ordered extrusion/cut writer, a SKETCH source and a discovered profile candidate. An append creates one new `cut` feature that depends on **both** the preceding body writer and the sketch. A cut can therefore follow another cut without the planner incorrectly reporting unordered mutation. No authoring chronology or inferred target-body heuristic substitutes for dependency edges.
+
+A request declares `extent: {kind: 'through_all'}` or `{kind: 'blind', depthMm: 3}`, plus project/revision fences and an admission policy. `require_ready` refuses an absent sketch or an unresolved cut; `permit_unresolved` intentionally leaves a not-yet-created sketch pending. Ambiguous/parallel same-body writers, unsupported terminal operations, duplicate semantic IDs, stale revisions and invalid depths are rejected without modifying the source. The returned structural invalidation identifies affected upstream/downstream features; unrelated bodies stay unaffected. Undo/redo and archive reopening preserve the original feature/body IDs and authored cut selection.
+
+Run `node packages/model/examples/sequential-body-cuts.mjs` for a plate with an existing through-cut, a new blind pocket, retrospective plate-width edit, partial replay, undo/redo and save/reopen. **This contract is semantic only.** The SKETCH/RUNTIME consumer must re-admit the `profileCandidateId`; KERNEL must separately evaluate the actual B-rep and STEP under a current-revision receipt. A planner status of `ready` is not physical Boolean success, a certified volume or an independent STEP reader result. The established FEATUREOPS profile authoring restriction on second writers remains its own consumer change; this API provides the explicit safe dependency contract rather than bypassing it.
