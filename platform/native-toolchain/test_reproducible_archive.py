@@ -5,6 +5,7 @@ import hashlib
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tarfile
 import tempfile
 import unittest
@@ -55,6 +56,36 @@ class ReproducibleArchiveTests(unittest.TestCase):
                 self.assertEqual(subprocess.check_output(
                     [str(extracted / ROOT_NAME / 'bin/tool.sh')]).strip(),
                     b'offline-exec-ok')
+
+    @unittest.skipUnless(shutil.which("cc") and os.name == "posix", "C/ELF compiler unavailable")
+    def test_compiled_origin_relative_elf_survives_archive_extraction(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            source = base / "source"
+            (source / "bin").mkdir(parents=True)
+            (source / "lib").mkdir()
+            (base / "math.c").write_text("int answer(void) {return 42;}\n")
+            (base / "main.c").write_text(
+                '#include <stdio.h>\nextern int answer(void);\n'
+                'int main(void) {printf("%d\\n", answer()); return 0;}\n')
+            lib = source / "lib/libTKMath.so.8.0"
+            subprocess.run(["cc", "-fPIC", "-shared", str(base / "math.c"),
+                            "-Wl,-soname,libTKMath.so.8.0", "-o", str(lib)], check=True)
+            (source / "lib/libTKMath.so").symlink_to(lib.name)
+            worker = source / "bin/worker"
+            subprocess.run(["cc", str(base / "main.c"), "-L" + str(source / "lib"),
+                            "-l:libTKMath.so.8.0", "-Wl,--disable-new-dtags",
+                            "-Wl,-rpath,$ORIGIN/../lib", "-o", str(worker)], check=True)
+            self.assertEqual(subprocess.check_output([str(worker)]).strip(), b"42")
+            archive = base / "compiled.tar.gz"
+            write_archive(source, archive)
+            shutil.rmtree(source)
+            relocated = base / "relocated"
+            relocated.mkdir()
+            with tarfile.open(archive, "r:gz") as tar:
+                tar.extractall(relocated, filter="data")
+            self.assertEqual(subprocess.check_output(
+                [str(relocated / ROOT_NAME / "bin/worker")]).strip(), b"42")
 
     def test_refuses_escape_link_and_cleans_partial_archive(self):
         with tempfile.TemporaryDirectory() as temp:
