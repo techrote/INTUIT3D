@@ -139,7 +139,7 @@ async function main(){
   await pointerClick('runtime-feature-remove');
   await eventually(()=>evaluate(
     "Boolean(document.querySelector('[data-testid=runtime-removed-extrusion]')) && "+
-    "Boolean(document.querySelector('[data-testid=runtime-empty]')) &&
+    "Boolean(document.querySelector('[data-testid=runtime-empty]')) && "+
     "document.querySelector('[data-testid=runtime-feature-plate]')?.textContent?.includes('tombstone')"
   ),'retired extrusion must not display cached geometry');
   check(await evaluate("document.querySelector('[data-testid=runtime-native-export]')?.disabled"),
@@ -171,8 +171,8 @@ async function main(){
   ),'tombstone lost on save/reopen');
   await screenshot('native-00-lifecycle-reopened.png');
   await pointerClick('runtime-feature-restore');
-  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-boundary]')) &&
-    document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-boundary]')) && "+
+    "document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'restoring exact original extrusion ID did not restore valid preview');
   await pointerClick('runtime-feature-cascade-start');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-feature-cascade-confirmation]'))"),
@@ -186,8 +186,8 @@ async function main(){
   // Actual browser keyboard undo reverses the entire multi-event deletion.
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-plate]')?.textContent?.includes('preview_only') &&
-    document.querySelector('[data-testid=runtime-feature-cut]')?.textContent?.includes('pending_exact_provider')"),
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-plate]')?.textContent?.includes('preview_only') && "+
+    "document.querySelector('[data-testid=runtime-feature-cut]')?.textContent?.includes('pending_exact_provider')"),
     'keyboard undo did not restore extrusion and cut together');
   await screenshot('native-00-lifecycle-undo-cascade.png');
 
