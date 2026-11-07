@@ -31,6 +31,10 @@
     "./local-body-cut-provider": {
       "types": "./src/local-body-cut-provider.d.mts",
       "node": "./src/local-body-cut-provider.mjs"
+    },
+    "./runtime-body-cut-provider": {
+      "types": "./src/runtime-body-cut-provider.d.mts",
+      "node": "./src/runtime-body-cut-provider.mjs"
     }
   },
   "scripts": {
