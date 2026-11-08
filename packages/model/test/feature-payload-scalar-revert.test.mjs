@@ -166,6 +166,54 @@ test('kind changes, lifecycle and formula-bound dimensions remain explicitly blo
     targetEventId:'edit.bound',eventId:'revert.bound',
   })),/parameter-bound/);
 });
+test('unsupported binding manifests cannot masquerade as freely authored dimensions',()=>{
+  // The model DAG may be ready even when the authoritative dimension adapter
+  // would reject a malformed/version-incompatible binding manifest.
+  const make=(manifest)=>{
+    let doc=newProject('project.scalar.binding.provenance');
+    doc=commitEvent(doc,{type:'feature.create',eventId:'create.bound.extrude',
+      feature:feature('extrude.bound','extrude',[],['body.bound'],{
+        thicknessMm:8,clearanceMm:1.5,dimensionBindings:manifest,
+      })});
+    doc=commitEvent(doc,{type:'feature.edit',eventId:'edit.bound.compound',
+      featureId:'extrude.bound',patch:{payload:{
+        thicknessMm:14,clearanceMm:2.5,dimensionBindings:manifest,
+      }}});
+    return doc;
+  };
+  const valid={
+    format:'intuit3d.dimension-bindings',version:1,
+    entries:[{field:'clearanceMm',unit:'mm',
+      expression:{op:'literal',value:2.5,unit:'mm'}}],
+  };
+  const malformed=[
+    {format:'legacy.dimension-bindings',version:1,entries:[]},
+    {format:'intuit3d.dimension-bindings',version:2,entries:[]},
+    {format:'intuit3d.dimension-bindings',version:1,entries:[],extra:true},
+    {format:'intuit3d.dimension-bindings',version:1,
+      entries:[{field:'clearanceMm',unit:'invalid',expression:{op:'literal'}}]},
+    {...valid,entries:[{field:'thicknessMm',unit:'mm',
+      expression:{op:'literal',value:14,unit:'mm'}}]},
+  ];
+  for(const manifest of malformed){
+    const doc=make(manifest);
+    const request=req(doc,{targetEventId:'edit.bound.compound',
+      eventId:'revert.bound.thickness'});
+    assert.throws(()=>previewFeaturePayloadScalarRevert(doc,request),
+      /parameter-bound/);
+    const row=inventory(doc).rows.find(x=>x.targetEventId==='edit.bound.compound');
+    assert.equal(row.scalarChoices.find(x=>x.field==='thicknessMm').status,
+      'blocked');
+  }
+  const independentlyAuthored=make(valid);
+  const preview=previewFeaturePayloadScalarRevert(independentlyAuthored,
+    req(independentlyAuthored,{targetEventId:'edit.bound.compound',
+      eventId:'revert.bound.independent.thickness'}));
+  assert.equal(find(preview.document,'extrude.bound').payload.thicknessMm,8);
+  assert.deepEqual(find(preview.document,'extrude.bound').payload.dimensionBindings,
+    valid);
+});
+
 test('strict ready gate refuses unresolved intent, permissive mode preserves it',()=>{
   let doc=baseline();
   doc=commitEvent(doc,{type:'feature.edit',eventId:'edit.housing.invalid.dependency',
