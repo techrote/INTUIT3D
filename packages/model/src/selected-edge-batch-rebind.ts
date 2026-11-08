@@ -82,7 +82,7 @@ function isPlain(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function hasExactFields(value: unknown, fields: readonly string[]): value is Record<string, unknown> {
+function hasExactFields(value: unknown, fields: readonly string[]): boolean {
   return isPlain(value) && Object.keys(value).length === fields.length &&
     fields.every((field) => Object.hasOwn(value, field));
 }
