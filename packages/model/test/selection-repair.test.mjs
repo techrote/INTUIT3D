@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {newProject, commitEvent, featuresOf, ProjectFormatError, ProjectRevisionError} from '../src/index.ts';
+import {newProject, commitEvent, featuresOf, serializeProject, ProjectFormatError, ProjectRevisionError} from '../src/index.ts';
 import {startUndoHistory, undoTransaction, redoTransaction} from '../src/transactions.ts';
 import {createModelArchive, serializeModelArchive, deserializeModelArchive} from '../src/archive.ts';
 import {SEMANTIC_SELECTION_EDIT_FORMAT, commitUndoableSemanticSelectionEdit} from '../src/semantic-selection.ts';
@@ -10,6 +10,8 @@ import {TOPOLOGY_REFERENCE_FORMAT} from '../src/topology.ts';
 import {SELECTION_EVIDENCE_FORMAT, inspectSelectionInventory} from '../src/selection-inventory.ts';
 import {
   SELECTION_REPAIR_FORMAT, previewSelectionRepairBatch, commitUndoableSelectionRepairBatch,
+  SELECTION_REPAIR_FENCED_FORMAT, SELECTION_EVIDENCE_FENCED_FORMAT,
+  previewFencedSelectionRepairBatch, commitUndoableFencedSelectionRepairBatch,
 } from '../src/selection-repair.ts';
 
 const projectId='project.plate';
@@ -183,4 +185,106 @@ test('standalone user workflow example runs',()=>{
   assert.equal(report.afterReopen,'pending_evidence');
   assert.equal(report.undoRestoredFace,'face.top');
   assert.equal(report.exactGeometryAuthority,false);
+});
+
+
+function fencedReceipt(doc, old) {
+  return {
+    ...old, format:SELECTION_EVIDENCE_FENCED_FORMAT,version:2,
+    documentFence:serializeProject(doc),
+  };
+}
+function fencedEvidence(doc) {
+  return evidence(doc).map((row)=>fencedReceipt(doc,row));
+}
+function fencedRequest(doc) {
+  const old=request(doc);
+  return {
+    ...old,format:SELECTION_REPAIR_FENCED_FORMAT,version:2,
+    expectedProjectId:doc.projectId,
+    expectedDocumentFence:serializeProject(doc),
+    repairs:old.repairs.map((action)=>action.replacementObservation
+      ? {...action,replacementObservation:{
+          ...action.replacementObservation,
+          documentFence:serializeProject(doc),
+        }}
+      : action),
+  };
+}
+
+test('v2 repairs split/deleted selections atomically with canonical model and provider fences',()=>{
+  const history=makeFixture(),doc=history.document;
+  const expected=serializeProject(doc);
+  const checked=previewFencedSelectionRepairBatch(
+    doc,fencedRequest(doc),fencedEvidence(doc));
+  assert.equal(checked.format,'intuit3d.selection-repair-fenced-preview');
+  assert.equal(checked.sourceDocumentFence,expected);
+  assert.equal(checked.sourceRevision,doc.revision);
+  assert.deepEqual(checked.repaired.map(x=>x.previousStatus),
+    ['requires_reconciliation','deleted']);
+  assert.deepEqual(checked.invalidation.unchangedReady,
+    ['feature.sketch','feature.extrude']);
+  assert.equal(checked.requiresNativeRebuild,true);
+  assert.equal(checked.exactGeometryAuthority,false);
+  let committed=commitUndoableFencedSelectionRepairBatch(
+    history,fencedRequest(doc),fencedEvidence(doc));
+  assert.equal(committed.undoStack.length,1);
+  committed=deserializeModelArchive(
+    serializeModelArchive(createModelArchive(committed))).history;
+  assert.deepEqual(targets(committed.document),[right,replacement]);
+  committed=undoTransaction(committed,['undo.fenced.edge','undo.fenced.face']);
+  assert.deepEqual(targets(committed.document),[face,edge]);
+  committed=redoTransaction(committed,['redo.fenced.face','redo.fenced.edge']);
+  assert.deepEqual(targets(committed.document),[right,replacement]);
+  assert.equal(serializeProject(doc),expected);
+});
+
+test('v2 refuses equal-revision divergent journals and mismatched provider or replacement observations',()=>{
+  const doc=makeFixture().document;
+  const before=serializeProject(doc);
+  // Same project ID, revision, authored face/edge references and stable IDs.
+  // Different historical thickness, hence different actual source topology.
+  const ancestor={...doc,revision:doc.revision-1,journal:doc.journal.slice(0,-1)};
+  const divergent=commitEvent(ancestor,{
+    eventId:'event.thickness.alternate',type:'feature.edit',
+    featureId:'feature.extrude',patch:{payload:{thicknessMm:17}},
+  });
+  assert.equal(divergent.revision,doc.revision);
+  assert.equal(divergent.projectId,doc.projectId);
+  assert.notEqual(serializeProject(divergent),before);
+  assert.deepEqual(targets(divergent),targets(doc));
+  const originalRequest=fencedRequest(doc),originalEvidence=fencedEvidence(doc);
+  assert.throws(()=>previewFencedSelectionRepairBatch(
+    divergent,originalRequest,originalEvidence),ProjectRevisionError);
+  // Even a new request on the divergent branch must not accept old reports.
+  assert.throws(()=>previewFencedSelectionRepairBatch(
+    divergent,fencedRequest(divergent),originalEvidence),ProjectRevisionError);
+  assert.throws(()=>previewFencedSelectionRepairBatch(
+    doc,originalRequest,[evidence(doc)[0],originalEvidence[1]]),
+  ProjectFormatError);
+  assert.throws(()=>previewFencedSelectionRepairBatch(
+    doc,originalRequest,originalEvidence.map((r,i)=>i===0
+      ? {...r,documentFence:'wrong-canonical-source'} : r)),
+  ProjectRevisionError);
+  const wrongReplacement={
+    ...originalRequest,
+    repairs:[originalRequest.repairs[0],{
+      ...originalRequest.repairs[1],
+      replacementObservation:{
+        ...originalRequest.repairs[1].replacementObservation,
+        documentFence:serializeProject(divergent),
+      },
+    }],
+  };
+  assert.throws(()=>previewFencedSelectionRepairBatch(
+    doc,wrongReplacement,originalEvidence),ProjectRevisionError);
+  assert.throws(()=>previewFencedSelectionRepairBatch(
+    doc,{...originalRequest,expectedProjectId:'project.other'},originalEvidence),
+  ProjectRevisionError);
+  assert.throws(()=>previewFencedSelectionRepairBatch(
+    doc,{...originalRequest,expectedDocumentFence:JSON.stringify(doc)},originalEvidence),
+  ProjectRevisionError);
+  assert.deepEqual(targets(doc),[face,edge]);
+  assert.deepEqual(targets(divergent),[face,edge]);
+  assert.equal(serializeProject(doc),before);
 });
