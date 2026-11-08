@@ -74,7 +74,26 @@ export function inspectPointerSelectableContours(source){
     return refused(stamp,'source_not_profile_ready',discovery.reason,
       discovery.sourceStatus);
   const candidates=[],blocked=[];
-  for(const candidate of discovery.candidates){
+  // A loop entirely inside another is geometrically overlapping material
+  // even if none of the containing loop's segments enters the inner bbox.
+  // Do not expose that interior as an independently selectable solid.
+  const all=discovery.candidates.map(candidate=>{
+    const outer=candidate.profile.outer;
+    return {candidate,bounds:{
+      minX:Math.min(...outer.map(p=>p.x)),minY:Math.min(...outer.map(p=>p.y)),
+      maxX:Math.max(...outer.map(p=>p.x)),maxY:Math.max(...outer.map(p=>p.y))
+    }};
+  });
+  for(const {candidate,bounds} of all){
+    const competing=all.filter(other=>other.candidate.id!==candidate.id&&
+      !(bounds.maxX<other.bounds.minX||other.bounds.maxX<bounds.minX||
+        bounds.maxY<other.bounds.minY||other.bounds.maxY<bounds.minY));
+    if(competing.length){
+      blocked.push({candidateId:candidate.id,
+        reason:'overlapping_candidate_bounds',
+        overlappingLineIds:competing.flatMap(x=>x.candidate.lineIds).sort()});
+      continue;
+    }
     const selection={candidateId:candidate.id,sourceSignature:stamp};
     const proposal=proposeSelectedPlateProfile(doc,selection);
     if(proposal.kind!=='selected_analytic_profile'){
@@ -83,12 +102,6 @@ export function inspectPointerSelectableContours(source){
       continue;
     }
     const profile=admitSelectedPlateProfile(doc,proposal);
-    const bounds={
-      minX:Math.min(...profile.profile.outer.map(p=>p.x)),
-      minY:Math.min(...profile.profile.outer.map(p=>p.y)),
-      maxX:Math.max(...profile.profile.outer.map(p=>p.x)),
-      maxY:Math.max(...profile.profile.outer.map(p=>p.y))
-    };
     candidates.push({candidateId:candidate.id,semanticProfileId:profile.semanticProfileId,
       lineIds:[...profile.lineIds],holeIds:[...profile.holeIds],
       boundary:profile.boundary,areaMm2:profile.profile.areaMm2,
