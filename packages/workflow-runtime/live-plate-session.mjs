@@ -50,8 +50,10 @@ export function createLivePlateSession({
   // cache. It is invalidated alongside receipts on every authoritative edit.
   function recordOutcome(result) {
     lastOutcomeKind=result.kind;
-    lastOutcomeCode=result.kind==='unresolved' ? result.code??'requires_reconciliation' : null;
-    lastOutcomeReason=result.kind==='unresolved' ? result.reason??'native provider refused evaluation' : null;
+    lastOutcomeCode=result.kind==='unresolved' && typeof result.code==='string'
+      ? result.code : result.kind==='unresolved'?'requires_reconciliation':null;
+    lastOutcomeReason=result.kind==='unresolved' && typeof result.reason==='string'
+      ? result.reason : result.kind==='unresolved'?'native provider refused evaluation':null;
   }
   // Previews are ephemeral proposals, never a second durable model or native receipt.
   const editPreviews=new WeakMap();
@@ -262,11 +264,16 @@ export function createLivePlateSession({
       // Orthogonal provenance: a previous verified STEP can still match this
       // exact archive while the latest native attempt is pending or failed.
       // Neither state promotes experimental geometry to exact CAD authority.
+      const sourceRefusals=['unsupported_feature','unsupported_profile',
+        'source_unavailable','provider_mismatch','invalid_archive',
+        'stale_revision'];
       const providerState=inFlight?'pending'
-        :lastOutcomeKind==='unresolved'?'provider_failed'
-        :lastOutcomeKind==='experimental_plate_evaluated'?'evaluated':'idle';
+        :lastOutcomeKind==='unresolved'
+          ? (lastOutcomeCode==='cancelled'?'cancelled'
+            :sourceRefusals.includes(lastOutcomeCode)?'blocked':'provider_failed')
+          :lastOutcomeKind==='experimental_plate_evaluated'?'evaluated':'idle';
       const stepAvailability=!hasVerifiedStep?'unavailable'
-        :(inFlight||providerState==='provider_failed'?'last_good':'current');
+        :(inFlight||lastOutcomeKind==='unresolved'?'last_good':'current');
       return {format:LIVE_PLATE_SESSION_FORMAT,version:LIVE_PLATE_SESSION_VERSION,
         projectId:state.report.projectId,revision:state.report.revision,
         inFlight,hasVerifiedStep,providerState,stepAvailability,
