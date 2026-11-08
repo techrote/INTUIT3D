@@ -121,7 +121,7 @@ function previewRevertFields(
   // A kind change also conflicts with all other edits, since it can change the
   // interpretation of the original payload and dependencies.
   const authoredFields = Object.keys(target.patch) as (keyof FeaturePatch)[];
-  const targetedFields = new Set(selectedFields ?? authoredFields);
+  const targetedFields = new Set<string>(selectedFields ?? authoredFields);
   if (selectedFields) {
     if (selectedFields.some((field) => !Object.hasOwn(target.patch, field))) {
       fail('selected field was not changed by the historical event');
