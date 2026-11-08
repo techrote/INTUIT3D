@@ -27,10 +27,10 @@ RAY h 8 9 10 -1 0 0 void
 
 V2_WITNESS = WITNESS.replace(
     b"INTUIT3D_3D_WITNESS_V1", b"INTUIT3D_3D_WITNESS_V2").replace(
-    b"AREA 200 201\\n",
-    b"AREA 200 201\\n"
-    b"CENTROID 1.0 1.2 2.0 2.3 3.0 3.4\\n"
-    b"COVARIANCE 100 102 100 102 3 3.5 -10 -9.3 -0.2 0.2 0.5 0.9\\n")
+    b"AREA 200 201\n",
+    b"AREA 200 201\n"
+    b"CENTROID 1.0 1.2 2.0 2.3 3.0 3.4\n"
+    b"COVARIANCE 100 102 100 102 3 3.5 -10 -9.3 -0.2 0.2 0.5 0.9\n")
 
 
 def fixture(root: Path):
@@ -115,16 +115,16 @@ class ThreeDimensionalWitnessTests(unittest.TestCase):
             root = Path(tmp)
             args = fixture(root)
             rays = "".join(
-                f"WITNESS_RAY ray-{i} material intersections=1\\n"
+                f"WITNESS_RAY ray-{i} material intersections=1\n"
                 for i in range(8))
             moments = ("WITNESS_MOMENTS centroid_x_mm=1.100000000 "
                        "centroid_y_mm=2.200000000 centroid_z_mm=3.300000000 "
                        "cov_xx_mm2=101.000000000 cov_yy_mm2=101.000000000 "
                        "cov_zz_mm2=3.250000000 cov_xy_mm2=-9.600000000 "
-                       "cov_xz_mm2=0.000000000 cov_yz_mm2=0.700000000\\n")
+                       "cov_xz_mm2=0.000000000 cov_yz_mm2=0.700000000\n")
             acceptance = ("WITNESS_ACCEPT solids=1 imported_exact=true "
                           "warnings=0 rays=8 triangles=394 "
-                          "volume_mm3=100.500000000 area_mm2=200.500000000\\n")
+                          "volume_mm3=100.500000000 area_mm2=200.500000000\n")
             with patch("witness_3d.subprocess.run",
                        return_value=CompletedProcess([], 0, rays + moments + acceptance, "")):
                 result = run_probe(args.probe, args.positive, args.witness, 20,
