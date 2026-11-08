@@ -122,6 +122,43 @@ test('real OS subprocess cancellation prevents synthetic STEP publication',async
   await assert.rejects(fs.stat(output),{code:'ENOENT'});
 }));
 
+test('synthetic STEP: final revision lookup failure rolls back exclusive publication',async()=>
+  fixture('good',async({dir,script})=>{
+    // Reproduce the post-link failure: initial fence, report assessment and
+    // pre-link fence succeed; the fourth lookup occurs after fs.link().
+    // This is deliberately a transport test, NOT pinned OCCT C++ evidence.
+    const output=join(dir,'must-rollback-after-link.step');
+    let reads=0;
+    const result=await runPinnedOcct8Plate(request(true),{
+      ...options(script),stepOutput:output,
+      readCurrentRevision:()=>{
+        if(++reads===4)throw new Error('project revision store closed');
+        return 4;
+      },
+    });
+    assert.equal(reads,4,'the failure must occur after the exclusive hard-link');
+    assert.equal(result.code,'requires_reconciliation',JSON.stringify(result));
+    assert.equal(result.reason,'revision_fence_unavailable');
+    await assert.rejects(fs.stat(output),{code:'ENOENT'});
+  }));
+
+test('synthetic STEP: abort inside final revision lookup also rolls back',async()=>
+  fixture('good',async({dir,script})=>{
+    const output=join(dir,'must-rollback-final-abort.step');
+    const aborter=new AbortController();
+    let reads=0;
+    const result=await runPinnedOcct8Plate(request(true),{
+      ...options(script),stepOutput:output,signal:aborter.signal,
+      readCurrentRevision:()=>{
+        if(++reads===4)aborter.abort();
+        return 4;
+      },
+    });
+    assert.equal(reads,4);
+    assert.equal(result.code,'cancelled',JSON.stringify(result));
+    await assert.rejects(fs.stat(output),{code:'ENOENT'});
+  }));
+
 test('missing pinned executable path and incorrect audit flags are rejected early',async()=>{
   await assert.rejects(runPinnedOcct8Plate(request(),{readCurrentRevision:()=>4}),KernelContractError);
   await assert.rejects(runPinnedOcct8Plate(request(),{
