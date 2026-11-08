@@ -66,7 +66,11 @@ test('empty sketch to solved selected contour, dependent extrude/cut, retrospect
   const user=sessionOn(initial()),before=user.session.save();
   const first=author(user.history);
   assert.equal(first.accepted.kind,'accepted',JSON.stringify(first.accepted));
-  assert.equal(submit(user.session,first.request).kind,'committed');
+  const firstCommitted=submit(user.session,first.request);
+  assert.equal(firstCommitted.kind,'committed');
+  assert.equal(firstCommitted.contourReceipt.selection.sourceSignature,
+    first.accepted.nextSourceSignature);
+  assert.equal(firstCommitted.contourReceipt.exactAuthority,false);
   assert.equal(user.history.document.revision,4);
   assert.equal(user.session.currentStep(),null);
   assert.equal(user.session.refresh().stepAvailability,'unavailable');
@@ -81,6 +85,8 @@ test('empty sketch to solved selected contour, dependent extrude/cut, retrospect
   const next=submit(user.session,edit.request);
   assert.equal(next.kind,'committed',JSON.stringify(next));
   assert.deepEqual(next.invalidation.invalidatedFeatureIds,['sketch.plate','plate','cut']);
+  assert.equal(next.contourReceipt.selection.candidateId,edit.accepted.selection.candidateId);
+  assert.equal(next.contourReceipt.nextSketchSignature,edit.accepted.nextSourceSignature);
   assert.equal(next.report.exactGeometryAvailable,false);
   assert.equal(user.session.currentStep(),null);
   const edited=runtime.save(user.history);
