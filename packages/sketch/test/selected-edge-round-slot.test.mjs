@@ -102,6 +102,16 @@ test('retrospective edited main dimensions recompile arc geometry without losing
   assert.deepEqual(result.holeIds,r.holeIds);
   assert.deepEqual(actualIds(result.arcSketch),actualIds(r.arcSketch));
   assert.equal(solveArcSketch(result.arcSketch).degreesOfFreedom,0);
+  // Circle dimensions may be edited independently of their original seeds.
+  const changedRadius=editConstraint(r.authoring.source,
+    'L:holeLowerRadius',{value:6});
+  const newRadius=rebaseSelectedEdgeRoundSlot(r.authoring,
+    changedRadius,selection(changedRadius),{
+      kind:'rebase-selected-edge-round-slot',version:1,
+      sourceSignature:r.authoringSignature});
+  assert.equal(newRadius.kind,'accepted',JSON.stringify(newRadius));
+  near(newRadius.profile.materialAreaMm2,5440-111*Math.PI);
+  assert.equal(newRadius.arcSketch.circles.find(c=>c.id==='L:holeLower').radiusMm,6);
 });
 
 test('selected contour isolation includes a second disjoint authored loop',()=>{
@@ -175,12 +185,16 @@ test('source uncertainty and unsupported midpoint never become new solved profil
       createCommand(source));
     assert.equal(result.kind,'refused');
   }
-  const midpoint=createSketch({...doc,constraints:[...doc.constraints,{
-    id:'user:midpoint',kind:'midpoint',
-    point:'L:d',a:'L:a',b:'L:c'
-  }]});
-  assert.equal(createSelectedEdgeRoundSlot(midpoint,selection(midpoint),
-    createCommand(midpoint)).kind,'refused');
+  const midpoint=createSketch({...doc,
+    points:[...doc.points,{id:'aux:mid',x:60,y:0}],
+    constraints:[...doc.constraints,{
+      id:'user:midpoint',kind:'midpoint',
+      point:'aux:mid',a:'L:a',b:'L:b'
+    }]});
+  const refused=createSelectedEdgeRoundSlot(midpoint,selection(midpoint),
+    createCommand(midpoint));
+  assert.equal(refused.kind,'refused');
+  assert.equal(refused.reason,'unsupported_source_midpoint_constraint');
 });
 
 test('source-independent authoring metadata cannot be added or silently accepted',()=>{
