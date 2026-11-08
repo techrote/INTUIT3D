@@ -73,3 +73,34 @@ test('v5 native adapter refuses non-executable and never silently selects OCP',a
     readCurrentRevision:()=>SOURCE.revision,
   }),/workerExecutable/);
 });
+
+test('real solved SKETCH -> authored two-cut sloped body -> edit, undo/reopen',async()=>{
+  const {buildAuthoredSlopedBracket,editAuthoredSlopedThickness,
+    SLOPED_BODY_ID,SLOPED_CUT_IDS} = await import(
+      '../examples/runtime-occt8-sloped-profile-document.mjs');
+  const {requestFromRuntimeOcct8Linear}=await import(
+    '../src/runtime-occt8-linear-profile-provider.mjs');
+  const fixture=buildAuthoredSlopedBracket();
+  const request=(fx,id)=>requestFromRuntimeOcct8Linear(fx.history,SLOPED_BODY_ID,{
+    runtime:fx.runtime,model:fx.model,requestId:id,exportStep:false});
+  const a=request(fixture,'sloped.original');
+  assert.deepEqual(a.profile.vertices,SOURCE.profile.vertices);
+  assert.equal(a.profile.thickness,8);
+  assert.deepEqual(a.cuts.map(c=>c.featureId),SLOPED_CUT_IDS);
+  assert.deepEqual(a.cuts.map(c=>c.kind),['rectangle','rectangle']);
+  assert.deepEqual(a.cuts.map(c=>c.cutDepthMm),[8,3]);
+  assert.equal(expectedOcct8LinearMetrics(a).volumeMm3,5700*8-112*8-100*3);
+  const edited=editAuthoredSlopedThickness(fixture,12);
+  assert.ok(edited.invalidation.invalidatedFeatureIds.includes('extrude.sloped'));
+  for(const id of SLOPED_CUT_IDS)
+    assert.ok(edited.invalidation.invalidatedFeatureIds.includes(id));
+  const undone=edited.runtime.undo(edited.history,['undo.sloped']);
+  const redone=edited.runtime.redo(undone,['redo.sloped']);
+  const reopen={...edited,
+    history:edited.runtime.reopen(edited.runtime.save(redone))};
+  const b=request(reopen,'sloped.edited');
+  assert.equal(b.profile.profileId,a.profile.profileId);
+  assert.deepEqual(b.cuts.map(c=>c.featureId),SLOPED_CUT_IDS);
+  assert.deepEqual(b.cuts.map(c=>c.cutDepthMm),[12,3]);
+  assert.equal(expectedOcct8LinearMetrics(b).volumeMm3,5700*12-112*12-100*3);
+});
