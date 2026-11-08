@@ -139,3 +139,39 @@ test('invalid L geometry refuses instead of returning a manufactured preview',()
   assert.throws(()=>createDimensionedLPlateSketch({holeRadiusMm:20}),/do not admit/);
   assert.throws(()=>createDimensionedLPlateSketch({lengthMm:NaN}),/invalid dimensions/);
 });
+
+
+test('disjoint machining islands within concave cutaway admit by real boundaries, not AABBs',()=>{
+  let doc=addRectangle(createDimensionedLPlateSketch(),'island',62,42,20,18);
+  const original=serializeSketch(doc);
+  const discovery=discoverPlateProfiles(doc);
+  assert.equal(discovery.candidates.length,2);
+  const l=choose(doc);
+  const island=choose(doc,discovery.candidates.find(c=>c.lineIds.length===4).id);
+  assert.equal(l.kind,'selected_analytic_profile',JSON.stringify(l));
+  assert.equal(island.kind,'selected_analytic_profile',JSON.stringify(island));
+  assert.deepEqual(l.holeIds,['L:holeLower','L:holeUpper']);
+  assert.deepEqual(island.holeIds,[]);
+  assert.equal(admitSelectedPlateProfile(doc,l).semanticProfileId,l.semanticProfileId);
+  assert.equal(admitSelectedPlateProfile(doc,island).semanticProfileId,island.semanticProfileId);
+  doc=parseSketch(serializeSketch(editConstraint(doc,'L:length',{value:150})));
+  const resized=choose(doc),reselected=choose(doc,island.candidateId);
+  assert.equal(resized.kind,'selected_analytic_profile');
+  assert.equal(reselected.kind,'selected_analytic_profile');
+  assert.equal(resized.semanticProfileId,l.semanticProfileId);
+  assert.equal(reselected.semanticProfileId,island.semanticProfileId);
+  assert.equal(serializeSketch(createSketch(JSON.parse(original))),original);
+  assert.equal(solveSketch(doc).degreesOfFreedom,0);
+  assert.throws(()=>admitSelectedPlateProfile(doc,l),/stale, unsafe or modified/);
+});
+
+test('enclosing contour is rejected from either direction without inferred subtraction',()=>{
+  const doc=addRectangle(createDimensionedLPlateSketch(),'enclosing',-10,-10,160,110);
+  const discovery=discoverPlateProfiles(doc);
+  const l=choose(doc);
+  const surrounding=choose(doc,discovery.candidates.find(c=>c.lineIds.length===4).id);
+  assert.equal(l.kind,'refused');
+  assert.equal(surrounding.kind,'refused');
+  assert.equal(l.reason,'unselected_lines_contact_or_overlap_selected_bounds');
+  assert.equal(surrounding.reason,l.reason);
+});
