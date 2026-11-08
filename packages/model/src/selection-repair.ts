@@ -7,7 +7,7 @@
  * evidence nor any kernel face number enters the authoritative document.
  */
 import {
-  featuresOf, parseProject, ProjectFormatError, ProjectRevisionError,
+  featuresOf, parseProject, serializeProject, ProjectFormatError, ProjectRevisionError,
 } from './index.ts';
 import type { JournalEvent, ProjectDocument } from './index.ts';
 import { planIncrementalEvaluation } from './incremental.ts';
@@ -195,4 +195,155 @@ export function commitUndoableSelectionRepairBatch(
   const history = parseUndoHistory(source);
   const preview = previewSelectionRepairBatch(history.document, request, evidence);
   return commitUndoableTransaction(history, preview.events, request.expectedRevision);
+}
+
+
+/**
+ * @intuit3d/model/selection-repair-fenced/v2
+ *
+ * User-selected split/deleted replacements are only valid for the canonical
+ * document on which the provider made its observations. Revision numbers alone
+ * are insufficient: undo/replay or diverging journal branches can produce
+ * different solids at the SAME project ID and revision. This additive v2 entry
+ * point rejects that ambiguity before delegating the unchanged v1 semantic
+ * repair/undo engine. V1 remains available for existing consumers, but callers
+ * requiring divergent-history protection must use v2 end to end.
+ *
+ * Fences are source identity assertions, not cryptographic provenance or
+ * evidence that the native provider produced an exact physical B-rep.
+ */
+export const SELECTION_REPAIR_FENCED_FORMAT =
+  'intuit3d.selection-repair-fenced' as const;
+export const SELECTION_EVIDENCE_FENCED_FORMAT =
+  'intuit3d.selection-evidence-fenced' as const;
+export const SELECTION_REPAIR_FENCED_VERSION = 2 as const;
+
+export interface FencedSelectionEvidenceReceipt
+  extends Omit<SelectionEvidenceReceipt, 'format' | 'version'> {
+  readonly format: typeof SELECTION_EVIDENCE_FENCED_FORMAT;
+  readonly version: typeof SELECTION_REPAIR_FENCED_VERSION;
+  /** Canonical model document observed, not merely its revision number. */
+  readonly documentFence: string;
+}
+export interface FencedReplacementObservation extends ReplacementObservation {
+  /** Must match the same current document as the split/merge receipts. */
+  readonly documentFence: string;
+}
+export interface FencedSelectionRepairAction
+  extends Omit<SelectionRepairAction, 'replacementObservation'> {
+  readonly replacementObservation?: FencedReplacementObservation;
+}
+export interface FencedSelectionRepairRequest
+  extends Omit<SelectionRepairRequest, 'format' | 'version' | 'repairs'> {
+  readonly format: typeof SELECTION_REPAIR_FENCED_FORMAT;
+  readonly version: typeof SELECTION_REPAIR_FENCED_VERSION;
+  readonly expectedProjectId: string;
+  readonly expectedDocumentFence: string;
+  readonly repairs: readonly FencedSelectionRepairAction[];
+}
+export interface FencedSelectionRepairPreview
+  extends Omit<SelectionRepairPreview, 'format' | 'version'> {
+  readonly format: 'intuit3d.selection-repair-fenced-preview';
+  readonly version: 2;
+  readonly sourceProjectId: string;
+  readonly sourceRevision: number;
+  readonly sourceDocumentFence: string;
+  readonly requiresNativeRebuild: true;
+}
+
+/** Fail closed before applying ANY candidate, including a deleted-role observation. */
+export function previewFencedSelectionRepairBatch(
+  source: ProjectDocument, request: FencedSelectionRepairRequest,
+  evidence: readonly FencedSelectionEvidenceReceipt[],
+): FencedSelectionRepairPreview {
+  const doc = parseProject(source);
+  if (!plain(request) || !exact(request, [
+    'format', 'version', 'expectedProjectId', 'expectedRevision',
+    'expectedDocumentFence', 'admission', 'repairs',
+  ]) || request.format !== SELECTION_REPAIR_FENCED_FORMAT ||
+    request.version !== SELECTION_REPAIR_FENCED_VERSION ||
+    !Array.isArray(request.repairs) ||
+    request.repairs.length < 1 || request.repairs.length > 32) {
+    fail('unsupported source-fenced selection repair request');
+  }
+  const canonical = serializeProject(doc);
+  if (request.expectedProjectId !== doc.projectId ||
+      request.expectedRevision !== doc.revision ||
+      request.expectedDocumentFence !== canonical) {
+    throw new ProjectRevisionError(
+      'selection repair: project, revision or canonical document fence differs');
+  }
+  if (!Array.isArray(evidence) || evidence.length > 4096) {
+    fail('source-fenced evidence must be a bounded array');
+  }
+  const legacyEvidence: SelectionEvidenceReceipt[] = evidence.map((receipt) => {
+    if (!plain(receipt) || !exact(receipt, [
+      'format', 'version', 'documentFence', 'projectId', 'revision',
+      'featureId', 'field', 'reference', 'provider', 'snapshot', 'steps',
+    ]) || receipt.format !== SELECTION_EVIDENCE_FENCED_FORMAT ||
+        receipt.version !== SELECTION_REPAIR_FENCED_VERSION) {
+      fail('unsupported source-fenced provider receipt');
+    }
+    if (receipt.documentFence !== canonical) {
+      throw new ProjectRevisionError(
+        'selection repair: provider receipt belongs to another document');
+    }
+    // The v1 inventory still validates the entire topology trace, source
+    // reference, provider type and project/revision/field identity.
+    return {
+      format: 'intuit3d.selection-evidence', version: 1,
+      projectId: receipt.projectId, revision: receipt.revision,
+      featureId: receipt.featureId, field: receipt.field,
+      reference: receipt.reference, provider: receipt.provider,
+      snapshot: receipt.snapshot, steps: receipt.steps,
+    };
+  });
+  const legacyRepairs: SelectionRepairAction[] = request.repairs.map((action) => {
+    validateAction(action);
+    let replacementObservation: ReplacementObservation | undefined;
+    if (action.replacementObservation !== undefined) {
+      const observed = action.replacementObservation;
+      if (!plain(observed) || !exact(observed, [
+        'provider', 'snapshot', 'documentFence',
+      ])) {
+        fail('unsupported source-fenced replacement observation');
+      }
+      if (observed.documentFence !== canonical) {
+        throw new ProjectRevisionError(
+          'selection repair: replacement observed on another document');
+      }
+      replacementObservation = {
+        provider: observed.provider, snapshot: observed.snapshot,
+      };
+    }
+    return {
+      eventId: action.eventId, featureId: action.featureId,
+      field: action.field, selected: action.selected,
+      ...(replacementObservation === undefined ? {} : { replacementObservation }),
+    };
+  });
+  const preview = previewSelectionRepairBatch(doc, {
+    format: SELECTION_REPAIR_FORMAT, version: SELECTION_REPAIR_VERSION,
+    expectedRevision: request.expectedRevision,
+    admission: request.admission, repairs: legacyRepairs,
+  }, legacyEvidence);
+  return {
+    ...preview,
+    format: 'intuit3d.selection-repair-fenced-preview', version: 2,
+    sourceProjectId: doc.projectId, sourceRevision: doc.revision,
+    sourceDocumentFence: canonical, requiresNativeRebuild: true,
+    exactGeometryAuthority: false,
+  };
+}
+
+/** Identical all-or-none persisted undo semantics; every receipt is fenced. */
+export function commitUndoableFencedSelectionRepairBatch(
+  source: UndoHistory, request: FencedSelectionRepairRequest,
+  evidence: readonly FencedSelectionEvidenceReceipt[],
+): UndoHistory {
+  const history = parseUndoHistory(source);
+  const preview = previewFencedSelectionRepairBatch(
+    history.document, request, evidence);
+  return commitUndoableTransaction(
+    history, preview.events, request.expectedRevision);
 }
