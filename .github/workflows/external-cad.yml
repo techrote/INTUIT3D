@@ -45,7 +45,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'intuit/integration/195-cross-engine-original-20261108' && 'e155633b3fe3ce07295953432f16305c3eb191db') || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || inputs.cad_ref || github.sha }}
+          ref: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'intuit/integration/source-matched-platform-witness-20261108' && 'e45bd8ffd2c5b09fc84b79bb9fdde4cc5c179969') || (github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'intuit/integration/195-cross-engine-original-20261108' && 'e155633b3fe3ce07295953432f16305c3eb191db') || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || inputs.cad_ref || github.sha }}
           path: cad-source
           persist-credentials: false
       - name: Download original actual OCP STEP evidence (not generated mock files)
@@ -408,6 +408,100 @@ jobs:
           assert len(v6['cases'])==12 and sum(c['rayCount'] for c in v6['cases'])==744
           assert len(v6['physicalNegatives'])==4 and all(x['rejected'] for x in v6['physicalNegatives'])
           print('NON_OCCT_SOURCE_MATCHED_SELECTED_V5_V6_16_STEP_PHYSICAL_PASS: 992 rays, 4 adversaries')
+          PY
+      # #252's new generic world-space witness must run as a real source-bound
+      # executable, not merely pass the historical 16-solid importer. Reuse the
+      # already-compiled independent Rust probe and ORIGINAL C++ STEP bytes.
+      - name: Execute Git-custodied non-OCCT generic 3D witness and wrong-solid rejection
+        shell: bash
+        working-directory: cad-source
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          direct="$root/new-native/selected-sloped-v5-v6/direct-v6"
+          worker="$root/new-native/qualification/worker-build/intuit3d_occt8_plate"
+          probe="$(cat "$root/independent-probe.path")"
+          witness=conformance/external-cad/witness-v6-direct-two-cuts-8mm.txt
+          test -x "$probe"
+          test -s "$direct/progressive-v6-receipts.json"
+          test -s "$direct/progressive-2-8.step"
+          test -s "$direct/progressive-0-8.step"
+          python3 conformance/external-cad/witness_3d.py \
+            --kernel-tree ../kernel-source --kernel-sha 93e984963db720cacdd8bb679a559a3b8df88ce8 \
+            --worker "$worker" --worker-sha256 d888308e6ac867d6d3fb59accc3a552ce74f13a23e78d2bd003a7b5a10f2c795 \
+            --probe "$probe" --probe-sha256 "$(sha256sum "$probe" | cut -d' ' -f1)" \
+            --anvil-source-sha 50c053840933c92d598976e837e63ccd7626c312 \
+            --receipt "$direct/progressive-v6-receipts.json" \
+            --receipt-sha256 abeec276e695fde86a1c2ce309ec2d8908ed8b942e76efbf8d3fa1905b8abeae \
+            --positive "$direct/progressive-2-8.step" --positive-index 4 \
+            --positive-sha256 17537f2c896e6ed5347d123df6982fbbcd17e703e33b52a5b9eadff4aa993c16 \
+            --negative "$direct/progressive-0-8.step" --negative-index 0 \
+            --negative-sha256 d8779d25b18ee234adc3167222257a31d773914817bc02e48a0907112ebdf439 \
+            --witness "$witness" \
+            --witness-sha256 "$(sha256sum "$witness" | cut -d' ' -f1)" \
+            --output-dir "$root/generic-3d-witness" \
+            2>&1 | tee "$root/generic-3d-witness.log"
+          python3 - "$root/generic-3d-witness/qualification.json" <<'PY'
+          import json,sys
+          report=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert report['status']=='NON_OCCT_3D_MATERIAL_WITNESS_PHYSICAL_PASS',report
+          assert report['independentCadInteroperability'] is True,report
+          assert len(report['physicalCases'])==2,report
+          positive,negative=report['physicalCases']
+          assert positive['role']=='positive' and positive['rayCount']==14,positive
+          assert negative['role']=='negative' and negative['rejection'].startswith(
+              'NOT_QUALIFIED: WITNESS_GEOMETRY:'),negative
+          print('NON_OCCT_3D_MATERIAL_WITNESS_PHYSICAL_PASS 14 genuine 3D rays, original STEP wrong-solid rejected')
+          PY
+      # New V2 independent 3D mass-moment witness: compile STEP #260 at its
+      # immutable head and use the same ORIGINAL, SHA-checked C++ STEP bytes,
+      # Rust probe and producer receipt from the preceding V1 physical gate.
+      # A green source test or V1 geometric witness alone cannot admit V2.
+      - name: Execute non-OCCT V2 centroid/covariance witness and wrong-solid rejection
+        shell: bash
+        working-directory: cad-source
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          direct="$root/new-native/selected-sloped-v5-v6/direct-v6"
+          worker="$root/new-native/qualification/worker-build/intuit3d_occt8_plate"
+          probe="$(cat "$root/independent-probe.path")"
+          witness=conformance/external-cad/witness-v6-direct-two-cuts-8mm-moments.txt
+          test -x "$probe" && test -s "$witness"
+          test "$(git rev-parse HEAD)" = 'e45bd8ffd2c5b09fc84b79bb9fdde4cc5c179969' || {
+            echo '::error::New STEP V2 probe source changed; exact candidate qualification required'; exit 1;
+          }
+          python3 conformance/external-cad/witness_3d.py \
+            --kernel-tree ../kernel-source --kernel-sha 93e984963db720cacdd8bb679a559a3b8df88ce8 \
+            --worker "$worker" --worker-sha256 d888308e6ac867d6d3fb59accc3a552ce74f13a23e78d2bd003a7b5a10f2c795 \
+            --probe "$probe" --probe-sha256 "$(sha256sum "$probe" | cut -d' ' -f1)" \
+            --anvil-source-sha 50c053840933c92d598976e837e63ccd7626c312 \
+            --receipt "$direct/progressive-v6-receipts.json" \
+            --receipt-sha256 abeec276e695fde86a1c2ce309ec2d8908ed8b942e76efbf8d3fa1905b8abeae \
+            --positive "$direct/progressive-2-8.step" --positive-index 4 \
+            --positive-sha256 17537f2c896e6ed5347d123df6982fbbcd17e703e33b52a5b9eadff4aa993c16 \
+            --negative "$direct/progressive-0-8.step" --negative-index 0 \
+            --negative-sha256 d8779d25b18ee234adc3167222257a31d773914817bc02e48a0907112ebdf439 \
+            --witness "$witness" \
+            --witness-sha256 "$(sha256sum "$witness" | cut -d' ' -f1)" \
+            --output-dir "$root/generic-3d-moments-v2" \
+            2>&1 | tee "$root/generic-3d-moments-v2.log"
+          python3 - "$root/generic-3d-moments-v2/qualification.json" <<'PY'
+          import json,math,sys
+          result=json.load(open(sys.argv[1],encoding='utf-8'))
+          assert result['status']=='NON_OCCT_3D_MATERIAL_WITNESS_PHYSICAL_PASS',result
+          assert result['witnessVersion']==2 and result['independentCadInteroperability'] is True,result
+          assert len(result['physicalCases'])==2,result
+          pos,neg=result['physicalCases']
+          keys=('centroid_x_mm','centroid_y_mm','centroid_z_mm','cov_xx_mm2',
+                'cov_yy_mm2','cov_zz_mm2','cov_xy_mm2','cov_xz_mm2','cov_yz_mm2')
+          assert pos['role']=='positive' and pos['rayCount']==14,pos
+          moment=pos.get('independentMassMoments',{})
+          assert set(moment)==set(keys) and all(math.isfinite(moment[k]) for k in keys),pos
+          assert pos['sourceStepSha256']=='17537f2c896e6ed5347d123df6982fbbcd17e703e33b52a5b9eadff4aa993c16'
+          assert neg['role']=='negative' and neg['sourceStepSha256']=='d8779d25b18ee234adc3167222257a31d773914817bc02e48a0907112ebdf439',neg
+          assert neg['rejection'].startswith('NOT_QUALIFIED: WITNESS_GEOMETRY:'),neg
+          print('NON_OCCT_3D_MOMENTS_V2_PHYSICAL_PASS: original C++ STEP, 14 rays, 9 independent mass moments, one original wrong-solid rejection')
           PY
       - name: Exclude distributor binary and extraction tree from evidence upload
         if: always()
