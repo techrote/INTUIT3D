@@ -215,8 +215,10 @@ test('unsupported binding manifests cannot masquerade as freely authored dimensi
     req(independentlyAuthored,{targetEventId:'edit.bound.compound',
       eventId:'revert.bound.independent.thickness'}));
   assert.equal(find(preview.document,'extrude.bound').payload.thicknessMm,8);
-  assert.deepEqual(find(preview.document,'extrude.bound').payload.dimensionBindings,
-    valid);
+  // Canonical model JSON uses null-prototype records. Compare its actual
+  // serialized semantics, not host-object prototypes.
+  assert.deepEqual(JSON.parse(JSON.stringify(
+    find(preview.document,'extrude.bound').payload.dimensionBindings)), valid);
 });
 
 test('strict ready gate refuses unresolved intent, permissive mode preserves it',()=>{
