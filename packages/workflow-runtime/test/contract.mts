@@ -5,7 +5,10 @@ import * as dimensions from '@intuit3d/model/dimension-batch-edit';
 import * as archive from '@intuit3d/model/archive';
 import * as sketch from '@intuit3d/sketch';
 import * as discovery from '@intuit3d/sketch/profile-discovery/v1';
-import {createWorkflowRuntime, diffWorkflowPlans, type WorkflowInvalidation, type RuntimeReport, type RuntimeFeature} from '../index.mjs';
+import {createWorkflowRuntime, diffWorkflowPlans, CLOSED_CONTOUR_TRANSACTION_FORMAT,
+  type ClosedContourRuntimeRequest,type WorkflowInvalidation,
+  type RuntimeReport,type RuntimeFeature} from '../index.mjs';
+import {createClosedContour} from '@intuit3d/sketch/closed-contour-authoring/v1';
 
 const runtime=createWorkflowRuntime({model,transactions,bindings,dimensions,archive,sketch,discovery});
 const session=transactions.startUndoHistory(model.newProject('runtime.contract'));
@@ -14,6 +17,36 @@ const result:RuntimeFeature | undefined=report.features[0];
 if(result?.status==='preview_only') {
   const body:string|undefined=result.bodyId;
   void body;
+}
+
+
+const emptyContourSketch=sketch.validateSketch({version:1,units:'mm',
+  points:[],lines:[],circles:[],constraints:[]});
+const contourSourceSignature=sketch.serializeSketch(emptyContourSketch);
+const contourCommand={kind:'create-closed-contour' as const,version:1 as const,
+  sourceSignature:contourSourceSignature,contourId:'type.sample',
+  vertices:[{x:0,y:0},{x:100,y:0},{x:100,y:80},{x:0,y:80}]};
+const contourAcceptance=createClosedContour(emptyContourSketch,contourCommand);
+if(contourAcceptance.kind==='accepted') {
+  const request:ClosedContourRuntimeRequest={
+    format:CLOSED_CONTOUR_TRANSACTION_FORMAT,version:1,
+    expectedProjectId:session.document.projectId,
+    expectedRevision:session.document.revision,
+    expectedArchive:runtime.save(session),
+    expectedSketchSignature:contourSourceSignature,
+    sketchFeatureId:'sketch.sample',eventId:'type.contour',
+    operation:'create',command:contourCommand,
+    admission:'require_admissible',acceptance:contourAcceptance,
+  };
+  const outcome=runtime.commitClosedContour(session,request);
+  if(outcome.kind==='committed') {
+    const selected:string=outcome.selection.candidateId;
+    const explicitNoExact:false=outcome.exactAuthority;
+    void [selected,explicitNoExact];
+  } else {
+    const retained:true=outcome.notCommitted;
+    void retained;
+  }
 }
 
 const atomicSketchEdit=runtime.editSketchConstraints(session,{
