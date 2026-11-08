@@ -30,7 +30,7 @@ test('one selected constrained contour notch changes an actual target sketch and
   assert.equal(created.history.undoStack.length,history.undoStack.length+1);
   assert.notEqual(sketch.serializeSketch(byId(created.history,'sketch.arm').payload.sketch),
     sketch.serializeSketch(original));
-  assert.deepEqual(byId(created.history,'sketch.arm').payload.selectedProfileSelection,
+  assert.deepEqual(JSON.parse(JSON.stringify(byId(created.history,'sketch.arm').payload.selectedProfileSelection)),
     created.selectedProfile);
   assert.equal(created.notch.originalEdgeId,'L:edge0');
   assert.equal(created.notch.depthMm,8);
@@ -72,7 +72,7 @@ test('retrospective dimension edit, numeric handle drag, undo and archive all re
     resized.selectedProfile.sourceSignature);
   const redo=runtime.redo(undo,['redo.notch.drag']);
   const reopened=runtime.reopen(runtime.save(redo));
-  assert.deepEqual(byId(reopened,'sketch.arm').payload.selectedProfileSelection,
+  assert.deepEqual(JSON.parse(JSON.stringify(byId(reopened,'sketch.arm').payload.selectedProfileSelection)),
     dragged.selectedProfile);
   const inspected=notch.inspectSelectedEdgeNotch(
     byId(reopened,'sketch.arm').payload.sketch,
