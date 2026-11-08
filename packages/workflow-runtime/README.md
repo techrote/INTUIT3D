@@ -959,3 +959,12 @@ Reproduce in `test/selected-edge-session.integration.test.mjs` with:
 `npm test --workspace @intuit3d/workflow-runtime` and
 `npm run typecheck --workspace @intuit3d/workflow-runtime`.
 
+
+
+## Authoritative atomic selected-profile hole layout (v1)
+
+WORKBENCH reads `session.inspectSelectedProfileHoleLayout({projectId,expectedRevision,sketchFeatureId,candidateId?})` against the current canonical history. A `ready` response gives solved hole centre/radius controls, their stable IDs, semantic anchor dependencies and `inspection.selection`; it does **not** create a second sketch document or imply a native body. Send that selection in one `sketch.holes.selected-profile-layout` typed command with `{sketchFeatureId,eventId,selection,command:{kind:'set-hole-layout',sourceSignature:inspection.sourceSignature,edits:[{holeId,xMm,yMm,radiusMm,anchorPointId?},...]}}`. The command must also carry the current `projectId` and `expectedRevision` like other live session commands.
+
+Up to 16 simultaneous changes are admitted by the accepted SKETCH selected-profile-hole-layout/v1 solver before one INTENT journal commit and one durable archive write. A swap may succeed even if sequential intermediate hole positions would collide. Omitted `anchorPointId` preserves the authored reference; an explicit anchor rebinds both axes. Rejections (including stale signatures, overlapping holes, unattainable explicit targets and unsolved source) leave the archive, undo history and still-current STEP receipt intact, and never dispatch native evaluation. Successful edits, undo/reopen and retrospective SKETCH dimension edits invalidate older native receipts. This interface remains **analytic-only**; selected L-profile holes do not prove OCCT 8.0.1 STEP qualification or independent non-OCCT import.
+
+Reproduce: `node --test packages/workflow-runtime/test/selected-profile-hole-layout-session.integration.test.mjs`, then `npm test --workspace @intuit3d/workflow-runtime`, `npm run typecheck --workspace @intuit3d/workflow-runtime`, `npm run check:workspace`.

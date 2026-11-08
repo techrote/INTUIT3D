@@ -6,6 +6,7 @@
 import {diffWorkflowPlans} from './invalidation.mjs';
 import {setSelectedEdgeHoles, inspectSelectedEdgeHolePlacement} from '@intuit3d/sketch/selected-edge-hole-placement/v1';
 import {editSelectedProfileHole as authorProfileHole, inspectSelectedProfileHoleAuthoring} from '@intuit3d/sketch/selected-profile-hole-authoring/v1';
+import {editSelectedProfileHoleLayout as authorProfileHoleLayout, inspectSelectedProfileHoleLayout as inspectProfileHoleLayout} from '@intuit3d/sketch/selected-profile-hole-layout/v1';
 import {serializeSketch} from '@intuit3d/sketch';
 import {applyPlateHoleOperations,planRectangularHoleArray,planCircularHolePattern,planRigidHoleTransform,planHoleLayoutResize} from './hole-edit.mjs';
 export {WORKFLOW_INVALIDATION_FORMAT, WORKFLOW_INVALIDATION_VERSION, diffWorkflowPlans} from './invalidation.mjs';
@@ -575,6 +576,109 @@ export function createWorkflowRuntime(services) {
       exactAuthority:false};
   }
 
+
+  /**
+   * The SKETCH selected-profile hole-layout provider makes a simultaneous
+   * 1–16-hole edit against ONE selected contour. It admits the FULL solved
+   * candidate before RUNTIME commits one INTENT feature.edit, so exchanging
+   * hole positions never publishes an intermediate collision.
+   */
+  function editSelectedProfileHoleLayout(history,request) {
+    const {sketchFeatureId,eventId,expectedRevision,selection,command}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if(!Number.isSafeInteger(expectedRevision)||
+        expectedRevision!==previous.document.revision)
+      throw new Error('runtime profile hole layout: stale or missing expectedRevision');
+    if(typeof sketchFeatureId!=='string'||!sketchFeatureId||
+       typeof eventId!=='string'||!eventId||
+       !selection||typeof selection!=='object'||Array.isArray(selection)||
+       !command||typeof command!=='object'||Array.isArray(command))
+      throw new TypeError('runtime profile hole layout: feature/event, selection and command required');
+    const entry=model.planProject(previous.document).features.find(
+      x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      throw new TypeError('runtime profile hole layout: authoritative sketch feature required');
+    const current=sketch.validateSketch(entry.feature.payload.sketch);
+    if(selection.sourceSignature!==command.sourceSignature)
+      return {kind:'refused',code:'stale_selection',notCommitted:true,
+        sourceRevision:expectedRevision,
+        reason:'selected contour and hole-layout command use different sketch signatures'};
+    const proposal=authorProfileHoleLayout(current,selection,command);
+    if(proposal.kind!=='accepted')
+      return {kind:'refused',code:'profile_hole_layout_refused',notCommitted:true,
+        sourceRevision:expectedRevision,reason:proposal.reason,review:proposal};
+    if(proposal.sourceSignature!==selection.sourceSignature||
+       proposal.semanticProfileId!==selection.candidateId||
+       proposal.selection?.candidateId!==selection.candidateId||
+       proposal.previewOnly!==true||proposal.nativeExact!==false||
+       proposal.exactBrepAvailable!==false||
+       proposal.independentStepQualified!==false)
+      throw new Error('runtime profile hole layout: SKETCH authority/identity mismatch');
+    const nextSketch=sketch.validateSketch(proposal.sketch);
+    if(serializeSketch(nextSketch)!==proposal.nextSourceSignature||
+       proposal.selection.sourceSignature!==proposal.nextSourceSignature)
+      throw new Error('runtime profile hole layout: SKETCH successor signature mismatch');
+    const candidate=commit(previous,[{
+      eventId,type:'feature.edit',featureId:sketchFeatureId,
+      patch:{payload:{...entry.feature.payload,sketch:nextSketch}},
+    }],expectedRevision);
+    const report=inspect(candidate);
+    const feature=report.features.find(x=>x.featureId===sketchFeatureId);
+    if(!feature)throw new Error('runtime profile hole layout: committed sketch disappeared');
+    return {kind:'committed',history:candidate,report,
+      invalidation:diff(previous,candidate),sketchStatus:feature.status,
+      selection:proposal.selection,semanticProfileId:proposal.semanticProfileId,
+      changedConstraintIds:proposal.changedConstraintIds,
+      affectedHoleIds:proposal.affectedHoleIds,
+      reanchoredHoleIds:proposal.reanchoredHoleIds,
+      edits:proposal.edits,exactAuthority:false};
+  }
+
+  /** Inspect simultaneous hole controls from the current INTENT sketch only. */
+  function inspectSelectedProfileHoleLayout(history,request) {
+    const previous=transactions.parseUndoHistory(history);
+    const {projectId,expectedRevision,sketchFeatureId,candidateId}=request??{};
+    if(typeof projectId!=='string'||!projectId||
+       !Number.isSafeInteger(expectedRevision)||expectedRevision<0||
+       typeof sketchFeatureId!=='string'||!sketchFeatureId||
+       (candidateId!==undefined&&(typeof candidateId!=='string'||
+         !candidateId.startsWith('cycle:')||candidateId.length>8192)))
+      throw new TypeError('runtime profile hole layout inspection: project, revision, sketch and optional candidate required');
+    const refused=(code,reason,review)=>({
+      kind:'refused',code,reason,notCommitted:true,
+      sourceProjectId:previous.document.projectId,
+      sourceRevision:previous.document.revision,
+      ...(review?{review}:{}),exactAuthority:false
+    });
+    if(projectId!==previous.document.projectId||
+       expectedRevision!==previous.document.revision)
+      return refused('stale_command','inspected project/revision is no longer current');
+    const entry=model.planProject(previous.document).features.find(
+      x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      return refused('missing_sketch','selected authored sketch is unavailable');
+    const current=sketch.validateSketch(entry.feature.payload.sketch);
+    let chosen=candidateId;
+    if(chosen===undefined){
+      const found=discovery.discoverPlateProfiles(current);
+      if(found.status!=='ready'||found.candidates?.length!==1)
+        return refused('selection_required','an explicitly selected solved contour is required');
+      chosen=found.candidates[0].id;
+    }
+    const selection={candidateId:chosen,sourceSignature:serializeSketch(current)};
+    const inspection=inspectProfileHoleLayout(current,selection);
+    if(inspection.kind!=='selected_profile_hole_layout')
+      return refused('profile_unavailable',inspection.reason,inspection);
+    if(inspection.sourceSignature!==selection.sourceSignature||
+       inspection.selection?.candidateId!==chosen||
+       inspection.selection?.sourceSignature!==selection.sourceSignature||
+       inspection.semanticProfileId!==chosen||
+       inspection.previewOnly!==true||inspection.nativeExact!==false)
+      throw new Error('runtime profile hole layout inspection: SKETCH authority/identity mismatch');
+    return {kind:'ready',projectId,sourceRevision:expectedRevision,
+      sketchFeatureId,inspection,exactAuthority:false};
+  }
+
   /** Explicitly delegated, revision-fenced authoritative commands. */
   function commit(history, events, expectedRevision = history.document.revision) {
     return transactions.commitUndoableTransaction(history, events, expectedRevision);
@@ -595,5 +699,5 @@ export function createWorkflowRuntime(services) {
   function reopen(serialized) {
     return archive.deserializeModelArchive(serialized).history;
   }
-  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, editSelectedEdgeHoles, inspectSelectedEdgeHoles, inspectSelectedProfileHoles, editSelectedProfileHole, undo, redo, save, reopen});
+  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, editSelectedEdgeHoles, inspectSelectedEdgeHoles, inspectSelectedProfileHoles, editSelectedProfileHole, inspectSelectedProfileHoleLayout, editSelectedProfileHoleLayout, undo, redo, save, reopen});
 }

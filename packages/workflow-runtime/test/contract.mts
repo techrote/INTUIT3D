@@ -104,6 +104,26 @@ if(profileHoleResult.kind==='committed'){
   const noNative:false=profileHoleResult.exactAuthority;
   void [selected,noNative];
 }
+const layout=runtime.editSelectedProfileHoleLayout(session,{
+  sketchFeatureId:'sketch.plate',eventId:'type.atomic.profile.layout',
+  expectedRevision:session.document.revision,
+  selection:{candidateId:'cycle:example',sourceSignature:'snapshot'},
+  command:{kind:'set-hole-layout',sourceSignature:'snapshot',
+    edits:[{holeId:'holeA',xMm:15,yMm:20,radiusMm:3}]},
+});
+if(layout.kind==='committed') {
+  const ids:readonly string[]=layout.affectedHoleIds;
+  const noExact:false=layout.exactAuthority;
+  void [ids,noExact];
+}
+const layoutView=runtime.inspectSelectedProfileHoleLayout(session,{
+  projectId:session.document.projectId,expectedRevision:session.document.revision,
+  sketchFeatureId:'sketch.plate',
+});
+if(layoutView.kind==='ready') {
+  const ids:string[]=layoutView.inspection.holes.map(h=>h.holeId);
+  void ids;
+}
 const delta:WorkflowInvalidation=runtime.diff(session,session);
 const direct:WorkflowInvalidation=diffWorkflowPlans(model.planProject(session.document),model.planProject(session.document));
 const exact:false=delta.exactReuseAllowed;

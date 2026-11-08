@@ -6,6 +6,7 @@ import type {SketchDocument, SketchSolution, PlateProfile} from '@intuit3d/sketc
 import type {SelectedProfileSelection} from '@intuit3d/sketch/selected-profile/v1';
 import type {SelectedEdgeHoleCommand,SelectedEdgeHoleRefusal,SelectedEdgeHoleInspection} from '@intuit3d/sketch/selected-edge-hole-placement/v1';
 import type {SelectedProfileHoleCommand,SelectedProfileHoleRefusal,SelectedProfileHoleInspection} from '@intuit3d/sketch/selected-profile-hole-authoring/v1';
+import type {SelectedProfileHoleLayoutCommand,SelectedProfileHoleLayoutRefusal,SelectedProfileHoleLayoutInspection,SelectedProfileHoleLayoutAccepted} from '@intuit3d/sketch/selected-profile-hole-layout/v1';
 import type {ProfileDiscoveryResponse} from '@intuit3d/sketch/profile-discovery/v1';
 
 
@@ -238,6 +239,33 @@ export type SelectedProfileHoleRuntimeResult =
       holeId:string;operation:SelectedProfileHoleCommand['kind'];
       changedConstraintIds:string[];exactAuthority:false}>;
 
+
+/** Atomic simultaneous hole rearrangement on a selected solved profile. */
+export interface SelectedProfileHoleLayoutRuntimeRequest {
+  sketchFeatureId:string;eventId:string;expectedRevision:number;
+  selection:SelectedProfileSelection;command:SelectedProfileHoleLayoutCommand;
+}
+export type SelectedProfileHoleLayoutRuntimeResult =
+  | Readonly<{kind:'refused';code:'stale_selection'|'profile_hole_layout_refused';
+      notCommitted:true;sourceRevision:number;reason:string;
+      review?:SelectedProfileHoleLayoutRefusal}>
+  | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
+      invalidation:WorkflowInvalidation;sketchStatus:RuntimeStatus;
+      selection:SelectedProfileSelection;semanticProfileId:string;
+      changedConstraintIds:string[];affectedHoleIds:string[];
+      reanchoredHoleIds:string[];edits:SelectedProfileHoleLayoutAccepted['edits'];
+      exactAuthority:false}>;
+export type SelectedProfileHoleLayoutRuntimeInspectionRequest =
+  SelectedProfileHoleRuntimeInspectionRequest;
+export type SelectedProfileHoleLayoutRuntimeInspectionResult =
+  | Readonly<{kind:'ready';projectId:string;sourceRevision:number;
+      sketchFeatureId:string;inspection:SelectedProfileHoleLayoutInspection;
+      exactAuthority:false}>
+  | Readonly<{kind:'refused';
+      code:'stale_command'|'missing_sketch'|'selection_required'|'profile_unavailable';
+      reason:string;notCommitted:true;sourceProjectId:string;sourceRevision:number;
+      review?:SelectedProfileHoleLayoutRefusal;exactAuthority:false}>;
+
 export interface RuntimeServices {
   model: { planProject(document: ProjectDocument): EvaluationPlan };
   transactions: {
@@ -285,6 +313,8 @@ export interface WorkflowRuntime {
   inspectSelectedEdgeHoles(history:UndoHistory,request:SelectedEdgeHoleRuntimeInspectionRequest):SelectedEdgeHoleRuntimeInspectionResult;
   inspectSelectedProfileHoles(history:UndoHistory,request:SelectedProfileHoleRuntimeInspectionRequest):SelectedProfileHoleRuntimeInspectionResult;
   editSelectedProfileHole(history:UndoHistory,request:SelectedProfileHoleRuntimeRequest):SelectedProfileHoleRuntimeResult;
+  editSelectedProfileHoleLayout(history:UndoHistory,request:SelectedProfileHoleLayoutRuntimeRequest):SelectedProfileHoleLayoutRuntimeResult;
+  inspectSelectedProfileHoleLayout(history:UndoHistory,request:SelectedProfileHoleLayoutRuntimeInspectionRequest):SelectedProfileHoleLayoutRuntimeInspectionResult;
   undo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   redo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   save(history: UndoHistory): string;

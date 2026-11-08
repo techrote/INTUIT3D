@@ -96,6 +96,23 @@ void solverPreviewThenNative;
 
 /** Browser consumer can stage multiple typed operations with one source fence
  * and one durable write; each inner command has no per-operation revision. */
+const profileLayoutView=session.inspectSelectedProfileHoleLayout({
+  projectId:state.projectId,expectedRevision:state.revision,
+  sketchFeatureId:'sketch.plate',
+});
+if(profileLayoutView.kind==='ready') {
+  const analyticOnly:false=profileLayoutView.exactAuthority;
+  void analyticOnly;
+}
+const atomicProfileLayout=session.applyCommand({
+  kind:'sketch.holes.selected-profile-layout',
+  projectId:state.projectId,expectedRevision:state.revision,
+  request:{sketchFeatureId:'sketch.plate',eventId:'type.session.profile.layout',
+    selection:{candidateId:'cycle:example',sourceSignature:'snapshot'},
+    command:{kind:'set-hole-layout',sourceSignature:'snapshot',
+      edits:[{holeId:'holeA',xMm:20,yMm:20,radiusMm:4}]}}
+});
+void atomicProfileLayout;
 const edgeCommand=session.applyCommand({
   kind:'sketch.holes.selected-edge',projectId:state.projectId,
   expectedRevision:state.revision,request:{
