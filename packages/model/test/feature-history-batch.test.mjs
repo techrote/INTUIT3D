@@ -8,7 +8,8 @@ import {
 } from '../src/index.ts';
 import {
   FEATURE_HISTORY_BATCH_FORMAT, previewFeatureHistoryBatch,
-  commitUndoableFeatureHistoryBatch,
+  commitUndoableFeatureHistoryBatch, recoverFeatureHistoryBatchSelection,
+  FEATURE_HISTORY_BATCH_RECOVERY_FORMAT,
 } from '../src/feature-history-batch.ts';
 import {
   startUndoHistory, undoTransaction, redoTransaction,
@@ -258,4 +259,157 @@ test('actual SKETCH/FEATUREOPS/RUNTIME linked multi-body authoring example',()=>
   assert.equal(summary.singleUndoFrame,true);
   assert.equal(summary.archiveUndoRedo,true);
   assert.equal(summary.exactGeometryAuthority,false);
+});
+
+
+test('stale multi-body selection is recovered only on its canonical append-only lineage',()=>{
+  const source=fixture(),captured=request(source);
+  const latest=commitEvent(source,{type:'feature.edit',
+    eventId:'later.qa.gauge',featureId:'extrude.gauge',
+    patch:{payload:{thicknessMm:7}}});
+  assert.throws(()=>previewFeatureHistoryBatch(latest,captured),
+    ProjectRevisionError,'stale commands may not commit directly');
+  const snapshot=serializeProject(latest);
+  const result=recoverFeatureHistoryBatchSelection(latest,captured);
+  assert.equal(result.format,FEATURE_HISTORY_BATCH_RECOVERY_FORMAT);
+  assert.equal(result.status,'ready');
+  assert.equal(result.requiresFreshReview,true);
+  assert.equal(result.appendedEventCount,1);
+  assert.deepEqual(result.newlyInvalidatedBodyIds,[]);
+  assert.equal(result.candidateRequest.expectedRevision,latest.revision);
+  assert.equal(result.candidateRequest.expectedDocumentFence,snapshot);
+  assert.equal(result.candidateRequest.admission,'require_ready');
+  assert.equal(result.candidateRequest.confirmUnresolved,false);
+  assert.deepEqual(result.preview.invalidatedBodyIds,['body.base','body.cover']);
+  let history=commitUndoableFeatureHistoryBatch(startUndoHistory(latest),
+    result.candidateRequest);
+  assert.equal(history.undoStack.length,1);
+  assert.equal(history.undoStack[0].length,2);
+  assert.equal(find(history.document,'extrude.gauge').payload.thicknessMm,7);
+  history=deserializeModelArchive(serializeModelArchive(createModelArchive(history))).history;
+  history=undoTransaction(history,['undo.recovered.cover','undo.recovered.base']);
+  assert.equal(find(history.document,'extrude.base').payload.thicknessMm,18);
+  assert.equal(find(history.document,'extrude.gauge').payload.thicknessMm,7);
+  history=redoTransaction(history,['redo.recovered.base','redo.recovered.cover']);
+  assert.equal(find(history.document,'extrude.base').payload.thicknessMm,10);
+  assert.equal(find(history.document,'extrude.cover').payload.thicknessMm,6);
+  assert.equal(find(history.document,'extrude.gauge').payload.thicknessMm,7);
+  assert.equal(serializeProject(latest),snapshot,'read-only recovery');
+});
+
+test('later disjoint same-feature datum survives a recovered scalar history choice',()=>{
+  const source=fixture();
+  const latest=commitEvent(source,{type:'feature.edit',
+    eventId:'later.base.additional.datum',featureId:'extrude.base',
+    patch:{dependsOn:['sketch.base','sketch.cover']}});
+  const result=recoverFeatureHistoryBatchSelection(latest,request(source));
+  assert.equal(result.status,'ready');
+  const committed=commitUndoableFeatureHistoryBatch(startUndoHistory(latest),
+    result.candidateRequest);
+  assert.deepEqual(find(committed.document,'extrude.base').dependsOn,
+    ['sketch.base','sketch.cover']);
+  assert.equal(find(committed.document,'extrude.base').payload.thicknessMm,10);
+});
+
+test('newly attached dependent body is disclosed, not silently omitted',()=>{
+  const source=fixture();
+  let latest=commitEvent(source,{type:'feature.create',
+    eventId:'create.sketch.brace',
+    feature:{id:'sketch.brace',kind:'sketch',dependsOn:[],
+      writeTargets:['sketch.brace'],payload:{widthMm:18}}});
+  latest=commitEvent(latest,{type:'feature.create',
+    eventId:'create.extrude.brace',
+    feature:{id:'extrude.brace',kind:'extrude',
+      dependsOn:['sketch.brace','extrude.cover'],
+      writeTargets:['body.brace'],payload:{thicknessMm:4}}});
+  const recovered=recoverFeatureHistoryBatchSelection(latest,request(source));
+  assert.equal(recovered.status,'ready');
+  assert.deepEqual(recovered.newlyInvalidatedBodyIds,['body.brace']);
+  assert.ok(recovered.preview.invalidatedBodyIds.includes('body.brace'));
+  const manifest=planBodyRebuildManifest(latest,recovered.preview.document,{
+    format:BODY_REBUILD_MANIFEST_FORMAT,version:1,
+    expectedProjectId:latest.projectId,
+    expectedFromRevision:latest.revision,
+    expectedToRevision:recovered.preview.document.revision,
+    bodyIds:['body.base','body.cover','body.gauge','body.brace'],
+  });
+  assert.deepEqual(Object.fromEntries(manifest.bodies.map((item)=>
+    [item.bodyId,item.action])),{
+    'body.base':'rebuild','body.cover':'rebuild',
+    'body.gauge':'preserve_candidate','body.brace':'rebuild',
+  });
+});
+
+test('overlapping edit, reused inverse event and feature retirement block entire recovery',()=>{
+  const original=fixture(),captured=request(original);
+  const cases=[
+    commitEvent(original,{type:'feature.edit',eventId:'later.base.payload',
+      featureId:'extrude.base',patch:{payload:{thicknessMm:18,clearanceMm:4}}}),
+    commitEvent(original,{type:'feature.edit',
+      eventId:'compensate.base.thickness',featureId:'extrude.gauge',
+      patch:{payload:{thicknessMm:7}}}),
+    commitEvent(original,{type:'feature.remove',eventId:'later.cover.remove',
+      featureId:'extrude.cover'}),
+  ];
+  for(const latest of cases){
+    const originalFence=serializeProject(latest);
+    const result=recoverFeatureHistoryBatchSelection(latest,captured);
+    assert.equal(result.status,'blocked');
+    assert.match(result.reason,/changed|retired|already|identity|reused|event/i);
+    assert.equal(result.candidateRequest,null);
+    assert.equal(result.preview,null);
+    assert.equal(serializeProject(latest),originalFence);
+  }
+});
+
+test('equal-revision divergence, changed project and invalid original fence never rebase',()=>{
+  const origin=fixture(),captured=request(origin);
+  const diverged={...origin,journal:origin.journal.map(event=>
+    event.eventId==='edit.gauge.independent'
+      ? {...event,patch:{payload:{thicknessMm:7}}}:event)};
+  assert.equal(diverged.revision,origin.revision);
+  assert.throws(()=>recoverFeatureHistoryBatchSelection(diverged,captured),
+    ProjectRevisionError);
+  const another=commitEvent(newProject('project.other'),{
+    type:'feature.create',eventId:'create.other',
+    feature:{id:'sketch.other',kind:'sketch',dependsOn:[],
+      writeTargets:['sketch.other'],payload:{widthMm:2}}});
+  assert.throws(()=>recoverFeatureHistoryBatchSelection(another,captured),
+    ProjectRevisionError);
+  assert.throws(()=>recoverFeatureHistoryBatchSelection(origin,{
+    ...captured,expectedDocumentFence:captured.expectedDocumentFence+' ',
+  }),ProjectRevisionError);
+});
+
+test('previous unresolved permission is not carried into a recovered batch',()=>{
+  let source=fixture();
+  source=commitEvent(source,{type:'feature.create',eventId:'create.sketch.pending',
+    feature:{id:'sketch.pending',kind:'sketch',dependsOn:['sketch.absent'],
+      writeTargets:['sketch.pending'],payload:{widthMm:12}}});
+  source=commitEvent(source,{type:'feature.edit',eventId:'edit.pending.repair',
+    featureId:'sketch.pending',patch:{dependsOn:[]}});
+  const selections=[request(source).selections[0],{
+    kind:'fields',targetEventId:'edit.pending.repair',
+    eventId:'compensate.pending.repair',selectedFields:['dependsOn']}];
+  const captured=request(source,{
+    selections,admission:'permit_unresolved',confirmUnresolved:true});
+  const latest=commitEvent(source,{type:'feature.edit',
+    eventId:'later.gauge.size',featureId:'extrude.gauge',
+    patch:{payload:{thicknessMm:8}}});
+  const recovered=recoverFeatureHistoryBatchSelection(latest,captured);
+  assert.equal(recovered.status,'requires_unresolved_review');
+  assert.ok(recovered.preview.regressedReadyFeatureIds.includes('sketch.pending'));
+  assert.equal(recovered.candidateRequest.admission,'require_ready');
+  assert.equal(recovered.candidateRequest.confirmUnresolved,false);
+  assert.throws(()=>commitUndoableFeatureHistoryBatch(startUndoHistory(latest),
+    recovered.candidateRequest),ProjectFormatError);
+  const explicitlyApproved={
+    ...recovered.candidateRequest,admission:'permit_unresolved',
+    confirmUnresolved:true};
+  const compensated=commitUndoableFeatureHistoryBatch(startUndoHistory(latest),
+    explicitlyApproved);
+  assert.equal(compensated.undoStack.length,1);
+  assert.equal(planProject(compensated.document).features.find(item=>
+    item.feature.id==='sketch.pending').status,'pending');
+  assert.equal(find(compensated.document,'extrude.gauge').payload.thicknessMm,8);
 });
