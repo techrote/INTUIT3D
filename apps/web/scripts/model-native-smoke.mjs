@@ -970,8 +970,27 @@ async function main(){
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
     'recovered checkpoint did not pass Worker validation after reload');
   await pointerClick('runtime-import-review-confirm');
-  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-revision]')?.textContent.match(/\\d+/)?.[0])==="+recoveryRevision),
-    'explicit recovery did not restore the original authoritative revision');
+  // Decode the browser's visible revision outside the CDP expression string.
+  // Backslash escapes inside nested JS strings can silently turn /\d+/ into /d+/.
+  // A passing check also requires the confirmation dialog to have closed.
+  try{
+    await eventually(async()=>{
+      const label=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+      const got=Number(String(label??'').match(/[0-9]+/)?.[0]);
+      return got===recoveryRevision &&
+        await evaluate("document.querySelector('[data-testid=runtime-import-review]')===null");
+    },'explicit recovery did not restore the original authoritative revision');
+  }catch(error){
+    const observed=await evaluate(`(() => JSON.stringify({
+      revision:document.querySelector('[data-testid=runtime-revision]')?.textContent??null,
+      reviewVisible:Boolean(document.querySelector('[data-testid=runtime-import-review]')),
+      processing:document.querySelector('[data-testid=runtime-import-stage]')?.textContent??null,
+      message:document.querySelector('.runtime-message')?.textContent??null,
+      archiveState:document.querySelector('[data-testid=runtime-archive-state]')?.textContent??null,
+    }))()`);
+    await screenshot('native-11-recovery-revision-failure.png').catch(()=>{});
+    throw Error(`Recovery revision mismatch (expected ${recoveryRevision}; observed ${observed}): ${String(error)}`);
+  }
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===2"),
     'recovering an archive lost newly authored circular holes');
   check(await evaluate("document.querySelector('[data-testid=runtime-archive-state]')?.textContent.includes('UNEXPORTED')"),
@@ -985,12 +1004,31 @@ async function main(){
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===2"),
     'reopened recovery failed redo of authored circular holes');
+  // Real Chromium pointer-selection and keyboard input, not a synthetic React call.
+  await pointerClick('runtime-mode-sketch');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch-outline-hole-holeA]'))"),
+    'fresh admitted plate sketch not visible');
+  await pointerClick('runtime-sketch-outline-hole-holeA');
+  const beforeNudge=Number(await evaluate("document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value"));
+  const beforeNudgeRevision=Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
+  await key('ArrowRight','ArrowRight',39);
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)===${beforeNudge+1}`),
+    'arrow-key nudge did not move selected hole through the authoritative model');
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===beforeNudgeRevision+1,
+    'arrow-key nudge did not commit precisely one journal revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'arrow-key nudge retained a stale native STEP receipt');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)===${beforeNudge}`),
+    'keyboard nudge undo failed to restore the authored centre');
+  await pointerClick('runtime-mode-solid');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder with schema-compatible OCP identity, NOT OCP/native/STEP interoperability',
     downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,realPhysicalGeometry:false,
-    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,localRecoveryIndexedDbReload:true,recoveryWorkerReviewCancel:true,recoveryUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
+    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,keyboardHoleNudge:true,keyboardNudgeUndo:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,localRecoveryIndexedDbReload:true,recoveryWorkerReviewCancel:true,recoveryUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
       'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png','native-10a-selected-rigid-rotation.png','native-10-circular-bolt-array.png','native-11-local-recovery-after-reload.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');

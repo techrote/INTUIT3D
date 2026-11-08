@@ -263,19 +263,70 @@ export function moveModelHoleGroup(
   return result;
 }
 
-/** A two-axis drag is one undoable constraint transaction, not two moves. */
+/** Direct gestures require physical clearance, not merely solvable constraints.
+ * The current editor admits only the actual orthogonal plate, never an
+ * arbitrary-contour bounding-box approximation. */
+function assertInsidePlate(h:ModelSession,hole:ModelHole,x:number,y:number):void {
+  const profile=previewModelSketchProfile(runtime.inspect(h));
+  if(!profile)throw Error('Direct hole movement requires an admitted solved profile.');
+  const xs=profile.outer.map(p=>p.x),ys=profile.outer.map(p=>p.y);
+  const minX=Math.min(...xs),maxX=Math.max(...xs);
+  const minY=Math.min(...ys),maxY=Math.max(...ys);
+  const corners=new Set(profile.outer.map(p=>p.x+','+p.y));
+  if(profile.outer.length!==4||corners.size!==4||
+      ![minX,maxX,minY,maxY].every(Number.isFinite)||
+      minX>=maxX||minY>=maxY||
+      profile.outer.some(p=>(p.x!==minX&&p.x!==maxX)||(p.y!==minY&&p.y!==maxY)))
+    throw Error('Direct hole movement requires an admitted rectangular plate.');
+  const rim=profile.holes.find(circle=>circle.id===hole);
+  if(!rim||!Number.isFinite(rim.radius)||rim.radius<=0)
+    throw Error('Selected hole missing from the admitted sketch profile.');
+  if(x-rim.radius<=minX||x+rim.radius>=maxX||
+      y-rim.radius<=minY||y+rim.radius>=maxY)
+    throw Error('Direct hole movement would place its rim outside the plate; model unchanged.');
+}
+
+/** One direct gesture changes both coordinates in one undoable SKETCH event.
+ * Numeric inspector edits separately preserve unresolved intent for repair. */
 export function moveModelHoleCenter(
   h:ModelSession, hole:ModelHole, x:number,y:number,
 ):SketchConstraintBatchResult {
   requireHole(h,hole);
-  if (![x,y].every(v=>Number.isFinite(v)&&Math.abs(v)<=10000)) {
+  if (![x,y].every(v=>Number.isFinite(v)&&Math.abs(v)<=10000))
     throw Error('Hole drag coordinates are out of supported range');
-  }
-  return runtime.editSketchConstraints(h,{
+  assertInsidePlate(h,hole,x,y);
+  const result=runtime.editSketchConstraints(h,{
     sketchFeatureId:'sketch.plate',eventId:`workbench.drag.${hole}.${h.document.revision}`,
     expectedRevision:h.document.revision,admission:'require_admissible',
     edits:[{constraintId:hole+':fixed',patch:{x,y}}],
   });
+  if(result.kind==='committed'){
+    const actual=modelHoleValues(result.history)[hole];
+    if(!actual||Math.abs(actual.x-x)>1e-6||Math.abs(actual.y-y)>1e-6)
+      throw Error('Direct hole movement missed its solved target; model unchanged.');
+    assertInsidePlate(result.history,hole,actual.x,actual.y);
+  }
+  return result;
+}
+
+/** One or several selected hole centres move per key press as one INTENT event. */
+export function nudgeModelHoleSelection(
+  h:ModelSession,holeIds:readonly ModelHole[],deltaX:number,deltaY:number,
+):SketchConstraintBatchResult {
+  if(!Array.isArray(holeIds)||holeIds.length<1||holeIds.length>32||
+      new Set(holeIds).size!==holeIds.length)
+    throw Error('Nudge requires 1–32 distinct selected authored holes.');
+  if(![deltaX,deltaY].every(Number.isFinite)||
+      [deltaX,deltaY].some(n=>Math.abs(n)>10000)||
+      (deltaX===0&&deltaY===0))
+    throw Error('Nudge requires a finite nonzero X/Y step within ±10,000 mm.');
+  const positions=modelHoleValues(h);
+  for(const id of holeIds)
+    if(!Object.hasOwn(positions,id))
+      throw Error('Nudge selection contains an unknown authored hole: '+id);
+  if(holeIds.length>1)return moveModelHoleGroup(h,holeIds,deltaX,deltaY);
+  const id=holeIds[0];
+  return moveModelHoleCenter(h,id,positions[id].x+deltaX,positions[id].y+deltaY);
 }
 
 /** Gesture/keyboard dimension edit: one authoritative transaction, refusing
