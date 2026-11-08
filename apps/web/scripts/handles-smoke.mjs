@@ -986,7 +986,7 @@ async function main() {
     'Close did not commit SKETCH through versioned RUNTIME structural authoring');
   const closedRevision=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
   check(closedRevision!==blankBefore,'Close did not commit one authoritative revision');
-  check(await evaluate("document.querySelector('[data-testid=runtime-mesh-caption]')?.textContent?.includes('4 outline vertices')"),
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent?.includes('4 outline vertices')"),
     'user-created polygon did not become the admitted analytic sketch preview');
   await screenshot('30-from-empty-authoritative-closed-contour.png');
   // One authoritative Undo removes the whole contour, not a single point.
