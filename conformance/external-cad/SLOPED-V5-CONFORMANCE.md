@@ -110,3 +110,30 @@ Verify all original STEP hashes/producer receipt source pins, all 12 imports,
 physical wrong-stage and shape-switch negatives and an exact source-to-binary
 compilation log before admitting interoperability under #74. Source-only unit
 receipts/old U fixtures do **not** qualify v6 physical correctness.
+
+### All-in-one v6 independent CAD execution
+
+After one exact-head hosted KERNEL #195 OCCT 8.0.1 build has produced the
+**original** six direct plus six authored progressive STEP outputs, the
+following command performs twelve independent physical imports, 456
+material/void/floor rays, **four physical adversarial re-imports** (missing
+blind, fabricated square pocket, circle vs square, incorrect thickness),
+source/binary/hash custody, and atomic fail-closed evidence status:
+
+\`\`\`sh
+python3 conformance/external-cad/progressive_v6.py \
+  --direct-dir /fresh/direct-v6 --authored-dir /fresh/authored-v6 \
+  --kernel-tree /exact/KERNEL-195-checkout --kernel-sha EXACT_KERNEL_SHA \
+  --worker /absolute/pinned-OCCT8-worker --probe /absolute/compiled-AnvilCAD-probe \
+  --probe-sha256 ACTUAL_ANVIL_EXECUTABLE_SHA256 \
+  --anvil-source-sha 50c053840933c92d598976e837e63ccd7626c312 \
+  --output-dir /fresh/progressive-independent-evidence
+\`\`\`
+
+Preserves 12 original STEP copies, individually hashed AnvilCAD logs, four
+negative replay logs, exact worker/engine SHA pins and qualification.json.
+The four negative cases must exit via the independent probe's controlled
+NOT_QUALIFIED rejection, not crash or timeout. A physical PASS remains
+**unavailable** until genuine source-matched producer data and exact-head
+compiler log are independently inspected. Synthetic tests cover contract
+refusals only, never imported geometry.
