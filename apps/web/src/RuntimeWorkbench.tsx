@@ -12,7 +12,7 @@ import type { SketchDimensionHandle } from './runtimeSketchHandles';
 import { nextCircleDrawing, type CircleDrawingState } from './circleDrawing';
 import { createLivePlateSession } from '@intuit3d/workflow-runtime/live-plate-session';
 import { experimentalStepFilename } from './localNativeStep';
-import { MAX_MODEL_ARCHIVE_BYTES, validateModelArchiveInWorker } from './modelArchiveImport';
+import { MAX_MODEL_ARCHIVE_BYTES, validateModelFileInWorker, type ModelImportStage } from './modelArchiveImport';
 import { checkedModelArchiveSize, modelArchiveDownloadName, modelArchiveSummary } from './modelFileLifecycle';
 
 const LABEL: Record<ModelDimension,string> = {
@@ -101,6 +101,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const loadTicket=useRef(0);
   const importAbort=useRef<AbortController|null>(null);
   const [loadingFile,setLoadingFile]=useState<string|null>(null);
+  const [importStage,setImportStage]=useState<ModelImportStage>('reading');
   const cancelActiveImport=()=>{
     ++loadTicket.current;
     importAbort.current?.abort();
@@ -448,14 +449,19 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     // Never apply an archive until the user explicitly confirms replacement.
     setPendingImport(null);
     setLoadingFile(file.name);
+    setImportStage('reading');
     setMessage(null);
     try{
       if(file.size>MAX_MODEL_ARCHIVE_BYTES)throw Error('Archive exceeds 4 MiB');
-      const source=await file.text();
-      if(ticket!==loadTicket.current||abort.signal.aborted)return;
-      // Full RUNTIME.reopen + undo validation + SKETCH inspection run in a
-      // bounded worker, not synchronously on Firefox's main/UI thread.
-      const incoming=await validateModelArchiveInWorker(source,{signal:abort.signal});
+      // Transfer the File handle, not its decoded JSON, to the Worker. Reading
+      // File.text(), RUNTIME.reopen, undo validation and SKETCH inspection all
+      // run off Firefox's main/UI thread; no synchronous fallback is allowed.
+      const incoming=await validateModelFileInWorker(file,{
+        signal:abort.signal,
+        onProgress:stage=>{
+          if(ticket===loadTicket.current&&!abort.signal.aborted)setImportStage(stage);
+        },
+      });
       if(ticket!==loadTicket.current||abort.signal.aborted)return;
       setPendingImport({file:file.name,history:incoming,origin:'file'});
     }catch(e){
@@ -1004,8 +1010,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       role="dialog" aria-modal="true" aria-label="Validating incoming model archive"
       data-testid="runtime-import-processing">
       <h2>Validating model archive…</h2>
-      <p>Checking {loadingFile} and its undo history in an isolated worker.
-        Your current model remains unchanged.</p>
+      <p data-testid="runtime-import-stage">Stage: {importStage==='reading'
+        ?'Reading selected file in isolated worker'
+        :importStage==='validating'?'Checking authoritative journal, undo history and sketch'
+        :'Returning validated model for confirmation'}.</p>
+      <p>Checking {loadingFile} in an isolated worker. Your current model remains unchanged;
+        you can cancel without authoring a new revision.</p>
       <div className="recovery-actions">
         <button type="button" data-testid="runtime-import-processing-cancel"
           onClick={()=>{cancelActiveImport();setMessage('Archive import cancelled; current model retained.');}}>

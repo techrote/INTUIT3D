@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  MAX_MODEL_ARCHIVE_BYTES, validateModelArchiveInWorker,
+  MAX_MODEL_ARCHIVE_BYTES, validateModelArchiveInWorker, validateModelFileInWorker,
 } from './modelArchiveImport.ts';
 import {
   editModelDimension, modelDimensionValues, newModelPlateSession,
@@ -49,6 +49,62 @@ test('isolated import transfers a genuine multi-frame model without erasing jour
   assert.equal(modelDimensionValues(imported).thickness, 18);
   assert.equal(modelDimensionValues(undoModelSession(imported)).thickness, 17);
   assert.equal(modelDimensionValues(redoModelSession(undoModelSession(imported))).thickness, 18);
+});
+
+test('selected OS File is read inside Worker, with progress, and durable history survives', async () => {
+  let original = newModelPlateSession('workbench.import.file-worker');
+  for (let i = 0; i < 11; i++) original = editModelDimension(original, 'thickness', 12 + i);
+  const saved = serializeModelSession(original);
+  const file = new File([saved], 'eleven-events.i3d-model.json', {type:'application/json'});
+  const worker = new FakeImportWorker();
+  const stages: string[] = [];
+  worker.onPost = request => {
+    const payload = request as {file: File; source?: string};
+    assert.equal(payload.file, file);
+    assert.equal(payload.source, undefined, 'do not decode the File in the UI event handler');
+    void payload.file.text().then(source => {
+      assert.equal(source, saved);
+      worker.reply({kind:'progress',stage:'reading'});
+      worker.reply({kind:'progress',stage:'validating'});
+      worker.reply({kind:'progress',stage:'transferring'});
+      worker.reply({kind:'accepted',history:structuredClone(reopenModelSession(source))});
+    });
+  };
+  const restored = await validateModelFileInWorker(file,{
+    ...options(worker),onProgress:stage=>stages.push(stage),
+  });
+  assert.deepEqual(stages, ['reading','validating','transferring']);
+  assert.equal(worker.terminated,true);
+  assert.equal(serializeModelSession(restored),saved);
+  assert.equal(restored.document.projectId,original.document.projectId);
+  assert.equal(modelDimensionValues(undoModelSession(restored)).thickness,21);
+});
+
+test('oversized selected File is rejected before Worker creation or file decoding', async () => {
+  const file=new File([new Uint8Array(MAX_MODEL_ARCHIVE_BYTES+1)],'oversized.i3d-model.json');
+  let spawned=false;
+  await assert.rejects(validateModelFileInWorker(file,{
+    createWorker:()=>{spawned=true;return new FakeImportWorker() as unknown as Worker;},
+  }),/4 MiB/);
+  assert.equal(spawned,false);
+});
+
+test('malformed File, a hung File reader and cancelled file import cannot publish history', async () => {
+  const invalid=new File(['{ invalid JSON'],'broken.i3d-model.json');
+  const worker=new FakeImportWorker();
+  worker.onPost=()=>worker.reply({kind:'refused',reason:'Malformed model archive'});
+  await assert.rejects(validateModelFileInWorker(invalid,options(worker)),/Malformed/);
+  assert.equal(worker.terminated,true);
+  const hung=new FakeImportWorker();
+  await assert.rejects(validateModelFileInWorker(invalid,{
+    ...options(hung),timeoutMs:10,
+  }),/timed out/);
+  assert.equal(hung.terminated,true);
+  const cancelled=new FakeImportWorker(), abort=new AbortController();
+  const running=validateModelFileInWorker(invalid,{...options(cancelled),signal:abort.signal});
+  abort.abort();
+  await assert.rejects(running,/cancelled/);
+  assert.equal(cancelled.terminated,true);
 });
 
 test('invalid archive is refused without accepting a document', async () => {
