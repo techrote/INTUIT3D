@@ -77,6 +77,9 @@ function context(history,request,services,fields){
     fail('explicit SKETCH base profile required');
   if(typeof request.depthMm!=='number'||!Number.isFinite(request.depthMm)||
      request.depthMm<=0)fail('positive finite extrusion depth in mm required');
+  if(fields===applyFields&&(!Array.isArray(request.newCutFeatureIds)||
+     !Array.isArray(request.cutEventIds)))
+    fail('fresh per-cut feature/event arrays required');
   const newIds=[request.newExtrudeFeatureId,request.newBodyId,
     request.newExtrudeEventId,
     ...(fields===applyFields?[...request.newCutFeatureIds??[],
@@ -151,6 +154,18 @@ export function createMachinedBodyVariant(history,request,services){
      request.newCutFeatureIds.length!==inspected.sourceCuts.length||
      request.cutEventIds.length!==inspected.sourceCuts.length)
     fail('one fresh feature and event ID required per cut');
+  // The unchanged-copy branch must be just as strict as adapted target
+  // selection: never silently ignore unknown geometry fields.
+  for(const cut of request.targetCuts){
+    exact(cut,['sourceCutFeatureId','sourceSketchId','profileCandidateId','extent'],
+      'target cut');
+    const e=cut.extent;
+    exact(e,e?.kind==='blind'?['kind','depthMm']:['kind'],'target extent');
+    if(e.kind!=='through_all'&&
+       (e.kind!=='blind'||typeof e.depthMm!=='number'||
+        !Number.isFinite(e.depthMm)||e.depthMm<=0))
+      fail('invalid target machining depth');
+  }
   const copied=sameRecipe(request.targetCuts,inspected.sourceCuts);
   const forwarded={...selection,expectedSourceCuts:inspected.sourceCuts,
     newCutFeatureIds:request.newCutFeatureIds,
