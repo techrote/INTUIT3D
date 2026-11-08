@@ -882,7 +882,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         <button className="ribbon-button" data-testid="runtime-new-sketch"
           title="New sketch-first project (Ctrl+N); replacement confirmation required"
           onClick={prepareNewSketch}>New sketch-first project</button>
-        <button className="ribbon-button" title="Save authoritative model archive (Ctrl+S)" onClick={save}>Save model archive</button>
+        <button className="ribbon-button" data-testid="runtime-save-archive" title="Save authoritative model archive (Ctrl+S)" onClick={save}>Save model archive</button>
         <button className="ribbon-button" title="Open authoritative model archive (Ctrl+O), or drop one JSON archive on the workbench" onClick={()=>fileInput.current?.click()}>Open model archive</button>
         <button className="ribbon-button" onClick={()=>{
           if(window.confirm('Leave the model-backed editor? Export your model archive first; the model session will close.'))onClose();
