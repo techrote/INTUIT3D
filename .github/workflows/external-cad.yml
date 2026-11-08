@@ -336,9 +336,15 @@ jobs:
           root="$RUNNER_TEMP/intuit3d-external-evidence"
           # Do not accept newly generated or synthetic STEP files.
           test "$(git -C kernel-source rev-parse HEAD)" = '93e984963db720cacdd8bb679a559a3b8df88ce8'
-          test "$(git -C cad-source rev-parse HEAD)" = 'e155633b3fe3ce07295953432f16305c3eb191db' || {
-            echo "::error::Selected sloped candidate code changed; requalify exact candidate SHA"; exit 1;
-          }
+          # The dedicated Integration candidate has a strict immutable source
+          # fence. Later STEP PRs must instead test their own actual head,
+          # rather than being permanently blocked by the historical SHA.
+          if [[ "$GITHUB_EVENT_NAME" == 'pull_request' &&
+                "$GITHUB_HEAD_REF" == 'intuit/integration/195-cross-engine-original-20261108' ]]; then
+            test "$(git -C cad-source rev-parse HEAD)" = 'e155633b3fe3ce07295953432f16305c3eb191db' || {
+              echo "::error::Selected sloped candidate code changed; requalify exact candidate SHA"; exit 1;
+            }
+          fi
           curl --fail --location --retry 3 --connect-timeout 20 --max-time 600 \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H 'Accept: application/vnd.github+json' \
