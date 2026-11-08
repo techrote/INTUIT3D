@@ -480,7 +480,135 @@ fn u_bracket(args: &[String]) {
              surface_area,expected_surface);
 }
 
+
+// KERNEL-002 v5: independently import real selected *sloped* contours and
+// reconstruct two differently edited C++ STEP exports. The oracle is the
+// immutable selected six-edge polygon and actual cuts, not native STEP text,
+// native mass-property receipts, or another OCCT reader. "direct" contains a
+// circular blind pocket; "authored" contains a rectangular blind pocket.
+fn sloped_profile(args: &[String]) {
+    if args.len()!=5 { fail("usage: --sloped-profile STEP direct|authored 8|12"); }
+    let kind=args[3].as_str();
+    if kind!="direct" && kind!="authored" { fail("unsupported sloped profile fixture"); }
+    let t=number(&args[4]);
+    if t!=8.0 && t!=12.0 { fail("unsupported sloped profile thickness"); }
+    let pocket_area=if kind=="direct" { std::f64::consts::PI*25.0 } else {100.0};
+    let pocket_wall=if kind=="direct" { 2.0*std::f64::consts::PI*5.0*3.0 } else {40.0*3.0};
+    // Shoelace polygon (0,0),(120,0),(120,20),(65,20),(45,80),(0,80).
+    // The 14x8 through-cut has four vertical walls. The blind pocket
+    // exchanges its top aperture for a same-area floor.
+    let wanted=(5700.0-112.0)*t-pocket_area*3.0;
+    let wanted_surface=2.0*(5700.0-112.0)
+        +(320.0+4000.0f64.sqrt()+44.0)*t+pocket_wall;
+    let source=fs::read_to_string(&args[2])
+        .unwrap_or_else(|_| fail("cannot read actual sloped-profile STEP bytes"));
+    let cad=import(&source)
+        .unwrap_or_else(|e|fail(&format!("independent sloped STEP import failed: {e}")));
+    if cad.length_unit!="millimetre" && cad.length_unit!="millimeter" {
+        fail("sloped-profile imported length unit is not millimetres");
+    }
+    if cad.bodies.len()!=1 || !cad.bodies[0].solid ||
+       cad.bodies[0].exact.is_none() || !cad.warnings.is_empty() {
+        fail("sloped-profile import must produce one warning-free exact B-rep solid");
+    }
+    let mesh=&cad.bodies[0].mesh;
+    if mesh.vertices.is_empty() || mesh.faces.is_empty() {
+        fail("empty independently reconstructed sloped mesh");
+    }
+    let mut directed:HashMap<(u32,u32),usize>=HashMap::new();
+    let mut signed_volume=0.0f64;
+    let mut surface=0.0f64;
+    let mut tris=0usize;
+    for triangle in mesh.faces.iter().flat_map(|face| &face.triangles) {
+        let a=point(mesh,triangle[0]);
+        let b=point(mesh,triangle[1]);
+        let c=point(mesh,triangle[2]);
+        tris+=1;
+        let u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]];
+        let v=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
+        let cross=[u[1]*v[2]-u[2]*v[1],
+                   u[2]*v[0]-u[0]*v[2],
+                   u[0]*v[1]-u[1]*v[0]];
+        surface+=0.5*(cross.iter().map(|x|x*x).sum::<f64>()).sqrt();
+        let origin_cross=[b[1]*c[2]-b[2]*c[1],
+                          b[2]*c[0]-b[0]*c[2],
+                          b[0]*c[1]-b[1]*c[0]];
+        signed_volume+=(a[0]*origin_cross[0]+a[1]*origin_cross[1]
+                       +a[2]*origin_cross[2])/6.0;
+        for i in 0..3 {
+            *directed.entry((triangle[i],triangle[(i+1)%3])).or_default()+=1;
+        }
+    }
+    let open=directed.iter().filter(|((a,b),n)|
+        **n!=1 || directed.get(&(*b,*a))!=Some(&1)).count();
+    let volume=signed_volume.abs();
+    if tris<8 || open!=0 || !volume.is_finite() || !surface.is_finite() ||
+       (volume-wanted).abs()>wanted*0.01 ||
+       (surface-wanted_surface).abs()>wanted_surface*0.01 {
+        fail(&format!("sloped profile wrong mesh/mass/area: triangles={tris} open={open} volume={volume} expected={wanted} surface={surface} expected_surface={wanted_surface}"));
+    }
+
+    // Every point is in the independently authored world coordinate system.
+    // The diagonal from (65,20) to (45,80) is x=65-(y-20)/3.
+    // Test both sides of three different portions of the actual sloped edge,
+    // along with concave re-entrant corner, stock, exterior and both cut walls.
+    let mut rays:Vec<(String,f64,f64,Option<f64>)>=vec![
+        ("stock.bottom".into(),40.0,5.0,Some(t)),
+        ("stock.left".into(),5.0,40.0,Some(t)),
+        ("stock.top".into(),5.0,75.0,Some(t)),
+        ("stock.right_foot".into(),112.0,10.0,Some(t)),
+        ("exterior.left".into(),-2.0,40.0,None),
+        ("exterior.bottom".into(),40.0,-2.0,None),
+        ("exterior.right".into(),122.0,10.0,None),
+        ("exterior.top".into(),20.0,82.0,None),
+        ("notch.below".into(),70.0,19.0,Some(t)),
+        ("notch.above".into(),70.0,21.0,None),
+    ];
+    for (i,y) in [30.0f64,50.0,70.0].iter().enumerate() {
+        let edge_x=65.0-(*y-20.0)/3.0;
+        rays.push((format!("slope.{i}.inner"),edge_x-1.0,*y,Some(t)));
+        rays.push((format!("slope.{i}.outer"),edge_x+1.0,*y,None));
+    }
+    rays.push(("window.centre".into(),95.0,10.0,None));
+    for (side,dx,dy,half) in [
+        ("east",1.0,0.0,7.0),("west",-1.0,0.0,7.0),
+        ("north",0.0,1.0,4.0),("south",0.0,-1.0,4.0),
+    ] {
+        rays.push((format!("window.inner.{side}"),
+                   95.0+(half-0.5)*dx,10.0+(half-0.5)*dy,None));
+        rays.push((format!("window.outer.{side}"),
+                   95.0+(half+0.5)*dx,10.0+(half+0.5)*dy,Some(t)));
+    }
+    let floor=Some(t-3.0);
+    rays.push(("pocket.centre".into(),15.0,50.0,floor));
+    for (side,dx,dy) in [
+        ("east",1.0,0.0),("west",-1.0,0.0),
+        ("north",0.0,1.0),("south",0.0,-1.0),
+    ] {
+        rays.push((format!("pocket.inner.{side}"),15.0+4.5*dx,50.0+4.5*dy,floor));
+        rays.push((format!("pocket.outer.{side}"),15.0+5.5*dx,50.0+5.5*dy,Some(t)));
+    }
+    if rays.len()!=34 { fail("incomplete generalized sloped-profile ray oracle"); }
+    for (name,x,y,expected) in rays {
+        let zs=intersections(mesh,x,y);
+        match expected {
+            Some(top) => if zs.len()!=2 || zs[0].abs()>0.05 ||
+                            (zs[1]-top).abs()>0.05 {
+                fail(&format!("{name}: incorrect imported material/floor at ({x},{y}): {zs:?}"));
+            },
+            None => if !zs.is_empty() {
+                fail(&format!("{name}: unexpected material in sloped void at ({x},{y}): {zs:?}"));
+            },
+        }
+        println!("SLOPE_RAY {name} {x:.9} {y:.9} {} {:.9} {:.9}",
+                 zs.len(),zs.first().copied().unwrap_or(-1.0),
+                 zs.last().copied().unwrap_or(-1.0));
+    }
+    println!("SLOPE_ACCEPT kind={kind} thickness_mm={t:.1} solids=1 source_unit={} imported_exact=true tris={tris} open_edges=0 volume_mm3={volume:.9} expected_mm3={wanted:.9} surface_area_mm2={surface:.9} expected_surface_mm2={wanted_surface:.9} warnings=0",cad.length_unit);
+}
+
 fn main() {
+    if env::args().nth(1).as_deref()==Some("--sloped-profile") { sloped_profile(&env::args().collect::<Vec<_>>()); return; }
     let args:Vec<String>=env::args().collect();
     if args.get(1).map(String::as_str)==Some("--u-bracket") { u_bracket(&args); return; }
     if args.get(1).map(String::as_str)==Some("--cut-chains") { cut_chains(&args); return; }
