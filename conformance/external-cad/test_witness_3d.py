@@ -33,6 +33,16 @@ V2_WITNESS = WITNESS.replace(
     b"COVARIANCE 100 102 100 102 3 3.5 -10 -9.3 -0.2 0.2 0.5 0.9\n")
 
 
+def accepted_rays():
+    """Matches the authored spec, including void parity, unlike a mere line count."""
+    return "".join(
+        f"WITNESS_RAY {name} {kind} intersections={1 if kind == 'material' else 0}\n"
+        for name, kind in (("a", "material"), ("b", "void"),
+                           ("c", "material"), ("d", "material"),
+                           ("e", "void"), ("f", "material"),
+                           ("g", "material"), ("h", "void")))
+
+
 def fixture(root: Path):
     tree = root / "source"
     (tree / "native/occt8").mkdir(parents=True)
@@ -50,7 +60,8 @@ def fixture(root: Path):
         step.write_bytes((f"NOT_A_REAL_STEP_fixture_{i}" * 30).encode())
         inputs.append(step)
         items.append({
-            "bodyId": "body.sloped.bracket",
+            "bodyId": "body.sloped.bracket", "revision": 20+i,
+            "requestId": f"native.progressive.v6.{i//2}.{8 if i%2 == 0 else 12}",
             "cutCount": i // 2, "thickness": 8 if i % 2 == 0 else 12,
             "stepSha256": sha(step.read_bytes()),
             "stepBytes": step.stat().st_size,
@@ -76,6 +87,7 @@ def fixture(root: Path):
         positive_index=4, negative=inputs[0],
         negative_sha256=sha(inputs[0].read_bytes()), negative_index=0,
         anvil_source_sha=ANVIL_PIN, output_dir=root / "out",
+        expected_native_revision=None,
     )
     return args
 
@@ -114,9 +126,7 @@ class ThreeDimensionalWitnessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             args = fixture(root)
-            rays = "".join(
-                f"WITNESS_RAY ray-{i} material intersections=1\n"
-                for i in range(8))
+            rays = accepted_rays()
             moments = ("WITNESS_MOMENTS centroid_x_mm=1.100000000 "
                        "centroid_y_mm=2.200000000 centroid_z_mm=3.300000000 "
                        "cov_xx_mm2=101.000000000 cov_yy_mm2=101.000000000 "
@@ -166,9 +176,7 @@ class ThreeDimensionalWitnessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             fixture_args = fixture(root)
-            rays = "".join(
-                f"WITNESS_RAY ray-{i} material intersections=1\n"
-                for i in range(8))
+            rays = accepted_rays()
             success = (rays +
                        "WITNESS_ACCEPT solids=1 imported_exact=true warnings=0 rays=8 "
                        "triangles=394 volume_mm3=44469.5749 area_mm2=14688.09\n")
@@ -204,6 +212,50 @@ class ThreeDimensionalWitnessTests(unittest.TestCase):
                         with self.assertRaises(Rejected):
                             run_probe(args.probe, args.negative, args.witness, 10,
                                       root/"bad.log", 8, process.returncode==0)
+
+    def test_ray_receipts_require_exact_source_identity_order_and_parity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            args = fixture(root)
+            good = accepted_rays().splitlines()
+            accepted = ("WITNESS_ACCEPT solids=1 imported_exact=true "
+                        "warnings=0 rays=8 triangles=394 "
+                        "volume_mm3=100.5 area_mm2=200.5\n")
+            cases = [
+                [good[1], good[0], *good[2:]],  # reorder genuine names
+                [good[0], good[0], *good[2:]],  # duplicate name, correct count
+                [good[0].replace("a material", "a void"), *good[1:]],
+                [good[0].replace("intersections=1", "intersections=2"), *good[1:]],
+            ]
+            for lines in cases:
+                transcript = "\n".join(lines)+"\n"+accepted
+                with self.subTest(transcript=transcript[:90]):
+                    with patch("witness_3d.subprocess.run",
+                               return_value=CompletedProcess([], 0, transcript, "")):
+                        with self.assertRaises(Rejected):
+                            run_probe(args.probe, args.positive, args.witness,
+                                      20, root/"adversarial.log", 8, True)
+            with patch("witness_3d.subprocess.run",
+                       return_value=CompletedProcess([], 0,
+                                                     accepted_rays()+accepted, "")):
+                measured = run_probe(args.probe, args.positive, args.witness,
+                                     20, root/"valid.log", 8, True)
+            self.assertEqual([r["name"] for r in measured["rayReceipts"]],
+                             list("abcdefgh"))
+            self.assertEqual(measured["importedTopology"]["solids"], 1)
+
+    def test_native_stage_revision_fence_is_not_browser_authority(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = fixture(Path(tmp))
+            with patch("witness_3d.subprocess.check_output",
+                       return_value="a"*40 + "\n"):
+                args.expected_native_revision = 24
+                observed = verify_originals(args)
+                self.assertEqual(observed["nativeStages"]["positive"]["revision"], 24)
+                self.assertEqual(observed["nativeStages"]["negative"]["revision"], 20)
+                args.expected_native_revision = 25
+                with self.assertRaisesRegex(Rejected, "expected native source revision"):
+                    verify_originals(args)
 
 
 if __name__ == "__main__":
