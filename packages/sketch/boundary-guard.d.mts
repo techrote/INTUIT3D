@@ -8,3 +8,14 @@ export type PolygonBoundaryAssessment = {
 };
 export function assessPolygonBoundary(vertices: ReadonlyArray<Readonly<{x:number;y:number}>>): PolygonBoundaryAssessment;
 export function requireSimplePolygonBoundary(vertices: ReadonlyArray<Readonly<{x:number;y:number}>>): PolygonBoundaryAssessment;
+
+export type SeparatedPolygonBoundariesAssessment = {
+  version:1;
+  status:'separated'|'refused';
+  reason:null|'invalid_boundary'|'boundary_contact'|'nested_contour';
+};
+/** Exact IEEE-754 polygon separation, not native B-rep or STEP qualification. */
+export function assessSeparatedPolygonBoundaries(
+  first:ReadonlyArray<Readonly<{x:number;y:number}>>,
+  second:ReadonlyArray<Readonly<{x:number;y:number}>>
+):SeparatedPolygonBoundariesAssessment;
