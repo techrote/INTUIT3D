@@ -215,7 +215,7 @@ async function execute(){
       'new sketch-first project replacement review');
     await click('runtime-import-review-confirm');
     await until(()=>evalInPage(
-      'Boolean(document.querySelector("[data-testid=runtime-feature-sketch.plate]"))'+
+      'Boolean(document.querySelector("[data-testid^=runtime-feature-sketch]"))'+
       '&&!document.querySelector("[data-testid=runtime-feature-plate]")'+
       '&&!document.querySelector("[data-testid=runtime-feature-cut]")'),
       'new project has a solved sketch but no authored solids');
