@@ -486,6 +486,59 @@ fn u_bracket(args: &[String]) {
 // immutable selected six-edge polygon and actual cuts, not native STEP text,
 // native mass-property receipts, or another OCCT reader. "direct" contains a
 // circular blind pocket; "authored" contains a rectangular blind pocket.
+// Independent analytic 3D mass distribution of the selected sloped polygon
+// minus explicitly located cutter volumes. Never uses producer STEP metadata.
+fn sloped_mass_expected(kind: &str, cut_count: usize, t: f64)
+    -> ([f64;3],[f64;6]) {
+    let vertices=[(0.0f64,0.0f64),(120.0,0.0),(120.0,20.0),
+                  (65.0,20.0),(45.0,80.0),(0.0,80.0)];
+    let mut twice_area=0.0;
+    let mut first_x=0.0; let mut first_y=0.0;
+    let mut second_xx=0.0; let mut second_yy=0.0; let mut second_xy=0.0;
+    for i in 0..vertices.len() {
+        let (x,y)=vertices[i]; let (nx,ny)=vertices[(i+1)%vertices.len()];
+        let cross=x*ny-nx*y;
+        twice_area+=cross;
+        first_x+=(x+nx)*cross/6.0;
+        first_y+=(y+ny)*cross/6.0;
+        second_xx+=(x*x+x*nx+nx*nx)*cross/12.0;
+        second_yy+=(y*y+y*ny+ny*ny)*cross/12.0;
+        second_xy+=(2.0*x*y+x*ny+nx*y+2.0*nx*ny)*cross/24.0;
+    }
+    let area=twice_area/2.0;
+    if (area-5700.0f64).abs()>1e-8 { fail("invalid independent sloped polygon oracle"); }
+    let mut mass=area*t;
+    let mut first=[first_x*t,first_y*t,area*t*t/2.0];
+    let mut second=[second_xx*t,second_yy*t,area*t*t*t/3.0,
+                    second_xy*t,first_x*t*t/2.0,first_y*t*t/2.0];
+    let axes=[(0,0),(1,1),(2,2),(0,1),(0,2),(1,2)];
+    let has_window=if kind=="direct" {cut_count==2} else {cut_count>=1};
+    let has_pocket=if kind=="direct" {cut_count>=1} else {cut_count==2};
+    let mut subtract=|removed:f64,c:[f64;3],variance:[f64;3]| {
+        mass-=removed;
+        for i in 0..3 {first[i]-=removed*c[i];}
+        for (k,(i,j)) in axes.iter().enumerate() {
+            second[k]-=removed*(c[*i]*c[*j]+
+                       if i==j {variance[*i]} else {0.0});
+        }
+    };
+    if has_window {
+        subtract(112.0*t,[95.0,10.0,t/2.0],
+                 [14.0f64.powi(2)/12.0,8.0f64.powi(2)/12.0,t*t/12.0]);
+    }
+    if has_pocket {
+        let area=if kind=="direct" {std::f64::consts::PI*25.0} else {100.0};
+        let lateral=if kind=="direct" {25.0/4.0} else {100.0/12.0};
+        subtract(area*3.0,[15.0,50.0,t-1.5],[lateral,lateral,9.0/12.0]);
+    }
+    let centre=[first[0]/mass,first[1]/mass,first[2]/mass];
+    let mut covariance=[0.0;6];
+    for (k,(i,j)) in axes.iter().enumerate() {
+        covariance[k]=second[k]/mass-centre[*i]*centre[*j];
+    }
+    (centre,covariance)
+}
+
 fn sloped_profile(args: &[String]) {
     let progressive=args.get(1).map(String::as_str)==Some("--progressive-v6");
     if (progressive && args.len()!=6) || (!progressive && args.len()!=5) {
@@ -529,6 +582,9 @@ fn sloped_profile(args: &[String]) {
     }
     let mut directed:HashMap<(u32,u32),usize>=HashMap::new();
     let mut signed_volume=0.0f64;
+    let mut first_moment=[0.0f64;3];
+    let mut second_moment=[0.0f64;6];
+    let axes=[(0,0),(1,1),(2,2),(0,1),(0,2),(1,2)];
     let mut surface=0.0f64;
     let mut tris=0usize;
     for triangle in mesh.faces.iter().flat_map(|face| &face.triangles) {
@@ -545,8 +601,18 @@ fn sloped_profile(args: &[String]) {
         let origin_cross=[b[1]*c[2]-b[2]*c[1],
                           b[2]*c[0]-b[0]*c[2],
                           b[0]*c[1]-b[1]*c[0]];
-        signed_volume+=(a[0]*origin_cross[0]+a[1]*origin_cross[1]
-                       +a[2]*origin_cross[2])/6.0;
+        let tetra=(a[0]*origin_cross[0]+a[1]*origin_cross[1]
+                   +a[2]*origin_cross[2])/6.0;
+        signed_volume+=tetra;
+        for axis in 0..3 {
+            first_moment[axis]+=tetra*(a[axis]+b[axis]+c[axis])/4.0;
+        }
+        for (k,(i,j)) in axes.iter().enumerate() {
+            let si=a[*i]+b[*i]+c[*i];
+            let sj=a[*j]+b[*j]+c[*j];
+            let diagonal=a[*i]*a[*j]+b[*i]*b[*j]+c[*i]*c[*j];
+            second_moment[k]+=tetra*(si*sj+diagonal)/20.0;
+        }
         for i in 0..3 {
             *directed.entry((triangle[i],triangle[(i+1)%3])).or_default()+=1;
         }
@@ -560,6 +626,30 @@ fn sloped_profile(args: &[String]) {
         fail(&format!("sloped profile wrong mesh/mass/area: triangles={tris} open={open} volume={volume} expected={wanted} surface={surface} expected_surface={wanted_surface}"));
     }
 
+    // Centroid and full material covariance detect volume/area-preserving
+    // material displacement that sparse point rays can miss.
+    let (expected_centre,expected_covariance)=sloped_mass_expected(kind,cut_count,t);
+    let centre=[
+        first_moment[0]/signed_volume,first_moment[1]/signed_volume,
+        first_moment[2]/signed_volume,
+    ];
+    for i in 0..3 {
+        if !centre[i].is_finite() || (centre[i]-expected_centre[i]).abs()>0.15 {
+            fail(&format!("sloped imported material centroid axis {i} wrong: {:.6} vs {:.6} mm",
+                          centre[i],expected_centre[i]));
+        }
+    }
+    let mut covariance=[0.0;6];
+    for (k,(i,j)) in axes.iter().enumerate() {
+        covariance[k]=second_moment[k]/signed_volume-centre[*i]*centre[*j];
+        let reference=expected_covariance[k];
+        let tolerance=if k<3 { (reference.abs()*0.01).max(0.1) }
+                      else { (reference.abs()*0.05).max(0.25) };
+        if !covariance[k].is_finite() || (covariance[k]-reference).abs()>tolerance {
+            fail(&format!("sloped imported material covariance {k} wrong: {:.6} vs {:.6} mm²",
+                          covariance[k],reference));
+        }
+    }
     // Every point is in the independently authored world coordinate system.
     // The diagonal from (65,20) to (45,80) is x=65-(y-20)/3.
     // Test both sides of three different portions of the actual sloped edge,
@@ -630,10 +720,14 @@ fn sloped_profile(args: &[String]) {
                  zs.len(),zs.first().copied().unwrap_or(-1.0),
                  zs.last().copied().unwrap_or(-1.0));
     }
+    let moments=format!(
+        "centroid_x_mm={:.9} centroid_y_mm={:.9} centroid_z_mm={:.9} cov_xx_mm2={:.9} cov_yy_mm2={:.9} cov_zz_mm2={:.9} cov_xy_mm2={:.9} cov_xz_mm2={:.9} cov_yz_mm2={:.9}",
+        centre[0],centre[1],centre[2],covariance[0],covariance[1],
+        covariance[2],covariance[3],covariance[4],covariance[5]);
     if progressive {
-        println!("SLOPE_ACCEPT kind={kind} cuts={cut_count} thickness_mm={t:.1} solids=1 source_unit={} imported_exact=true tris={tris} open_edges=0 volume_mm3={volume:.9} expected_mm3={wanted:.9} surface_area_mm2={surface:.9} expected_surface_mm2={wanted_surface:.9} warnings=0",cad.length_unit);
+        println!("SLOPE_ACCEPT kind={kind} cuts={cut_count} thickness_mm={t:.1} solids=1 source_unit={} imported_exact=true tris={tris} open_edges=0 volume_mm3={volume:.9} expected_mm3={wanted:.9} surface_area_mm2={surface:.9} expected_surface_mm2={wanted_surface:.9} {moments} warnings=0",cad.length_unit);
     } else {
-        println!("SLOPE_ACCEPT kind={kind} thickness_mm={t:.1} solids=1 source_unit={} imported_exact=true tris={tris} open_edges=0 volume_mm3={volume:.9} expected_mm3={wanted:.9} surface_area_mm2={surface:.9} expected_surface_mm2={wanted_surface:.9} warnings=0",cad.length_unit);
+        println!("SLOPE_ACCEPT kind={kind} thickness_mm={t:.1} solids=1 source_unit={} imported_exact=true tris={tris} open_edges=0 volume_mm3={volume:.9} expected_mm3={wanted:.9} surface_area_mm2={surface:.9} expected_surface_mm2={wanted_surface:.9} {moments} warnings=0",cad.length_unit);
     }
 }
 
