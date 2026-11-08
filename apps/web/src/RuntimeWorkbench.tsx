@@ -9,7 +9,8 @@ import {
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
 import { BlankSketchCanvas } from './BlankSketchCanvas';
 import {appendBlankContourPoint,undoBlankContourVertex,type BlankContourDraft,type SketchLocalPoint} from './blankContourDraft';
-import {commitModelBlankContour,startModelBlankContour,structuralContourRuntimeAvailable} from './closedContourBridge';
+import {commitModelBlankContour,startModelBlankContour,structuralContourRuntimeAvailable,inspectModelClosedContour,dragModelClosedContourVertex} from './closedContourBridge';
+import {ClosedContourVertexEditor} from './ClosedContourVertexEditor';
 import { HistoricalEditInspector } from './HistoricalEditInspector';
 import { ProfileNumericEditor } from './ProfileNumericEditor';
 import { SelectedEdgeHoleEditor } from './SelectedEdgeHoleEditor';
@@ -111,6 +112,9 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [profilePickMode,setProfilePickMode]=useState(false);
   const [pointerSelection,setPointerSelection]=useState<SelectedProfileSelection|null>(null);
   const [pointerHandleId,setPointerHandleId]=useState('');
+  // Whole canonical archive at semantic selection. Reject divergent histories
+  // even when their numeric revision and sketch signature happen to agree.
+  const [pointerSourceArchive,setPointerSourceArchive]=useState<string|null>(null);
   const [activeHole,setActiveHole]=useState<string|null>(null);
   const [layoutSelected,setLayoutSelected]=useState<string[]>(['holeA']);
   const [layoutDraft,setLayoutDraft]=useState({scaleX:'120',scaleY:'100',radiusScale:'100'});
@@ -287,6 +291,13 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   },[history,pointerSelection]);
   const pointerHandles=pointerInventory?.kind==='pointer_editable_handles'
     ?pointerInventory.handles:[];
+  const closedInventory=useMemo(()=>{
+    if(!pointerSelection||!pointerSourceArchive||
+        pointerSourceArchive!==serializeModelSession(history))return null;
+    try{return inspectModelClosedContour(history,pointerSelection);}
+    catch{return null;}
+  },[history,pointerSelection,pointerSourceArchive]);
+  const closedHandle=closedInventory?.handles.find(h=>h.handleId===pointerHandleId)??null;
   const pointerDragHandle=pointerHandles.find(h=>h.handleId===pointerHandleId)??null;
   const canAuthorExtrusion=!plateAuthored && !!sketchProfile && !pendingImport;
   const canAuthorCut=plateActive && !cutAuthored && !!sketchProfile?.holes.length && !pendingImport;
@@ -309,6 +320,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         return;
       }
       setPointerSelection(result.selection);
+      setPointerSourceArchive(serializeModelSession(liveHistory.current));
       setPointerHandleId('');
       setProfilePickMode(false);
       setMessage('Selected solver-owned profile '+result.profile.semanticProfileId+
@@ -321,10 +333,27 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       const result=dragModelPointerProfileHandle(liveHistory.current,pointerSelection,handleId,{x,y});
       acceptHistory(result.history);
       setPointerSelection(result.selection);
+      setPointerSourceArchive(serializeModelSession(result.history));
       setMessage('Edited selected semantic profile handle '+handleId+' in one undoable RUNTIME transaction at revision '+
         result.history.document.revision+'. Invalidated: '+
         (result.invalidatedFeatureIds.join(' → ')||'none')+'. Native STEP revoked; preview not exact.');
     }catch(e){setMessage('Profile handle drag refused; original journal retained: '+String(e));}
+  };
+  const dragDrawnVertex=(handleId:string,x:number,y:number)=>{
+    if(!pointerSelection||!pointerSourceArchive||pendingImport||loadingFile)return;
+    try{
+      if(liveHistory.current!==history)throw Error('The displayed journal has changed; reselect the contour.');
+      const result=dragModelClosedContourVertex(liveHistory.current,nativeSession.current!,
+        pointerSelection,handleId,{x,y},pointerSourceArchive);
+      if(result.kind==='refused'){setMessage('Drawn vertex refused: '+result.reason);return;}
+      acceptHistory(result.history);
+      setPointerSelection(result.selection);
+      setPointerSourceArchive(serializeModelSession(result.history));
+      setMessage('Moved selected solver-owned vertex '+handleId+
+        ' as one authoritative structural SKETCH edit at revision '+result.history.document.revision+
+        '; invalidated '+(result.invalidatedFeatureIds.join(' → ')||'no downstream features')+
+        '. Native STEP revoked.');
+    }catch(e){setMessage('Drawn vertex refused; journal unchanged: '+String(e));}
   };
   const createExtrusion=():boolean=>{
     try{
@@ -757,7 +786,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     try {
       const draft=startModelBlankContour(liveHistory.current);
       setBlankDraft(draft);setSketchMode(true);setCircleDrawing({phase:'idle'});
-      setProfilePickMode(false);setPointerSelection(null);setPointerHandleId('');
+      setProfilePickMode(false);setPointerSelection(null);setPointerSourceArchive(null);setPointerHandleId('');
       setMessage('Place 3–12 sketch-local vertices. Close admits one solver-owned contour; Escape cancels with no journal change.');
     }catch(error){setMessage('Cannot begin outline: '+String(error));}
   };
@@ -776,7 +805,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       const outcome=commitModelBlankContour(liveHistory.current,nativeSession.current!,blankDraft);
       if(outcome.kind==='refused'){setMessage('Close refused: '+outcome.reason);return;}
       acceptHistory(outcome.history);
-      setPointerSelection(outcome.selection);setPointerHandleId('');
+      setPointerSelection(outcome.selection);setPointerSourceArchive(serializeModelSession(outcome.history));setPointerHandleId('');
       setSketchMode(true);setSelected('sketch.plate');
       setMessage('Closed '+blankDraft.vertices.length+' pointer vertices as one authoritative SKETCH/RUNTIME revision '+
         outcome.history.document.revision+'. Select the solver-owned profile for editing. Native STEP is stale/pending.');
@@ -1100,8 +1129,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               circleDrawing={circleDrawing}
               onCirclePick={circleDrawing.phase!=='idle'?pickCirclePoint:undefined}
               onProfilePick={profilePickMode&&circleDrawing.phase==='idle'?pickProfile:undefined}
-              profileEditHandle={!profilePickMode&&circleDrawing.phase==='idle'?pointerDragHandle:undefined}
-              onProfileHandleDrag={dragProfile}/>:
+              profileEditHandle={!profilePickMode&&circleDrawing.phase==='idle'?(closedHandle??pointerDragHandle):undefined}
+              onProfileHandleDrag={(handleId,x,y)=>closedHandle?dragDrawnVertex(handleId,x,y):dragProfile(handleId,x,y)}/>:
             <div className="empty-overlay" data-testid="runtime-empty">Current dimensions cannot produce an admitted sketch profile. No previous mesh is represented as current.</div>}
           {geom&&!renderSketch&&displayedActiveHole&&layoutIds.length===1&&
             layoutIds[0]===displayedActiveHole&&
@@ -1165,9 +1194,30 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         <div className="inspector-section" data-testid="runtime-pointer-profile-editor">
           <div className="section-head">SOLVED CONTOUR · SEMANTIC DIRECT EDIT</div>
           {pointerSelection?<div className="runtime-hole-add">
-            <strong data-testid="runtime-pointer-profile-selected">{pointerInventory?.kind==='pointer_editable_handles'
-              ?pointerInventory.semanticProfileId:'Selection expired / no admitted handles'}</strong>
-            {pointerInventory?.kind==='pointer_editable_handles'?<>
+            <strong data-testid="runtime-pointer-profile-selected">{closedInventory?'Drawn outline · '+closedInventory.contourId:
+                pointerInventory?.kind==='pointer_editable_handles'
+                  ?pointerInventory.semanticProfileId:'Selection expired / no admitted handles'}</strong>
+            {closedInventory?<>
+              <label className="runtime-scalar"><span>Selected drawn vertex</span>
+                <span className="runtime-scalar-control">
+                  <select data-testid="runtime-drawn-vertex-select"
+                    aria-label="Explicit drawn contour vertex" value={pointerHandleId}
+                    onChange={event=>setPointerHandleId(event.target.value)}>
+                    <option value="">Choose a vertex…</option>
+                    {closedInventory.handles.map(handle=><option key={handle.handleId} value={handle.handleId}>
+                      {handle.kind==='origin'?'Origin':'Vertex '+handle.index} · {handle.handleId}
+                    </option>)}
+                  </select>
+                </span>
+              </label>
+              {closedHandle&&<ClosedContourVertexEditor
+                key={pointerSourceArchive+':'+closedHandle.handleId}
+                handle={closedHandle} disabled={!!pendingImport||!!loadingFile}
+                onCommit={target=>dragDrawnVertex(closedHandle.handleId,target.x,target.y)}/>}
+              <p className="microcopy">Move a chosen original vertex with the amber sketch handle
+                or precise X/Y fields. Only source-fenced, full-SKETCH admitted edits
+                become an undoable RUNTIME revision; unsupported profiles remain preview-only.</p>
+            </>:pointerInventory?.kind==='pointer_editable_handles'?<>
               <label className="runtime-scalar"><span>Drag handle</span>
                 <span className="runtime-scalar-control">
                   <select data-testid="runtime-pointer-profile-handle"
@@ -1188,7 +1238,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               
             </>:<p className="microcopy">The sketch source changed or this contour is unsolved. Reselect the current solved contour; no stale drag is permitted.</p>}
             <button type="button" className="ribbon-button" data-testid="runtime-pointer-profile-clear"
-              onClick={()=>{setPointerSelection(null);setPointerHandleId('');setProfilePickMode(false);}}>
+              onClick={()=>{setPointerSelection(null);setPointerSourceArchive(null);setPointerHandleId('');setProfilePickMode(false);}}>
               Clear profile selection</button>
           </div>:<p className="microcopy">
             Choose “Select contour”, then click within a solved sketch face.
