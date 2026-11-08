@@ -97,7 +97,7 @@ class SessionSourceGateTests(unittest.TestCase):
             # Isolate the rule from prior independent witness parsing.
             with patch('session_step.witness_version', return_value=2), \
                  patch('session_step.witness_count', return_value=14):
-                with self.assertRaisesRegex(Rejected, 'distinct earlier'):
+                with self.assertRaisesRegex(Rejected, 'earlier same-project'):
                     execute(args)
                 self.assertFalse(args.output_dir.exists())
 
