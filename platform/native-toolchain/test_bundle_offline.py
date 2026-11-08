@@ -135,19 +135,19 @@ class OfflineBundleTests(unittest.TestCase):
             ordered = ("TKLCAF", "TKXCAF", "TKDirect", *bundle.TOOLKITS, "TKUnused")
             for name in ordered:
                 if name == "TKLCAF":
-                    code = "int lcaf(void) {return 40;}\\n"
+                    code = "int lcaf(void) {return 40;}\n"
                     dependency = None
                 elif name == "TKXCAF":
-                    code = "extern int lcaf(void); int xcaf(void) {return lcaf()+1;}\\n"
+                    code = "extern int lcaf(void); int xcaf(void) {return lcaf()+1;}\n"
                     dependency = "TKLCAF"
                 elif name == "TKDESTEP":
-                    code = "extern int xcaf(void); int destep(void) {return xcaf()+1;}\\n"
+                    code = "extern int xcaf(void); int destep(void) {return xcaf()+1;}\n"
                     dependency = "TKXCAF"
                 elif name == "TKDirect":
-                    code = "int direct(void) {return 0;}\\n"
+                    code = "int direct(void) {return 0;}\n"
                     dependency = None
                 else:
-                    code = "int otherwise_unused(void) {return 0;}\\n"
+                    code = "int otherwise_unused(void) {return 0;}\n"
                     dependency = None
                 cfile = root / f"{name}.c"
                 cfile.write_text(code)
@@ -162,9 +162,9 @@ class OfflineBundleTests(unittest.TestCase):
                     "lib" + name + ".so.8.0")
             worker_source = root / "worker.c"
             worker_source.write_text(
-                '#include <stdio.h>\\n'
-                'extern int destep(void); extern int direct(void);\\n'
-                'int main(void) {printf("%d\\\\n", destep()+direct()); return 0;}\\n')
+                '#include <stdio.h>\n'
+                'extern int destep(void); extern int direct(void);\n'
+                'int main(void) {printf("%d\\\n", destep()+direct()); return 0;}\n')
             worker = portable / "bin" / "worker"
             subprocess.run(
                 ["cc", str(worker_source), "-o", str(worker),
