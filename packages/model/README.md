@@ -785,3 +785,31 @@ node --experimental-strip-types --test packages/model/test/cut-profile-source.te
 against the current SKETCH solver, invalidate previous native/STEP receipts
 and run new native geometry before marking a result exact. MODEL preserves
 the cut/body semantics but cannot certify that the selected loop cuts material.
+
+## Stale parameter-sheet draft reconciliation (v1 additive subpath)
+
+`rebaseParameterSheetEdit(baseDocument, currentDocument, draftFormulaTableRequest,
+expectedCurrentRevision)` from `@intuit3d/model/parameter-sheet-rebase`
+is a conservative **read-only** three-way rebase for concurrent CAD spreadsheet
+work. A stale draft can be retargeted to an append-only descendant only when
+every edited semantic row and every direct or transitive referenced parameter remains unchanged, requested
+event IDs are still free, final-name formula references retain identical stable
+IDs, and the entire current revision's parameter/dimension admission passes.
+Otherwise it returns explicit `edited_row_changed`,
+`referenced_parameter_changed`, `event_id_taken`,
+`formula_binding_changed` or `candidate_rejected` conflicts with no
+rebased request and no journal mutation. Divergent project ancestry and stale
+current revision fences are rejected, not merged.
+
+A `ready` result supplies a versioned current-revision `rebasedRequest`
+and a speculative `preview` with dependency invalidation. The UI must show
+these changes and obtain author confirmation before calling
+`commitUndoableParameterFormulaTableEdit(currentSession, rebasedRequest)`.
+That commit retains its normal compare-and-swap revision guard. A model
+`ready` result **never** establishes executed physical geometry or STEP
+authority, nor does it guarantee filesystem-atomic saving.
+
+Run `node --experimental-strip-types --test packages/model/test/parameter-sheet-rebase.test.mjs`
+and `node --experimental-strip-types packages/model/examples/parameter-sheet-rebase-plate.mjs`
+for an independent-offset-edit → stale-thickness-draft → safe rebase →
+sketch/extrude/cut/rebuild → archive/undo/redo product flow.
