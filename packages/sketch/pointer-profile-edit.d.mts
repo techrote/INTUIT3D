@@ -1,5 +1,6 @@
 import type {SketchDocument,SketchSolution} from './index.mjs';
 import type {SelectedAnalyticProfile,SelectedProfileSelection} from './selected-profile.mjs';
+import type {ConflictExplanation} from './conflict-explanation.mjs';
 
 export const POINTER_PROFILE_EDIT_VERSION:1;
 export type PointerEditPoint={x:number;y:number};
@@ -13,7 +14,7 @@ export type PointerEditHit=PointerEditableHandle&{distanceMm:number};
 export type PointerEditRefusal={
   kind:'refused';version:1;sourceSignature:string;reason:string;
   detail:string|null;sourceStatus:SketchSolution['status']|null;
-  diagnostics:SketchSolution['diagnostics'];
+  diagnostics:SketchSolution['diagnostics'];conflict:ConflictExplanation|null;
   previewOnly:true;nativeExact:false;exactBrepAvailable:false;
   independentStepQualified:false;
 };
