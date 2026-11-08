@@ -210,7 +210,7 @@ test('pointer selects editable independent islands inside a concave contour AABB
   assert.equal(pick(doc,{x:72,y:50}).selection.candidateId,island.selection.candidateId);
   assert.equal(pick(doc,{x:140,y:15}).selection.candidateId,l.selection.candidateId);
   assert.equal(pick(doc,{x:72,y:34}).reason,'outside_contours');
-  assert.equal(pick(doc,{x:90,y:15}).reason,'outside_contours'); // former hole shifts with width
+  assert.equal(pick(doc,{x:120,y:15}).reason,'hole_void'); // hole follows edited width
   assert.equal(selectContourAtPointer(doc,{
     kind:'select-contour-at-pointer',version:1,sourceSignature:before,
     point:{x:72,y:50},boundaryClearanceMm:0
