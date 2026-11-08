@@ -8,11 +8,15 @@ import {setSelectedEdgeHoles, inspectSelectedEdgeHolePlacement} from '@intuit3d/
 import {editSelectedProfileHole as authorProfileHole, inspectSelectedProfileHoleAuthoring} from '@intuit3d/sketch/selected-profile-hole-authoring/v1';
 import {editSelectedProfileHoleLayout as authorProfileHoleLayout, inspectSelectedProfileHoleLayout as inspectProfileHoleLayout} from '@intuit3d/sketch/selected-profile-hole-layout/v1';
 import {serializeSketch} from '@intuit3d/sketch';
+import {createClosedContour,editClosedContourVertices,dragClosedContourVertex,inspectClosedContour} from '@intuit3d/sketch/closed-contour-authoring/v1';
+import {proposeSelectedPlateProfile} from '@intuit3d/sketch/selected-profile/v1';
 import {applyPlateHoleOperations,planRectangularHoleArray,planCircularHolePattern,planRigidHoleTransform,planHoleLayoutResize} from './hole-edit.mjs';
 export {WORKFLOW_INVALIDATION_FORMAT, WORKFLOW_INVALIDATION_VERSION, diffWorkflowPlans} from './invalidation.mjs';
 
 export const WORKFLOW_RUNTIME_FORMAT = 'intuit3d.workflow-runtime-evaluation';
 export const WORKFLOW_RUNTIME_VERSION = 1;
+export const CLOSED_CONTOUR_TRANSACTION_FORMAT = 'intuit3d.runtime.closed-contour-transaction';
+export const CLOSED_CONTOUR_TRANSACTION_VERSION = 1;
 
 const required = {
   model: ['planProject'],
@@ -202,6 +206,103 @@ export function createWorkflowRuntime(services) {
    * preserve_unresolved: retain validly authored but unsolved/invalid geometry
    * for subsequent user repair, with no fabricated usable solid.
    */
+
+  /**
+   * Commit a SKETCH-approved structural contour as exactly one INTENT event.
+   * Never trust browser-supplied solved documents, profile shapes, or preview
+   * meshes. Re-run the accepted SKETCH authoring command on the exact journal
+   * source and compare the complete proposed result before committing.
+   */
+  function commitClosedContour(historyInput,request) {
+    const previous=transactions.parseUndoHistory(historyInput);
+    const refusal=(code,reason,extra={})=>({
+      kind:'refused',code,notCommitted:true,reason,
+      sourceProjectId:previous.document.projectId,
+      sourceRevision:previous.document.revision,...extra,
+    });
+    if(!request||request.format!==CLOSED_CONTOUR_TRANSACTION_FORMAT||
+       request.version!==CLOSED_CONTOUR_TRANSACTION_VERSION||
+       typeof request.sketchFeatureId!=='string'||!request.sketchFeatureId||
+       typeof request.eventId!=='string'||!request.eventId||
+       !['create','edit','drag'].includes(request.operation)||
+       !['require_admissible','preserve_unresolved'].includes(
+         request.admission??'require_admissible')||
+       !request.command||typeof request.command!=='object'||
+       !request.acceptance||typeof request.acceptance!=='object'||
+       typeof request.expectedArchive!=='string'||
+       typeof request.expectedSketchSignature!=='string')
+      throw new TypeError('runtime contour: versioned authoring, source archive, acceptance and semantic IDs required');
+    if(request.expectedProjectId!==previous.document.projectId||
+       request.expectedRevision!==previous.document.revision)
+      return refusal('stale_revision','project or revision changed since contour authoring');
+    if(request.expectedArchive!==save(previous))
+      return refusal('stale_source','canonical INTENT archive changed since contour authoring');
+    const entry=model.planProject(previous.document).features.find(
+      x=>x.feature.id===request.sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      return refusal('missing_sketch','authoritative target sketch is absent or inactive');
+    const source=sketch.validateSketch(entry.feature.payload.sketch);
+    const signature=serializeSketch(source);
+    if(signature!==request.expectedSketchSignature||
+       request.command.sourceSignature!==signature)
+      return refusal('stale_sketch','SKETCH source signature changed before contour authoring');
+    if(request.operation==='create' && request.selection!==undefined)
+      return refusal('invalid_selection','creation must not inherit an earlier selected profile');
+    if(request.operation!=='create' &&
+       (!request.selection||request.selection.sourceSignature!==signature))
+      return refusal('invalid_selection','editing requires a source-bound selected contour');
+    let fresh;
+    try {
+      fresh=request.operation==='create'
+        ? createClosedContour(source,request.command)
+        : request.operation==='edit'
+          ? editClosedContourVertices(source,request.selection,request.command)
+          : dragClosedContourVertex(source,request.selection,request.command);
+    } catch(error) {
+      return refusal('sketch_refused',errorMessage(error));
+    }
+    if(fresh.kind!=='accepted')
+      return refusal('sketch_refused',fresh.reason??'SKETCH refused structural authoring',
+        {sourceReason:fresh.reason??null,detail:fresh.detail??null});
+    // Compare the *whole* SKETCH result: hidden entity removal, selection
+    // swapping, forged solve diagnostics and changed hole membership are not
+    // admissible browser-to-model transactions.
+    if(JSON.stringify(fresh)!==JSON.stringify(request.acceptance))
+      return refusal('changed_acceptance','SKETCH acceptance differs from the reviewed command result');
+    const successor=sketch.validateSketch(fresh.sketch);
+    if(serializeSketch(successor)!==fresh.nextSourceSignature||
+       fresh.sourceSignature!==signature||
+       fresh.selection?.sourceSignature!==fresh.nextSourceSignature)
+      return refusal('invalid_successor','successor sketch/source signature mismatch');
+    const selected=proposeSelectedPlateProfile(successor,fresh.selection);
+    if(selected.kind!=='selected_analytic_profile'||
+       JSON.stringify(selected)!==JSON.stringify(fresh.profile))
+      return refusal('invalid_selection','selected successor contour was not independently admitted');
+    const handleView=inspectClosedContour(successor,fresh.selection,fresh.contourId);
+    if(handleView.kind!=='closed_contour'||
+       JSON.stringify(handleView.handles)!==JSON.stringify(fresh.handles))
+      return refusal('invalid_selection','successor contour handles were not admitted');
+    const candidate=commit(previous,[{
+      eventId:request.eventId,type:'feature.edit',
+      featureId:request.sketchFeatureId,
+      patch:{payload:{...entry.feature.payload,sketch:successor}},
+    }],request.expectedRevision);
+    const report=inspect(candidate);
+    const state=report.features.find(f=>f.featureId===request.sketchFeatureId);
+    if(!state)return refusal('invalid_successor','edited sketch disappeared from the authoritative plan');
+    if((request.admission??'require_admissible')==='require_admissible' &&
+       state.status!=='analytic_profile_only')
+      return refusal('inadmissible_sketch',
+        'full-project SKETCH admission did not produce one usable analytic profile',
+        {candidateFeature:state,candidateRevision:report.revision});
+    return {kind:'committed',history:candidate,report,
+      sketchStatus:state.status,invalidation:diff(previous,candidate),
+      selection:structuredClone(fresh.selection),
+      contourId:fresh.contourId,nextSketchSignature:fresh.nextSourceSignature,
+      sourceRevision:previous.document.revision,revision:report.revision,
+      exactAuthority:false};
+  }
+
   function editSketchConstraints(history, request) {
     const {sketchFeatureId,eventId,expectedRevision,edits,
       admission='require_admissible'}=request??{};
@@ -699,5 +800,5 @@ export function createWorkflowRuntime(services) {
   function reopen(serialized) {
     return archive.deserializeModelArchive(serialized).history;
   }
-  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, editSelectedEdgeHoles, inspectSelectedEdgeHoles, inspectSelectedProfileHoles, editSelectedProfileHole, inspectSelectedProfileHoleLayout, editSelectedProfileHoleLayout, undo, redo, save, reopen});
+  return Object.freeze({inspect, diff, commit, editDimensions, commitClosedContour, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, editSelectedEdgeHoles, inspectSelectedEdgeHoles, inspectSelectedProfileHoles, editSelectedProfileHole, inspectSelectedProfileHoleLayout, editSelectedProfileHoleLayout, undo, redo, save, reopen});
 }
