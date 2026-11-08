@@ -22,10 +22,10 @@ and depth. Both have 8 mm and retrospectively edited 12 mm STEP outputs.
 
 The separately compiled, source-pinned AnvilCAD importer must reconstruct
 one exact closed warning-free solid per STEP, oriented watertight triangles,
-triangle-derived material volume and exposed area, and **34 world-space
+triangle-derived material volume and exposed area, and **38 world-space
 material/void/pocket-floor rays each**. The ray oracle crosses three distinct
 segments of the real diagonal, the re-entrant corner, each window wall,
-and both blind pocket variants. **Four imports / 136 physical rays**.
+and both blind pocket variants. The four additional diagonal pocket rays distinguish the R5 circle from the 10x10 square even when cardinal walls and the 1% mass/area budgets match. **Four imports / 152 physical rays**.
 
 The Python runner checks original STEP byte SHA-256 against unmodified native
 producer receipts, exact KERNEL git SHA and C++ source hash, actual worker
@@ -60,7 +60,7 @@ does not implement this new mode.
       --output-dir /fresh/sloped-independent-evidence
 
 Success prints/records NON_OCCT_SLOPED_V5_FOUR_STEP_PHYSICAL_PASS only after
-the binary actually executes four non-OCCT imports and verifies all 136
+the binary actually executes four non-OCCT imports and verifies all 152
 material rays. **Still review the hosted C++ binary/source compile binding
 and independent AnvilCAD build log**; source and binary digests alone do not
 prove the producer was compiled at that source revision.
