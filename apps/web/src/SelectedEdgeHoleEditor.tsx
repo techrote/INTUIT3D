@@ -77,8 +77,9 @@ export function SelectedEdgeHoleEditor({history,disabled,onAccept,onMessage}:{
       or adjust an existing edge-anchored hole. The three dimensions are real SKETCH constraints,
       not saved canvas coordinates. Native STEP remains pending a separate source-matched build.</p>
     {!ready?<p className="microcopy" role="status" data-testid="runtime-edge-hole-unavailable">
-      {inspection.error??inspection.review?.kind==='refused'&&inspection.review.reason||
-       'No uniquely admitted selected contour; resolve or select a profile before edge authoring.'}
+      {inspection.error ?? (inspection.review?.kind==='refused'
+        ?inspection.review.reason
+        :'No uniquely admitted selected contour; resolve or select a profile before edge authoring.')}
     </p>:<>
       <p className="microcopy" data-testid="runtime-edge-hole-profile">
         Selected solved contour: {ready.inspection.semanticProfileId} · revision {ready.sourceRevision} · analytic preview only
