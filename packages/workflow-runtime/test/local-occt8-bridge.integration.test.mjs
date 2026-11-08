@@ -418,3 +418,44 @@ test('a misleading capability handshake cannot override the actual provider repl
     assert.equal(calls.length,0);
   });
 });
+
+test('local pinned STEP custody refuses omitted second solid after authoritative archive edit',async()=>{
+  let current=plateProject(),calls=[];
+  const session=createLivePlateSession({
+    runtime,readCurrentHistory:()=>current,publishHistory:h=>{current=h;},
+  });
+  await withHost(fakePinnedFactory(calls),async host=>{
+    const evaluate=id=>session.evaluate({
+      url:host.url,token:host.token,requestId:id,
+      exportStep:true,requiredBackend:'OCCT-cxx-8.0.1',
+    });
+    assert.equal((await evaluate('multibody.original')).kind,'experimental_plate_evaluated');
+    assert.ok(session.captureCurrentStepEvidence());
+    assert.equal(calls.length,1);
+
+    const edit=session.applyEdit(h=>runtime.commit(h,[
+      created('multibody.sketch',{id:'sketch.other',kind:'sketch',
+        dependsOn:[],writeTargets:[],
+        payload:{sketch:sketch.plateSketchFixture()}}),
+      created('multibody.extrude',{id:'extrude.other',kind:'extrude',
+        dependsOn:['sketch.other'],writeTargets:['body.other'],
+        payload:{sourceSketchId:'sketch.other',thicknessMm:5}}),
+    ]));
+    assert.equal(edit.kind,'committed');
+    assert.equal(session.currentStepReceipt(),null);
+    assert.equal(session.captureCurrentStepEvidence(),null);
+    const reopened=session.save();
+    assert.equal(session.reopen(reopened).kind,'opened');
+    const blocked=await evaluate('multibody.blocked');
+    assert.equal(blocked.kind,'unresolved');
+    assert.equal(blocked.code,'unsupported_feature');
+    assert.deepEqual(blocked.unsupportedFeatureIds,['extrude.other']);
+    assert.equal(session.captureCurrentStepEvidence(),null);
+    assert.equal(calls.length,1,'blocked archive must not execute C++ or publish partial STEP');
+
+    assert.equal(session.applyEdit(h=>runtime.undo(h,['multibody.undo'])).kind,'committed');
+    assert.equal((await evaluate('multibody.restored')).kind,'experimental_plate_evaluated');
+    assert.ok(session.captureCurrentStepEvidence());
+    assert.equal(calls.length,2,'restoring an eligible one-body journal permits fresh native work');
+  });
+});
