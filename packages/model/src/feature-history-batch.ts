@@ -70,6 +70,10 @@ export interface FeatureHistoryBatchPreview {
   readonly plan: EvaluationPlan;
   readonly invalidation: IncrementalEvaluationPlan;
   readonly regressedReadyFeatureIds: readonly string[];
+  /** Selected features still unresolved after compensation, even if already pending. */
+  readonly unresolvedSelectedFeatureIds: readonly string[];
+  /** A permit_unresolved command must carry consent for either unresolved impact. */
+  readonly requiresUnresolvedConsent: boolean;
   readonly invalidatedBodyIds: readonly string[];
   readonly unaffectedReadyFeatureIds: readonly string[];
   readonly requiresSketchAdmission: true;
@@ -194,13 +198,19 @@ export function previewFeatureHistoryBatch(
   if (regressed.some((id) => !affected.has(id))) {
     fail('combined compensation regresses an unrelated ready feature');
   }
-  if (request.admission === 'require_ready' &&
-      (selections.some((row) => afterStates.get(row.featureId) !== 'ready') ||
-        regressed.length > 0)) {
+  // A selected feature can remain pending both BEFORE and AFTER compensation.
+  // Such a choice still requires explicit human acknowledgement, even though
+  // it did not regress a previously ready operation. Otherwise a caller can
+  // bypass consent by batching an already-unresolved historical edit.
+  const unresolvedSelected = selections.filter((row) =>
+    afterStates.get(row.featureId) !== 'ready').map((row) => row.featureId);
+  const requiresUnresolvedConsent =
+    regressed.length > 0 || unresolvedSelected.length > 0;
+  if (request.admission === 'require_ready' && requiresUnresolvedConsent) {
     fail('combined compensation leaves ready intent unresolved');
   }
-  if (regressed.length > 0 && !request.confirmUnresolved) {
-    fail('explicit confirmation required for unresolved downstream intent');
+  if (requiresUnresolvedConsent && !request.confirmUnresolved) {
+    fail('explicit confirmation required for unresolved selected or downstream intent');
   }
 
   // The writer's departed body and restored body both matter. The full
@@ -218,6 +228,8 @@ export function previewFeatureHistoryBatch(
     format: 'intuit3d.feature-history-batch-preview', version: 1,
     selections, events, document: staged.document, plan: staged.plan,
     invalidation, regressedReadyFeatureIds: regressed,
+    unresolvedSelectedFeatureIds: unresolvedSelected,
+    requiresUnresolvedConsent,
     invalidatedBodyIds: [...bodies],
     unaffectedReadyFeatureIds: invalidation.unchangedReady,
     requiresSketchAdmission: true, requiresNativeRebuild: true,
@@ -339,13 +351,10 @@ export function recoverFeatureHistoryBatchSelection(
   }
 
   const previousBodies = new Set(oldPreview.invalidatedBodyIds);
-  const states = new Map(preview.plan.features.map((row) =>
-    [row.feature.id, row.status] as const));
-  const requiresUnresolved = preview.regressedReadyFeatureIds.length > 0 ||
-    preview.selections.some((row) => states.get(row.featureId) !== 'ready');
   return {
     ...base,
-    status: requiresUnresolved ? 'requires_unresolved_review' : 'ready',
+    status: preview.requiresUnresolvedConsent
+      ? 'requires_unresolved_review' : 'ready',
     reason: null, candidateRequest, preview,
     newlyInvalidatedBodyIds: preview.invalidatedBodyIds.filter(
       (id) => !previousBodies.has(id)),
