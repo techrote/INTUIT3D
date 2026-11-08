@@ -453,7 +453,7 @@ test('local pinned STEP custody refuses omitted second solid after authoritative
     assert.equal(session.captureCurrentStepEvidence(),null);
     assert.equal(calls.length,1,'blocked archive must not execute C++ or publish partial STEP');
 
-    assert.equal(session.applyEdit(h=>runtime.undo(h,['multibody.undo'])).kind,'committed');
+    assert.equal(session.applyEdit(h=>runtime.undo(h,['multibody.undo.extrude','multibody.undo.sketch'])).kind,'committed');
     assert.equal((await evaluate('multibody.restored')).kind,'experimental_plate_evaluated');
     assert.ok(session.captureCurrentStepEvidence());
     assert.equal(calls.length,2,'restoring an eligible one-body journal permits fresh native work');
