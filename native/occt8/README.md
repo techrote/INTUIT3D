@@ -203,3 +203,51 @@ The final two commands must produce genuine C++-generated STEP files and
 different digests; their absence is a skip, **not** a native pass. External
 AnvilCAD reconstruction and WORKBENCH interaction must be admitted separately
 by INTEGRATION (#74); this operation is tracked under KERNEL-002 #154.
+
+
+## Additive v5 selected planar straight-line contours (KERNEL-002 candidate)
+
+The v4 rectilinear selected-contour contract is **unchanged**. The new
+`intuit3d/kernel/linear-profile-cut-chain-v5` accepts 3–64 explicitly selected,
+counterclockwise, simple planar line-segment vertices, including sloped edges
+and concave contours. Profile identity, named body ID, ordered and disjoint
+blind/through round or rectangular cuts, thickness edits, typed IPC, isolation,
+revision fencing, SHA-256 custody, no-overwrite publication and one valid solid
+are retained. Circular arcs are **not** approximated; the runtime adapter
+requires actual solved straight-line SKETCH edges and rejects islands/arcs.
+
+Representative `native/examples/occt8-sloped-bracket-linear.request.json`:
+six-edge sloped concave bracket, 5700 mm² stock area,
+`320 + sqrt(4000)` mm perimeter; radius-5 blind 3 mm hole and
+14×8 mm through-window. Thickness 8→12 mm retains semantic IDs and changes
+the physical STEP solid from `5700*8 - 75*pi - 112*8` to
+`5700*12 - 75*pi - 112*12` cubic millimetres. Inclined-line
+self-intersection, collinear/touching edges and cutters crossing profile
+boundaries fail closed; cuts never infer a body target.
+
+Source-only contract commands (not physical truth):
+
+```sh
+python3 -m unittest discover -s native/tests -p test_occt8_linear_contract.py -v
+node --test packages/kernel-contract/test/occt8-linear-profile-v5.test.mjs
+npm run typecheck --workspace=@intuit3d/kernel-contract
+```
+
+**Required pinned execution** using an actually compiled OCCT 8.0.1 worker
+from the exact candidate head:
+
+```sh
+INTUIT3D_OCCT8_WORKER=/absolute/pinned/intuit3d_occt8_plate \
+  python3 -m unittest discover -s native/tests -p test_occt8_linear_contract.py -v
+node packages/kernel-contract/examples/pinned-occt8-sloped-profile.mjs \
+  /absolute/pinned/intuit3d_occt8_plate /fresh/sloped-v5-out
+```
+
+The latter must produce two distinct actual STEP files and
+`sloped-receipts.json` containing real C++ source and same-engine STEP
+measurements. Neither this source, an unavailable-worker skip, nor the
+same-engine STEP import demonstrates production exact authority, independently
+imported non-OCCT STEP or browser/human acceptance. RUNTIME may consume the
+additive `runtime-occt8-linear-profile-provider` without displacing the
+admitted v4 path; INTEGRATION alone decides guarded merge and #154 closure.
+
