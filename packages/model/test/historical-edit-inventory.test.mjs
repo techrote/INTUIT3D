@@ -289,7 +289,7 @@ test('history inspector reports before, authored and current mechanical values, 
   assert.equal(datum.laterEdited,true);
   assert.equal(row.status,'blocked');
   assert.deepEqual(row.fieldChoices.map(x=>[x.field,x.status]),
-    [['payload','available'],['dependsOn','blocked']]);
+    [['dependsOn','blocked'],['payload','available']]);
   assert.equal(serializeProject(doc),snapshot);
 });
 
