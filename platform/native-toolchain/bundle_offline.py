@@ -45,8 +45,8 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-TOOLKIT_NAME = re.compile(r"libTK[A-Za-z0-9]+\\.so(?:\\.[0-9]+)*\\Z")
-NEEDED_NAME = re.compile(r"\\(NEEDED\\).*?\\[([^\\]]+)\\]")
+TOOLKIT_NAME = re.compile(r"libTK[A-Za-z0-9]+\.so(?:\.[0-9]+)*\Z")
+NEEDED_NAME = re.compile(r"\(NEEDED\).*?\[([^\]]+)\]")
 
 
 def _needed_toolkits(obj: Path) -> set[str]:
