@@ -197,7 +197,7 @@ def run_probe(probe: Path, step: Path, witness: Path, timeout: int,
     require(len(output) == count + (2 if version == 2 else 1) and
             all(re.fullmatch(
                 r"WITNESS_RAY [A-Za-z0-9._-]{1,56} (material|void) intersections=\d+",
-                line) for line in output[:-1]),
+                line) for line in output[:count]),
             "physical witness ray receipts incomplete/malformed")
     moments = None
     if version == 2:
