@@ -93,8 +93,8 @@ function inventory(history,request,services){
        cut.payload?.frame!=='local_xy'||!same(cut.writeTargets,[bodyId]))
       fail('unsupported cut body/units/frame');
     const sketchId=id(cut.payload?.sourceSketchId,'source sketch');
-    const candidate=id(cut.payload?.profileCandidateId,'SKETCH profile');
-    if(!candidate.startsWith('cycle:')||candidate.length>8192)
+    const candidate=cut.payload?.profileCandidateId;
+    if(typeof candidate!=='string'||!candidate.startsWith('cycle:')||candidate.length>8192)
       fail('canonical selected SKETCH cycle required');
     const source=byId.get(sketchId);
     if(source?.kind!=='sketch'||!source.payload?.sketch||
