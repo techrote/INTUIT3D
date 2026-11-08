@@ -1015,6 +1015,87 @@ async function main() {
     'reopened authoritative contour was discarded or replaced by empty sketch');
   await screenshot('31-from-empty-authoritative-save-reopen.png');
 
+  // Re-select the genuinely authored contour after archive import, not a
+  // template-based pointer fixture. The persisted SKETCH vertices are handles.
+  await clickControl('[data-testid="runtime-profile-select-mode"]');
+  const drawnPick=await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=runtime-sketch]');
+    if(!svg||!svg.getScreenCTM())return null;
+    const p=new DOMPoint(45,35).matrixTransform(svg.getScreenCTM());
+    return {x:p.x,y:p.y};
+  })()`);
+  check(drawnPick&&Number.isFinite(drawnPick.x),'drawn contour selection had no real SVG projection');
+  await mouse('mouseMoved',drawnPick.x,drawnPick.y);
+  await mouse('mousePressed',drawnPick.x,drawnPick.y,1);
+  await mouse('mouseReleased',drawnPick.x,drawnPick.y);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-pointer-profile-selected]')?.textContent?.includes('Drawn outline')"),
+    'user-drawn profile could not be semantically reselected after reopening');
+  check(await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-drawn-vertex-select]');
+    if(!s)return false;
+    const o=[...s.options].find(item=>item.value.endsWith(':handle:2'));
+    if(!o)return false;s.value=o.value;s.dispatchEvent(new Event('change',{bubbles:true}));return true;
+  })()`),'semantic drawn vertex #2 not offered');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-drawn-contour-vertex-editor]'))"),
+    'drawn vertex did not expose a numeric model-backed editor');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-drawn-vertex-x]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'drawn vertex X cannot receive actual keyboard focus');
+  await send('Input.insertText',{text:'135'});
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-drawn-vertex-y]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'drawn vertex Y cannot receive actual keyboard focus');
+  await send('Input.insertText',{text:'90'});
+  check(await evaluate("document.querySelector('[data-testid=runtime-drawn-vertex-x]')?.value==='135' && document.querySelector('[data-testid=runtime-drawn-vertex-y]')?.value==='90'"),
+    'physical keyboard values were not entered into the drawn vertex editor');
+  await clickControl('[data-testid="runtime-drawn-vertex-commit"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('135,90')"),
+    'numeric drawn-vertex edit was not admitted as changed sketch geometry');
+  await screenshot('34-drawn-vertex-numeric-edit.png');
+
+  // Direct manipulation of the same explicitly chosen semantic handle goes
+  // through the same versioned RUNTIME transaction, not a pixel-only preview.
+  const vertexGesture=await evaluate(`(() => {
+    const h=document.querySelector('[data-testid=runtime-profile-drag-handle]');
+    if(!h||!h.getScreenCTM())return null;
+    const matrix=h.getScreenCTM();
+    const from=new DOMPoint(Number(h.getAttribute('cx')),Number(h.getAttribute('cy'))).matrixTransform(matrix);
+    const to=new DOMPoint(140,92).matrixTransform(matrix);
+    return {from:{x:from.x,y:from.y},to:{x:to.x,y:to.y}};
+  })()`);
+  check(vertexGesture&&Number.isFinite(vertexGesture.from.x),
+    'semantic vertex drag marker did not project into screen coordinates');
+  await mouse('mouseMoved',vertexGesture.from.x,vertexGesture.from.y);
+  await mouse('mousePressed',vertexGesture.from.x,vertexGesture.from.y,1);
+  await mouse('mouseMoved',vertexGesture.to.x,vertexGesture.to.y,1);
+  await mouse('mouseReleased',vertexGesture.to.x,vertexGesture.to.y);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('140,92')"),
+    'actual pointer drag of a committed drawn vertex failed');
+  await screenshot('35-drawn-vertex-pointer-drag.png');
+  const undoButton=()=>evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()");
+  const redoButton=()=>evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()");
+  check(await undoButton(),'undo unavailable after real drawn vertex drag');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('135,90')"),
+    'undo of pointer movement failed to restore the precise numeric vertex');
+  check(await undoButton(),'undo unavailable after drawn vertex numeric edit');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('120,80')"),
+    'second undo failed to restore original solver-authoritative vertex');
+  check(await redoButton(),'redo unavailable after numeric vertex undo');
+  check(await redoButton(),'redo unavailable after direct vertex undo');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('140,92')"),
+    'redo failed to recover the fully edited drawn vertex');
+  await screenshot('36-drawn-vertex-undo-redo.png');
+  const editedSavedCount=await evaluate('window.__modelArchiveBlobs.length');
+  await clickControl('[data-testid="runtime-save-archive"]');
+  await eventually(()=>evaluate('window.__modelArchiveBlobs.length === '+(editedSavedCount+1)),
+    'edited drawn contour failed to save');
+  check(await evaluate("((async()=>{const text=await window.__modelArchiveBlobs.at(-1).text();const dt=new DataTransfer();dt.items.add(new File([text],'drawn-vertex.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})())"),
+    'edited drawn contour archive could not be selected');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'edited contour archive did not reach Worker validation');
+  await clickControl('[data-testid="runtime-import-review-confirm"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('140,92')"),
+    'reopened authored contour lost the moved vertex');
+  await screenshot('37-drawn-vertex-edit-reopened.png');
+
   // Continue on the SAME genuinely drawn project: model-backed extrusion,
   // accepted circular-hole operation, explicitly body-targeted cut and archive.
   await clickControl('[data-testid="runtime-create-extrusion"]');
@@ -1067,7 +1148,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -1086,6 +1167,7 @@ async function main() {
     actualChromiumSelectedEdgeHoleCreateUndoRedoArchive: true,
     genuineEmptySketchFourPointerVerticesAuthoritativeContourUndoRedoSaveReopen: true,
     genuineDrawnContourExtrusionHoleCutUndoRedoSaveReopen: true,
+    genuinelyDrawnVertexNumericAndPointerEditUndoRedoReopen: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
