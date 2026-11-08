@@ -171,9 +171,12 @@ jobs:
           import json,pathlib
           p=pathlib.Path('pinned-browser-evidence/independent-physical/qualification.json')
           result=json.loads(p.read_text())
-          assert result['status']=='NON_OCCT_SESSION_STEP_PHYSICAL_PASS',result
-          assert result['independentCadInteroperability'] is True,result
-          assert result['browserUserClickProven'] is False or result.get('browserUserClickProven') is None
+          assert result['status']=='INDEPENDENT_CAD_PASS_SESSION_CUSTODY_UNATTESTED',result
+          assert result['independentCadPhysicalPass'] is True,result
+          assert result['browserClickAttested'] is False,result
+          # The independent standalone importer cannot attest browser actions.
+          # This paired workflow separately executes and preserves real CDP clicks,
+          # original custody ZIPs, and source-matched native host receipts.
           print('CONNECTED_PINNED_CHROMIUM_CXX_STEP_INDEPENDENT_ANVIL_PHYSICAL_PASS')
           PY
       - name: Preserve original clicked ZIPs, screenshots, physical receipts and refusal logs
