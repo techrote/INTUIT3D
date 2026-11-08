@@ -163,6 +163,10 @@
     "./historical-edit-inventory": {
       "types": "./src/historical-edit-inventory.ts",
       "default": "./src/historical-edit-inventory.ts"
+    },
+    "./feature-history-batch": {
+      "types": "./src/feature-history-batch.ts",
+      "default": "./src/feature-history-batch.ts"
     }
   },
   "scripts": {
