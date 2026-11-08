@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import {isAbsolute,join} from 'node:path';
-import {mkdtempSync,readFileSync,writeFileSync,renameSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,renameSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import * as model from '@intuit3d/model';
@@ -33,6 +33,9 @@ if(!worker||!isAbsolute(worker))
 const runtime=createWorkflowRuntime({model,transactions,bindings,dimensions,archive,sketch,discovery});
 const create=(eventId,feature)=>({eventId,type:'feature.create',feature});
 const runFromEmpty=process.argv.includes('--from-empty');
+const evidenceDir=process.env.INTUIT3D_NATIVE_EVIDENCE_DIR;
+if(evidenceDir && (!runFromEmpty || !isAbsolute(evidenceDir)))
+  throw new Error('INTUIT3D_NATIVE_EVIDENCE_DIR requires --from-empty and an absolute directory');
 let current=runFromEmpty?blankNativePlateHistory(runtime):
   transactions.startUndoHistory(model.newProject('runtime.occt8.real.plate.cut'));
 if(!runFromEmpty)current=runtime.commit(current,[
@@ -94,6 +97,22 @@ const options=(id)=>({
   url:host.url,token:host.token,requestId:id,exportStep:true,
   deadlineMs:120000,requiredBackend:'OCCT-cxx-8.0.1',
 });
+function preserveFromEmptyEvidence(label,capture){
+  if(!evidenceDir)return null;
+  assert.ok(capture,'no current pinned STEP custody to preserve');
+  const archiveSha256=createHash('sha256').update(capture.archive).digest('hex');
+  const stepSha256=createHash('sha256').update(capture.stepBytes).digest('hex');
+  assert.equal(archiveSha256,capture.receipt.source.archiveSha256);
+  assert.equal(stepSha256,capture.receipt.step.sha256);
+  mkdirSync(evidenceDir,{recursive:true});
+  // Refuse accidental overwrite of an earlier qualification: every run
+  // should be tied to its own evidence directory and immutable source.
+  writeFileSync(join(evidenceDir,label+'.i3d-model.json'),capture.archive,{flag:'wx'});
+  writeFileSync(join(evidenceDir,label+'.receipt.json'),
+    JSON.stringify(capture.receipt,null,2)+'\\n',{flag:'wx'});
+  writeFileSync(join(evidenceDir,label+'.step'),capture.stepBytes,{flag:'wx'});
+  return {label,archiveSha256,stepSha256,revision:capture.receipt.source.revision};
+}
 async function record(out,stage,activeSession=session){
   assert.equal(out.kind,'experimental_plate_evaluated',JSON.stringify(out));
   assert.equal(out.result.backend,'OCCT-cxx-8.0.1');
@@ -138,6 +157,7 @@ try{
     assert.equal(createHash('sha256').update(firstCapture.stepBytes).digest('hex'),
       firstCapture.receipt.step.sha256);
     assert.equal(firstCapture.receipt.producer.backend,'OCCT-cxx-8.0.1');
+    const originalEvidence=preserveFromEmptyEvidence('01-original',firstCapture);
     const updated=widenBlankNativePlate(session,runtime,authored.contourReceipt);
     assert.equal(updated.kind,'committed');
     assert.equal(session.currentStep(),null,
@@ -147,6 +167,8 @@ try{
     assert.deepEqual(results[1].holes,[{x:-40,y:0,radius:6},{x:10,y:0,radius:6}]);
     assert.ok(results[1].volumeMm3>results[0].volumeMm3);
     assert.notEqual(results[1].sha256,results[0].sha256);
+    const editedEvidence=preserveFromEmptyEvidence('02-edited',
+      session.captureCurrentStepEvidence());
     const editedArchive=session.save();
     const unchanged=session.applyCommand({
       kind:'model.undo',projectId:session.refresh().projectId,
@@ -176,6 +198,12 @@ try{
     assert.ok(Math.abs(results[3].volumeMm3-results[1].volumeMm3)<1e-7);
     assert.equal(session.save(),editedArchive);
     assert.equal(results.length,4);
+    if(evidenceDir)writeFileSync(join(evidenceDir,'manifest.json'),
+      JSON.stringify({format:'intuit3d.runtime.from-empty-native-evidence',
+        version:1,originalEvidence,editedEvidence,
+        browserPointerExecuted:false,
+        nativeWorkerExecuted:true,externalCadProbeExecuted:runIndependent,
+        results},null,2)+'\\n',{flag:'wx'});
     console.log(JSON.stringify({
       kind:runIndependent
         ?'RUNTIME_REAL_PINNED_OCCT8_FROM_EMPTY_EXTERNAL_SAMPLE_EXECUTED'
@@ -184,6 +212,7 @@ try{
       browserPointerExecuted:false,
       nativeWorkerExecuted:true,
       externalCadProbeExecuted:runIndependent,
+      ...(evidenceDir?{evidenceDir}:{}),
       exactAuthority:false,independentInteroperability:false,
       originalArchiveSha256:createHash('sha256').update(authored.sourceArchive).digest('hex'),
       editedArchiveSha256:createHash('sha256').update(editedArchive).digest('hex'),
