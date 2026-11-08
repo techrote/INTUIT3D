@@ -1,5 +1,11 @@
 # INTUIT3D — live integration status
 
+## 8 November 2026 — source-fenced destructive CAD consent admitted; selective revert held on real CI
+
+**Further accepted-main checkpoint:** [`9dc36e64a8ab2ae1ddf31f390ad6f3b35a09f591`](https://github.com/techrote/INTUIT3D/commit/9dc36e64a8ab2ae1ddf31f390ad6f3b35a09f591). [RUNTIME #262](https://github.com/techrote/INTUIT3D/pull/262) source `b3a35e878b663392b793978f6fe088aedeb97ca8` was guarded squash-merged after both [Ubuntu/Windows CI #42469490156](https://github.com/techrote/INTUIT3D/actions/runs/42469490156) PASS. This adds exact inspected *target and ordered descendant/tombstone consent* to the previously admitted RUNTIME feature deletion/ancestor recovery, rejecting approval replay against another semantic feature before journal publication or native dispatch. No new native exactness is claimed.
+
+**Real failed candidate kept out:** [MODEL #263](https://github.com/techrote/INTUIT3D/pull/263) source `d61d1bf5c68f15615fd522dd59a16b9d3d9c53d0` failed its own [Ubuntu/Windows CI #42469996035](https://github.com/techrote/INTUIT3D/actions/runs/42469996035) because a modular saddle example uses strict object prototype comparison between immutable null-prototype MODEL payloads and authored ordinary-object fixtures. [MODEL-owned exact failure handoff](https://github.com/techrote/INTUIT3D/pull/263#issuecomment-6720186881) requests canonical semantic assertions and requalification; Draft intentionally not merged. This is a test admission defect, not proof of wrong native geometry.
+
 ## 8 November 2026 — further physical V2 and browser-edge admission (current checkpoint)
 
 **Accepted main:** [`004747c0b0d7dc6d8d6a8d128dcd8dc7041e5814`](https://github.com/techrote/INTUIT3D/commit/004747c0b0d7dc6d8d6a8d128dcd8dc7041e5814), following the five separately qualified source admissions in the historical entry immediately below, plus **two further exact-head guarded merges**:
