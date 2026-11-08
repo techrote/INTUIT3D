@@ -800,6 +800,25 @@ async function main(){
     'fresh plate was not restored to two authored hole IDs');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-evidence]'))"),
     'fresh plate was not automatically rebuilt by the persistent native session');
+  // Real Chromium pointer-selection and keyboard input, not a synthetic React call.
+  await pointerClick('runtime-mode-sketch');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch-outline-hole-holeA]'))"),
+    'fresh admitted plate sketch not visible');
+  await pointerClick('runtime-sketch-outline-hole-holeA');
+  const beforeNudge=Number(await evaluate("document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value"));
+  const beforeNudgeRevision=Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\\d+/)?.[0]);
+  await key('ArrowRight','ArrowRight',39);
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)===${beforeNudge+1}`),
+    'arrow-key nudge did not move selected hole through the authoritative model');
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\\d+/)?.[0])===beforeNudgeRevision+1,
+    'arrow-key nudge did not commit precisely one journal revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'arrow-key nudge retained a stale native STEP receipt');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)===${beforeNudge}`),
+    'keyboard nudge undo failed to restore the authored centre');
+  await pointerClick('runtime-mode-solid');
   const beforeLayout=await evaluate(`(() => {
     const val=id=>Number(document.querySelector('[data-testid="runtime-hole-'+id+'"]')?.value);
     return {a:val('holeA-x'),b:val('holeB-x'),
@@ -990,7 +1009,7 @@ async function main(){
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder with schema-compatible OCP identity, NOT OCP/native/STEP interoperability',
     downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,realPhysicalGeometry:false,
-    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,localRecoveryIndexedDbReload:true,recoveryWorkerReviewCancel:true,recoveryUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
+    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,keyboardHoleNudge:true,keyboardNudgeUndo:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,localRecoveryIndexedDbReload:true,recoveryWorkerReviewCancel:true,recoveryUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
       'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png','native-10a-selected-rigid-rotation.png','native-10-circular-bolt-array.png','native-11-local-recovery-after-reload.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
