@@ -307,10 +307,23 @@ async function runLocalPlate(requestInput, {
         return unresolved(request, 'stale_revision');
       publishOperation = 'link-stage';
       await fs.link(stage, destination);
-      if (signal?.aborted || revisionOf(readCurrentRevision) !== request.revision) {
+      // The final revision lookup is user-supplied and can throw (for example
+      // when a project is closed during export). Once linked, *every* failed
+      // final fence must roll back the new artifact, including lookup failure.
+      // A callback may also synchronously abort the request; recheck after it.
+      let finalFence = null;
+      try {
+        finalFence = revisionOf(readCurrentRevision) === request.revision
+          ? null : 'stale_revision';
+      } catch {
+        finalFence = 'requires_reconciliation';
+      }
+      if (signal?.aborted) finalFence = 'cancelled';
+      if (finalFence !== null) {
         publishOperation = 'rollback-stale-export';
         await fs.unlink(destination);
-        return unresolved(request, signal?.aborted ? 'cancelled' : 'stale_revision');
+        return unresolved(request, finalFence,
+          finalFence === 'requires_reconciliation' ? 'revision_fence_unavailable' : undefined);
       }
       return {...assessment, observed, artifact:{
         path:destination, bytes:bytes.length, sha256,
