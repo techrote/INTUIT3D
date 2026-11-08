@@ -81,6 +81,22 @@ export function parseNonOcctPlateTranscript(stdout,plateInput) {
     ['exterior',plate.width/2+10,0,false]];
   if(!plate.holes.some(h=>Math.abs(h.x)<1e-9&&Math.abs(h.y)<1e-9))
     probes.push(['central.material',0,0,true]);
+  // The accepted AnvilCAD V1 importer emits eight additional independent
+  // bore-wall rays per hole. Their radial offsets are part of its physical
+  // witness, not optional diagnostics: rejecting them made every genuine
+  // transcript fail as "extra rays", while dropping them would lose radius
+  // and wall-placement discrimination (equal-volume swapped radii).
+  for(const [i,h] of plate.holes.entries()) {
+    const delta=Math.min(h.radius*0.15,0.75);
+    for(const [direction,dx,dy] of [
+      ['east',1,0],['west',-1,0],['north',0,-1],['south',0,1],
+    ]) {
+      probes.push(['hole.'+i+'.inner.'+direction,
+        h.x+dx*(h.radius-delta),h.y+dy*(h.radius-delta),false]);
+      probes.push(['hole.'+i+'.outer.'+direction,
+        h.x+dx*(h.radius+delta),h.y+dy*(h.radius+delta),true]);
+    }
+  }
   const rays=lines.filter(x=>x.startsWith('RAY '));
   if(rays.length!==probes.length) reject('missing or extra independent physical rays');
   const observed=[];
