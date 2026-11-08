@@ -229,9 +229,17 @@ test('strict ready gate refuses unresolved intent, permissive mode preserves it'
     }});
   assert.throws(()=>previewFeaturePayloadScalarRevert(doc,req(doc)),
     ProjectFormatError);
-  const allowed=previewFeaturePayloadScalarRevert(doc,req(doc,{
+  // Pending before AND after: no ready feature regresses, but the selected
+  // historical engineering decision still requires explicit human consent.
+  assert.throws(()=>previewFeaturePayloadScalarRevert(doc,req(doc,{
     admission:'permit_unresolved',
+  })),/explicit confirmation required/);
+  const allowed=previewFeaturePayloadScalarRevert(doc,req(doc,{
+    admission:'permit_unresolved',confirmUnresolved:true,
   }));
+  assert.deepEqual(allowed.regressedReadyFeatureIds,[]);
+  assert.deepEqual(allowed.unresolvedSelectedFeatureIds,['extrude.housing']);
+  assert.equal(allowed.requiresUnresolvedConsent,true);
   assert.equal(allowed.plan.features.find(x=>x.feature.id==='extrude.housing').status,'pending');
   assert.equal(allowed.exactGeometryAuthority,false);
 });

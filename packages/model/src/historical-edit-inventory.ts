@@ -7,7 +7,7 @@
  * reversion preview, so a disabled choice is not a guessed UI heuristic.
  *
  * WORKBENCH: display rows newest first, require a fresh user-selected eventId
- * and explicit consent for regressed ready features before calling the
+ * and explicit consent for unresolved selected or downstream features before calling the
  * existing feature-edit-revert command. A provider cache is never authoritative
  * here; RUNTIME must independently fence and rebuild affected bodies.
  */
@@ -221,7 +221,7 @@ function summarize(
     resultingTargetStatus: preview.plan.features.find(
       (row) => row.feature.id === source.featureId)?.status ?? null,
     admission,
-    confirmUnresolved: preview.regressedReadyFeatureIds.length > 0,
+    confirmUnresolved: preview.requiresUnresolvedConsent,
   };
 }
 
@@ -237,7 +237,7 @@ function summarizeFieldChoice(
     resultingTargetStatus: preview.plan.features.find(
       (row) => row.feature.id === preview.featureId)?.status ?? null,
     admission: status === 'available' ? 'require_ready' : 'permit_unresolved',
-    confirmUnresolved: preview.regressedReadyFeatureIds.length > 0,
+    confirmUnresolved: preview.requiresUnresolvedConsent,
   };
 }
 /** A field checkbox must be backed by the same authoritative preflight. */
@@ -316,7 +316,7 @@ function scalarChoicesFor(
       regressedReadyFeatureIds: preview.regressedReadyFeatureIds,
       invalidatedBodyIds: preview.invalidatedBodyIds,
       admission: status === 'available' ? 'require_ready' : 'permit_unresolved',
-      confirmUnresolved: preview.regressedReadyFeatureIds.length > 0,
+      confirmUnresolved: preview.requiresUnresolvedConsent,
     });
     try {
       return summary('available',
