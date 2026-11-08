@@ -161,3 +161,28 @@ test('explicit edge relocation and retrospective rebase preserve references; inv
   assert.notEqual(rebased.nextSourceSignature,sig);
   assert.equal(serializeSketch(rebased.authoring.source),serializeSketch(wider));
 });
+
+test('individually admissible slots intersect after composition and refuse globally',()=>{
+  const source=doc(),sel=selected(source),original=serializeSketch(source);
+  const nearCorner=[
+    {id:'cornerBottom',edgeId:'L:edge0',fromMm:100,toMm:115,straightDepthMm:8},
+    {id:'cornerRight',edgeId:'L:edge1',fromMm:5,toMm:20,straightDepthMm:5}
+  ];
+  const first=createSelectedEdgeRoundSlotLayout(source,sel,{
+    kind:'create-selected-edge-round-slot-layout',version:1,
+    sourceSignature:original,slots:[nearCorner[0]]
+  });
+  const second=createSelectedEdgeRoundSlotLayout(source,sel,{
+    kind:'create-selected-edge-round-slot-layout',version:1,
+    sourceSignature:original,slots:[nearCorner[1]]
+  });
+  assert.equal(first.kind,'accepted',JSON.stringify(first));
+  assert.equal(second.kind,'accepted',JSON.stringify(second));
+  const both=createSelectedEdgeRoundSlotLayout(source,sel,{
+    kind:'create-selected-edge-round-slot-layout',version:1,
+    sourceSignature:original,slots:nearCorner
+  });
+  assert.equal(both.kind,'refused',JSON.stringify(both.kind==='refused'?both:{kind:both.kind}));
+  assert.equal(both.reason,'composite_profile_rejected');
+  assert.equal(serializeSketch(source),original);
+});
