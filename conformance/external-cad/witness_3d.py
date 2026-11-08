@@ -18,6 +18,12 @@ import sys
 ANVIL_PIN = "50c053840933c92d598976e837e63ccd7626c312"
 HEX40 = re.compile(r"[a-f0-9]{40}\Z")
 HEX64 = re.compile(r"[a-f0-9]{64}\Z")
+FLOAT = r"-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)"
+MOMENT_FIELDS = ("centroid_x_mm", "centroid_y_mm", "centroid_z_mm",
+                 "cov_xx_mm2", "cov_yy_mm2", "cov_zz_mm2",
+                 "cov_xy_mm2", "cov_xz_mm2", "cov_yz_mm2")
+MOMENTS = re.compile("WITNESS_MOMENTS " + " ".join(
+    name + "=(" + FLOAT + ")" for name in MOMENT_FIELDS) + r"\Z")
 SUCCESS = re.compile(
     r"WITNESS_ACCEPT solids=1 imported_exact=true warnings=0 "
     r"rays=(\d+) triangles=(\d+) volume_mm3=([0-9.]+) area_mm2=([0-9.]+)\Z")
@@ -42,13 +48,21 @@ def bound_bytes(path: Path, cap: int) -> bytes:
     return path.read_bytes()
 
 
+def witness_version(raw: bytes) -> int:
+    first = raw.decode("ascii").splitlines()
+    require(bool(first) and first[0] in
+            ("INTUIT3D_3D_WITNESS_V1", "INTUIT3D_3D_WITNESS_V2"),
+            "unsupported 3D material witness format")
+    return 2 if first[0].endswith("_V2") else 1
+
+
 def witness_count(raw: bytes) -> int:
     """Reject malformed, oversized, ungrounded or weak test specification."""
     require(len(raw) <= 100_000, "oversized witness")
     lines = raw.decode("ascii").splitlines()
-    require(lines and lines[0] == "INTUIT3D_3D_WITNESS_V1",
-            "unsupported 3D material witness format")
-    counts = {"VOLUME": 0, "AREA": 0, "RAY": 0}
+    version = witness_version(raw)
+    counts = {"VOLUME": 0, "AREA": 0, "RAY": 0,
+              "CENTROID": 0, "COVARIANCE": 0}
     ids = set()
     for line in lines[1:]:
         if not line:
@@ -69,6 +83,17 @@ def witness_count(raw: bytes) -> int:
             require(all(abs(x) < 1e8 for x in vectors) and
                     any(abs(x) > 1e-8 for x in vectors[3:]),
                     "invalid witness ray vector")
+        elif kind in ("CENTROID", "COVARIANCE"):
+            dimensions = 3 if kind == "CENTROID" else 6
+            require(version == 2 and len(fields) == 1 + 2 * dimensions,
+                    "mass moments require complete V2 witness")
+            for i in range(dimensions):
+                lower, upper = map(float, fields[1+2*i:3+2*i])
+                permitted = (0.5 if kind == "CENTROID" else
+                             0.03 * max(abs(lower), abs(upper), 1) + 0.5)
+                require(float("-inf") < lower < upper < float("inf") and
+                        upper-lower <= permitted,
+                        "independent 3D mass-moment interval too broad")
         else:
             require(len(fields) == 3, "invalid witness interval")
             lower, upper = map(float, fields[1:])
@@ -76,6 +101,12 @@ def witness_count(raw: bytes) -> int:
                     "missing or overly broad physical mass/area bound")
     require(counts["VOLUME"] == counts["AREA"] == 1 and
             8 <= counts["RAY"] <= 256, "incomplete independent witness")
+    if version == 1:
+        require(counts["CENTROID"] == counts["COVARIANCE"] == 0,
+                "V1 cannot claim 3D mass moments")
+    else:
+        require(counts["CENTROID"] == counts["COVARIANCE"] == 1,
+                "V2 requires centroid and all six covariance moments")
     return counts["RAY"]
 
 
@@ -137,11 +168,12 @@ def verify_originals(args: argparse.Namespace) -> dict:
                 "STEP bytes not bound to their specific physical C++ stage")
     require(args.positive_sha256 != args.negative_sha256,
             "negative must be a distinct genuine C++ STEP export")
-    return {"cppSha256": cpp_sha, "rays": total_rays}
+    return {"cppSha256": cpp_sha, "rays": total_rays,
+            "witnessVersion": witness_version(witness_raw)}
 
 
 def run_probe(probe: Path, step: Path, witness: Path, timeout: int,
-              log: Path, count: int, positive: bool) -> dict:
+              log: Path, count: int, positive: bool, version: int = 1) -> dict:
     cmd = [str(probe.resolve()), "--witness-3d",
            str(step.resolve()), str(witness.resolve())]
     completed = subprocess.run(cmd, capture_output=True, text=True,
@@ -162,18 +194,26 @@ def run_probe(probe: Path, step: Path, witness: Path, timeout: int,
     require(completed.returncode == 0 and not completed.stderr.strip(),
             "independent physical STEP import failed or warned")
     output = completed.stdout.strip().splitlines()
-    require(len(output) == count + 1 and
+    require(len(output) == count + (2 if version == 2 else 1) and
             all(re.fullmatch(
                 r"WITNESS_RAY [A-Za-z0-9._-]{1,56} (material|void) intersections=\d+",
-                line) for line in output[:-1]),
+                line) for line in output[:count]),
             "physical witness ray receipts incomplete/malformed")
+    moments = None
+    if version == 2:
+        matched = MOMENTS.fullmatch(output[count])
+        require(matched is not None, "physical centroid/covariance receipt missing")
+        moments = dict(zip(MOMENT_FIELDS, (float(v) for v in matched.groups())))
     accepted = SUCCESS.fullmatch(output[-1])
     require(accepted is not None and int(accepted.group(1)) == count and
             int(accepted.group(2)) >= 8,
             "independent exact-body physical acceptance missing")
-    return {"rayCount": count, "triangleCount": int(accepted.group(2)),
-            "volumeMm3": float(accepted.group(3)),
-            "surfaceMm2": float(accepted.group(4))}
+    result = {"rayCount": count, "triangleCount": int(accepted.group(2)),
+              "volumeMm3": float(accepted.group(3)),
+              "surfaceMm2": float(accepted.group(4))}
+    if moments is not None:
+        result["independentMassMoments"] = moments
+    return result
 
 
 def execute(args: argparse.Namespace) -> int:
@@ -187,6 +227,7 @@ def execute(args: argparse.Namespace) -> int:
         "nativeWorkerSha256": args.worker_sha256,
         "independentProbeSha256": args.probe_sha256,
         "anvilSourceSha": args.anvil_source_sha,
+        "witnessVersion": verified["witnessVersion"],
         "producerReceiptSha256": args.receipt_sha256,
         "sourceToBinaryCompilationBinding": "separate exact-head hosted build-log review required",
         "physicalCases": [],
@@ -200,7 +241,8 @@ def execute(args: argparse.Namespace) -> int:
             target.write_bytes(original.read_bytes())
             log = args.output_dir / (name + ".anvil.log")
             result = run_probe(args.probe, target, args.witness, args.timeout,
-                               log, verified["rays"], positive)
+                               log, verified["rays"], positive,
+                               verified["witnessVersion"])
             require(sha(target.read_bytes()) == expected,
                     "original STEP mutated during physical witness import")
             report["physicalCases"].append({

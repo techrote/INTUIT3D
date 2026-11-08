@@ -1,4 +1,4 @@
-# Independent, data-driven 3D material witness — candidate
+# Independent, data-driven 3D material witness
 
 This is an additive **non-OCCT** physical acceptance mode, not a replacement for the
 already admitted fixed KERNEL v5/v6 16-STEP/992-ray gate. It makes the next
@@ -100,3 +100,41 @@ B-rep fidelity, multiple solids/assembly exports, browser-authored state,
 Windows native binaries, or human CAD usability. Integration owns hosted
 workflow wiring, evidence retention and guarded merge. No other owner lane
 should be modified by this STEP worker.
+
+## V2 — analytic full 3D mass distribution (candidate)
+
+V1 and its exact independent importer receipts remain backward compatible.
+The optional `INTUIT3D_3D_WITNESS_V2` specification requires `CENTROID`
+(x, y, z, lower/upper pairs in mm) and `COVARIANCE` (xx, yy, zz,
+xy, xz, yz lower/upper pairs in mm²), in addition to all V1 volume,
+surface-area and world-coordinate material/void rays. Missing, duplicated,
+nonfinite or excessively wide moments fail closed. The independent AnvilCAD
+consumer integrates signed oriented triangles into tetrahedral first and
+second volume moments, normalizes by their signed volume, and reports
+`WITNESS_MOMENTS`. The Python custody runner refuses an absent/malformed
+V2 mass receipt and retains nine measured values in `qualification.json`.
+The V1 path does not claim these new moment predicates.
+
+For the existing direct two-cut 8 mm sloped native STEP, the V2 oracle
+`witness-v6-direct-two-cuts-8mm-moments.txt` was calculated **analytically**
+from the six-edge source contour
+`(0,0),(120,0),(120,20),(65,20),(45,80),(0,80)`,
+minus a 14×8 mm through-window at (95,10) and a radius-5 mm,
+3 mm deep blind cylinder at (15,50). The independently calculated
+volume is **44468.380550981 mm³**, centroid
+**(40.418510546, 32.455848620, 3.986753540) mm** and six
+covariance components, in xx/yy/zz/xy/xz/yz order, are
+**(873.844322413, 543.147811368, 5.324326891,
+-309.934714097, 0.336705282, -0.232397899) mm²**.
+The signed-mesh physical reference previously measured by the admitted
+v6 AnvilCAD fixture is within the V2 bounds, but this is **not**
+a substitute for executing the **newly compiled V2 probe**.
+
+Run the command above with
+`WITNESS=conformance/external-cad/witness-v6-direct-two-cuts-8mm-moments.txt`
+and the genuinely newly built V2 probe; keep the original STEP bytes
+and six-stage receipt, update the witness SHA argument, require all
+14 rays plus nine independently reconstructed moments, and replay
+both actual original geometry and a changed-position (not merely
+changed-volume) negative. A candidate is **physically unqualified** until
+that exact new executable and both physical cases have been run.
