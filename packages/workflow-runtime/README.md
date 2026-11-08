@@ -1206,6 +1206,14 @@ INTUIT3D_ANVIL_PROBE_SHA256=<verified-executable-sha256> \
   npm run demo:occt8:from-empty:independent --workspace @intuit3d/workflow-runtime
 ```
 
+To preserve the original bytes rather than only stdout hashes, set the
+optional `INTUIT3D_NATIVE_EVIDENCE_DIR=/absolute/new/evidence-directory` with
+either command. The runner creates two immutable (exclusive-create)
+`.i3d-model.json`, `.receipt.json` and `.step` triplets plus a machine-readable
+`manifest.json`; it checks each archive/STEP digest against its own current
+receipt before saving. Use a fresh directory for each exact-source run.
+No evidence is saved unless explicitly requested.
+
 The second command requires independently compiled AnvilCAD and checks
 physical material/void and geometry through the existing external probe.
 Both commands **fail** without the genuine installed worker and report
