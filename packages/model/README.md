@@ -901,3 +901,46 @@ old inventory as a commit token. The target body and any affected cross-body
 dependents require RUNTIME provider-cache invalidation. This model contract
 reports semantic admission only: native selected-edge placement, exact B-rep,
 STEP conformance and actual browser acceptance remain separate.
+
+## Atomic compensation across different historical features (v1)
+
+`@intuit3d/model/feature-history-batch` groups **2–8 source-fenced history selections on distinct features** into one durable, undoable semantic transaction. A selection may revert a top-level `feature.edit` field or a selected previously authored numeric `Mm`/`Deg` payload dimension. Each constituent event is checked independently against the *same* canonical project and journal, not progressively rebased onto intermediate revisions. All inverse events are then staged together, and only the **combined** plan determines dependency admission, affected bodies, surviving independent work and explicit unresolved-intent consent. A failed selection commits nothing; duplicate features, source events, new event IDs, stale revisions and equal-revision divergent journals are refused.
+
+```ts
+import {
+  FEATURE_HISTORY_BATCH_FORMAT,
+  previewFeatureHistoryBatch,
+  commitUndoableFeatureHistoryBatch,
+} from '@intuit3d/model/feature-history-batch';
+
+const request = {
+  format: FEATURE_HISTORY_BATCH_FORMAT, version: 1,
+  expectedProjectId: session.document.projectId,
+  expectedRevision: session.document.revision,
+  expectedDocumentFence: serializeProject(session.document),
+  admission: 'require_ready', confirmUnresolved: false,
+  selections: [
+    { kind: 'scalars', targetEventId: 'history.base',
+      eventId: 'inverse.base', selectedFields: ['thicknessMm'] },
+    { kind: 'fields', targetEventId: 'history.cover',
+      eventId: 'inverse.cover', selectedFields: ['payload'] },
+  ],
+};
+const preview = previewFeatureHistoryBatch(session.document, request);
+// Show preview.regressedReadyFeatureIds, invalidatedBodyIds and
+// unaffectedReadyFeatureIds; require fresh human consent when appropriate.
+const committed = commitUndoableFeatureHistoryBatch(session, request);
+```
+
+**WORKBENCH handoff:** let the engineer select two or more history-inspector choices targeting distinct features; take each row's already preflighted `fieldChoices` or `scalarChoices`, allocate a fresh per-choice event ID and bind the entire review to the current document fence. Display the **aggregate** preview, not a union of independent UI guesses. Require explicit unresolved-intent consent before one atomic Apply; cancel or source advancement discards the batch. **RUNTIME** must run its normal authoritative session acceptance and provider-cache retirement/rebuild for every `invalidatedBodyIds` entry; the model `unaffectedReadyFeatureIds` are only *semantic* cache candidates, never claims of current native geometry or STEP.
+
+Run the adversarial model tests and connected dual-rail SKETCH/FEATUREOPS/RUNTIME example:
+
+```sh
+node --experimental-strip-types --test packages/model/test/feature-history-batch.test.mjs
+node --experimental-strip-types packages/model/examples/dual-rail-history-batch.mjs
+npm run typecheck -w @intuit3d/model
+npm run check:workspace
+```
+
+The result is source/revision identity and semantic authoring evidence only. It does **not** close browser-native-independent CAD acceptance #74.
