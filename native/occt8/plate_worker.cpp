@@ -46,7 +46,7 @@ struct RectCut { std::string id; bool circular=false; double x,y,width,depth,cut
 struct Request {
   std::string request_id,feature_id;
   long long revision=0;
-  bool export_step=false,cut_chain=false,mixed_chain=false,l_profile_chain=false,orthogonal_chain=false;
+  bool export_step=false,cut_chain=false,mixed_chain=false,l_profile_chain=false,orthogonal_chain=false,linear_chain=false;
   double width=0,depth=0,thickness=0,leg_width=0,foot_height=0;
   std::string profile_id;
   std::vector<Hole> holes;
@@ -77,11 +77,12 @@ double polygon_area(const std::vector<Point>& v) {
   }
   return result/2;
 }
-double polygon_perimeter(const std::vector<Point>& v) {
+double polygon_perimeter(const std::vector<Point>& v,bool linear=false) {
   double result=0;
   for(std::size_t i=0;i<v.size();++i) {
     const auto& a=v[i];const auto& b=v[(i+1)%v.size()];
-    result+=std::abs(a.x-b.x)+std::abs(a.y-b.y);
+    result+=linear?std::hypot(a.x-b.x,a.y-b.y):
+      std::abs(a.x-b.x)+std::abs(a.y-b.y);
   }
   return result;
 }
@@ -121,6 +122,44 @@ void validate_polygon(const std::vector<Point>& v) {
   if(!(polygon_area(v)>1e-6))
     throw std::runtime_error("selected contour must have positive CCW area");
 }
+
+double orientation(const Point& a,const Point& b,const Point& c) {
+  return (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+}
+bool on_segment(const Point& a,const Point& b,const Point& p) {
+  return orientation(a,b,p)==0 &&
+    p.x>=std::min(a.x,b.x)&&p.x<=std::max(a.x,b.x)&&
+    p.y>=std::min(a.y,b.y)&&p.y<=std::max(a.y,b.y);
+}
+bool line_segments_touch(const Point& a,const Point& b,const Point& c,const Point& d) {
+  const double x=orientation(a,b,c),y=orientation(a,b,d);
+  const double z=orientation(c,d,a),w=orientation(c,d,b);
+  return (x==0&&on_segment(a,b,c))||(y==0&&on_segment(a,b,d))||
+    (z==0&&on_segment(c,d,a))||(w==0&&on_segment(c,d,b))||
+    (x*y<0&&z*w<0);
+}
+void validate_linear_polygon(const std::vector<Point>& v) {
+  if(v.size()<3||v.size()>64)
+    throw std::runtime_error("linear profile requires 3..64 vertices");
+  for(std::size_t i=0;i<v.size();++i){
+    const auto& a=v[i];const auto& b=v[(i+1)%v.size()];
+    const auto& c=v[(i+2)%v.size()];
+    if(!std::isfinite(a.x)||!std::isfinite(a.y)||
+       std::abs(a.x)>1e6||std::abs(a.y)>1e6||
+       std::hypot(b.x-a.x,b.y-a.y)<1e-6)
+      throw std::runtime_error("invalid linear contour coordinates or edge");
+    if(orientation(a,b,c)==0)
+      throw std::runtime_error("adjacent collinear linear contour edges");
+    for(std::size_t j=i+1;j<v.size();++j){
+      if(j==i+1||(i==0&&j==v.size()-1))continue;
+      if(line_segments_touch(a,b,v[j],v[(j+1)%v.size()]))
+        throw std::runtime_error("self-intersecting or touching linear contour");
+    }
+  }
+  if(!(polygon_area(v)>1e-6))
+    throw std::runtime_error("linear contour needs CCW positive area");
+}
+
 bool point_inside(const std::vector<Point>& v,double x,double y) {
   bool inside=false;
   for(std::size_t i=0;i<v.size();++i) {
@@ -157,6 +196,35 @@ bool cut_inside_polygon(const std::vector<Point>& v,const RectCut& c) {
   return true;
 }
 
+
+bool linear_cut_inside_polygon(const std::vector<Point>& v,const RectCut& c) {
+  if(!point_inside(v,c.x,c.y))return false;
+  const double rx=c.width/2,ry=c.depth/2;
+  const Point corners[4]={
+    {c.x-rx,c.y-ry},{c.x+rx,c.y-ry},
+    {c.x+rx,c.y+ry},{c.x-rx,c.y+ry},
+  };
+  for(std::size_t i=0;i<v.size();++i){
+    const auto& a=v[i];const auto& b=v[(i+1)%v.size()];
+    if(c.circular){
+      const double dx=b.x-a.x,dy=b.y-a.y;
+      const double t=std::clamp(((c.x-a.x)*dx+(c.y-a.y)*dy)/
+                                (dx*dx+dy*dy),0.0,1.0);
+      if(std::hypot(c.x-a.x-t*dx,c.y-a.y-t*dy)<=c.width)return false;
+    }else{
+      const auto inside_box=[&](const Point& p) {
+        return p.x>=c.x-rx&&p.x<=c.x+rx&&
+               p.y>=c.y-ry&&p.y<=c.y+ry;
+      };
+      if(inside_box(a)||inside_box(b))return false;
+      for(int j=0;j<4;++j)
+        if(line_segments_touch(a,b,corners[j],corners[(j+1)%4]))
+          return false;
+    }
+  }
+  return true;
+}
+
 Request read_request(const std::filesystem::path& path) {
   std::ifstream file(path);
   std::string magic;Request q;int export_flag=-1,count=-1,cut_count=0;
@@ -164,17 +232,19 @@ Request read_request(const std::filesystem::path& path) {
                       magic!="INTUIT3D_OCCT8_CUT_CHAIN_V1"&&
                       magic!="INTUIT3D_OCCT8_MIXED_CUT_CHAIN_V2"&&
                       magic!="INTUIT3D_OCCT8_L_PROFILE_CHAIN_V3"&&
-                      magic!="INTUIT3D_OCCT8_ORTHOGONAL_CHAIN_V4"))
+                      magic!="INTUIT3D_OCCT8_ORTHOGONAL_CHAIN_V4"&&
+                      magic!="INTUIT3D_OCCT8_LINEAR_CHAIN_V5"))
     throw std::runtime_error("invalid canonical request protocol");
   q.mixed_chain=(magic=="INTUIT3D_OCCT8_MIXED_CUT_CHAIN_V2");
   q.l_profile_chain=(magic=="INTUIT3D_OCCT8_L_PROFILE_CHAIN_V3");
   q.orthogonal_chain=(magic=="INTUIT3D_OCCT8_ORTHOGONAL_CHAIN_V4");
+  q.linear_chain=(magic=="INTUIT3D_OCCT8_LINEAR_CHAIN_V5");
   q.cut_chain=(magic!="INTUIT3D_OCCT8_PLATE_V1");
-  if(q.orthogonal_chain) {
+  if(q.orthogonal_chain||q.linear_chain) {
     int vertex_count=0;
     if(!(file>>q.request_id>>q.feature_id>>q.revision>>export_flag>>
          q.profile_id>>q.thickness>>vertex_count>>cut_count)||
-       vertex_count<6||vertex_count>64)
+       vertex_count<(q.linear_chain?3:6)||vertex_count>64)
       throw std::runtime_error("invalid selected orthogonal contour header");
     for(int i=0;i<vertex_count;++i) {
       Point p{};
@@ -182,7 +252,8 @@ Request read_request(const std::filesystem::path& path) {
         throw std::runtime_error("truncated selected contour");
       q.vertices.push_back(p);
     }
-    validate_polygon(q.vertices);
+    if(q.linear_chain)validate_linear_polygon(q.vertices);
+    else validate_polygon(q.vertices);
     auto xmin=q.vertices[0].x,xmax=xmin,ymin=q.vertices[0].y,ymax=ymin;
     for(const auto& p:q.vertices) {
       xmin=std::min(xmin,p.x);xmax=std::max(xmax,p.x);
@@ -205,7 +276,7 @@ Request read_request(const std::filesystem::path& path) {
   const auto dimension=[](double v) {return std::isfinite(v)&&v>=1e-6&&v<=1e6;};
   if(!dimension(q.width)||!dimension(q.depth)||!dimension(q.thickness))
     throw std::runtime_error("invalid plate dimensions");
-  if(q.orthogonal_chain &&
+  if((q.orthogonal_chain||q.linear_chain) &&
      (!id_ok(q.profile_id)||q.profile_id==q.feature_id||cut_count<2))
     throw std::runtime_error("invalid selected orthogonal profile ID or cuts");
   if(q.l_profile_chain &&
@@ -239,17 +310,19 @@ Request read_request(const std::filesystem::path& path) {
   for(int i=0;i<cut_count;++i) {
     RectCut c{};
     std::string kind="R";
-    if(!(file>>c.id) || ((q.mixed_chain||q.l_profile_chain||q.orthogonal_chain) && !(file>>kind)) ||
+    if(!(file>>c.id) || ((q.mixed_chain||q.l_profile_chain||q.orthogonal_chain||q.linear_chain) && !(file>>kind)) ||
        !(file>>c.x>>c.y>>c.width>>c.depth>>c.cut_depth))
       throw std::runtime_error("truncated ordered cut");
     if(kind!="R" && kind!="C")
       throw std::runtime_error("unsupported cut profile kind");
     c.circular=(kind=="C");
-    if(!id_ok(c.id)||((q.l_profile_chain||q.orthogonal_chain)&&c.id==q.profile_id)||!std::isfinite(c.x)||!std::isfinite(c.y)||
+    if(!id_ok(c.id)||((q.l_profile_chain||q.orthogonal_chain||q.linear_chain)&&c.id==q.profile_id)||!std::isfinite(c.x)||!std::isfinite(c.y)||
        !dimension(c.width)||!dimension(c.cut_depth)||
        (c.circular ? c.depth!=0 : !dimension(c.depth))||
        c.cut_depth>q.thickness||
-       (q.orthogonal_chain ?
+       (q.linear_chain ?
+         !linear_cut_inside_polygon(q.vertices,c) :
+         q.orthogonal_chain ?
          !cut_inside_polygon(q.vertices,c) :
          q.l_profile_chain ?
          !inside_l(c.x,c.y,c.circular?c.width:c.width/2,
@@ -328,15 +401,15 @@ void require_shape(const Request& q,const Metrics& m) {
     removed_area+=std::acos(-1.0)*h.r*h.r;
     bore_wall+=2*std::acos(-1.0)*h.r;
   }
-  const double stock_area=q.orthogonal_chain?polygon_area(q.vertices):
+  const double stock_area=(q.orthogonal_chain||q.linear_chain)?polygon_area(q.vertices):
     q.l_profile_chain ? q.width*q.foot_height+q.leg_width*(q.depth-q.foot_height):
     q.width*q.depth;
-  const double stock_perimeter=q.orthogonal_chain?
-    polygon_perimeter(q.vertices):2*(q.width+q.depth);
+  const double stock_perimeter=(q.orthogonal_chain||q.linear_chain)?
+    polygon_perimeter(q.vertices,q.linear_chain):2*(q.width+q.depth);
   double v=(stock_area-removed_area)*q.thickness;
   double a=2*(stock_area-removed_area)+
        (stock_perimeter+bore_wall)*q.thickness;
-  int expected_faces=(q.orthogonal_chain?static_cast<int>(q.vertices.size())+2:
+  int expected_faces=((q.orthogonal_chain||q.linear_chain)?static_cast<int>(q.vertices.size())+2:
     q.l_profile_chain?8:6)+static_cast<int>(q.holes.size());
   for(const auto& c:q.cuts) {
     const bool through=(c.cut_depth==q.thickness);
@@ -375,7 +448,7 @@ void require_shape(const Request& q,const Metrics& m) {
 }
 TopoDS_Shape construct(const Request& q) {
   TopoDS_Shape shape;
-  if(q.orthogonal_chain) {
+  if(q.orthogonal_chain||q.linear_chain) {
     // One closed, validated CCW contour. Do not join boxes or infer a sketch.
     BRepBuilderAPI_MakePolygon poly;
     for(const auto& p:q.vertices)poly.Add(gp_Pnt(p.x,p.y,0));
@@ -457,7 +530,8 @@ void write_report(const Request& q,const Metrics& source,
                   const Metrics* step,const std::filesystem::path& output) {
   // IDs have already been restricted to JSON-safe alphanumeric characters.
   std::ostringstream s;
-  s<<"{\"protocol\":\""<<(q.orthogonal_chain?"intuit3d/kernel/orthogonal-profile-cut-chain-v4":
+  s<<"{\"protocol\":\""<<(q.linear_chain?"intuit3d/kernel/linear-profile-cut-chain-v5":
+       q.orthogonal_chain?"intuit3d/kernel/orthogonal-profile-cut-chain-v4":
       q.l_profile_chain?"intuit3d/kernel/l-profile-cut-chain-v3":
      q.mixed_chain?"intuit3d/kernel/plate-mixed-cut-chain-v2":
      q.cut_chain?"intuit3d/kernel/plate-cut-chain-v1":"intuit3d/kernel/plate-v1")<<"\",\"requestId\":\""
