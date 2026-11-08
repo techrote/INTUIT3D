@@ -8,13 +8,41 @@ const rays=[['hole.0',-30,0,0,-1,-1],['hole.1',30,0,0,-1,-1],
   ['solid.nw',-20,-80/6,2,0,8],['solid.ne',20,-80/6,2,0,8],
   ['solid.sw',-20,80/6,2,0,8],['solid.se',20,80/6,2,0,8],
   ['exterior',70,0,0,-1,-1],['central.material',0,0,2,0,8]];
+// Match the actual independently compiled AnvilCAD V1 ray order, including
+// bore-wall probes that discriminate local radius/placement despite equal volume.
+for(const [i,h] of plate.holes.entries()) {
+  const delta=Math.min(h.radius*0.15,0.75);
+  for(const [direction,dx,dy] of [
+    ['east',1,0],['west',-1,0],['north',0,-1],['south',0,1],
+  ]) {
+    rays.push(['hole.'+i+'.inner.'+direction,
+      h.x+dx*(h.radius-delta),h.y+dy*(h.radius-delta),0,-1,-1]);
+    rays.push(['hole.'+i+'.outer.'+direction,
+      h.x+dx*(h.radius+delta),h.y+dy*(h.radius+delta),2,0,8]);
+  }
+}
 const accepted=()=>rays.map(row=>'RAY '+row.join(' ')).join('\n')+'\n'+
   'ACCEPT solids=1 source_unit=millimetre imported_exact=true tris=386 open_edges=0 volume_mm3='+volume+' expected_mm3='+volume+' warnings=0\n';
 test('synthetic external-receipt parser tests dimensional and coordinate anchors',()=>{
   const out=parseNonOcctPlateTranscript(accepted(),plate);
-  assert.equal(out.rays.length,8);
+  assert.equal(out.rays.length,24);
   assert.equal(out.importedExactBrep,true);
   assert.equal(out.relativeVolumeError,0);
+});
+test('rejects missing bore-wall rays, moved radii and material/void inversion',()=>{
+  const valid=accepted();
+  assert.throws(()=>parseNonOcctPlateTranscript(
+    valid.replace(/^RAY hole\.0\.inner\.east .*\n/m,''),plate),/rays/);
+  assert.throws(()=>parseNonOcctPlateTranscript(
+    valid.replace('RAY hole.0.inner.east -24.75 0 0 -1 -1',
+      'RAY hole.0.inner.east -24.5 0 0 -1 -1'),plate),/ray geometry/);
+  assert.throws(()=>parseNonOcctPlateTranscript(
+    valid.replace('RAY hole.0.outer.east -23.25 0 2 0 8',
+      'RAY hole.0.outer.east -23.25 0 0 -1 -1'),plate),/ray geometry/);
+  // A seemingly identical volume cannot excuse a wrong local bore wall.
+  assert.throws(()=>parseNonOcctPlateTranscript(
+    valid.replace('RAY hole.1.inner.west 24.75 0 0 -1 -1',
+      'RAY hole.1.inner.west 25.25 0 0 -1 -1'),plate),/ray geometry/);
 });
 test('refuses physical rays moved without any volume change',()=>{
   assert.throws(()=>parseNonOcctPlateTranscript(accepted().replace('RAY hole.1 30 0','RAY hole.1 31 0'),plate),/ray geometry/);
@@ -57,7 +85,7 @@ test('POSIX-only synthetic executable exercises source-matched STEP bytes, subpr
     assert.equal(result.source.revision,3);
     assert.equal(result.exactAuthority,false);
     assert.equal(result.independentInteroperability,false);
-    assert.equal(result.sample.rays.length,8);
+    assert.equal(result.sample.rays.length,24);
     await assert.rejects(()=>runNonOcctPlateProbe({
       ...opts,expectedProbeSha256:'0'.repeat(64)}),/binary digest/);
     stepBytes[0]^=1;
