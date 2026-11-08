@@ -6,6 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {writeFile} from 'node:fs/promises';
+import {request as httpRequest} from 'node:http';
 import * as model from '@intuit3d/model';
 import * as transactions from '@intuit3d/model/transactions';
 import * as bindings from '@intuit3d/model/dimension-bindings';
@@ -367,5 +368,71 @@ test('closing a bridge with an uncooperative worker terminates the HTTP attempt 
   } finally {
     release();
     if(!closing) await host.close();
+  }
+});
+
+test('partial native HTTP upload cannot pin host shutdown; reopened project still rebuilds',async()=>{
+  // Real authenticated HTTP request, deliberately left mid-JSON by a client.
+  // The provider is a labelled synthetic test double, never physical OCCT8.
+  const current=plateProject();
+  const originalArchive=runtime.save(current);
+  const previousCalls=nativeCalls;
+  const host=await startLocalPlateBridge({
+    runtime,model,plateContract,runExperimentalPlate:fakeProvider,timeoutMs:5000,
+  });
+  const upload=httpRequest(host.url+'/v1/plate/evaluate',{
+    method:'POST',headers:{
+      'content-type':'application/json','x-intuit3d-token':host.token,
+    },
+  });
+  // The expected forced socket teardown is not an unhandled test error.
+  upload.on('error',()=>{});
+  const connected=new Promise((resolve,reject)=>{
+    upload.once('socket',socket=>{
+      if(!socket.connecting) resolve();
+      else {
+        socket.once('connect',resolve);
+        socket.once('error',reject);
+      }
+    });
+  });
+  let closing=null,timer=null;
+  try {
+    upload.write('{"archive":"'); // valid beginning, no terminating body
+    await connected;
+    await new Promise(resolve=>setTimeout(resolve,40));
+    closing=host.close();
+    assert.strictEqual(closing,host.close(),
+      'repeated shutdown requests should share the same completion');
+    await Promise.race([
+      closing,
+      new Promise((_,reject)=>{timer=setTimeout(()=>
+        reject(Error('partial body indefinitely blocked native bridge close')),1200);}),
+    ]);
+    assert.equal(nativeCalls,previousCalls,
+      'an incomplete command must never reach the physical provider');
+  } finally {
+    clearTimeout(timer);
+    upload.destroy();
+    if(!closing) closing=host.close();
+    await closing;
+  }
+
+  assert.equal(runtime.save(current),originalArchive,
+    'shutdown must not write or replace authoritative CAD history');
+  const restarted=await startLocalPlateBridge({
+    runtime,model,plateContract,runExperimentalPlate:fakeProvider,
+  });
+  try {
+    const result=await evaluateLocalPlate({
+      url:restarted.url,token:restarted.token,runtime,
+      readCurrentHistory:()=>runtime.reopen(originalArchive),
+      cutFeatureId:'cut',requestId:'restarted.after.partial.body',exportStep:true,
+    });
+    assert.equal(result.kind,'experimental_plate_evaluated',JSON.stringify(result));
+    assert.deepEqual(Buffer.from(result.step.bytes),STEP);
+    assert.equal(result.source.revision,current.document.revision);
+  } finally {
+    await restarted.close();
   }
 });
