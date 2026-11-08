@@ -269,15 +269,18 @@ async function main(){
   // INTENT undo is an explicit compensating journal transaction: it restores
   // the original *values*, not the former revision counter. Export must remain
   // stale until physical STEP is rebuilt for this new authoritative revision.
-  const afterContextualUndos=Number(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"));
-  check(Number.isInteger(afterContextualUndos)&&afterContextualUndos>Number(cameraRev),
+  const afterContextualUndos=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  const beforeEditRevision=Number(cameraRev?.match(/\\d+/)?.[0]);
+  const afterEditRevision=Number(afterContextualUndos?.match(/\\d+/)?.[0]);
+  check(Number.isInteger(afterEditRevision)&&afterEditRevision>beforeEditRevision,
     '3D contextual undos did not preserve monotonic journal revision');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent")==='pending_exact_provider',
     '3D contextual undo falsely retained previous exact STEP authority');
   await screenshot('native-00b-3d-selected-hole-edit.png');
   await pointerClick('runtime-camera-isometric');
   await pointerClick('runtime-camera-fit');
-  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,'FIT authored model revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===afterContextualUndos,
+    'FIT altered the current journal revision after contextual edits');
   await screenshot('native-00-camera-views.png');
   check(await evaluate("(() => {const h=document.querySelector('[data-testid=runtime-thickness-handle]');h?.focus();return document.activeElement===h})()"),
     '3D camera controls did not return keyboard focus to thickness grip');
