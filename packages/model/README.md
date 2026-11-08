@@ -876,3 +876,28 @@ WORKBENCH may consume this exported model contract through a separately
 owned UI integration. It must present both the old and proposed numerical
 results, obtain explicit author approval, and make the final commit separately.
 Cross-package admission remains under INTEGRATION.
+
+## Revision-safe destination inventory for a selected body cut (v1)
+
+Import `inspectBodyCutRelocateDestinations` and `BODY_CUT_DESTINATIONS_FORMAT`
+from `@intuit3d/model/body-cut-relocate`. Unlike authored timeline ordering,
+the returned `writerOrderBefore` is the actual single body-writer dependency
+chain. Supply `expectedProjectId`, `expectedRevision`, explicit
+`targetBodyId`, `cutFeatureId`, `offset:0` and `limit:16`.
+
+The response contains `available`, `current` and `blocked` destinations.
+Each `available` choice includes `afterBodyWriterId`, `requiredEventIds`,
+a proposed execution order and cross-body semantic invalidation. A `blocked`
+choice retains the real relocation rejection diagnostic (e.g. a selected edge
+would now refer forward to a later writer), **not** a geometry auto-repair.
+Follow `nextOffset` at the same revision for longer chains; a revision change
+invalidates the inventory. Calls are pure, limited to 16 actual relocation
+previews each and never reserve/commit their temporary validation event IDs.
+
+Once the user selects an `available` destination, generate that many **fresh**
+journal event IDs and pass them to `previewBodyCutRelocate`, then to
+`commitUndoableBodyCutRelocate` on the same project revision. Never treat an
+old inventory as a commit token. The target body and any affected cross-body
+dependents require RUNTIME provider-cache invalidation. This model contract
+reports semantic admission only: native selected-edge placement, exact B-rep,
+STEP conformance and actual browser acceptance remain separate.
