@@ -10,6 +10,8 @@ import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
 import * as model from '@intuit3d/model';
 import * as discovery from '@intuit3d/sketch/profile-discovery/v1';
+import {BODY_REBUILD_MANIFEST_FORMAT,planBodyRebuildManifest}
+  from '@intuit3d/model/body-rebuild-manifest';
 import {appendOrderedProfileCut,ORDERED_CUT_FORMAT}
   from '@intuit3d/feature-ops/ordered-cut/v1';
 import {editExtrudeThickness} from '@intuit3d/feature-ops';
@@ -133,6 +135,14 @@ export function runMultiTargetRecipe(){
   assert.equal(after.document.revision,before.document.revision+4);
   assert.deepEqual(committed.nativeHandoff.bodyIds,['body.backer','body.shim']);
   assert.equal(lookup(after,'cut.guard.finish').payload.depthMm,1);
+  const bodyActions=planBodyRebuildManifest(before.document,after.document,{
+    format:BODY_REBUILD_MANIFEST_FORMAT,version:1,
+    expectedProjectId:before.document.projectId,
+    expectedFromRevision:before.document.revision,
+    expectedToRevision:after.document.revision,
+    bodyIds:['body.guard','body.backer','body.shim'],
+  }).bodies.map(body=>body.action);
+  assert.deepEqual(bodyActions,['preserve_candidate','rebuild','rebuild']);
   for(const target of ['backer','shim']){
     for(const name of ['relief','bore']){
       const f=lookup(after,'cut.'+target+'.'+name+'.batch');
@@ -184,7 +194,7 @@ export function runMultiTargetRecipe(){
     events:committed.allEventIds.length,
     negativeSelectionsRefused:bad.length,
     sourceTailPreserved:true,
-    crossBodyInvalidation:changed,
+    bodyActions,crossBodyInvalidation:changed,
     sharedProfileInvalidation:affected,
     archiveUndoRedo:true,guardThicknessMm:14,
     exactAuthority:false,nativeSTEP:'not_executed',
