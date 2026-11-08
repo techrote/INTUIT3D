@@ -243,7 +243,8 @@ test('cascade and recovery consent cannot be reused for a different semantic sel
     ...removeCommand(removal,{
       featureId:'extrude.frame',
       eventIds:['switch.guide','switch.cut','switch.extrude'],
-    }),...session.refresh(),
+    }),projectId:session.refresh().projectId,
+    expectedRevision:session.refresh().revision,
   });
   assert.equal(switched.kind,'refused');
   assert.equal(switched.edit.code,'unreviewed_impact');
