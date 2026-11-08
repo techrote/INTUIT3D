@@ -135,7 +135,8 @@ test('crossing contour, stale follow-up and wrong edited selection refuse; unrel
   assert.equal(accepted.kind,'committed',JSON.stringify(accepted));
   assert.deepEqual(source(user.history).circles.map(c=>c.id),holes);
   assert.equal(accepted.report.features.find(f=>f.featureId==='sketch.plate').status,'invalid_profile');
-  assert.equal(submit(user.session,valid.request).code,'stale_revision');
+  assert.equal(submit(user.session,valid.request).code,'stale_command');
+  assert.equal(runtime.commitClosedContour(user.history,valid.request).code,'stale_revision');
   const archiveNow=user.session.save(),signature=sketch.serializeSketch(source(user.history));
   const badCommand={kind:'create-closed-contour',version:1,sourceSignature:signature,
     contourId:'crossing',vertices:rect(110,70)};
