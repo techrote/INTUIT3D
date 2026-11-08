@@ -127,8 +127,12 @@ export function BlankSketchCanvas({
         fill="#162535" pointerEvents="all"/>
       <rect x={view.x} y={view.y} width={view.width} height={view.height}
         fill="url(#blank-grid-10mm)" pointerEvents="none"/>
+      {/* Axes remain tied to sketch coordinates, but extend across the *current*
+          navigated viewport rather than disappearing past the original 240 mm box. */}
+      <path data-testid="runtime-blank-axes"
+        d={`M ${view.x} ${Y_ORIGIN} H ${view.x+view.width} M 0 ${view.y} V ${view.y+view.height}`}
+        stroke="#7797a7" strokeWidth=".35" fill="none" pointerEvents="none"/>
       <g transform="translate(0 120) scale(1 -1)" pointerEvents="none">
-        <path d="M -20 0 H 220 M 0 -20 V 140" stroke="#7797a7" strokeWidth=".35" fill="none"/>
         {points.length>0&&<polyline data-testid="runtime-contour-preview"
           points={points.map(p=>p.x+','+p.y).join(' ')}
           fill="none" stroke="#7bdfec" strokeWidth="1.3" vectorEffect="non-scaling-stroke"/>}
@@ -145,13 +149,16 @@ export function BlankSketchCanvas({
             stroke="#ffdc8d" strokeWidth=".8" vectorEffect="non-scaling-stroke"/>
         </>}
       </g>
-      <text x="-16" y="-12" fill="#93b6c8" fontSize="4">SKETCH XY · MILLIMETRES · ANALYTIC ONLY</text>
-      <text x="-16" y="-6" fill="#abd6df" fontSize="3.5"
-        data-testid="runtime-contour-pointer-coordinate" aria-live="off">
+    </svg>
+    {/* SVG-space text disappeared once the user navigated away from the old
+        fixed extent. Keep live precision feedback outside the SVG viewBox. */}
+    <div className="runtime-blank-readout" data-testid="runtime-blank-cursor-readout">
+      <span>SKETCH XY · MILLIMETRES · ANALYTIC ONLY</span>
+      <span data-testid="runtime-contour-pointer-coordinate" aria-live="off">
         {draft&&hover?`NEXT X ${hover.x.toFixed(3)} · Y ${hover.y.toFixed(3)} mm`:
           '1 MM SNAP · SHIFT: 0.001 MM'}
-      </text>
-    </svg>
+      </span>
+    </div>
     <p data-testid="runtime-blank-contour-guidance" className="microcopy">
       {draft?'Click 3–12 vertices. Wheel zooms about the pointer; middle-drag pans; Reset view restores the initial drawing area. The 10 mm grid is visual; clicks snap to 1 mm, or 0.001 mm with Shift. Close commits only after SKETCH/RUNTIME admission. Escape cancels.':
         'This sketch has no seeded outline or holes. Start drawing to create the first solver-owned profile. Wheel zooms, middle-drag pans, and Reset view returns to the origin.'}
