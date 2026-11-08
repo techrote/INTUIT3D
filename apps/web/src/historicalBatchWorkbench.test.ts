@@ -41,8 +41,12 @@ test('workbench previews two distinct historic CAD features and commits one undo
   assert.equal(compensated.undoStack.length,changed.undoStack.length+1);
   assert.equal(modelSketchDimensionValues(compensated).width,
     modelSketchDimensionValues(initial).width);
-  assert.equal(modelDimensionValues(compensated).thickness,
-    modelDimensionValues(initial).thickness);
+  // This fixture starts with a named thickness source. The historical
+  // extrusion payload was 8 mm even though its current linked evaluation is
+  // 10 mm; compensate the authored field, not the derived parameter value.
+  const beforePlate=selections[1].row.fieldTransitions.find(item=>item.field==='payload')
+    ?.before as {thicknessMm?:number}|undefined;
+  assert.equal(modelDimensionValues(compensated).thickness,beforePlate?.thicknessMm);
   assert.equal(serializeModelSession(changed),original,'read/preview/commit are immutable');
   const reopened=reopenModelSession(serializeModelSession(compensated));
   const undone=undoModelSession(reopened);
@@ -51,8 +55,7 @@ test('workbench previews two distinct historic CAD features and commits one undo
   const redone=redoModelSession(undone);
   assert.equal(modelSketchDimensionValues(redone).width,
     modelSketchDimensionValues(initial).width);
-  assert.equal(modelDimensionValues(redone).thickness,
-    modelDimensionValues(initial).thickness);
+  assert.equal(modelDimensionValues(redone).thickness,beforePlate?.thicknessMm);
 });
 
 test('workbench refuses stale same-revision source and stale post-edit batch',()=>{
