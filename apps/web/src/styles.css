@@ -390,3 +390,12 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
   background:#305a65;color:#e3fff8;border-color:#63c7c5;
 }
 .runtime-camera-toolbar button:focus-visible {outline:2px solid #ffe29c;outline-offset:2px;}
+
+/* Display-only feedback for semantic sketch-hole picks from the top of the solid. */
+.runtime-solid-selection-hint {
+  position:absolute;top:12px;left:12px;z-index:6;
+  max-width:min(300px,48%);padding:7px 9px;
+  color:#cde6ec;background:#132638ee;border:1px solid #426379;
+  border-radius:6px;font:600 10px ui-monospace,monospace;
+  pointer-events:none;overflow-wrap:anywhere;
+}

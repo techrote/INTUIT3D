@@ -201,6 +201,31 @@ async function main(){
     check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');return c===window.__intuit3dTest3DCanvas&&c?.getContext('webgl2')===window.__intuit3dTest3DContext})()"),'Camera preset reset WebGL2 context');
     check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,'Camera preset authored model revision');
   }
+  // Select a real authored hole from the actual Three.js canvas using real
+  // CDP pointer events, not a DOM callback or synthetic model edit.
+  await pointerClick('runtime-camera-top');
+  const visibleHole=await eventually(()=>evaluate(`(() => {
+    const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');
+    if(!c||c.dataset.cameraPreset!=='top')return null;
+    const h=JSON.parse(c.dataset.holePickMarkers||'[]').find(x=>x.id==='holeA');
+    if(!h)return null;
+    const rect=c.getBoundingClientRect();
+    return {x:rect.left+h.x,y:rect.top+h.y};
+  })()`),'projected actual 3D holeA');
+  check(visibleHole.x>0&&visibleHole.x<1360&&visibleHole.y>0&&visibleHole.y<900,
+    '3D hole projection is outside the browser viewport');
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:visibleHole.x,y:visibleHole.y});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:visibleHole.x,y:visibleHole.y,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:visibleHole.x,y:visibleHole.y,button:'left',clickCount:1});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-solid-selected-hole]')?.textContent?.includes('holeA')"),
+    '3D hole click did not select existing solver holeA');
+  check(await evaluate("document.querySelector('[data-testid=runtime-3d-viewport] canvas')?.dataset.cameraPreset==='top'"),
+    'Stationary hole selection was mistaken for a camera drag');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,
+    '3D hole selection accidentally authored a CAD revision');
+  check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');return c===window.__intuit3dTest3DCanvas&&c?.getContext('webgl2')===window.__intuit3dTest3DContext})()"),
+    '3D hole selection recreated the GPU context');
+  await pointerClick('runtime-camera-isometric');
   await pointerClick('runtime-camera-fit');
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,'FIT authored model revision');
   await screenshot('native-00-camera-views.png');
