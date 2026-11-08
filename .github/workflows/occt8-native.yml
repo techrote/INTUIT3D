@@ -48,11 +48,15 @@ jobs:
     env:
       PYTHONDONTWRITEBYTECODE: '1' # prevent runtime-derived .pyc/__pycache__ from entering immutable archive
     steps:
+      # #239 new-head process-hardening acceptance: the Integration PR pins exactly
+      # one PLATFORM candidate and latest accepted RUNTIME; the underlying
+      # native job must run full Python tests, OCCT C++ compilation, sealed
+      # extracted replay and all seven actual native RUNTIME STEP stages.
       - name: Checkout pinned accepted Platform source
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ (github.event_name == 'pull_request' && 'b015036b565cae422f285a9bacfbb04b771f6918') || (github.event_name == 'push' && github.sha) || inputs.platform_ref || 'b015036b565cae422f285a9bacfbb04b771f6918' }}
+          ref: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'intuit/integration/source-matched-platform-witness-20261108' && '8c3c1c27710f2fc9fbc8d57729bea06bdaaa7475') || (github.event_name == 'pull_request' && 'b015036b565cae422f285a9bacfbb04b771f6918') || (github.event_name == 'push' && github.sha) || inputs.platform_ref || 'b015036b565cae422f285a9bacfbb04b771f6918' }}
           path: platform-repo
           persist-credentials: false
       - name: Checkout KERNEL-001 #158 immutable source (or explicit KERNEL-002 ref)
@@ -68,7 +72,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && '324be5870efe4887c2656c992a71aa99f19375a3') || inputs.runtime_ref || '324be5870efe4887c2656c992a71aa99f19375a3' }}
+          ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'intuit/integration/source-matched-platform-witness-20261108' && 'a0361e179e4b6c98a91f1b68ac4fceacf31a6e80') || (github.event_name == 'pull_request' && '324be5870efe4887c2656c992a71aa99f19375a3') || inputs.runtime_ref || '324be5870efe4887c2656c992a71aa99f19375a3' }}
           path: runtime-repo
           persist-credentials: false
       - name: Install native packaging, ELF audit and build dependencies
