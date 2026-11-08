@@ -202,7 +202,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       const expectedTicket=nativeTicket.current;
       autoNativeTimer.current=setTimeout(()=>{
         autoNativeTimer.current=null;
-        if(expectedTicket===nativeTicket.current)void rebuildNative(false);
+        if(expectedTicket===nativeTicket.current)void rebuildNative('prepare');
       },250);
     }
   };
@@ -729,7 +729,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         (error instanceof Error?error.message:String(error)));
     }
   };
-  const rebuildNative=async(downloadImmediately:boolean)=>{
+  const rebuildNative=async(action:'prepare'|'experimental-step'|'pinned-evidence')=>{
     const id=++nativeTicket.current;
     const current=liveHistory.current;
     setNativeBusy(true);setPinnedEvidenceReady(false);setNativeReport(null);setNativeEvidence(null);
@@ -762,7 +762,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       setNativeEvidence({revision:outcome.source.revision,solidCount,volumeMm3,
         holeCount:outcome.result.intendedPlate?.holes?.length??0});
       setPinnedEvidenceReady(Boolean(nativeSession.current?.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'})));
-      if(downloadImmediately) downloadCachedStep();
+      if(action==='pinned-evidence') downloadPinnedEvidence();
+      else if(action==='experimental-step') downloadCachedStep();
       else setNativeReport(`Experimental STEP prepared · revision ${outcome.source.revision} · SHA-256 ${step.sha256}. Use Download current STEP to publish these revision-fenced bytes. Same-engine readback only; not independent STEP.`);
     }catch(error){
       if(id===nativeTicket.current)
@@ -1280,12 +1281,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               }}/> Live rebuild after each accepted edit (experimental, 250 ms coalescing)</span>
           </label>
           <button type="button" className="ribbon-button runtime-native-export"
-            data-testid="runtime-native-build" onClick={()=>void rebuildNative(false)}
+            data-testid="runtime-native-build" onClick={()=>void rebuildNative('prepare')}
             disabled={!geom || !cutActive || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}>
             {nativeBusy?'Rebuilding experimental solid…':'Rebuild experimental solid + STEP'}
           </button>
           <button type="button" className="ribbon-button runtime-native-export"
-            data-testid="runtime-native-export" onClick={()=>void rebuildNative(true)}
+            data-testid="runtime-native-export" onClick={()=>void rebuildNative('experimental-step')}
             disabled={!geom || !cutActive || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}>
             {nativeBusy?'Building verified STEP…':'Build and download experimental STEP'}
           </button>
@@ -1297,6 +1298,13 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             data-testid="runtime-native-evidence-zip"
             disabled={nativeBusy || !!pendingImport || !pinnedEvidenceReady}
             onClick={downloadPinnedEvidence}>Download pinned STEP evidence ZIP</button>
+          <button type="button" className="ribbon-button runtime-native-export"
+            data-testid="runtime-native-build-pinned-evidence"
+            disabled={!geom || !cutActive || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}
+            onClick={()=>void rebuildNative('pinned-evidence')}>
+            {nativeBusy?'Evaluating native source…':'Build pinned STEP + download evidence ZIP'}
+          </button>
+          <p className="microcopy">Single-action source custody: evaluate this authoritative journal revision, then atomically capture the returned RUNTIME archive, pinned C++ receipt and STEP bytes into one ZIP. A missing/stale or experimental OCP provider returns a refusal, without a substitute ZIP. The existing two-step build and download controls remain available.</p>
           <p className="microcopy">Pinned OCCT 8.0.1 C++ only: this button enables after a revision-matched native result. It captures the authoritative model archive, producer receipt and exact STEP bytes together in one ZIP for independent CAD verification. A missing/stale/OCP result cannot publish evidence. The ZIP alone does not prove native build provenance or external STEP interoperability.</p>
           {nativeBusy&&<button type="button" className="ribbon-button"
             data-testid="runtime-native-cancel" onClick={()=>{invalidateNative();setNativeReport('Native evaluation cancelled; no STEP published.');}}>Cancel native evaluation</button>}
