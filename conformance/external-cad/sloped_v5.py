@@ -437,7 +437,7 @@ def execute(args: argparse.Namespace) -> int:
                     **physical,
                 })
         require(len(report["cases"]) == 4 and
-                sum(case["rayCount"] for case in report["cases"]) == 152,
+                sum(case["rayCount"] for case in report["cases"]) == 248,
                 "missing generalized edited CAD physical predicates")
         report["status"] = "NON_OCCT_SLOPED_V5_FOUR_STEP_PHYSICAL_PASS"
         report["independentCadInteroperability"] = True
