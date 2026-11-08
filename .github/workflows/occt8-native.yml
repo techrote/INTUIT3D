@@ -59,7 +59,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && '7e893a6deb4ca7d88c7bd92ec42fb828cfc87a5c') || inputs.kernel_ref || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
+          ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && '93e984963db720cacdd8bb679a559a3b8df88ce8') || inputs.kernel_ref || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
           path: kernel-repo
           persist-credentials: false
       # The runtime checkout is immutable and intentionally separate from the
@@ -173,7 +173,7 @@ jobs:
       # Real RUNTIME + INTENT + SKETCH L-profile source and C++ output gates.
       # A source-matched OCCT 8.0.1 binary is REQUIRED, not simulated or OCP.
       # On the workflow-change PR this run is pinned to immutable KERNEL-002
-      # source 7e893a6deb4ca7d88c7bd92ec42fb828cfc87a5c; accepted-main KERNEL-001 push keeps its own SHA.
+      # source 93e984963db720cacdd8bb679a559a3b8df88ce8; accepted-main KERNEL-001 push keeps its own SHA.
       - name: Check authored L-profile physical fixture availability
         id: lprofile
         shell: bash
@@ -201,7 +201,7 @@ jobs:
           test -x "$worker"
           candidate="$(git -C kernel-repo rev-parse HEAD)"
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            test "$candidate" = "7e893a6deb4ca7d88c7bd92ec42fb828cfc87a5c" || {
+            test "$candidate" = "93e984963db720cacdd8bb679a559a3b8df88ce8" || {
               echo "::error::KERNEL-002 source moved: $candidate"; exit 1;
             }
           fi
@@ -256,7 +256,7 @@ jobs:
           test -x "$worker"
           kernel="$(git -C kernel-repo rev-parse HEAD)"
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            test "$kernel" = '7e893a6deb4ca7d88c7bd92ec42fb828cfc87a5c' || {
+            test "$kernel" = '93e984963db720cacdd8bb679a559a3b8df88ce8' || {
               echo "::error::Unreviewed KERNEL candidate source: $kernel"; exit 1;
             }
           fi
@@ -366,6 +366,116 @@ jobs:
           assert receipt['windowsNativeQualified'] is False,receipt
           print('RUNTIME_PINNED_OCCT8_DELIVERY_PASS / SEVEN_NATIVE_STEPS')
           PY
+      # Dedicated single-build exact-source KERNEL-002 v5/v6 acceptance:
+      # reuse the worker compiled above, preserving original STEP byte custody.
+      # Never claim a source-only test or an older U bracket as v6 execution.
+      - name: Require pinned new selected sloped and progressive geometry fixtures
+        id: v6profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          examples="kernel-repo/packages/kernel-contract/examples"
+          required=(
+            pinned-occt8-sloped-profile.mjs
+            runtime-occt8-sloped-profile-native.mjs
+            pinned-occt8-progressive-profile.mjs
+            runtime-occt8-progressive-profile-native.mjs
+          )
+          missing=0
+          for file in "${required[@]}"; do
+            if [[ ! -f "$examples/$file" ]]; then
+              echo "Missing KERNEL-002 source example $file"
+              missing=1
+            fi
+          done
+          if (( missing )); then
+            if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+              echo "::error::New KERNEL v6 physical gate cannot silently skip unavailable authored/direct fixture"
+              exit 1
+            fi
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Execute same-built OCCT C++ selected sloped v5 and progressive v6 direct plus authored STEP
+        if: steps.v6profile.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker="$RUNNER_TEMP/intuit3d-native-evidence/qualification/worker-build/intuit3d_occt8_plate"
+          test -x "$worker"
+          kernel_sha="$(git -C kernel-repo rev-parse HEAD)"
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            test "$kernel_sha" = '93e984963db720cacdd8bb679a559a3b8df88ce8' || {
+              echo "::error::Unreviewed KERNEL v6 source: $kernel_sha"; exit 1;
+            }
+          fi
+          export INTUIT3D_OCCT8_WORKER="$worker"
+          export INTUIT3D_SOURCE_SHA="$kernel_sha"
+          out="$RUNNER_TEMP/intuit3d-native-evidence/selected-sloped-v5-v6"
+          mkdir -p "$out"/{direct-v5,authored-v5,direct-v6,authored-v6}
+          python3 -m unittest discover -s kernel-repo/native/tests \
+            -p test_occt8_linear_contract.py -v \
+            2>&1 | tee "$out/native-v5-contract.log"
+          python3 -m unittest discover -s kernel-repo/native/tests \
+            -p test_occt8_flexible_contract.py -v \
+            2>&1 | tee "$out/native-v6-contract.log"
+          node kernel-repo/packages/kernel-contract/examples/pinned-occt8-sloped-profile.mjs \
+            "$worker" "$out/direct-v5" 2>&1 | tee "$out/direct-v5-execution.log"
+          node kernel-repo/packages/kernel-contract/examples/runtime-occt8-sloped-profile-native.mjs \
+            "$worker" "$out/authored-v5" 2>&1 | tee "$out/authored-v5-execution.log"
+          node kernel-repo/packages/kernel-contract/examples/pinned-occt8-progressive-profile.mjs \
+            "$worker" "$out/direct-v6" 2>&1 | tee "$out/direct-v6-execution.log"
+          node kernel-repo/packages/kernel-contract/examples/runtime-occt8-progressive-profile-native.mjs \
+            "$worker" "$out/authored-v6" 2>&1 | tee "$out/authored-v6-execution.log"
+          python3 - "$out" "$kernel_sha" "$worker" <<'PY'
+          import hashlib,json,pathlib,sys
+          root,kernel,worker=pathlib.Path(sys.argv[1]),sys.argv[2],pathlib.Path(sys.argv[3])
+          sha=lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+          inventory={}
+          receipts=[
+            ('direct-v5','sloped-receipts.json','receipts',['sloped-8.step','sloped-12.step']),
+            ('authored-v5','authored-receipts.json','receipts',['authored-8.step','authored-12.step']),
+            ('direct-v6','progressive-v6-receipts.json','receipts',
+             [f'progressive-{cuts}-{thickness}.step' for cuts in range(3) for thickness in (8,12)]),
+            ('authored-v6','authored-progressive-v6-receipts.json','receipts',
+             [f'authored-{cuts}-{thickness}.step' for cuts in range(3) for thickness in (8,12)]),
+          ]
+          for folder,manifest,key,names in receipts:
+              path=root/folder/manifest
+              assert path.is_file(),str(path)
+              data=json.loads(path.read_text())
+              provenance=data['provenance']
+              assert provenance['sourceSha']==kernel,(folder,provenance)
+              assert provenance['workerSha256']==sha(worker),(folder,provenance)
+              entries=data[key]
+              assert len(entries)==len(names),(folder,len(entries))
+              for i,name in enumerate(names):
+                  f=root/folder/name
+                  assert f.is_file() and f.stat().st_size>256,str(f)
+                  got=sha(f)
+                  assert got==entries[i]['stepSha256'],(str(f),got,entries[i]['stepSha256'])
+                  assert entries[i]['exactAuthority'] is False,(folder,name)
+                  assert entries[i]['independentInteroperability'] is False,(folder,name)
+                  inventory[str(f.relative_to(root))]=got
+          assert len(inventory)==16,len(inventory)
+          (root/'original-step-sha256.json').write_text(json.dumps({
+            'status':'PINNED_CXX_SELECTED_SLOPED_V5_V6_SIXTEEN_STEP_EXECUTED',
+            'kernelSha':kernel,'workerSha256':sha(worker),'originalStepSha256':inventory,
+            'nativeStepCount':16,'independentCadInteroperability':False,
+            'browserConnected':False,'windowsNativeQualified':False},indent=2)+'\n')
+          print('PINNED_CXX_SELECTED_SLOPED_V5_V6_SIXTEEN_STEP_EXECUTED',len(inventory))
+          PY
+          sha256sum "$worker" > "$out/compiled-worker.sha256"
+          sha256sum "$out"/{direct-v5,authored-v5,direct-v6,authored-v6}/*.step \
+            > "$out/original-sixteen-step.sha256"
+          printf 'kernel_sha=%s\nworker_sha256=%s\nplatform_sha=%s\nruntime_sha=%s\nworkflow_sha=%s\n' \
+            "$kernel_sha" "$(sha256sum "$worker" | cut -d' ' -f1)" \
+            "$(git -C platform-repo rev-parse HEAD)" \
+            "$(git -C runtime-repo rev-parse HEAD)" "$GITHUB_SHA" \
+            > "$out/producer-consumer-pins.txt"
+
       - name: Remove only huge intermediate build directory before artifact upload
         if: always()
         run: |
