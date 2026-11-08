@@ -10,7 +10,7 @@ import {
   serializeModelSession,undoModelSession,
 } from './runtimeSession.ts';
 import {
-  appendBlankContourPoint,canCloseBlankContour,undoBlankContourVertex,
+  appendBlankContourPoint,canCloseBlankContour,placeBlankContourPointer,undoBlankContourVertex,
 } from './blankContourDraft.ts';
 import {
   commitModelBlankContour,startModelBlankContour,structuralContourRuntimeAvailable,
@@ -172,4 +172,45 @@ test('self-crossing drawn vertex movement refuses with unchanged authoritative a
   assert.equal(outcome.kind,'refused',JSON.stringify(outcome));
   assert.equal(serializeModelSession(current),sourceArchive);
   assert.equal(serializeModelSession(reopenModelSession(sourceArchive)),sourceArchive);
+});
+
+test('blank-canvas construction snap is signed, finite, bounded and offers Shift precision',()=>{
+  assert.deepEqual(placeBlankContourPointer({x:120.190,y:80.325}),{x:120,y:80});
+  assert.deepEqual(placeBlankContourPointer({x:0.499,y:-0.501}),{x:0,y:-1});
+  assert.deepEqual(placeBlankContourPointer({x:0.5,y:-0.5}),{x:1,y:-1},
+    'half-grid clicks must be symmetric about the sketch origin');
+  assert.deepEqual(placeBlankContourPointer({x:-0.21,y:0.29}),{x:0,y:0});
+  assert.deepEqual(placeBlankContourPointer({x:120.1904,y:-0.3254},true),
+    {x:120.19,y:-0.325});
+  for(const rejected of [{x:10000.1,y:0},{x:Infinity,y:0},{x:0,y:NaN}])
+    assert.equal(placeBlankContourPointer(rejected),null);
+});
+test('quantized off-grid pointer clicks build an exact, undoable solver-owned rectangle',()=>{
+  let current=newModelEmptySketchSession('workbench.blank.snap');
+  const session=createLivePlateSession({runtime,readCurrentHistory:()=>current,
+    publishHistory:next=>{current=next;}});
+  const raw=[
+    {x:0.21,y:-0.2},{x:119.78,y:0.31},
+    {x:120.2,y:79.75},{x:-0.23,y:80.24},
+  ];
+  const initialRevision=current.document.revision;
+  let draft=startModelBlankContour(current);
+  for(const click of raw){
+    const point=placeBlankContourPointer(click);
+    assert.ok(point);
+    const next=appendBlankContourPoint(draft,point!);
+    assert.equal(next.kind,'added');
+    if(next.kind!=='added')return;
+    draft=next.draft;
+  }
+  assert.deepEqual(draft.vertices,rectangle);
+  assert.equal(current.document.revision,initialRevision,'pointer drafting cannot commit a revision');
+  const committed=commitModelBlankContour(current,session,draft);
+  assert.equal(committed.kind,'committed',JSON.stringify(committed));
+  if(committed.kind!=='committed')return;
+  assert.deepEqual(inspectModelClosedContour(current,committed.selection)?.handles.map(p=>p.position),
+    rectangle,'SKETCH owns exact admitted positions, not rounded preview pixels');
+  const archive=serializeModelSession(current);
+  assert.equal(serializeModelSession(reopenModelSession(archive)),archive);
+  assert.equal(modelSketchIsEmpty(undoModelSession(current)),true);
 });

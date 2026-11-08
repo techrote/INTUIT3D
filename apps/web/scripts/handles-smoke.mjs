@@ -997,8 +997,31 @@ async function main() {
     await evaluate("Boolean(document.querySelector('[data-testid=runtime-blank-sketch]'))"),
     'Escape after crossing refusal changed the original empty model');
   await screenshot('29b-crossing-outline-escape.png');
-  // A new independent gesture on the unchanged zero-entity sketch succeeds.
+  // Real CDP pointer pixels cannot guarantee the ideal subpixel SVG inverse.
+  // The authored point must land on an integer 1 mm grid, near the requested
+  // location; never demand a literal ideal origin from rounded screen pixels.
   await clickControl('[data-testid="runtime-outline-tool"]');
+  await clickBlankVertex(0.24,0.29);
+  await eventually(()=>evaluate("(() => {const p=document.querySelector('[data-testid=runtime-draft-vertex-0]');if(!p)return false;const x=Number(p.getAttribute('cx')),y=Number(p.getAttribute('cy'));return Number.isInteger(x)&&Number.isInteger(y)&&Math.hypot(x-0.24,y-0.29)<1.3})()"),
+    'actual pointer was not quantized to a nearby integer-mm sketch vertex');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore,
+    'grid-snapped ephemeral click changed the authoritative journal');
+  await clickControl('[data-testid="runtime-undo-contour-point"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent?.includes('0 / 12')"),
+    'Undo vertex failed after snapped pointer click');
+  // A genuinely Shift-modified CDP click must preserve off-grid coordinates.
+  // This is browser event delivery, not a synthetic React onClick invocation.
+  const fineScreen=await evaluate('(() => {const svg=document.querySelector("[data-testid=runtime-blank-sketch]");const m=svg?.getScreenCTM();if(!m)return null;const p=new DOMPoint(0.237,119.711).matrixTransform(m);return {x:p.x,y:p.y}})()');
+  check(fineScreen&&Number.isFinite(fineScreen.x),'no fine-grain screen matrix');
+  for(const [type,buttons] of [['mouseMoved',0],['mousePressed',1],['mouseReleased',0]])
+    await send('Input.dispatchMouseEvent',{type,x:fineScreen.x,y:fineScreen.y,
+      button:'left',buttons,clickCount:1,modifiers:8});
+  await eventually(()=>evaluate("(() => {const p=document.querySelector('[data-testid=runtime-draft-vertex-0]');if(!p)return false;const x=Number(p.getAttribute('cx')),y=Number(p.getAttribute('cy'));return Number.isFinite(x)&&Number.isFinite(y)&&(Math.abs(x-Math.round(x))>=0.001||Math.abs(y-Math.round(y))>=0.001)&&Math.hypot(x-0.237,y-0.289)<1.3})()"),
+    'Shift-modified pointer was not admitted at a nearby off-grid sketch coordinate');
+  await clickControl('[data-testid="runtime-undo-contour-point"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent?.includes('0 / 12')"),
+    'Undo vertex failed after Shift fine placement');
+  // A new independent gesture on the unchanged zero-entity sketch succeeds.
   for(const [x,y] of [[0,0],[120,0],[120,80],[0,80]])
     await clickBlankVertex(x,y);
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent?.includes('4 / 12')"),
@@ -1226,6 +1249,8 @@ async function main() {
     actualChromiumSelectedHoleStampAndBatchDeleteUndo: true,
     actualChromiumSelectedEdgeHoleCreateUndoRedoArchive: true,
     actualCrossingContourRefusedAndEscapePreservesEmptyHistory: true,
+    realChromiumBlankGridSnapPreservesDraftAndUndo: true,
+    realChromiumShiftFineBlankPointerRemainsOffGrid: true,
     genuineEmptySketchFourPointerVerticesAuthoritativeContourUndoRedoSaveReopen: true,
     genuineDrawnContourExtrusionHoleCutUndoRedoSaveReopen: true,
     genuinelyDrawnVertexNumericAndPointerEditUndoRedoReopen: true,
