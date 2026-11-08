@@ -19,7 +19,7 @@ const eq=(a,b)=>JSON.stringify([...a].sort())===JSON.stringify([...b].sort());
 const exact=(o,keys)=>!!o&&typeof o==='object'&&!Array.isArray(o)&&
   Object.keys(o).length===keys.length&&keys.every(k=>Object.hasOwn(o,k));
 const suffixes=['p1','p2','p3','p4','in','floor','out','tail',
-  'p1:x','p1:y','p2:x','p2:y','p3:x','p3:y','p4:x','p4:y'];
+  'p1:x','p1:y','p2:x','p2:y','p3:x','p3:y','p4:x','p4:y','tailAxis'];
 const names=id=>Object.fromEntries(suffixes.map(s=>[s,id+':'+s]));
 const refusal=(stamp,reason,detail=null,status=null,diagnostics=[])=>({
   kind:'refused',version:1,sourceSignature:stamp,reason,detail,
@@ -136,6 +136,7 @@ export function createSelectedEdgeNotch(source,selection,command){
     {id:n.out,start:n.p3,end:n.p4},
     {id:n.tail,start:n.p4,end:edge.endPointId}
   );
+  next.constraints.push({id:n.tailAxis,kind:edge.axis,line:n.tail});
   ids.forEach((id,i)=>{
     next.constraints.push(
       {id:n['p'+(i+1)+':x'],kind:'distanceX',
@@ -159,8 +160,8 @@ export function createSelectedEdgeNotch(source,selection,command){
     nextCandidateId:outcome.profile.candidateId,
     notchId:command.notchId,originalEdgeId:edge.edgeId,
     createdEntityIds:[...ids,n.in,n.floor,n.out,n.tail],
-    changedConstraintIds:ids.flatMap((_,i)=>
-      [n['p'+(i+1)+':x'],n['p'+(i+1)+':y']]),
+    changedConstraintIds:[n.tailAxis,...ids.flatMap((_,i)=>
+      [n['p'+(i+1)+':x'],n['p'+(i+1)+':y']])],
     handles:inspection.handles,previewOnly:true,nativeExact:false,
     exactBrepAvailable:false,independentStepQualified:false};
 }

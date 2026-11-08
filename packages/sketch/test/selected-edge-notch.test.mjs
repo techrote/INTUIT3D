@@ -36,7 +36,7 @@ test('selected L boundary becomes a solved 10-line, notch-trimmed profile; hole 
   assert.ok(r.profile.lineIds.includes('L:edge0'));
   near(r.profile.profile.areaMm2,5600-50*Math.PI-160);
   assert.equal(r.createdEntityIds.length,8);
-  assert.equal(r.changedConstraintIds.length,8);
+  assert.equal(r.changedConstraintIds.length,9);
   assert.equal(r.previewOnly,true);
   assert.equal(r.nativeExact,false);
   assert.equal(r.exactBrepAvailable,false);
