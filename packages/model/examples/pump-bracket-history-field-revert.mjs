@@ -97,6 +97,18 @@ export function runPumpBracketHistoryFieldRevert(){
   });
   const choice=inventory.rows.find(x=>x.targetEventId==='edit.base.compound');
   assert.equal(choice?.status,'blocked');
+  // History UI can show what actually changed without replaying or guessing
+  // the meaning of journal patches in the browser.
+  const thicknessHistory=choice.fieldTransitions.find(x=>x.field==='payload');
+  const datumHistory=choice.fieldTransitions.find(x=>x.field==='dependsOn');
+  assert.equal(thicknessHistory.before.thicknessMm,original);
+  assert.equal(thicknessHistory.authored.thicknessMm,18);
+  assert.equal(thicknessHistory.current.thicknessMm,18);
+  assert.equal(thicknessHistory.laterEdited,false);
+  assert.deepEqual(datumHistory.authored,['sketch.base','sketch.gauge']);
+  assert.deepEqual(datumHistory.current,
+    ['sketch.base','sketch.gauge','sketch.cover']);
+  assert.equal(datumHistory.laterEdited,true);
   const thickness=choice.fieldChoices.find(x=>x.field==='payload');
   assert.equal(thickness?.status,'available');
   assert.equal(choice.fieldChoices.find(x=>x.field==='dependsOn')?.status,'blocked');
@@ -128,7 +140,8 @@ export function runPumpBracketHistoryFieldRevert(){
     ['sketch.base','sketch.gauge','sketch.cover']);
   return {format:'intuit3d.feature-edit-field-revert-demo',
     bodyActions:actions,historyFullEditBlocked:true,
-    selectedFieldAvailable:true,archiveUndoRedo:true,
+    selectedFieldAvailable:true,historyFieldTransitionsVerified:true,
+    archiveUndoRedo:true,
     preservedLaterDatum:true,exactGeometryAuthority:false,
     nativeSTEP:'not_executed'};
 }

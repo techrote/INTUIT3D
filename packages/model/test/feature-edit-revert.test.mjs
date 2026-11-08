@@ -434,5 +434,6 @@ test('connected SKETCH FEATUREOPS RUNTIME pump bracket history fixture',()=>{
   assert.equal(output.format,'intuit3d.feature-edit-field-revert-demo');
   assert.deepEqual(output.bodyActions,['rebuild','rebuild','preserve_candidate']);
   assert.equal(output.archiveUndoRedo,true);
+  assert.equal(output.historyFieldTransitionsVerified,true);
   assert.equal(output.exactGeometryAuthority,false);
 });
