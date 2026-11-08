@@ -806,11 +806,11 @@ async function main(){
     'fresh admitted plate sketch not visible');
   await pointerClick('runtime-sketch-outline-hole-holeA');
   const beforeNudge=Number(await evaluate("document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value"));
-  const beforeNudgeRevision=Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\\d+/)?.[0]);
+  const beforeNudgeRevision=Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
   await key('ArrowRight','ArrowRight',39);
   await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)===${beforeNudge+1}`),
     'arrow-key nudge did not move selected hole through the authoritative model');
-  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\\d+/)?.[0])===beforeNudgeRevision+1,
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===beforeNudgeRevision+1,
     'arrow-key nudge did not commit precisely one journal revision');
   check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
     'arrow-key nudge retained a stale native STEP receipt');
@@ -989,7 +989,7 @@ async function main(){
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
     'recovered checkpoint did not pass Worker validation after reload');
   await pointerClick('runtime-import-review-confirm');
-  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-revision]')?.textContent.match(/\\d+/)?.[0])==="+recoveryRevision),
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-revision]')?.textContent.match(/\d+/)?.[0])==="+recoveryRevision),
     'explicit recovery did not restore the original authoritative revision');
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===2"),
     'recovering an archive lost newly authored circular holes');
