@@ -51,14 +51,15 @@ def expected_surface(kind: str, thickness: int) -> float:
     return 2 * (5700 - 112) + (320 + math.sqrt(4000) + 44) * thickness + wall
 
 
-def ray_oracle(thickness: int) -> list[tuple[str, float, float, float | None]]:
+def ray_oracle(kind: str, thickness: int) -> list[tuple[str, float, float, float | None]]:
     """Selected diagonal polygon, concave junction, four cut walls and floor.
 
     Defined here from the authored feature dimensions, not copied from native
     receipts or STEP text. Every expected terminal is Z=thickness or the
     top-down blind pocket's Z=thickness-3; void means zero intersections.
     """
-    require(thickness in THICKNESSES, "unsupported source profile thickness")
+    require(kind in KINDS and thickness in THICKNESSES,
+            "unsupported source profile or thickness")
     z = float(thickness)
     rays: list[tuple[str, float, float, float | None]] = [
         ("stock.bottom", 40., 5., z),
@@ -98,14 +99,24 @@ def ray_oracle(thickness: int) -> list[tuple[str, float, float, float | None]]:
             (f"pocket.inner.{side}", 15+4.5*dx, 50+4.5*dy, z-3),
             (f"pocket.outer.{side}", 15+5.5*dx, 50+5.5*dy, z),
         ])
-    require(len(rays) == 34, "incomplete sloped selected-profile oracle")
+    # The circle and square share cardinal wall occupancy. Their four
+    # diagonal points (+/-4,+/-4) do not: radius sqrt(32) exceeds R5,
+    # but each corner lies inside the 10x10 square. A mode swap must
+    # fail even where 1% volume/surface budgets would otherwise pass.
+    diagonal = z if kind == "direct" else z-3
+    for side, dx, dy in (
+        ("ne", 1, 1), ("nw", -1, 1), ("se", 1, -1), ("sw", -1, -1),
+    ):
+        rays.append((f"pocket.diagonal.{side}", 15+4*dx,
+                     50+4*dy, diagonal))
+    require(len(rays) == 38, "incomplete sloped selected-profile oracle")
     return rays
 
 
 def parse_receipt(stdout: str, kind: str, thickness: int) -> dict:
-    expected = ray_oracle(thickness)
+    expected = ray_oracle(kind, thickness)
     lines = stdout.splitlines()
-    require(len(lines) == 35, "missing, extra or duplicate physical ray lines")
+    require(len(lines) == 39, "missing, extra or duplicate physical ray lines")
     observed = []
     for line, (name, x, y, top) in zip(lines[:-1], expected):
         parts = line.split()
@@ -164,7 +175,7 @@ def parse_receipt(stdout: str, kind: str, thickness: int) -> dict:
     require(abs(claimed_area-surface_oracle) < 1e-5 and
             abs(area-surface_oracle) <= surface_oracle*.01,
             "independently reconstructed selected-profile surface wrong")
-    return {"importedExactBRep": True, "rayCount": 34,
+    return {"importedExactBRep": True, "rayCount": 38,
             "rays": observed, "triangleCount": triangles,
             "measuredVolumeMm3": volume, "expectedVolumeMm3": oracle,
             "measuredSurfaceAreaMm2": area,
@@ -310,7 +321,7 @@ def execute(args: argparse.Namespace) -> int:
                     **physical,
                 })
         require(len(report["cases"]) == 4 and
-                sum(case["rayCount"] for case in report["cases"]) == 136,
+                sum(case["rayCount"] for case in report["cases"]) == 152,
                 "missing generalized edited CAD physical predicates")
         report["status"] = "NON_OCCT_SLOPED_V5_FOUR_STEP_PHYSICAL_PASS"
         report["independentCadInteroperability"] = True
