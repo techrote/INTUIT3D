@@ -228,6 +228,28 @@ test('reject wrong project, divergent equal-revision history and unsafe probe id
     ProjectFormatError);
   assert.equal(serializeProject(doc),fence);
 });
+test('history inventory exposes field-level safe actions even when full edit is blocked',()=>{
+  let doc=baseline();
+  doc=commitEvent(doc,{eventId:'edit.motor.compound',type:'feature.edit',
+    featureId:'extrude.motor',patch:{
+      payload:{thicknessMm:16},dependsOn:['sketch.motor','sketch.gauge'],
+    }});
+  doc=commitEvent(doc,{eventId:'edit.motor.newer.datum',type:'feature.edit',
+    featureId:'extrude.motor',patch:{dependsOn:['sketch.gauge','sketch.motor']}});
+  const row=inspectHistoricalFeatureEdits(doc,inventoryRequest(doc)).rows
+    .find(x=>x.targetEventId==='edit.motor.compound');
+  assert.equal(row.status,'blocked');
+  assert.deepEqual(row.fieldChoices.map(x=>[x.field,x.status]),
+    [['dependsOn','blocked'],['payload','available']]);
+  assert.deepEqual(row.fieldChoices[1].invalidatedBodyIds,['body.motor']);
+  assert.equal(row.fieldChoices[1].admission,'require_ready');
+  assert.equal(row.fieldChoices[0].admission,null);
+  const snapshot=serializeProject(doc);
+  assert.throws(()=>inspectHistoricalFeatureEdits(doc,inventoryRequest(doc,{
+    expectedDocumentFence:serializeProject(baseline()),
+  })),ProjectRevisionError);
+  assert.equal(serializeProject(doc),snapshot);
+});
 test('connected SKETCH FEATUREOPS RUNTIME motor saddle authoring exercises the menu',()=>{
   const path=fileURLToPath(new URL('../examples/selective-motor-saddle-revert.mjs',import.meta.url));
   const run=spawnSync(process.execPath,['--experimental-strip-types',path],

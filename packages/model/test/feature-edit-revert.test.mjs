@@ -13,7 +13,9 @@ import {createModelArchive, serializeModelArchive,
 import {BODY_REBUILD_MANIFEST_FORMAT,planBodyRebuildManifest}
   from '../src/body-rebuild-manifest.ts';
 import {FEATURE_EDIT_REVERT_FORMAT,previewFeatureEditRevert,
-  commitUndoableFeatureEditRevert} from '../src/feature-edit-revert.ts';
+  commitUndoableFeatureEditRevert, FEATURE_EDIT_FIELD_REVERT_FORMAT,
+  previewFeatureEditFieldRevert, commitUndoableFeatureEditFieldRevert}
+  from '../src/feature-edit-revert.ts';
 
 function fixture() {
   let doc = newProject('project.motor.saddle.history');
@@ -281,6 +283,155 @@ test('real SKETCH FEATUREOPS RUNTIME modular saddle fixture executes',()=>{
   assert.equal(result.status,0,result.stderr||result.stdout);
   const output=JSON.parse(result.stdout);
   assert.equal(output.format,'intuit3d.feature-edit-revert-demo');
+  assert.deepEqual(output.bodyActions,['rebuild','rebuild','preserve_candidate']);
+  assert.equal(output.archiveUndoRedo,true);
+  assert.equal(output.exactGeometryAuthority,false);
+});
+
+function fieldRequest(doc, selectedFields, override={}) {
+  return {
+    format:FEATURE_EDIT_FIELD_REVERT_FORMAT,version:1,
+    expectedProjectId:doc.projectId,expectedRevision:doc.revision,
+    expectedDocumentFence:serializeProject(doc),
+    targetEventId:'edit.saddle.compound',eventId:'revert.saddle.fields',
+    admission:'require_ready',confirmUnresolved:false,
+    selectedFields,...override,
+  };
+}
+
+test('compound historical edit: keep later same-feature datum, compensate only thickness',()=>{
+  let doc=fixture();
+  doc=commitEvent(doc,{eventId:'edit.saddle.compound',type:'feature.edit',
+    featureId:'extrude.saddle',patch:{
+      payload:{thicknessMm:18},dependsOn:['sketch.saddle','sketch.gauge'],
+    }});
+  doc=commitEvent(doc,{eventId:'edit.saddle.newer.datum',type:'feature.edit',
+    featureId:'extrude.saddle',patch:{dependsOn:['sketch.gauge','sketch.saddle']}});
+  const initial=serializeProject(doc);
+  assert.throws(()=>previewFeatureEditRevert(doc,request(doc,{
+    targetEventId:'edit.saddle.compound',eventId:'revert.saddle.legacy',
+  })),ProjectRevisionError);
+  const selected=fieldRequest(doc,['payload']);
+  const preview=previewFeatureEditFieldRevert(doc,selected);
+  assert.deepEqual(preview.revertedFields,['payload']);
+  assert.equal(find(preview.document,'extrude.saddle').payload.thicknessMm,16);
+  assert.deepEqual(find(preview.document,'extrude.saddle').dependsOn,
+    ['sketch.gauge','sketch.saddle']);
+  assert.equal(find(preview.document,'sketch.gauge').payload.widthMm,40);
+  assert.deepEqual(preview.invalidatedBodyIds,['body.saddle','body.clamp']);
+  assert.equal(serializeProject(doc),initial);
+  const manifest=planBodyRebuildManifest(doc,preview.document,{
+    format:BODY_REBUILD_MANIFEST_FORMAT,version:1,
+    expectedProjectId:doc.projectId,expectedFromRevision:doc.revision,
+    expectedToRevision:preview.document.revision,
+    bodyIds:['body.saddle','body.clamp','body.gauge'],
+  });
+  assert.deepEqual(manifest.bodies.map(x=>x.action),
+    ['rebuild','rebuild','preserve_candidate']);
+  let history=commitUndoableFeatureEditFieldRevert(startUndoHistory(doc),selected);
+  history=deserializeModelArchive(serializeModelArchive(createModelArchive(history))).history;
+  history=undoTransaction(history,['undo.saddle.fields']);
+  assert.equal(find(history.document,'extrude.saddle').payload.thicknessMm,18);
+  history=redoTransaction(history,['redo.saddle.fields']);
+  assert.equal(find(history.document,'extrude.saddle').payload.thicknessMm,16);
+  assert.deepEqual(find(history.document,'extrude.saddle').dependsOn,
+    ['sketch.gauge','sketch.saddle']);
+});
+
+test('field-only writer rollback retires departed body and preserves newer payload',()=>{
+  let doc=fixture();
+  doc=commitEvent(doc,{eventId:'edit.gauge.compound',type:'feature.edit',
+    featureId:'extrude.gauge',patch:{
+      writeTargets:['body.gauge.temporary'],payload:{thicknessMm:5},
+    }});
+  doc=commitEvent(doc,{eventId:'edit.gauge.newer.thickness',type:'feature.edit',
+    featureId:'extrude.gauge',patch:{payload:{thicknessMm:7}}});
+  const selected=fieldRequest(doc,['writeTargets'],{
+    targetEventId:'edit.gauge.compound',eventId:'revert.gauge.writer.only',
+  });
+  const preview=previewFeatureEditFieldRevert(doc,selected);
+  assert.deepEqual(find(preview.document,'extrude.gauge').writeTargets,['body.gauge']);
+  assert.equal(find(preview.document,'extrude.gauge').payload.thicknessMm,7);
+  assert.deepEqual(preview.invalidatedBodyIds,['body.gauge.temporary','body.gauge']);
+  const manifest=planBodyRebuildManifest(doc,preview.document,{
+    format:BODY_REBUILD_MANIFEST_FORMAT,version:1,
+    expectedProjectId:doc.projectId,expectedFromRevision:doc.revision,
+    expectedToRevision:preview.document.revision,
+    bodyIds:['body.gauge.temporary','body.gauge'],
+  });
+  assert.deepEqual(manifest.bodies.map(x=>x.action),['retire','rebuild']);
+});
+
+test('field-selective request rejects stale, malformed, absent and kind-split changes',()=>{
+  let doc=fixture();
+  doc=commitEvent(doc,{eventId:'edit.saddle.compound',type:'feature.edit',
+    featureId:'extrude.saddle',patch:{
+      payload:{thicknessMm:18},dependsOn:['sketch.saddle','sketch.gauge'],
+    }});
+  const selected=fieldRequest(doc,['payload']);
+  for(const override of [
+    {selectedFields:[]},{selectedFields:['payload','payload']},
+    {selectedFields:['payload','thicknessMm']},
+    {selectedFields:['writeTargets']},{selectedFields:['kind']},
+    {eventId:'edit.saddle.compound'},{unknown:true},
+  ]) assert.throws(()=>previewFeatureEditFieldRevert(doc,{
+    ...selected,...override,
+  }),ProjectFormatError);
+  const fork={...doc,journal:doc.journal.map(e=>
+    e.eventId==='edit.gauge.width'?
+      {...e,patch:{payload:{widthMm:41}}}:e)};
+  assert.throws(()=>previewFeatureEditFieldRevert(fork,selected),ProjectRevisionError);
+  assert.throws(()=>previewFeatureEditFieldRevert(doc,{
+    ...selected,expectedRevision:doc.revision-1,
+  }),ProjectRevisionError);
+  const changed=commitEvent(doc,{eventId:'edit.saddle.kind.change',
+    type:'feature.edit',featureId:'extrude.saddle',
+    patch:{kind:'cut',payload:{depthMm:2}}});
+  assert.throws(()=>previewFeatureEditFieldRevert(changed,
+    fieldRequest(changed,['payload'],{
+      targetEventId:'edit.saddle.kind.change',eventId:'revert.saddle.split.kind',
+    })),ProjectFormatError);
+});
+
+test('partial dependency revert requires explicit unresolved-intent permission',()=>{
+  let doc=newProject('project.field.pending');
+  doc=commitEvent(doc,{eventId:'create.sketch.good',type:'feature.create',
+    feature:{id:'sketch.good',kind:'sketch',dependsOn:[],
+      writeTargets:['sketch.good'],payload:{}}});
+  doc=commitEvent(doc,{eventId:'create.extrude.pending',type:'feature.create',
+    feature:{id:'extrude.pending',kind:'extrude',dependsOn:['sketch.missing'],
+      writeTargets:['body.pending'],payload:{thicknessMm:4}}});
+  doc=commitEvent(doc,{eventId:'edit.pending.compound',type:'feature.edit',
+    featureId:'extrude.pending',patch:{
+      dependsOn:['sketch.good'],payload:{thicknessMm:8},
+    }});
+  doc=commitEvent(doc,{eventId:'edit.pending.latest',type:'feature.edit',
+    featureId:'extrude.pending',patch:{payload:{thicknessMm:9}}});
+  const selected=fieldRequest(doc,['dependsOn'],{
+    targetEventId:'edit.pending.compound',eventId:'revert.pending.selected',
+  });
+  assert.throws(()=>previewFeatureEditFieldRevert(doc,selected),ProjectFormatError);
+  assert.throws(()=>previewFeatureEditFieldRevert(doc,{
+    ...selected,admission:'permit_unresolved',
+  }),ProjectFormatError);
+  const preview=previewFeatureEditFieldRevert(doc,{
+    ...selected,admission:'permit_unresolved',confirmUnresolved:true,
+  });
+  assert.equal(preview.plan.features.find(x=>x.feature.id==='extrude.pending').status,
+    'pending');
+  assert.equal(find(preview.document,'extrude.pending').payload.thicknessMm,9);
+  assert.deepEqual(find(preview.document,'extrude.pending').dependsOn,['sketch.missing']);
+  assert.deepEqual(preview.regressedReadyFeatureIds,['extrude.pending']);
+});
+
+test('connected SKETCH FEATUREOPS RUNTIME pump bracket history fixture',()=>{
+  const path=fileURLToPath(new URL('../examples/pump-bracket-history-field-revert.mjs',
+    import.meta.url));
+  const result=spawnSync(process.execPath,['--experimental-strip-types',path],
+    {encoding:'utf8',timeout:30000});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  const output=JSON.parse(result.stdout);
+  assert.equal(output.format,'intuit3d.feature-edit-field-revert-demo');
   assert.deepEqual(output.bodyActions,['rebuild','rebuild','preserve_candidate']);
   assert.equal(output.archiveUndoRedo,true);
   assert.equal(output.exactGeometryAuthority,false);

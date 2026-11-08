@@ -17,9 +17,11 @@ import {
 import type { FeatureStatus, ProjectDocument, FeaturePatch } from './index.ts';
 import {
   FEATURE_EDIT_REVERT_FORMAT, previewFeatureEditRevert,
+  FEATURE_EDIT_FIELD_REVERT_FORMAT, previewFeatureEditFieldRevert,
 } from './feature-edit-revert.ts';
 import type {
   FeatureEditRevertRequest, FeatureEditRevertPreview,
+  FeatureEditFieldRevertRequest,
 } from './feature-edit-revert.ts';
 
 export const HISTORICAL_EDIT_INVENTORY_FORMAT =
@@ -43,12 +45,25 @@ export interface HistoricalEditInventoryRequest {
 export type HistoricalEditChoiceStatus =
   'available' | 'requires_confirmation' | 'requires_unresolved_admission' | 'blocked';
 
+/** Per-field, preview-backed affordance for a compound history row. */
+export interface HistoricalFieldRevertChoice {
+  readonly field: keyof FeaturePatch;
+  readonly status: HistoricalEditChoiceStatus;
+  readonly reason: string | null;
+  readonly regressedReadyFeatureIds: readonly string[];
+  readonly invalidatedBodyIds: readonly string[];
+  readonly resultingTargetStatus: FeatureStatus | null;
+  readonly admission: FeatureEditRevertRequest['admission'] | null;
+  readonly confirmUnresolved: boolean;
+}
 export interface HistoricalEditChoice {
   readonly targetEventId: string;
   readonly featureId: string;
   /** One-based event revision, distinct from the current document revision. */
   readonly sourceRevision: number;
   readonly originallyEditedFields: readonly (keyof FeaturePatch)[];
+  /** Real admissibility for each historically authored top-level field. */
+  readonly fieldChoices: readonly HistoricalFieldRevertChoice[];
   readonly status: HistoricalEditChoiceStatus;
   /** Actual model refusal, not provider-geometry speculation. */
   readonly reason: string | null;
@@ -113,12 +128,14 @@ function summarize(
   source: { eventId: string; featureId: string; ordinal: number;
     changedFields: readonly (keyof FeaturePatch)[] },
   status: Exclude<HistoricalEditChoiceStatus, 'blocked'>,
+  fieldChoices: readonly HistoricalFieldRevertChoice[],
 ): HistoricalEditChoice {
   const admission = status === 'available' ? 'require_ready' : 'permit_unresolved';
   return {
     targetEventId: source.eventId, featureId: source.featureId,
     sourceRevision: source.ordinal + 1,
-    originallyEditedFields: source.changedFields, status, reason: null,
+    originallyEditedFields: source.changedFields, fieldChoices,
+    status, reason: null,
     revertedFields: preview.revertedFields,
     regressedReadyFeatureIds: preview.regressedReadyFeatureIds,
     invalidatedBodyIds: preview.invalidatedBodyIds,
@@ -127,6 +144,54 @@ function summarize(
     admission,
     confirmUnresolved: preview.regressedReadyFeatureIds.length > 0,
   };
+}
+
+function summarizeFieldChoice(
+  field: keyof FeaturePatch,
+  status: Exclude<HistoricalEditChoiceStatus, 'blocked'>,
+  preview: FeatureEditRevertPreview,
+): HistoricalFieldRevertChoice {
+  return {
+    field, status, reason: null,
+    regressedReadyFeatureIds: preview.regressedReadyFeatureIds,
+    invalidatedBodyIds: preview.invalidatedBodyIds,
+    resultingTargetStatus: preview.plan.features.find(
+      (row) => row.feature.id === preview.featureId)?.status ?? null,
+    admission: status === 'available' ? 'require_ready' : 'permit_unresolved',
+    confirmUnresolved: preview.regressedReadyFeatureIds.length > 0,
+  };
+}
+/** A field checkbox must be backed by the same authoritative preflight. */
+function evaluateFieldChoice(
+  document: ProjectDocument,
+  base: FeatureEditRevertRequest,
+  field: keyof FeaturePatch,
+): HistoricalFieldRevertChoice {
+  const request: FeatureEditFieldRevertRequest = {
+    ...base, format: FEATURE_EDIT_FIELD_REVERT_FORMAT,
+    version: 1, selectedFields: [field],
+  };
+  try {
+    return summarizeFieldChoice(field, 'available',
+      previewFeatureEditFieldRevert(document, request));
+  } catch (error) {
+    diagnostic(error);
+  }
+  try {
+    const preview = previewFeatureEditFieldRevert(document, {
+      ...request, admission: 'permit_unresolved', confirmUnresolved: true,
+    });
+    return summarizeFieldChoice(field,
+      preview.regressedReadyFeatureIds.length
+        ? 'requires_confirmation' : 'requires_unresolved_admission',
+      preview);
+  } catch (error) {
+    return {
+      field, status: 'blocked', reason: diagnostic(error),
+      regressedReadyFeatureIds: [], invalidatedBodyIds: [],
+      resultingTargetStatus: null, admission: null, confirmUnresolved: false,
+    };
+  }
 }
 
 /**
@@ -170,9 +235,11 @@ export function inspectHistoricalFeatureEdits(
       targetEventId: event.eventId, eventId: request.probeEventId,
       admission: 'require_ready', confirmUnresolved: false,
     };
+    const fieldChoices = sourceEdit.changedFields.map((field) =>
+      evaluateFieldChoice(document, base, field));
     try {
       rows.push(summarize(previewFeatureEditRevert(document, base),
-        sourceEdit, 'available'));
+        sourceEdit, 'available', fieldChoices));
       continue;
     } catch (error) {
       diagnostic(error);
@@ -183,12 +250,13 @@ export function inspectHistoricalFeatureEdits(
       });
       rows.push(summarize(preview, sourceEdit,
         preview.regressedReadyFeatureIds.length
-          ? 'requires_confirmation' : 'requires_unresolved_admission'));
+          ? 'requires_confirmation' : 'requires_unresolved_admission',
+        fieldChoices));
     } catch (error) {
       rows.push({
         targetEventId: event.eventId, featureId: event.featureId,
         sourceRevision: ordinal + 1,
-        originallyEditedFields: sourceEdit.changedFields,
+        originallyEditedFields: sourceEdit.changedFields, fieldChoices,
         status: 'blocked', reason: diagnostic(error),
         revertedFields: [], regressedReadyFeatureIds: [],
         invalidatedBodyIds: [], resultingTargetStatus: null,

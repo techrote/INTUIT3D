@@ -88,13 +88,14 @@ function validate(value: unknown): asserts value is FeatureEditRevertRequest {
 }
 
 /**
- * The selected edit is invertible only if the same semantic feature has NOT
- * subsequently been edited, deleted or restored. Later unrelated commands,
- * including a move of the selected feature's timeline presentation, survive.
+ * Selected fields are invertible only if the same feature has NOT subsequently
+ * changed them or been retired. Later edits to unselected fields and timeline
+ * presentation survive; geometry and constraints are never silently repaired.
  * Never reverse a changed field by guessing its earlier value from geometry.
  */
-export function previewFeatureEditRevert(
+function previewRevertFields(
   input: ProjectDocument, request: FeatureEditRevertRequest,
+  selectedFields?: readonly (keyof FeaturePatch)[],
 ): FeatureEditRevertPreview {
   validate(request);
   const original = parseProject(input);
@@ -119,7 +120,19 @@ export function previewFeatureEditRevert(
   // any nested payload key conflicts rather than inviting an invented merge.
   // A kind change also conflicts with all other edits, since it can change the
   // interpretation of the original payload and dependencies.
-  const targetedFields = new Set(Object.keys(target.patch));
+  const authoredFields = Object.keys(target.patch) as (keyof FeaturePatch)[];
+  const targetedFields = new Set<string>(selectedFields ?? authoredFields);
+  if (selectedFields) {
+    if (selectedFields.some((field) => !Object.hasOwn(target.patch, field))) {
+      fail('selected field was not changed by the historical event');
+    }
+    // A kind transition changes interpretation of every other semantic field.
+    // Do not manufacture an operation/payload combination never authored.
+    if (Object.hasOwn(target.patch, 'kind') &&
+        targetedFields.size !== authoredFields.length) {
+      fail('kind transition cannot be split into a partial historical revert');
+    }
+  }
   for (const later of original.journal.slice(index + 1)) {
     if (later.type === 'feature.create' ||
         later.type === 'feature.move' || later.featureId !== target.featureId) {
@@ -148,10 +161,10 @@ export function previewFeatureEditRevert(
     writeTargets?: readonly string[];
     payload?: typeof prior.payload;
   } = {};
-  if (target.patch.kind !== undefined) patch.kind = prior.kind;
-  if (target.patch.dependsOn !== undefined) patch.dependsOn = prior.dependsOn;
-  if (target.patch.writeTargets !== undefined) patch.writeTargets = prior.writeTargets;
-  if (target.patch.payload !== undefined) patch.payload = prior.payload;
+  if (targetedFields.has('kind')) patch.kind = prior.kind;
+  if (targetedFields.has('dependsOn')) patch.dependsOn = prior.dependsOn;
+  if (targetedFields.has('writeTargets')) patch.writeTargets = prior.writeTargets;
+  if (targetedFields.has('payload')) patch.payload = prior.payload;
   const fields = Object.keys(patch) as (keyof FeaturePatch)[];
   if (fields.length === 0 ||
       fields.every((field) => JSON.stringify(current[field]) === JSON.stringify(prior[field]))) {
@@ -202,6 +215,72 @@ export function previewFeatureEditRevert(
     invalidatedBodyIds: [...bodyIds],
     requiresNativeRebuild: true, exactGeometryAuthority: false,
   };
+}
+
+/** The existing v1 command compensates EVERY authored field. */
+export function previewFeatureEditRevert(
+  input: ProjectDocument, request: FeatureEditRevertRequest,
+): FeatureEditRevertPreview {
+  return previewRevertFields(input, request);
+}
+
+/**
+ * @intuit3d/model/feature-edit-field-revert/v1
+ *
+ * Explicitly compensate selected top-level fields of a compound historical
+ * feature.edit, retaining later edits to unselected semantic fields. This is
+ * NOT a nested JSON merge, invented constraint solution or geometric rollback.
+ */
+export const FEATURE_EDIT_FIELD_REVERT_FORMAT =
+  'intuit3d.feature-edit-field-revert' as const;
+export const FEATURE_EDIT_FIELD_REVERT_VERSION = 1 as const;
+export interface FeatureEditFieldRevertRequest
+  extends Omit<FeatureEditRevertRequest, 'format' | 'version'> {
+  readonly format: typeof FEATURE_EDIT_FIELD_REVERT_FORMAT;
+  readonly version: typeof FEATURE_EDIT_FIELD_REVERT_VERSION;
+  /** Nonempty, distinct top-level fields authored by targetEventId. */
+  readonly selectedFields: readonly (keyof FeaturePatch)[];
+}
+const SELECTABLE_FIELDS = ['kind','dependsOn','writeTargets','payload'] as const;
+function asLegacyFieldRequest(value: FeatureEditFieldRevertRequest): FeatureEditRevertRequest {
+  return {
+    format: FEATURE_EDIT_REVERT_FORMAT, version: FEATURE_EDIT_REVERT_VERSION,
+    expectedProjectId: value.expectedProjectId,
+    expectedRevision: value.expectedRevision,
+    expectedDocumentFence: value.expectedDocumentFence,
+    targetEventId: value.targetEventId, eventId: value.eventId,
+    admission: value.admission, confirmUnresolved: value.confirmUnresolved,
+  };
+}
+function validateFieldRequest(value: unknown): asserts value is FeatureEditFieldRevertRequest {
+  if (!plain(value) || Object.keys(value).length !== FIELDS.length + 1 ||
+      ![...FIELDS, 'selectedFields'].every((field) => Object.hasOwn(value, field)) ||
+      value.format !== FEATURE_EDIT_FIELD_REVERT_FORMAT ||
+      value.version !== FEATURE_EDIT_FIELD_REVERT_VERSION ||
+      !Array.isArray(value.selectedFields) ||
+      value.selectedFields.length < 1 || value.selectedFields.length > 4 ||
+      value.selectedFields.some((field: unknown) =>
+        typeof field !== 'string' || !(SELECTABLE_FIELDS as readonly string[]).includes(field)) ||
+      new Set(value.selectedFields).size !== value.selectedFields.length) {
+    fail('invalid versioned field-selection request');
+  }
+  validate(asLegacyFieldRequest(value as unknown as FeatureEditFieldRevertRequest));
+}
+/** Complete semantic/revision preflight, without appending a journal event. */
+export function previewFeatureEditFieldRevert(
+  input: ProjectDocument, request: FeatureEditFieldRevertRequest,
+): FeatureEditRevertPreview {
+  validateFieldRequest(request);
+  return previewRevertFields(input, asLegacyFieldRequest(request),
+    request.selectedFields);
+}
+/** Append precisely one field-limited compensating event as one undo frame. */
+export function commitUndoableFeatureEditFieldRevert(
+  input: UndoHistory, request: FeatureEditFieldRevertRequest,
+): UndoHistory {
+  const history = parseUndoHistory(input);
+  const preview = previewFeatureEditFieldRevert(history.document, request);
+  return commitUndoableTransaction(history, [preview.event], request.expectedRevision);
 }
 
 /** Append one compensating edit as one durable undo frame, or leave history intact. */
