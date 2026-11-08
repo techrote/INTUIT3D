@@ -7,7 +7,7 @@ import type {ParameterSheetRebaseResult} from '@intuit3d/model/parameter-sheet-r
 import type {ParameterSheetResolutionRequest,ParameterSheetResolutionResult} from '@intuit3d/model/parameter-sheet-resolution';
 import type {DimensionBatchEditRequest} from '@intuit3d/model/dimension-batch-edit';
 import type {WorkflowRuntime,WorkflowInvalidation,RuntimeReport,SketchConstraintBatchResult,
-  SketchConstraintBatchRequest,PlateHoleBatchRequest,RectangularHoleArrayRequest,
+  SketchConstraintBatchRequest,ClosedContourRuntimeRequest,ClosedContourRuntimeResult,PlateHoleBatchRequest,RectangularHoleArrayRequest,
   CircularHolePatternRequest,RigidHoleTransformRequest,HoleLayoutResizeRequest,
   SelectedEdgeHoleRuntimeRequest,SelectedEdgeHoleRuntimeResult,
   SelectedEdgeHoleRuntimeInspectionRequest,SelectedEdgeHoleRuntimeInspectionResult,
@@ -95,6 +95,7 @@ export type LiveCadCommand = Readonly<{projectId:string;expectedRevision:number}
           confirmedRequiredFeatureIds:readonly string[]}>}>
   | Readonly<{kind:'dimensions.batch';request:Omit<DimensionBatchEditRequest,'expectedRevision'>}>
   | Readonly<{kind:'sketch.constraints';request:Omit<SketchConstraintBatchRequest,'expectedRevision'>}>
+  | Readonly<{kind:'sketch.contour/v1';request:Omit<ClosedContourRuntimeRequest,'expectedRevision'|'expectedProjectId'>}>
   | Readonly<{kind:'sketch.holes';request:Omit<PlateHoleBatchRequest,'expectedRevision'>}>
   | Readonly<{kind:'sketch.holes.rectangular';request:Omit<RectangularHoleArrayRequest,'expectedRevision'>}>
   | Readonly<{kind:'sketch.holes.circular';request:Omit<CircularHolePatternRequest,'expectedRevision'>}>
@@ -140,7 +141,7 @@ export type SessionRecoveryInspection =
   | Readonly<{kind:'ready';projectId:string;sourceRevision:number;
       sourceDocumentFence:string;inspection:FeatureRecoveryInspection;exactAuthority:false}>
   | SessionLifecycleRefusal;
-export type SessionEdit = UndoHistory | SketchConstraintBatchResult | SelectedEdgeHoleRuntimeResult | SelectedProfileHoleRuntimeResult | SelectedProfileHoleLayoutRuntimeResult;
+export type SessionEdit = UndoHistory | ClosedContourRuntimeResult | SketchConstraintBatchResult | SelectedEdgeHoleRuntimeResult | SelectedProfileHoleRuntimeResult | SelectedProfileHoleLayoutRuntimeResult;
 export type SessionEditResult =
   | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
       invalidation:WorkflowInvalidation}>
