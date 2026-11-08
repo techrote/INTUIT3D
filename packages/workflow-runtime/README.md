@@ -1178,3 +1178,46 @@ browser-to-pinned-C++ and independent non-OCCT STEP.
 
 Executable regression: node --test
 packages/workflow-runtime/test/closed-contour-transaction.integration.test.mjs
+
+## From-empty source → genuine pinned C++ → optional independent STEP (RUNTIME qualification)
+
+To distinguish a seeded plate from a newly **structurally authored** sketch in the
+real native pipeline, this package supplies an opt-in physical runner sharing
+the exact same live Runtime session and localhost host as the existing native
+plate demonstration. It starts with a SKETCH document containing **zero**
+points, edges, circles or constraints, commits an accepted four-vertex contour
+through `sketch.contour/v1` as one undoable INTENT event, adds two SKETCH
+circles, then authors a target-bound extrusion and through-cut. It obtains
+original and 120→150 mm retrospectively edited STEP outputs on **two different
+canonical journal revisions**, verifies the pinned source receipt and actual
+STEP digests, invalidates old custody, refuses a stale command, undoes and
+rebuilds, and reopens and rebuilds the edited archive.
+
+Use an **already compiled, independently attested, source-matched installed**
+OCCT 8.0.1 C++ worker; do not rebuild OCCT just for this smoke test.
+
+```sh
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+  npm run demo:occt8:from-empty --workspace @intuit3d/workflow-runtime
+
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+INTUIT3D_ANVIL_STEP_PROBE=/absolute/path/to/anvil-step-probe \
+INTUIT3D_ANVIL_PROBE_SHA256=<verified-executable-sha256> \
+  npm run demo:occt8:from-empty:independent --workspace @intuit3d/workflow-runtime
+```
+
+The second command requires independently compiled AnvilCAD and checks
+physical material/void and geometry through the existing external probe.
+Both commands **fail** without the genuine installed worker and report
+`browserPointerExecuted:false`. They establish real source-authored
+SKETCH→RUNTIME→pinned native/provider execution *when actually run*, not
+that a mouse-generated contour passed through a browser or that the
+unexecuted CLI is physical evidence. The original seven-stage default
+`demo:occt8:bridge` output remains unchanged.
+
+The shared fixture is covered by a source/synthetic-provider contract test
+in `test/blank-contour-native-handoff.integration.test.mjs`. Ordinary
+Ubuntu/Windows CI proves this fixture can assemble versioned source-bound
+requests; it does **not** execute pinned C++ or AnvilCAD. INTEGRATION #74
+must still connect the actual WORKBENCH pointer-created and downloaded
+source/ZIP bytes to the full physical witness; Windows Firefox #177 is separate.
