@@ -3,8 +3,10 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+from subprocess import CompletedProcess
 
-from progressive_v6 import verify_producer
+from progressive_v6 import NEGATIVE_GEOMETRY_REASONS, run_probe, verify_producer
 from sloped_v5 import Rejected, digest
 
 
@@ -71,6 +73,39 @@ class ProgressiveCustodyOnly(unittest.TestCase):
                 (folder / name).write_text(json.dumps(item))
                 with self.assertRaisesRegex(Rejected, "cutter"):
                     verify_producer(kind, folder, "a"*40, "c"*64, "b"*64)
+
+
+    def test_physical_negatives_require_specific_geometry_diagnostics(self):
+        # Synthetic stderr from a mocked process, never a claim that AnvilCAD ran.
+        examples = {
+            "blind-pocket-omitted": "sloped imported material covariance 4 wrong: 1 vs 2 mm2",
+            "square-pocket-fabricated": "sloped imported material centroid axis 0 wrong: 1 vs 2 mm",
+            "circle-vs-square": "pocket.diagonal.ne: incorrect imported material/floor at (19,54): []",
+            "wrong-thickness": "sloped profile wrong mesh/mass/area: triangles=100",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "negative.log"
+            for name, reasons in NEGATIVE_GEOMETRY_REASONS.items():
+                with self.subTest(adversary=name):
+                    valid = CompletedProcess([], 3, "SLOPE_RAY stock.bottom 40 5 2 0 8\n",
+                                             "NOT_QUALIFIED: " + examples[name] + "\n")
+                    with patch("progressive_v6.subprocess.run", return_value=valid):
+                        self.assertIsNone(run_probe(Path("probe"), Path("original.step"),
+                                                    "direct", 2, 8, 5, log, False, reasons))
+                    self.assertIn("NOT_QUALIFIED", log.read_text())
+                    # The old exit-code-only check falsely accepted all of these.
+                    for invalid in (
+                        CompletedProcess([], 3, "", "NOT_QUALIFIED: cannot read actual sloped-profile STEP bytes\n"),
+                        CompletedProcess([], 3, "", "NOT_QUALIFIED: sloped-profile import failed: missing dependency\n"),
+                        CompletedProcess([], 3, "SLOPE_ACCEPT fake=1\n",
+                                         "NOT_QUALIFIED: " + examples[name] + "\n"),
+                        CompletedProcess([], 2, "", "NOT_QUALIFIED: " + examples[name] + "\n"),
+                        CompletedProcess([], 3, "", "NOT_QUALIFIED: " + examples[name] + "\nwarning: ignored\n"),
+                    ):
+                        with patch("progressive_v6.subprocess.run", return_value=invalid):
+                            with self.assertRaisesRegex(Rejected, "non-geometric"):
+                                run_probe(Path("probe"), Path("original.step"),
+                                          "direct", 2, 8, 5, log, False, reasons)
 
 
 if __name__ == "__main__":

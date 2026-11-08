@@ -28,6 +28,29 @@ RECEIPTS = {
                  "PINNED_AUTHORED_V6_PHYSICAL_EXECUTED"),
 }
 
+# Each physical adversary must fail an EXPECTED geometric predicate, not just
+# return code 3 for an unrelated reader/IO/dependency failure. These diagnostics
+# are emitted by the pinned independent Rust importer after successful import.
+# The circle-vs-square case must reach its distinguishing diagonal ray.
+NEGATIVE_GEOMETRY_REASONS = {
+    "blind-pocket-omitted": (
+        "sloped imported material centroid axis ",
+        "sloped imported material covariance ",
+        "pocket.centre: incorrect imported material/floor",
+    ),
+    "square-pocket-fabricated": (
+        "sloped imported material centroid axis ",
+        "sloped imported material covariance ",
+        "pocket.centre: incorrect imported material/floor",
+    ),
+    "circle-vs-square": (
+        "pocket.diagonal.",
+    ),
+    "wrong-thickness": (
+        "sloped profile wrong mesh/mass/area:",
+    ),
+}
+
 
 def verify_producer(kind: str, directory: Path, kernel_sha: str,
                     worker_sha: str, cpp_sha: str) -> dict:
@@ -109,7 +132,8 @@ def verify_producer(kind: str, directory: Path, kernel_sha: str,
 
 
 def run_probe(probe: Path, step: Path, kind: str, cuts: int, t: int,
-              timeout: int, log: Path, expect_pass: bool) -> dict | None:
+              timeout: int, log: Path, expect_pass: bool,
+              expected_reasons: tuple[str, ...] = ()) -> dict | None:
     cmd = [str(probe.resolve()), "--progressive-v6", str(step.resolve()),
            kind, str(cuts), str(t)]
     try:
@@ -121,9 +145,18 @@ def run_probe(probe: Path, step: Path, kind: str, cuts: int, t: int,
                    str(completed.returncode) + "\nstdout:\n" +
                    completed.stdout + "\nstderr:\n" + completed.stderr)
     if not expect_pass:
-        require(completed.returncode == 3 and
-                "NOT_QUALIFIED:" in completed.stderr,
-                f"wrong-geometry physical {kind}/{cuts}/{t} was not properly rejected")
+        # A missing STEP, broken AnvilCAD importer, uncaught failure, or
+        # always-rejecting fake probe must never count as a geometric negative.
+        stderr = completed.stderr.strip().splitlines()
+        reason = (stderr[0].removeprefix("NOT_QUALIFIED: ")
+                  if len(stderr) == 1 and
+                  stderr[0].startswith("NOT_QUALIFIED: ") else "")
+        require(bool(expected_reasons) and completed.returncode == 3 and
+                any(reason.startswith(prefix) for prefix in expected_reasons) and
+                not any(line.startswith("SLOPE_ACCEPT ")
+                        for line in completed.stdout.splitlines()),
+                f"wrong-geometry physical {kind}/{cuts}/{t} rejected for "
+                "an unrelated/non-geometric reason")
         return None
     require(completed.returncode == 0 and not completed.stderr.strip(),
             f"independent {kind}/{cuts}/{t} importer failed or emitted warnings")
@@ -192,8 +225,12 @@ def execute(args: argparse.Namespace) -> int:
             filename = producers[actual_kind]["cases"][(actual_cuts, actual_t)][0]
             copied = args.output_dir / f"{actual_kind}-{filename}"
             log = args.output_dir / f"negative-{name}.anvil.log"
+            require(digest(copied.read_bytes()) ==
+                    producers[actual_kind]["cases"][(actual_cuts, actual_t)][2],
+                    "negative replay STEP bytes changed after positive import")
             run_probe(args.probe, copied, claimed_kind, claimed_cuts,
-                      claimed_t, args.timeout, log, False)
+                      claimed_t, args.timeout, log, False,
+                      NEGATIVE_GEOMETRY_REASONS[name])
             report["physicalNegatives"].append({
                 "name": name, "originalStep": copied.name,
                 "independentLogSha256": digest(log.read_bytes()),
