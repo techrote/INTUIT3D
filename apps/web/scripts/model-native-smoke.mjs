@@ -266,8 +266,14 @@ async function main(){
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-diameter]')?.value==='12'"),
     '3D contextual diameter edit was not undoable');
-  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,
-    '3D contextual undo did not restore the source revision');
+  // INTENT undo is an explicit compensating journal transaction: it restores
+  // the original *values*, not the former revision counter. Export must remain
+  // stale until physical STEP is rebuilt for this new authoritative revision.
+  const afterContextualUndos=Number(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"));
+  check(Number.isInteger(afterContextualUndos)&&afterContextualUndos>Number(cameraRev),
+    '3D contextual undos did not preserve monotonic journal revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent")==='pending_exact_provider',
+    '3D contextual undo falsely retained previous exact STEP authority');
   await screenshot('native-00b-3d-selected-hole-edit.png');
   await pointerClick('runtime-camera-isometric');
   await pointerClick('runtime-camera-fit');
