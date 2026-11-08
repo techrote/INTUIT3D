@@ -282,7 +282,7 @@ test('v2 refuses equal-revision divergent journals and mismatched provider or re
     doc,{...originalRequest,expectedProjectId:'project.other'},originalEvidence),
   ProjectRevisionError);
   assert.throws(()=>previewFencedSelectionRepairBatch(
-    doc,{...originalRequest,expectedDocumentFence:JSON.stringify(doc)},originalEvidence),
+    doc,{...originalRequest,expectedDocumentFence:'not-the-canonical-document'},originalEvidence),
   ProjectRevisionError);
   assert.deepEqual(targets(doc),[face,edge]);
   assert.deepEqual(targets(divergent),[face,edge]);
