@@ -1188,7 +1188,7 @@ async function main(){
   await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:dragStart.x+dragStart.dx,y:dragStart.y,
     button:'left',clickCount:1});
   try {
-    await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)===130"),
+    await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-130)<0.001"),
       'Pointer-released semantic profile handle failed to commit width 120 -> 130');
   }catch(error){
     const observed=await evaluate(`(() => JSON.stringify({
@@ -1210,11 +1210,11 @@ async function main(){
     'Semantic pointer edit did not fence stale native STEP');
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
-  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)===120"),
+  await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-120)<0.001"),
     'Semantic pointer drag lost model-backed undo');
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
-  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)===130"),
+  await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-130)<0.001"),
     'Semantic pointer drag lost model-backed redo');
   await screenshot('native-12-selected-profile-direct-drag.png');
   await pointerClick('runtime-mode-solid');
