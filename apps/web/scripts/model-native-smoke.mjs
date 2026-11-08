@@ -738,6 +738,8 @@ async function main(){
     'STEP result lacks experimental and independent status');
   check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]').disabled"),
     'RUNTIME did not retain current, verified STEP for explicit download');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-evidence-zip]')?.disabled"),
+    'synthetic/OCP browser fixture was offered as pinned OCCT8 independent-CAD custody');
   check(await evaluate("document.querySelector('[data-testid=runtime-native-evidence]')?.textContent.includes('Through-holes:')"),
     'browser cannot inspect same-revision experimental provider result');
   await screenshot('native-02-download.png');
