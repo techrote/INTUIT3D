@@ -1,4 +1,4 @@
-import type {SketchDocument,SolveStatus} from './index.mjs';
+import type {SketchDocument,SolveStatus,SketchSolution} from './index.mjs';
 import type {SelectedProfileSelection,SelectedAnalyticProfile} from './selected-profile.mjs';
 
 export const POINTER_CONTOUR_SELECTION_VERSION:1;
@@ -6,7 +6,7 @@ export type SketchPoint={x:number;y:number};
 export type PointerProfileRefusal={
   kind:'refused';version:1;sourceSignature:string;
   reason:string;detail:string|null;sourceStatus:SolveStatus|null;
-  diagnostics:[];previewOnly:true;nativeExact:false;
+  diagnostics:SketchSolution['diagnostics'];previewOnly:true;nativeExact:false;
   exactBrepAvailable:false;independentStepQualified:false;
 };
 export type PointerProfileMiss={
