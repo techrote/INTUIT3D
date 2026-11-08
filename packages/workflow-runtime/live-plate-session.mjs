@@ -7,6 +7,9 @@
  * current. Cancelling and superseding also fences non-cooperative old providers.
  */
 import {evaluateLocalPlate} from './local-plate-client.mjs';
+import {ProjectFormatError, ProjectRevisionError, serializeProject} from '@intuit3d/model';
+import {inspectFeatureRemoval as inspectModelRemoval, commitUndoableFeatureRemoval} from '@intuit3d/model/feature-lifecycle';
+import {inspectFeatureRecoveryClosure as inspectModelRecovery, commitUndoableFeatureRecoveryClosure} from '@intuit3d/model/feature-recovery-closure';
 import {rebaseParameterSheetEdit} from '@intuit3d/model/parameter-sheet-rebase';
 import {resolveParameterSheetConflict} from '@intuit3d/model/parameter-sheet-resolution';
 import {commitUndoableParameterFormulaTableEdit} from '@intuit3d/model/parameter-formula-table';
@@ -14,6 +17,9 @@ import {commitUndoableParameterFormulaTableEdit} from '@intuit3d/model/parameter
 export const LIVE_PLATE_SESSION_FORMAT='intuit3d.live-plate-session';
 export const LIVE_PLATE_SESSION_VERSION=1;
 const ID=/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
+const lifecycleRefused=(code,reason)=>({
+  kind:'refused',code,reason,notCommitted:true,exactAuthority:false,
+});
 const refuse=(code,reason)=>({kind:'unresolved',code,reason,artifact:null,
   exactAuthority:false,independentInteroperability:false});
 
@@ -122,7 +128,8 @@ export function createLivePlateSession({
           !Number.isSafeInteger(command.expectedRevision) ||
           command.expectedRevision<0 ||
           ![
-            'model.events','model.undo','model.redo','dimensions.batch',
+            'model.events','model.undo','model.redo',
+            'model.feature.remove','model.feature.recover-closure','dimensions.batch',
             'sketch.constraints','sketch.holes','sketch.holes.rectangular',
             'sketch.holes.circular','sketch.holes.transform',
             'sketch.holes.resize','sketch.holes.selected-edge',
@@ -161,6 +168,39 @@ export function createLivePlateSession({
           throw new TypeError('live plate session: command request must omit expectedRevision');
         const request={...command.request,expectedRevision:revision};
         switch(command.kind) {
+          case 'model.feature.remove': {
+            const {sourceDocumentFence,...modelRequest}=request;
+            if(typeof sourceDocumentFence!=='string' ||
+                sourceDocumentFence!==serializeProject(history.document))
+              return lifecycleRefused('stale_source',
+                'feature removal was inspected against a different authoritative journal');
+            try {
+              return commitUndoableFeatureRemoval(history,{
+                ...modelRequest,expectedProjectId:command.projectId,
+                expectedRevision:revision,
+              });
+            } catch(error) {
+              if(error instanceof ProjectFormatError || error instanceof ProjectRevisionError)
+                return lifecycleRefused('feature_removal_refused',error.message);
+              throw error;
+            }
+          }
+          case 'model.feature.recover-closure': {
+            if(typeof request.expectedDocumentFence!=='string' ||
+                request.expectedDocumentFence!==serializeProject(history.document))
+              return lifecycleRefused('stale_source',
+                'feature recovery was inspected against a different authoritative journal');
+            try {
+              return commitUndoableFeatureRecoveryClosure(history,{
+                ...request,expectedProjectId:command.projectId,
+                expectedRevision:revision,
+              });
+            } catch(error) {
+              if(error instanceof ProjectFormatError || error instanceof ProjectRevisionError)
+                return lifecycleRefused('feature_recovery_refused',error.message);
+              throw error;
+            }
+          }
           case 'dimensions.batch': return runtime.editDimensions(history,request);
           case 'sketch.constraints': return runtime.editSketchConstraints(history,request);
           case 'sketch.holes': return runtime.editPlateHoles(history,request);
@@ -184,6 +224,61 @@ export function createLivePlateSession({
         inFlight:controller!==null,hasVerifiedStep:!!latest?.step,
         hasActivePreview:activePreview!==null && editPreviews.has(activePreview),
         lastResultKind:lastOutcomeKind,exactAuthority:false};
+    },
+    /**
+     * Inspect removal impact against the one durable INTENT document. The
+     * returned exact document fence MUST accompany a subsequently confirmed
+     * model.feature.remove command, including after concurrent same-revision
+     * journal divergence. No model mutation or native request occurs here.
+     */
+    inspectFeatureRemoval({projectId,expectedRevision,featureId}={}) {
+      if(typeof projectId!=='string'||!projectId||
+          !Number.isSafeInteger(expectedRevision)||expectedRevision<0||
+          typeof featureId!=='string'||!ID.test(featureId))
+        throw new TypeError('live plate session: removal inspection requires project/revision and feature ID');
+      const current=synchronize();
+      if(projectId!==current.report.projectId||
+          expectedRevision!==current.report.revision)
+        return lifecycleRefused('stale_command','removal inspection is not for current project/revision');
+      try {
+        const impact=inspectModelRemoval(current.history.document,featureId);
+        return {kind:'ready',projectId,sourceRevision:expectedRevision,
+          sourceDocumentFence:serializeProject(current.history.document),
+          impact,exactAuthority:false};
+      } catch(error) {
+        if(error instanceof ProjectFormatError || error instanceof ProjectRevisionError)
+          return lifecycleRefused('feature_removal_refused',error.message);
+        throw error;
+      }
+    },
+    /**
+     * Inspect the transitive set of tombstoned ancestors needed to recover a
+     * selected feature. The source fence and semantic IDs come from MODEL,
+     * not timeline indices, preview geometry, or a second document.
+     */
+    inspectFeatureRecovery({projectId,expectedRevision,selectedFeatureIds}={}) {
+      if(typeof projectId!=='string'||!projectId||
+          !Number.isSafeInteger(expectedRevision)||expectedRevision<0||
+          !Array.isArray(selectedFeatureIds))
+        throw new TypeError('live plate session: recovery inspection requires project/revision and tombstone IDs');
+      const current=synchronize();
+      if(projectId!==current.report.projectId||
+          expectedRevision!==current.report.revision)
+        return lifecycleRefused('stale_command','recovery inspection is not for current project/revision');
+      const sourceDocumentFence=serializeProject(current.history.document);
+      try {
+        const inspection=inspectModelRecovery(current.history.document,{
+          format:'intuit3d.feature-recovery-closure',version:1,
+          expectedProjectId:projectId,expectedRevision,
+          expectedDocumentFence:sourceDocumentFence,selectedFeatureIds,
+        });
+        return {kind:'ready',projectId,sourceRevision:expectedRevision,
+          sourceDocumentFence,inspection,exactAuthority:false};
+      } catch(error) {
+        if(error instanceof ProjectFormatError || error instanceof ProjectRevisionError)
+          return lifecycleRefused('feature_recovery_refused',error.message);
+        throw error;
+      }
     },
     /** Current source-fenced edge-local controls, with no second journal. */
     inspectSelectedEdgeHoles(request) {
