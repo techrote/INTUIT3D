@@ -12,9 +12,9 @@
  * here; RUNTIME must independently fence and rebuild affected bodies.
  */
 import {
-  parseProject, serializeProject, ProjectFormatError, ProjectRevisionError,
+  featuresOf, parseProject, serializeProject, ProjectFormatError, ProjectRevisionError,
 } from './index.ts';
-import type { FeatureStatus, ProjectDocument, FeaturePatch } from './index.ts';
+import type { Feature, FeatureStatus, ProjectDocument, FeaturePatch } from './index.ts';
 import {
   FEATURE_EDIT_REVERT_FORMAT, previewFeatureEditRevert,
   FEATURE_EDIT_FIELD_REVERT_FORMAT, previewFeatureEditFieldRevert,
@@ -56,12 +56,33 @@ export interface HistoricalFieldRevertChoice {
   readonly admission: FeatureEditRevertRequest['admission'] | null;
   readonly confirmUnresolved: boolean;
 }
+/**
+ * Authoritative, source-fenced field history for displaying an actual
+ * engineering change, not merely an opaque journal event ID.
+ *
+ * `before` is the authored value just before the selected event,
+ * `authored` is its replacement, and `current` is the living feature's
+ * value today (null when retired). A later edit is reported even if the
+ * resulting value happens to match the historical value again. These are
+ * semantic model values; they are not dimensional solver or B-rep evidence.
+ */
+export interface HistoricalEditFieldTransition {
+  readonly field: keyof FeaturePatch;
+  readonly before: Feature[keyof FeaturePatch];
+  readonly authored: Feature[keyof FeaturePatch];
+  readonly current: Feature[keyof FeaturePatch] | null;
+  readonly laterEdited: boolean;
+  readonly laterLifecycleChange: boolean;
+}
+
 export interface HistoricalEditChoice {
   readonly targetEventId: string;
   readonly featureId: string;
   /** One-based event revision, distinct from the current document revision. */
   readonly sourceRevision: number;
   readonly originallyEditedFields: readonly (keyof FeaturePatch)[];
+  /** Journal-replayed before/authored/current field values for history UI. */
+  readonly fieldTransitions: readonly HistoricalEditFieldTransition[];
   /** Real admissibility for each historically authored top-level field. */
   readonly fieldChoices: readonly HistoricalFieldRevertChoice[];
   readonly status: HistoricalEditChoiceStatus;
@@ -123,18 +144,53 @@ function diagnostic(error: unknown): string {
       error instanceof ProjectRevisionError) return error.message;
   throw error;
 }
+function fieldTransitionsFor(
+  document: ProjectDocument, ordinal: number,
+  featureId: string, fields: readonly (keyof FeaturePatch)[],
+): readonly HistoricalEditFieldTransition[] {
+  // Replay the actual historical prefix. The current feature alone cannot
+  // recover values replaced by the selected edit; the patch only holds "after".
+  const before = parseProject({
+    ...document, revision: ordinal, journal: document.journal.slice(0, ordinal),
+  });
+  const previous = featuresOf(before).find((feature) => feature.id === featureId);
+  const current = featuresOf(document).find((feature) => feature.id === featureId);
+  const target = document.journal[ordinal];
+  if (!previous || !target || target.type !== 'feature.edit' ||
+      target.featureId !== featureId) {
+    fail('selected historical edit has no valid source feature');
+  }
+  const subsequent = document.journal.slice(ordinal + 1).filter(
+    (event) => event.type !== 'feature.create' && event.featureId === featureId);
+  const laterLifecycleChange = subsequent.some((event) =>
+    event.type === 'feature.remove' || event.type === 'feature.restore');
+  return fields.map((field) => ({
+    field,
+    before: previous[field],
+    authored: target.patch[field]!,
+    current: current ? current[field] : null,
+    // Kind changes reinterpret every other field. A later re-edit remains
+    // relevant even when it eventually writes the same JSON value.
+    laterEdited: subsequent.some((event) => event.type === 'feature.edit' &&
+      (field === 'kind' || Object.hasOwn(event.patch, 'kind') ||
+        Object.hasOwn(event.patch, field))),
+    laterLifecycleChange,
+  }));
+}
+
 function summarize(
   preview: FeatureEditRevertPreview,
   source: { eventId: string; featureId: string; ordinal: number;
     changedFields: readonly (keyof FeaturePatch)[] },
   status: Exclude<HistoricalEditChoiceStatus, 'blocked'>,
   fieldChoices: readonly HistoricalFieldRevertChoice[],
+  fieldTransitions: readonly HistoricalEditFieldTransition[],
 ): HistoricalEditChoice {
   const admission = status === 'available' ? 'require_ready' : 'permit_unresolved';
   return {
     targetEventId: source.eventId, featureId: source.featureId,
     sourceRevision: source.ordinal + 1,
-    originallyEditedFields: source.changedFields, fieldChoices,
+    originallyEditedFields: source.changedFields, fieldChoices, fieldTransitions,
     status, reason: null,
     revertedFields: preview.revertedFields,
     regressedReadyFeatureIds: preview.regressedReadyFeatureIds,
@@ -235,11 +291,13 @@ export function inspectHistoricalFeatureEdits(
       targetEventId: event.eventId, eventId: request.probeEventId,
       admission: 'require_ready', confirmUnresolved: false,
     };
+    const fieldTransitions = fieldTransitionsFor(document, ordinal,
+      event.featureId, sourceEdit.changedFields);
     const fieldChoices = sourceEdit.changedFields.map((field) =>
       evaluateFieldChoice(document, base, field));
     try {
       rows.push(summarize(previewFeatureEditRevert(document, base),
-        sourceEdit, 'available', fieldChoices));
+        sourceEdit, 'available', fieldChoices, fieldTransitions));
       continue;
     } catch (error) {
       diagnostic(error);
@@ -251,12 +309,13 @@ export function inspectHistoricalFeatureEdits(
       rows.push(summarize(preview, sourceEdit,
         preview.regressedReadyFeatureIds.length
           ? 'requires_confirmation' : 'requires_unresolved_admission',
-        fieldChoices));
+        fieldChoices, fieldTransitions));
     } catch (error) {
       rows.push({
         targetEventId: event.eventId, featureId: event.featureId,
         sourceRevision: ordinal + 1,
         originallyEditedFields: sourceEdit.changedFields, fieldChoices,
+        fieldTransitions,
         status: 'blocked', reason: diagnostic(error),
         revertedFields: [], regressedReadyFeatureIds: [],
         invalidatedBodyIds: [], resultingTargetStatus: null,
