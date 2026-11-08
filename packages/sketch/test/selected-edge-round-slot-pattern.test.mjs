@@ -138,5 +138,37 @@ test('bad pointer, unknown handle, bad array envelope and attempted implicit reb
   assert.equal(inspectSelectedEdgeRoundSlotPattern({...v.authoring,
     pattern:{...base,count:0}}).reason,'invalid_authoring');
   assert.equal(inspectSelectedEdgeRoundSlotPattern({...v.authoring,
-    pattern:{...base,id:'L:edge0'}}).kind,'refused');
+    pattern:{...base,id:'invalid pattern id'}}).kind,'refused');
+});
+
+test('width and depth handles edit symmetric pattern dimensions, not only one slot',()=>{
+  const {v}=make();
+  const width=v.handles.find(h=>h.kind==='width');
+  const widened=dragSelectedEdgeRoundSlotPatternHandle(v.authoring,{
+    version:1,sourceSignature:v.authoringSignature,handleId:width.id,
+    target:{x:width.position.x+1,y:width.position.y}
+  });
+  assert.equal(widened.kind,'accepted',JSON.stringify(widened));
+  assert.equal(widened.pattern.widthMm,10);
+  assert.deepEqual(widened.slots.map(s=>s.toMm-s.fromMm),[10,10,10]);
+  const cap=widened.handles.find(h=>h.kind==='depth');
+  const deeper=dragSelectedEdgeRoundSlotPatternHandle(widened.authoring,{
+    version:1,sourceSignature:widened.authoringSignature,handleId:cap.id,
+    target:{x:cap.position.x,y:cap.position.y+1}
+  });
+  assert.equal(deeper.kind,'accepted',JSON.stringify(deeper));
+  assert.equal(deeper.pattern.straightDepthMm,4);
+  assert.deepEqual(deeper.slots.map(s=>s.straightDepthMm),[4,4,4]);
+});
+test('deliberate edge relocation rebinds the whole array without changing instance identities',()=>{
+  const {v}=make();
+  const moved=relocateSelectedEdgeRoundSlotPattern(v.authoring,{
+    kind:'relocate-selected-edge-round-slot-pattern',version:1,
+    sourceSignature:v.authoringSignature,edgeId:'L:edge1',
+    firstCenterMm:5,pitchMm:7,widthMm:4,straightDepthMm:2
+  });
+  assert.equal(moved.kind,'accepted',JSON.stringify(moved));
+  assert.deepEqual(moved.slots.map(s=>s.id),v.slots.map(s=>s.id));
+  assert.ok(moved.slots.every(s=>s.edgeId==='L:edge1'));
+  assert.equal(moved.solution.degreesOfFreedom,0);
 });
