@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
-  addModelHole, createModelExtrusion, createModelThroughCut, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelSketchDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, moveModelFeature, moveModelHoleCenter, moveModelHoleGroup, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
+  addModelHole, createModelExtrusion, createModelThroughCut, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelSketchDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, moveModelFeature, moveModelHoleCenter, moveModelHoleGroup, nudgeModelHoleSelection, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
   editNamedThicknessParameter, inspectNamedThicknessParameter, makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, newModelSketchSession, previewModelProfile, previewModelSketchProfile, redoModelSession,
   runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
@@ -498,6 +498,29 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         :`Moved ${hole} center to (${x}, ${y}) mm in one undoable sketch transaction; native STEP requires rebuild.`);
     }catch(e){setMessage('Hole drag refused: '+String(e));}
   };
+  const nudgeActiveHoles=(direction:string,fast:boolean)=>{
+    if(!renderSketch||!displayedActiveHole||circleDrawing.phase!=='idle'||
+        pendingImport||loadingFile)return false;
+    const step=fast?10:1;
+    const dx=direction==='ArrowRight'?step:direction==='ArrowLeft'?-step:0;
+    const dy=direction==='ArrowUp'?step:direction==='ArrowDown'?-step:0;
+    if(!dx&&!dy)return false;
+    const ids=layoutIds.length>1&&layoutIds.includes(displayedActiveHole)
+      ?layoutIds:[displayedActiveHole];
+    try{
+      const result=nudgeModelHoleSelection(liveHistory.current,ids,dx,dy);
+      if(result.kind==='refused'){
+        setMessage('Hole nudge refused by SKETCH: '+
+          (result.candidateFeature.diagnostics.join('; ')||result.reason));
+      }else{
+        acceptHistory(result.history);
+        setActiveHole(displayedActiveHole);
+        setLayoutSelected([...ids]);
+        setMessage(`Nudged ${ids.length} hole(s) by (${dx}, ${dy}) mm in ONE undoable SKETCH transaction. Native STEP revoked.`);
+      }
+    }catch(e){setMessage('Hole nudge refused: '+(e instanceof Error?e.message:String(e)));}
+    return true;
+  };
   const dragHoleDiameter=(hole:ModelHole,diameterMm:number)=>{
     try{
       const result=editModelHole(liveHistory.current,hole,'diameter',diameterMm,'require_admissible');
@@ -720,7 +743,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       if(command&&!e.altKey&&letter==='s'){e.preventDefault();save();return;}
       if(command&&!e.altKey&&letter==='o'){e.preventDefault();fileInput.current?.click();return;}
       if(command&&!e.altKey&&letter==='n'){e.preventDefault();prepareNewSketch();return;}
-      if(target?.closest('input,textarea,select,[contenteditable=true]'))return;
+      if(target?.closest('input,textarea,select,[contenteditable=true],[role=slider]'))return;
+      if(!command&&!e.altKey && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key) &&
+          nudgeActiveHoles(e.key,e.shiftKey)){
+        e.preventDefault();return;
+      }
       if(!command&&!e.altKey&&!e.shiftKey && letter==='e' &&
           circleDrawing.phase==='idle'){
         e.preventDefault();openFeatureCombo();return;
@@ -853,6 +880,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             <span>{geom?'Public SKETCH solver + profile admission':'Invalid or unresolved geometry'}</span></div>
           <span className={geom?'preview-tag':'preview-tag stale'}>{geom?'TESSELLATED PREVIEW · NOT EXACT':'NO CURRENT VALID MESH'}</span>
         </div>
+        {renderSketch&&<p className="microcopy" data-testid="runtime-hole-nudge-help">Click a sketch hole, then use arrow keys to nudge 1 mm (Shift: 10 mm). Ctrl-select multiple holes to move together. Each accepted nudge is one undoable model revision. Hole rims cannot cross the admitted plate boundary.</p>}
         <div className="viewport-stage">
           {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={renderSketch}
               onHoleMove={circleDrawing.phase==='idle'?dragHole:undefined}
