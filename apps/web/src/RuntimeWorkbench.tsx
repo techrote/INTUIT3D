@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
   addModelHole, createModelExtrusion, createModelThroughCut, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelSketchDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, modelHoleIsCartesian, moveModelFeature, moveModelHoleCenter, moveModelHoleGroup, nudgeModelHoleSelection, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
-  editNamedThicknessParameter, inspectNamedThicknessParameter, makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, newModelSketchSession, previewModelProfile, previewModelSketchProfile, redoModelSession,
+  editNamedThicknessParameter, inspectNamedThicknessParameter, makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, newModelSketchSession, newModelEmptySketchSession, modelSketchHasPlateDimensions, modelSketchIsEmpty, previewModelProfile, previewModelSketchProfile, redoModelSession,
   runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
+import { BlankSketchCanvas } from './BlankSketchCanvas';
+import {appendBlankContourPoint,undoBlankContourVertex,type BlankContourDraft,type SketchLocalPoint} from './blankContourDraft';
+import {commitModelBlankContour,startModelBlankContour,structuralContourRuntimeAvailable} from './closedContourBridge';
 import { HistoricalEditInspector } from './HistoricalEditInspector';
 import { ProfileNumericEditor } from './ProfileNumericEditor';
 import { SelectedEdgeHoleEditor } from './SelectedEdgeHoleEditor';
@@ -94,6 +97,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   // An unfinished circle is presentation-only. The INTENT journal changes
   // precisely once, after centre AND radius are accepted by RUNTIME/SKETCH.
   const [circleDrawing,setCircleDrawing]=useState<CircleDrawingState>({phase:'idle'});
+  const [blankDraft,setBlankDraft]=useState<BlankContourDraft|null>(null);
   const [holeDraft,setHoleDraft]=useState({x:'60',y:'20',diameter:'10'});
   const [arrayDraft,setArrayDraft]=useState({sourceHoleId:'holeA',rows:'2',columns:'2',pitchXmm:'20',pitchYmm:'20'});
   const [orbitDraft,setOrbitDraft]=useState({sourceHoleId:'holeA',instances:'3',pivotXmm:'60',pivotYmm:'40',sweepDegrees:'360'});
@@ -199,6 +203,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     invalidateNative();
     setCascadeConfirmation(null);
     setCircleDrawing({phase:'idle'});
+    setBlankDraft(null);
     setFeatureCombo(null);
     setHistory(next);
     setRecoveryActivated(true);
@@ -234,8 +239,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const editableLifecycle=selected==='plate'||selected==='cut';
   const removalImpact=selectedActive&&editableLifecycle
     ?modelFeatureRemovalImpact(history,selected):null;
-  const values=useMemo(()=>plateActive?modelDimensionValues(history):null,[history,plateActive]);
-  const sketchValues=useMemo(()=>modelSketchDimensionValues(history),[history]);
+  const values=useMemo(()=>plateActive&&modelSketchHasPlateDimensions(history)?modelDimensionValues(history):null,[history,plateActive]);
+  const legacySketch=useMemo(()=>modelSketchHasPlateDimensions(history),[history]);
+  const emptySketch=useMemo(()=>modelSketchIsEmpty(history),[history]);
+  const sketchValues=useMemo(()=>legacySketch?modelSketchDimensionValues(history):null,[history,legacySketch]);
   const thicknessBinding=useMemo(()=>plateActive?modelThicknessBinding(history):'independent',[history,plateActive]);
   const namedThickness=useMemo(()=>plateActive?inspectNamedThicknessParameter(history):null,[history,plateActive]);
   const [namedParameterDraft,setNamedParameterDraft]=useState({name:'thickness',value:'10'});
@@ -708,6 +715,41 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     event.target.value=''; // Allow retrying the same rejected file.
     if(file)void openModelFile(file);
   };
+  const prepareNewEmptySketch=()=>{
+    cancelActiveImport();
+    setPendingImport({file:'New genuinely empty CAD sketch',
+      history:newModelEmptySketchSession('workbench.empty.'+crypto.randomUUID()),origin:'new'});
+  };
+  const startBlankDrawing=()=>{
+    if(pendingImport||loadingFile)return;
+    try {
+      const draft=startModelBlankContour(liveHistory.current);
+      setBlankDraft(draft);setSketchMode(true);setCircleDrawing({phase:'idle'});
+      setProfilePickMode(false);setPointerSelection(null);setPointerHandleId('');
+      setMessage('Place 3–12 sketch-local vertices. Close admits one solver-owned contour; Escape cancels with no journal change.');
+    }catch(error){setMessage('Cannot begin outline: '+String(error));}
+  };
+  const addBlankVertex=(point:SketchLocalPoint)=>{
+    if(!blankDraft||pendingImport||loadingFile)return;
+    if(blankDraft.expectedArchive!==serializeModelSession(liveHistory.current)){
+      setBlankDraft(null);setMessage('Outline cancelled: authoritative project changed.');return;
+    }
+    const step=appendBlankContourPoint(blankDraft,point);
+    if(step.kind==='refused'){setMessage(step.reason);return;}
+    setBlankDraft(step.draft);setMessage(null);
+  };
+  const closeBlankDrawing=()=>{
+    if(!blankDraft||pendingImport||loadingFile)return;
+    try {
+      const outcome=commitModelBlankContour(liveHistory.current,nativeSession.current!,blankDraft);
+      if(outcome.kind==='refused'){setMessage('Close refused: '+outcome.reason);return;}
+      acceptHistory(outcome.history);
+      setPointerSelection(outcome.selection);setPointerHandleId('');
+      setSketchMode(true);setSelected('sketch.plate');
+      setMessage('Closed '+blankDraft.vertices.length+' pointer vertices as one authoritative SKETCH/RUNTIME revision '+
+        outcome.history.document.revision+'. Select the solver-owned profile for editing. Native STEP is stale/pending.');
+    }catch(error){setMessage('Close refused; authoritative source retained: '+String(error));}
+  };
   const prepareNewSketch=()=>{
     cancelActiveImport();
     setPendingImport({file:'New sketch-first CAD project',
@@ -824,6 +866,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       if(e.key==='Escape' && featureCombo){
         e.preventDefault();setFeatureCombo(null);return;
       }
+      if(e.key==='Escape'&&blankDraft){
+        e.preventDefault();setBlankDraft(null);
+        setMessage('Uncommitted outline cancelled. No CAD revision or undo frame created.');return;
+      }
       if(e.key==='Escape' && circleDrawing.phase!=='idle'){
         setCircleDrawing({phase:'idle'});
         setMessage('Circle sketch cancelled. No model revision was created.');
@@ -883,6 +929,9 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         <button className="ribbon-button" data-testid="runtime-new-sketch"
           title="New sketch-first project (Ctrl+N); replacement confirmation required"
           onClick={prepareNewSketch}>New sketch-first project</button>
+        <button className="ribbon-button" data-testid="runtime-new-empty-sketch"
+          title="Create a truly empty SKETCH document; replacement confirmation required"
+          onClick={prepareNewEmptySketch}>New empty sketch</button>
         <button className="ribbon-button" data-testid="runtime-save-archive" title="Save authoritative model archive (Ctrl+S)" onClick={save}>Save model archive</button>
         <button className="ribbon-button" title="Open authoritative model archive (Ctrl+O), or drop one JSON archive on the workbench" onClick={()=>fileInput.current?.click()}>Open model archive</button>
         <button className="ribbon-button" onClick={()=>{
@@ -923,6 +972,13 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             if(circleDrawing.phase!=='idle'){setCircleDrawing({phase:'idle'});setMessage('Circle sketch cancelled.');}
             else{setSketchMode(true);setCircleDrawing({phase:'centre'});setMessage('Circle: click a centre, then click a radius. Escape cancels.');}
           }}>{circleDrawing.phase!=='idle'?'Cancel circle':'Draw circle · 2 clicks'}</button>
+      </div>
+      <div className="ribbon-group" data-testid="runtime-blank-outline-tools">
+        <span className="ribbon-label">FROM EMPTY</span>
+        <button type="button" className={blankDraft?'ribbon-button active':'ribbon-button'}
+          data-testid="runtime-outline-tool" disabled={!emptySketch||!!pendingImport||!!loadingFile}
+          onClick={()=>blankDraft?(setBlankDraft(null),setMessage('Uncommitted outline cancelled.')):startBlankDrawing()}>
+          {blankDraft?'Cancel outline':'Draw outline'}</button>
       </div>
       <div className="ribbon-group" data-testid="runtime-profile-pointer-tools">
         <span className="ribbon-label">SKETCH PROFILE</span>
@@ -987,7 +1043,13 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <span className={geom?'preview-tag':'preview-tag stale'}>{geom?'TESSELLATED PREVIEW · NOT EXACT':'NO CURRENT VALID MESH'}</span>
         </div>
         <div className="viewport-stage">
-          {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={renderSketch}
+          {emptySketch?<BlankSketchCanvas draft={blankDraft} disabled={!!pendingImport||!!loadingFile}
+              runtimeReady={structuralContourRuntimeAvailable()}
+              onBegin={startBlankDrawing} onPoint={addBlankVertex}
+              onUndoPoint={()=>setBlankDraft(previous=>previous?undoBlankContourVertex(previous):null)}
+              onCancel={()=>{setBlankDraft(null);setMessage('Uncommitted outline cancelled. No revision created.');}}
+              onClose={closeBlankDrawing}/>:
+           geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={renderSketch}
               onHoleMove={circleDrawing.phase==='idle'&&!profilePickMode?dragHole:undefined}
               onHoleDiameterEdit={circleDrawing.phase==='idle'&&!profilePickMode?dragHoleDiameter:undefined}
               onHoleSelect={(id,additive=false)=>{
@@ -1131,11 +1193,16 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           }} onMessage={setMessage}/>
         <div className="inspector-section">
           <div className="section-head">EDIT RETROSPECTIVE DIMENSIONS</div>
-          {(['width','depth','holeDiameter','holePitch'] as const).map(field=><ScalarInput
+          {sketchValues?(['width','depth','holeDiameter','holePitch'] as const).map(field=><ScalarInput
              key={field+':'+history.document.revision} field={field}
-             value={sketchValues[field]} onCommit={update}/>)}
+             value={sketchValues[field]} onCommit={update}/>):<p className="microcopy" data-testid="runtime-structural-sketch-dimensions">
+             This contour does not use the mounting-plate template's width/height/hole constraints.
+             Select a solver-owned contour handle to edit its authentic dimensions.
+           </p>}
           {values?<ScalarInput key={'thickness:'+history.document.revision}
-             field="thickness" value={values.thickness} onCommit={update}/>:plateAuthored?<p
+             field="thickness" value={values.thickness} onCommit={update}/>:plateActive?<p className="microcopy">
+             Extrusion thickness is model-owned. This drawn contour has no seeded fixture dimensions; use the extrusion control and selected handles.
+           </p>:plateAuthored?<p
              data-testid="runtime-removed-extrusion" className="microcopy">
              Extrusion removed. Plate parameters remain authored in the journal;
              restore the original extrusion to edit or rebuild it.
