@@ -13,6 +13,12 @@ import {
   PARAMETER_FORMULA_TABLE_FORMAT, PARAMETER_FORMULA_TABLE_VERSION,
   previewParameterFormulaTableEdit, commitUndoableParameterFormulaTableEdit,
 } from '@intuit3d/model/parameter-formula-table';
+import { rebaseParameterSheetEdit } from '@intuit3d/model/parameter-sheet-rebase';
+import type { ParameterSheetConflictApproval, ParameterSheetEventReplacement, ParameterSheetResolutionResult } from '@intuit3d/model/parameter-sheet-resolution';
+import {
+  PARAMETER_SHEET_RESOLUTION_FORMAT, PARAMETER_SHEET_RESOLUTION_VERSION,
+  resolveParameterSheetConflict,
+} from '@intuit3d/model/parameter-sheet-resolution';
 import * as dimensions from '@intuit3d/model/dimension-batch-edit';
 import * as archive from '@intuit3d/model/archive';
 import { moveHistoryFeature } from '@intuit3d/model/history-move';
@@ -541,6 +547,48 @@ export function commitModelParameterFormulaTable(
 ):ModelSession {
   return commitUndoableParameterFormulaTableEdit(
     h,formulaTableRequest(h,rows,expectedRevision));
+}
+
+/**
+ * Keep the authored BASE, draft and CURRENT journal separate. INTENT is the
+ * only authority for ancestry, conflict identity, semantic formula bindings
+ * and final admission; WORKBENCH never mutates an old draft to fake a rebase.
+ */
+export function inspectModelParameterFormulaRecovery(
+  base:ModelSession,current:ModelSession,
+  rows:readonly ModelParameterFormulaDraft[],
+) {
+  return rebaseParameterSheetEdit(base.document,current.document,
+    formulaTableRequest(base,rows,base.document.revision),current.document.revision);
+}
+
+export function resolveModelParameterFormulaRecovery(
+  base:ModelSession,current:ModelSession,
+  rows:readonly ModelParameterFormulaDraft[],
+  approvals:readonly ParameterSheetConflictApproval[],
+  eventReplacements:readonly ParameterSheetEventReplacement[],
+):ParameterSheetResolutionResult {
+  return resolveParameterSheetConflict(base.document,current.document,
+    formulaTableRequest(base,rows,base.document.revision),{
+      format:PARAMETER_SHEET_RESOLUTION_FORMAT,
+      version:PARAMETER_SHEET_RESOLUTION_VERSION,
+      expectedProjectId:base.document.projectId,
+      expectedBaseRevision:base.document.revision,
+      expectedCurrentRevision:current.document.revision,
+      approvals,eventReplacements,
+    });
+}
+
+/** A recovered preview is NOT a commit. An additional exact-current-revision
+ * fence remains mandatory, even after the user explicitly approves conflicts. */
+export function commitResolvedModelParameterFormulaRecovery(
+  current:ModelSession,recovery:ParameterSheetResolutionResult,
+):ModelSession {
+  if(recovery.status!=='ready'||!recovery.resolvedRequest||!recovery.preview||
+    recovery.projectId!==current.document.projectId||
+    recovery.currentRevision!==current.document.revision)
+    throw Error('Parameter recovery is unapproved or stale; review the current model again.');
+  return commitUndoableParameterFormulaTableEdit(current,recovery.resolvedRequest);
 }
 
 /** Freeze CURRENT resolved thickness, explicitly release the witnessed binding
