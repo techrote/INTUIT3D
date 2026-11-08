@@ -8,7 +8,8 @@ import type {
   BodyCutExtentEditRequest,BodyCutExtentEditPreview
 } from '@intuit3d/model/body-cut-chain';
 import type {OrderedCutExtent} from './ordered-cut.d.mts';
-import type {TransactionPreview,JournalEvent} from '@intuit3d/model/transactions';
+import type {TransactionPreview} from '@intuit3d/model/transactions';
+import type {JournalEvent} from '@intuit3d/model';
 
 export declare const COMPOUND_POCKET_FORMAT:
   'intuit3d.feature-ops.compound-pocket-reconfigure';
