@@ -754,8 +754,13 @@ async function main() {
   // Actual Chromium pointer events on the model-backed selected-hole stamp.
   // A fresh default plate avoids accidental dependence on earlier imported
   // fixtures and verifies the real React controls rather than helper calls.
-  await send('Page.navigate', {url:origin});
-  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-stamp-apply]') && document.querySelector('[data-testid=runtime-layout-select-holeB]'))"),
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-new-plate]');b?.click();return Boolean(b)})()"),
+    'Cannot start fresh model-backed plate after archive import');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'new plate requested explicit replacement consent');
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-import-review-confirm]');b?.click();return Boolean(b)})()"),
+    'Cannot confirm a fresh plate for selected-hole acceptance');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-stamp-apply]') && document.querySelector('[data-testid=runtime-layout-select-holeB]') && !document.querySelector('[data-testid=runtime-import-review]'))"),
     'fresh model-backed selected-hole stamp editor');
   const clickControl=async selector=>{
     const point=await evaluate(`(() => {
