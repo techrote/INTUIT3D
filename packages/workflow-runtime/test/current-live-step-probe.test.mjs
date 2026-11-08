@@ -14,6 +14,19 @@ const rays=[['hole.0',-30,0,0,-1,-1],['hole.1',30,0,0,-1,-1],
   ['solid.nw',-20,-80/6,2,0,8],['solid.ne',20,-80/6,2,0,8],
   ['solid.sw',-20,80/6,2,0,8],['solid.se',20,80/6,2,0,8],
   ['exterior',70,0,0,-1,-1],['central.material',0,0,2,0,8]];
+// The real AnvilCAD V1 physical importer emits eight additional
+// radial wall samples for each admitted bore, after the stock rays.
+for(const [i,h] of plate.holes.entries()) {
+  const delta=Math.min(h.radius*0.15,0.75);
+  for(const [direction,dx,dy] of [
+    ['east',1,0],['west',-1,0],['north',0,-1],['south',0,1],
+  ]) {
+    rays.push(['hole.'+i+'.inner.'+direction,
+      h.x+dx*(h.radius-delta),h.y+dy*(h.radius-delta),0,-1,-1]);
+    rays.push(['hole.'+i+'.outer.'+direction,
+      h.x+dx*(h.radius+delta),h.y+dy*(h.radius+delta),2,0,8]);
+  }
+}
 function fixture(){
   const archive='{"projectId":"sample.project","revision":2}';
   const bytes=Uint8Array.from(Buffer.from('SYNTHETIC_NOT_REAL_STEP'));
@@ -69,7 +82,7 @@ test('POSIX synthetic external process checks current receipt, rejects an edit w
     });
     assert.equal(outcome.kind,'executed_current_live_plate_nonocct_sample');
     assert.equal(outcome.stepSha256,first.evaluation.step.sha256);
-    assert.equal(outcome.sample.rays.length,8);
+    assert.equal(outcome.sample.rays.length,24);
     assert.equal(outcome.exactAuthority,false);
     assert.equal(outcome.independentInteroperability,false);
     const second=fixture();
