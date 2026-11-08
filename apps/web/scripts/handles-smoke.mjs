@@ -1044,6 +1044,8 @@ async function main() {
   // flex layout. Resolve the SVG screen transform AFTER the real button click,
   // never reuse a pre-scroll pointer position for a sketch-local vertex.
   await clickControl('[data-testid="runtime-outline-tool"]');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-contour-vertex-count]'))"),
+    'real outline button click did not open a draft after sketch navigation');
   const farPoint=await evaluate(`(() => {
     const s=document.querySelector('[data-testid=runtime-blank-sketch]');
     const m=s?.getScreenCTM();
@@ -1057,6 +1059,9 @@ async function main() {
   check(farPoint?.inside&&farPoint.hittable,
     'off-origin vertex lies outside the live sketch pointer target after tool activation');
   await mouse('mouseMoved',farPoint.x,farPoint.y);
+  await eventually(()=>evaluate(
+    "document.querySelector('[data-testid=runtime-contour-pointer-coordinate]')?.textContent.includes('NEXT X 500.000')"),
+    'current SVG pointer transform did not deliver a 500 mm hover after middle pan');
   await mouse('mousePressed',farPoint.x,farPoint.y,1);
   await mouse('mouseReleased',farPoint.x,farPoint.y);
   await eventually(()=>evaluate(`(() => {
