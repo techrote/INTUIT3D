@@ -148,7 +148,7 @@ const secondRedoRestoredSecond=close(sourceXY(secondRedone),twice);
 if(!secondUndoRestoredFirst||!secondRedoRestoredSecond||close(moved,twice))
  throw Error('repeated retrospective grid placement lost solved positions');
 const modified=editExtrudeThickness(secondRedone,{
- eventId:'fixture.depth.12',expectedRevision:redo.document.revision,
+ eventId:'fixture.depth.12',expectedRevision:secondRedone.document.revision,
  featureId:'extrude.fixture',thicknessMm:12},services);
 const reopened=runtime.reopen(runtime.save(modified.history));
 const parts=model.featuresOf(reopened.document);
