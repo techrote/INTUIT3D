@@ -1,0 +1,155 @@
+# Integration-owned, non-compiling physical qualification of PLATFORM #284.
+# Pin each source and binary to previously independently recorded immutable IDs.
+# This job does NOT qualify #74 Chromium/STEP or #177 Windows Firefox.
+name: PLATFORM #284 clean-source offline restart / seven native RUNTIME stages
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/platform-284-restart-qualification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: intuit3d-platform284-fixed-source-physical
+  cancel-in-progress: false
+
+jobs:
+  pinned-restart:
+    name: Ubuntu 24.04 / sealed OCCT8 offline restart / 4 C++ + 7 RUNTIME
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PLATFORM_SHA: 566960fb7eafea071ce66c225c4ee388e48432f4
+      RUNTIME_SHA: d36bbd19e49134a76bea82b31d0cc7d0e10f9792
+      KERNEL_SHA: 93e984963db720cacdd8bb679a559a3b8df88ce8
+      ARCHIVE_SHA: 7b792374dc75e0a3db8a947f8289630caf3fad1cb52aaaa4020298cc3a67e986
+      MANIFEST_SHA: 6778710b39dfaf1b1e11ccd3ad31ee37cabb204e4bbae2c78e62f9cd49e447bf
+      WORKER_SHA: a346489f79e49c1eb81a1bebe5987d31fbd6e92814c2f5a7028c1ecf4d3dbbc1
+    steps:
+      - name: Checkout candidate PLATFORM #284 at its immutable head
+        uses: actions/checkout@v4
+        with:
+          repository: techrote/INTUIT3D
+          ref: 566960fb7eafea071ce66c225c4ee388e48432f4
+          path: platform-candidate
+          persist-credentials: false
+      - name: Checkout previously proven immutable RUNTIME source separately
+        uses: actions/checkout@v4
+        with:
+          repository: techrote/INTUIT3D
+          ref: d36bbd19e49134a76bea82b31d0cc7d0e10f9792
+          path: runtime-pinned
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Required ELF and Python tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils patchelf
+      - name: Install exact RUNTIME dependencies; verify both clean tracked checkouts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          P="$GITHUB_WORKSPACE/platform-candidate"
+          R="$GITHUB_WORKSPACE/runtime-pinned"
+          test "$(git -C "$P" rev-parse HEAD)" = "$PLATFORM_SHA"
+          test "$(git -C "$R" rev-parse HEAD)" = "$RUNTIME_SHA"
+          git -C "$P" diff --quiet HEAD --
+          git -C "$R" diff --quiet HEAD --
+          (cd "$R" && npm ci --ignore-scripts --no-audit --no-fund)
+          git -C "$R" diff --quiet HEAD --
+          mkdir -p "$RUNNER_TEMP/platform284-evidence"
+          printf 'platform=%s\nruntime=%s\nkernel=%s\n' \
+            "$PLATFORM_SHA" "$RUNTIME_SHA" "$KERNEL_SHA" \
+            > "$RUNNER_TEMP/platform284-evidence/source-pins.txt"
+          node --version | tee "$RUNNER_TEMP/platform284-evidence/node-version.txt"
+          python3 --version | tee "$RUNNER_TEMP/platform284-evidence/python-version.txt"
+      - name: Run complete candidate-head Platform Python test suite
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          P="$GITHUB_WORKSPACE/platform-candidate"
+          E="$RUNNER_TEMP/platform284-evidence"
+          python3 -m unittest discover \
+            -s "$P/platform/native-toolchain" -p 'test_*.py' -v \
+            > "$E/platform-unittest.stdout" 2> "$E/platform-unittest.stderr"
+          echo PLATFORM_284_FULL_PYTHON_SUITE_PASS
+      - name: Retrieve previously compiled, sealed C++ archive — no OCCT build
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 42469504601
+          name: occt801-cxx-and-step-evidence
+          path: ${{ runner.temp }}/platform284-artifact
+          github-token: ${{ github.token }}
+      - name: Install immutable C++ source-bundle and execute #284 actual 4+7 restart
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          P="$GITHUB_WORKSPACE/platform-candidate"
+          R="$GITHUB_WORKSPACE/runtime-pinned"
+          E="$RUNNER_TEMP/platform284-evidence"
+          INSTALLED="$RUNNER_TEMP/platform284-installed"
+          A="$(find "$RUNNER_TEMP/platform284-artifact" -name offline-occt801.tar.gz -type f -print -quit)"
+          test -n "$A" && test -s "$A"
+          printf '%s  %s\n' "$ARCHIVE_SHA" "$A" | sha256sum -c - | tee "$E/archive-pin-check.txt"
+          python3 "$P/platform/native-toolchain/install_offline.py" \
+            --archive "$A" --expected-sha256 "$ARCHIVE_SHA" \
+            --kernel-sha "$KERNEL_SHA" --destination "$INSTALLED" \
+            > "$E/install-receipt.json" 2> "$E/install.stderr"
+          printf '%s  %s\n' "$MANIFEST_SHA" "$INSTALLED/manifest.json" | sha256sum -c - | tee "$E/manifest-pin-before.txt"
+          printf '%s  %s\n' "$WORKER_SHA" "$INSTALLED/bin/intuit3d_occt8_plate" | sha256sum -c - | tee "$E/worker-pin-before.txt"
+          python3 "$P/platform/native-toolchain/resume_runtime_delivery.py" \
+            --directory "$INSTALLED" --manifest-sha256 "$MANIFEST_SHA" \
+            --kernel-sha "$KERNEL_SHA" --worker-sha256 "$WORKER_SHA" \
+            --runtime-tree "$R" --runtime-sha "$RUNTIME_SHA" --replay \
+            > "$E/restart-seven.json" 2> "$E/restart-seven.stderr"
+          python3 - "$E/restart-seven.json" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1],encoding="utf-8"))
+          assert r["status"]=="RUNTIME_PINNED_OCCT8_RESTART_PASS",r
+          assert r["nativeStepCount"]==7 and len(r["physicalNativeStepSha256"])==7,r
+          assert r["installationReattestedAfterExecution"] is True,r
+          assert r["preflightNativeReplayExecuted"] is True,r
+          assert r["runtimeSourceCommit"]=="d36bbd19e49134a76bea82b31d0cc7d0e10f9792",r
+          assert r["workerSha256"]=="a346489f79e49c1eb81a1bebe5987d31fbd6e92814c2f5a7028c1ecf4d3dbbc1",r
+          print("PLATFORM_284_ACTUAL_SEVEN_STAGE_RESTART_PASS")
+          PY
+          printf '%s  %s\n' "$MANIFEST_SHA" "$INSTALLED/manifest.json" | sha256sum -c - | tee "$E/manifest-pin-after.txt"
+          printf '%s  %s\n' "$WORKER_SHA" "$INSTALLED/bin/intuit3d_occt8_plate" | sha256sum -c - | tee "$E/worker-pin-after.txt"
+      - name: Deliberately wrong independently supplied manifest pin must refuse
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          P="$GITHUB_WORKSPACE/platform-candidate"
+          R="$GITHUB_WORKSPACE/runtime-pinned"
+          E="$RUNNER_TEMP/platform284-evidence"
+          INSTALLED="$RUNNER_TEMP/platform284-installed"
+          set +e
+          python3 "$P/platform/native-toolchain/resume_runtime_delivery.py" \
+            --directory "$INSTALLED" \
+            --manifest-sha256 0000000000000000000000000000000000000000000000000000000000000000 \
+            --kernel-sha "$KERNEL_SHA" --worker-sha256 "$WORKER_SHA" \
+            --runtime-tree "$R" --runtime-sha "$RUNTIME_SHA" \
+            > "$E/wrong-pin.stdout" 2> "$E/wrong-pin.stderr"
+          code=$?
+          set -e
+          printf '%s\n' "$code" > "$E/wrong-pin.exit"
+          test "$code" -eq 2
+          grep -q RUNTIME_PINNED_OCCT8_RESTART_FAIL "$E/wrong-pin.stderr"
+          ! grep -q RUNTIME_PINNED_OCCT8_RESTART_PASS "$E/wrong-pin.stdout"
+          printf '%s  %s\n' "$MANIFEST_SHA" "$INSTALLED/manifest.json" | sha256sum -c - | tee "$E/manifest-pin-after-negative.txt"
+          printf '%s  %s\n' "$WORKER_SHA" "$INSTALLED/bin/intuit3d_occt8_plate" | sha256sum -c - | tee "$E/worker-pin-after-negative.txt"
+          echo PLATFORM_284_WRONG_PIN_REFUSAL_PASS
+      - name: Retain execution receipts, test logs and negative without installed binary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform284-exact-head-real-restart-evidence
+          path: ${{ runner.temp }}/platform284-evidence/
+          retention-days: 14
+          if-no-files-found: warn
