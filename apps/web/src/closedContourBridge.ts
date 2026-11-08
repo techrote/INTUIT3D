@@ -67,7 +67,7 @@ export function commitModelBlankContour(
       operation:'create',admission:'require_admissible',
       command,acceptance,
     },
-  } as Parameters<LivePlateSession['applyCommand']>[0]) as unknown as
+  } as unknown as Parameters<LivePlateSession['applyCommand']>[0]) as unknown as
     | {kind:'committed';history:ModelSession;
         contourReceipt?:{selection:SelectedProfileSelection;revision:number}}
     | {kind:'refused';reason:string;code?:string};
