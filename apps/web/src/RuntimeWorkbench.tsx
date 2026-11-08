@@ -8,6 +8,8 @@ import {
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
 import { SelectedEdgeHoleEditor } from './SelectedEdgeHoleEditor';
+import { selectModelProfileAtPointer, inspectModelPointerProfile, dragModelPointerProfileHandle } from './pointerProfileBridge';
+import type {SelectedProfileSelection} from '@intuit3d/sketch/selected-profile/v1';
 import { SolidHoleQuickEdit } from './SolidHoleQuickEdit';
 import { removeModelEdgeHole } from './selectedEdgeHole';
 import { ParameterFormulaTable } from './ParameterFormulaTable';
@@ -97,6 +99,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   // Presentation-only E combo: the actual feature is committed by RUNTIME/INTENT.
   const [featureCombo,setFeatureCombo]=useState<'extrude'|'cut'|null>(null);
   const [selected,setSelected]=useState('plate');
+  // A selected contour and its handles are ephemeral, source-fenced SKETCH
+  // projections. They are never duplicated into model or native authority.
+  const [profilePickMode,setProfilePickMode]=useState(false);
+  const [pointerSelection,setPointerSelection]=useState<SelectedProfileSelection|null>(null);
+  const [pointerHandleId,setPointerHandleId]=useState('');
   const [activeHole,setActiveHole]=useState<string|null>(null);
   const [layoutSelected,setLayoutSelected]=useState<string[]>(['holeA']);
   const [layoutDraft,setLayoutDraft]=useState({scaleX:'120',scaleY:'100',radiusScale:'100'});
@@ -243,6 +250,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   }:null;
   const solidProfile=useMemo(()=>previewModelProfile(report),[report]);
   const sketchProfile=useMemo(()=>previewModelSketchProfile(report),[report]);
+  const pointerInventory=useMemo(()=>{
+    if(!pointerSelection)return null;
+    try{return inspectModelPointerProfile(history,pointerSelection);}
+    catch{return null;} // A separate edit/undo/archive replacement expires the source fence.
+  },[history,pointerSelection]);
+  const pointerHandles=pointerInventory?.kind==='pointer_editable_handles'
+    ?pointerInventory.handles:[];
+  const pointerDragHandle=pointerHandles.find(h=>h.handleId===pointerHandleId)??null;
   const canAuthorExtrusion=!plateAuthored && !!sketchProfile && !pendingImport;
   const canAuthorCut=plateActive && !cutAuthored && !!sketchProfile?.holes.length && !pendingImport;
   // Until an authored cut exists, show the extrusion WITHOUT through-holes.
@@ -255,6 +270,32 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const faults=useMemo(()=>modelDiagnostics(report),[report]);
   const plate=report.features.find(f=>f.featureId==='plate');
   const cut=report.features.find(f=>f.featureId==='cut');
+  const pickProfile=(x:number,y:number)=>{
+    try{
+      const result=selectModelProfileAtPointer(liveHistory.current,x,y);
+      if(result.kind!=='selected'){
+        setMessage('Profile selection '+(result.kind==='miss'?'missed: ':'refused: ')+result.reason+
+          '. Click strictly inside a solved contour, away from edges/holes.');
+        return;
+      }
+      setPointerSelection(result.selection);
+      setPointerHandleId('');
+      setProfilePickMode(false);
+      setMessage('Selected solver-owned profile '+result.profile.semanticProfileId+
+        '. Choose a semantic dimension/centre handle in the inspector before dragging it. Analytic preview only.');
+    }catch(e){setMessage('Profile selection refused: '+String(e));}
+  };
+  const dragProfile=(handleId:string,x:number,y:number)=>{
+    if(!pointerSelection||pendingImport)return;
+    try{
+      const result=dragModelPointerProfileHandle(liveHistory.current,pointerSelection,handleId,{x,y});
+      acceptHistory(result.history);
+      setPointerSelection(result.selection);
+      setMessage('Edited selected semantic profile handle '+handleId+' in one undoable RUNTIME transaction at revision '+
+        result.history.document.revision+'. Invalidated: '+
+        (result.invalidatedFeatureIds.join(' → ')||'none')+'. Native STEP revoked; preview not exact.');
+    }catch(e){setMessage('Profile handle drag refused; original journal retained: '+String(e));}
+  };
   const createExtrusion=():boolean=>{
     try{
       if(!extrudeDraft.trim())throw Error('Enter a positive extrusion distance.');
@@ -881,6 +922,16 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             else{setSketchMode(true);setCircleDrawing({phase:'centre'});setMessage('Circle: click a centre, then click a radius. Escape cancels.');}
           }}>{circleDrawing.phase!=='idle'?'Cancel circle':'Draw circle · 2 clicks'}</button>
       </div>
+      <div className="ribbon-group" data-testid="runtime-profile-pointer-tools">
+        <span className="ribbon-label">SKETCH PROFILE</span>
+        <button type="button" className={profilePickMode?'ribbon-button active':'ribbon-button'}
+          data-testid="runtime-profile-select-mode" aria-pressed={profilePickMode}
+          disabled={!geom||!!pendingImport||!!loadingFile||circleDrawing.phase!=='idle'}
+          onClick={()=>{
+            setSketchMode(true);setProfilePickMode(previous=>!previous);
+            setMessage('Click strictly inside an admitted sketch contour to select it. Boundary/void hits are refused.');
+          }}>{profilePickMode?'Cancel contour selection':'Select contour'}</button>
+      </div>
       <div className="ribbon-group" data-testid="runtime-feature-authoring"><span className="ribbon-label">SOLID FEATURES</span>
         <label className="runtime-extrusion-distance" aria-label="Extrusion distance">
           <input type="number" step="any" min="0.001" max="10000"
@@ -935,18 +986,21 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         </div>
         <div className="viewport-stage">
           {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={renderSketch}
-              onHoleMove={circleDrawing.phase==='idle'?dragHole:undefined}
-              onHoleDiameterEdit={circleDrawing.phase==='idle'?dragHoleDiameter:undefined}
+              onHoleMove={circleDrawing.phase==='idle'&&!profilePickMode?dragHole:undefined}
+              onHoleDiameterEdit={circleDrawing.phase==='idle'&&!profilePickMode?dragHoleDiameter:undefined}
               onHoleSelect={(id,additive=false)=>{
                 setActiveHole(id);
                 setLayoutSelected(previous=>additive
                   ?previous.includes(id)?previous.filter(item=>item!==id):[...previous,id]
                   :[id]);
               }} selectedHoleId={displayedActiveHole} selectedHoleIds={layoutIds}
-              onDimensionEdit={circleDrawing.phase==='idle'?dragDimension:undefined}
+              onDimensionEdit={circleDrawing.phase==='idle'&&!profilePickMode?dragDimension:undefined}
               onThicknessEdit={plateActive?(mm)=>update('thickness',mm):undefined}
               circleDrawing={circleDrawing}
-              onCirclePick={circleDrawing.phase!=='idle'?pickCirclePoint:undefined}/>:
+              onCirclePick={circleDrawing.phase!=='idle'?pickCirclePoint:undefined}
+              onProfilePick={profilePickMode&&circleDrawing.phase==='idle'?pickProfile:undefined}
+              profileEditHandle={!profilePickMode&&circleDrawing.phase==='idle'?pointerDragHandle:undefined}
+              onProfileHandleDrag={dragProfile}/>:
             <div className="empty-overlay" data-testid="runtime-empty">Current dimensions cannot produce an admitted sketch profile. No previous mesh is represented as current.</div>}
           {geom&&!renderSketch&&displayedActiveHole&&layoutIds.length===1&&
             layoutIds[0]===displayedActiveHole&&
@@ -1007,6 +1061,34 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         <div className="panel-heading">PARAMETRIC INSPECTOR <span className="panel-count">mm</span></div>
         <div className="inspector-feature"><small>SELECTED SEMANTIC FEATURE</small><strong>{selected}</strong>
           <span>{report.features.find(f=>f.featureId===selected)?.status ?? 'Missing'}</span></div>
+        <div className="inspector-section" data-testid="runtime-pointer-profile-editor">
+          <div className="section-head">SOLVED CONTOUR · SEMANTIC DIRECT EDIT</div>
+          {pointerSelection?<div className="runtime-hole-add">
+            <strong data-testid="runtime-pointer-profile-selected">{pointerInventory?.kind==='pointer_editable_handles'
+              ?pointerInventory.semanticProfileId:'Selection expired / no admitted handles'}</strong>
+            {pointerInventory?.kind==='pointer_editable_handles'?<>
+              <label className="runtime-scalar"><span>Drag handle</span>
+                <span className="runtime-scalar-control">
+                  <select data-testid="runtime-pointer-profile-handle"
+                    aria-label="Explicit semantic profile handle" value={pointerHandleId}
+                    onChange={event=>setPointerHandleId(event.target.value)}>
+                    <option value="">Choose semantic handle…</option>
+                    {pointerHandles.map(handle=><option key={handle.handleId} value={handle.handleId}>
+                      {handle.handleId} · {handle.kind} {handle.dimensionKind??''}
+                    </option>)}
+                  </select>
+                </span>
+              </label>
+              <p className="microcopy">One amber handle appears on the sketch after explicit selection. Drag and release to commit one solver-admitted, undoable constraint change. Colocated handles are never chosen by nearest-hit guessing.</p>
+            </>:<p className="microcopy">The sketch source changed or this contour is unsolved. Reselect the current solved contour; no stale drag is permitted.</p>}
+            <button type="button" className="ribbon-button" data-testid="runtime-pointer-profile-clear"
+              onClick={()=>{setPointerSelection(null);setPointerHandleId('');setProfilePickMode(false);}}>
+              Clear profile selection</button>
+          </div>:<p className="microcopy">
+            Choose “Select contour”, then click within a solved sketch face.
+            This is a source-fenced analytic SKETCH operation; disjoint/multi-contour native geometry remains unsupported.
+          </p>}
+        </div>
         <div className="inspector-section" data-testid="runtime-feature-lifecycle">
           <div className="section-head">FEATURE LIFECYCLE · INTENT JOURNAL</div>
           {editableLifecycle?(selectedActive?<div className="runtime-hole-add">
