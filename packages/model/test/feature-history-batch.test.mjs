@@ -258,6 +258,7 @@ test('actual SKETCH/FEATUREOPS/RUNTIME linked multi-body authoring example',()=>
     ['rebuild','rebuild','preserve_candidate']);
   assert.equal(summary.singleUndoFrame,true);
   assert.equal(summary.archiveUndoRedo,true);
+  assert.equal(summary.recoveredSelectionAfterRuntimeEdit,true);
   assert.equal(summary.exactGeometryAuthority,false);
 });
 
