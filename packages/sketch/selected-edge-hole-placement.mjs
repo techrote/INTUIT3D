@@ -64,7 +64,8 @@ export function inspectSelectedEdgeHolePlacement(source,selection){
       x:kind==='horizontal'?Math.sign(dx):0,
       y:kind==='vertical'?Math.sign(dy):0
     }:null;
-    const inward=tangent?{x:-sign*tangent.y,y:sign*tangent.x}:null;
+    const inward=tangent?{x:tangent.y===0?0:-sign*tangent.y,
+      y:tangent.x===0?0:sign*tangent.x}:null;
     return {edgeId:e.edgeId,startPointId:e.startPointId,
       endPointId:e.endPointId,start:{...e.start},end:{...e.end},
       lengthMm,editable,axis:kind,
