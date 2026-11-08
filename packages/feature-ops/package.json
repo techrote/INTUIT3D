@@ -79,6 +79,10 @@
     "./ordered-cut-move/v1": {
       "types": "./ordered-cut-move.d.mts",
       "default": "./src/ordered-cut-move.mjs"
+    },
+    "./shared-cut-source-retrofit/v1": {
+      "types": "./shared-cut-source-retrofit.d.mts",
+      "default": "./src/shared-cut-source-retrofit.mjs"
     }
   },
   "peerDependencies": {
