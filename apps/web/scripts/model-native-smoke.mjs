@@ -485,7 +485,7 @@ async function main(){
   await send('DOM.setFileInputFiles',{nodeId:uploader.nodeId,files:[removedPath]});
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
     'deleted extrusion archive not offered for review');
-  check(await evaluate("(() => {document.querySelector('[data-testid=runtime-import-review] button:last-child').click();return true})()"),
+  check(await evaluate("(() => {const confirm=document.querySelector('[data-testid=runtime-import-review-confirm]');confirm?.click();return Boolean(confirm)})()"),
     'cannot reopen deleted extrusion');
   await eventually(()=>evaluate(
     "Boolean(document.querySelector('[data-testid=runtime-removed-extrusion]')) && "+
