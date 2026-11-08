@@ -108,6 +108,8 @@ def execute(args: argparse.Namespace) -> int:
             negative['stepSha256'] != current['stepSha256'],
             "negative must be a distinct earlier same-project physical C++ export")
     args.output_dir.mkdir(parents=True)
+    frozen_witness = args.output_dir / 'witness.v2.txt'
+    frozen_witness.write_bytes(witness)
     result = {
         'format': 'intuit3d.session-step-external-gate', 'version': 1,
         'status': 'REJECTED', 'independentCadPhysicalPass': False,
@@ -117,17 +119,35 @@ def execute(args: argparse.Namespace) -> int:
         'independentWitnessSha256': args.witness_sha256,
         'current': current, 'wrongGeometry': negative, 'physicalCases': []}
     try:
-        for name, src, identity, positive in (
-            ('current', args.current_step, current, True),
-            ('wrong-geometry', args.negative_step, negative, False),
+        for name, src, archive, receipt, identity, positive in (
+            ('current', args.current_step, args.current_archive,
+             args.current_receipt, current, True),
+            ('wrong-geometry', args.negative_step, args.negative_archive,
+             args.negative_receipt, negative, False),
         ):
             target = args.output_dir / (name + '.step')
             target.write_bytes(bound_bytes(src, 50_000_000))
+            (args.output_dir / (name + '.archive.json')).write_bytes(
+                bound_bytes(archive, 32 * 1024 * 1024))
+            (args.output_dir / (name + '.receipt.json')).write_bytes(
+                bound_bytes(receipt, 100_000))
+            require(sha(target.read_bytes()) == identity['stepSha256'] and
+                    sha((args.output_dir / (name + '.archive.json')).read_bytes()) ==
+                    identity['source']['archiveSha256'] and
+                    sha((args.output_dir / (name + '.receipt.json')).read_bytes()) ==
+                    identity['receiptSha256'],
+                    "captured source/STEP evidence changed before physical import")
             log = args.output_dir / (name + '.anvil.log')
-            observed = run_probe(args.probe, target, args.witness, args.timeout,
+            observed = run_probe(args.probe, target, frozen_witness, args.timeout,
                                  log, count, positive, version=2)
-            require(sha(target.read_bytes()) == identity['stepSha256'],
-                    "original STEP bytes changed during external CAD import")
+            require(sha(target.read_bytes()) == identity['stepSha256'] and
+                    sha(bound_bytes(src, 50_000_000)) == identity['stepSha256'] and
+                    sha(bound_bytes(archive, 32 * 1024 * 1024)) ==
+                    identity['source']['archiveSha256'] and
+                    sha(bound_bytes(receipt, 100_000)) == identity['receiptSha256'] and
+                    sha(bound_bytes(args.witness, 100_000)) == args.witness_sha256 and
+                    sha(bound_bytes(args.probe, 100_000_000)) == args.probe_sha256,
+                    "original source, executable, STEP or witness changed during import")
             result['physicalCases'].append({'role': name,
                                             'stepSha256': identity['stepSha256'],
                                             'logSha256': sha(log.read_bytes()), **observed})
