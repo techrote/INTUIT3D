@@ -5,8 +5,10 @@ import {parseOcct8MixedCutRequest} from './occt8-mixed-cut-v2.mjs';
 
 export const OCCT8_ORTHOGONAL_PROFILE_PROTOCOL=
   'intuit3d/kernel/orthogonal-profile-cut-chain-v4';
+export const OCCT8_LINEAR_PROFILE_PROTOCOL=
+  'intuit3d/kernel/linear-profile-cut-chain-v5';
 const ID=/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
-const fail=msg=>{throw new KernelContractError('OCCT8 orthogonal profile: '+msg);};
+const fail=msg=>{throw new KernelContractError('OCCT8 selected profile: '+msg);};
 function fields(o,n,label) {
   if(!o||typeof o!=='object'||Array.isArray(o)||
      Object.keys(o).length!==n.length||n.some(k=>!Object.hasOwn(o,k)))
@@ -96,10 +98,76 @@ function clearOfContour(vertices,c) {
   }
   return true;
 }
-export function parseOcct8OrthogonalProfileRequest(value) {
+
+const cross=(a,b,c)=>(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+const onSegment=(a,b,p)=>cross(a,b,p)===0&&
+  p.x>=Math.min(a.x,b.x)&&p.x<=Math.max(a.x,b.x)&&
+  p.y>=Math.min(a.y,b.y)&&p.y<=Math.max(a.y,b.y);
+function intersectsLinear(a,b,c,d){
+  const x=cross(a,b,c),y=cross(a,b,d),z=cross(c,d,a),w=cross(c,d,b);
+  return (x===0&&onSegment(a,b,c))||(y===0&&onSegment(a,b,d))||
+    (z===0&&onSegment(c,d,a))||(w===0&&onSegment(c,d,b))||
+    ((x>0)!==(y>0)&&(z>0)!==(w>0));
+}
+function linearGeometry(vertices){
+  if(!Array.isArray(vertices)||vertices.length<3||vertices.length>64)
+    fail('three to 64 selected line vertices required');
+  const v=vertices.map((p,i)=>({
+    x:number(fields(p,['x','y'],'vertex '+i).x,'vertex x'),
+    y:number(p.y,'vertex y'),
+  }));
+  for(let i=0;i<v.length;i++){
+    const a=v[i],b=v[(i+1)%v.length],c=v[(i+2)%v.length];
+    if(Math.hypot(b.x-a.x,b.y-a.y)<1e-6)
+      fail('degenerate selected line edge');
+    if(cross(a,b,c)===0)fail('consecutive collinear edges');
+    for(let j=i+1;j<v.length;j++){
+      if(j===i+1||(i===0&&j===v.length-1))continue;
+      if(intersectsLinear(a,b,v[j],v[(j+1)%v.length]))
+        fail('self intersecting or touching line contour');
+    }
+  }
+  const area=v.reduce((acc,a,i)=>{
+    const b=v[(i+1)%v.length];return acc+a.x*b.y-b.x*a.y;
+  },0)/2;
+  if(!(area>1e-6))fail('selected line contour needs positive CCW area');
+  const perimeter=v.reduce((acc,a,i)=>{
+    const b=v[(i+1)%v.length];return acc+Math.hypot(b.x-a.x,b.y-a.y);
+  },0);
+  const xs=v.map(p=>p.x),ys=v.map(p=>p.y);
+  return {vertices:v,area,perimeter,xmin:Math.min(...xs),xmax:Math.max(...xs),
+    ymin:Math.min(...ys),ymax:Math.max(...ys)};
+}
+function clearOfLinearContour(vertices,c){
+  if(!inside(vertices,c.x,c.y))return false;
+  const circle=c.kind==='circle';
+  const x0=c.x-(circle?c.radius:c.width/2);
+  const x1=c.x+(circle?c.radius:c.width/2);
+  const y0=c.y-(circle?c.radius:c.depth/2);
+  const y1=c.y+(circle?c.radius:c.depth/2);
+  const corners=[{x:x0,y:y0},{x:x1,y:y0},
+    {x:x1,y:y1},{x:x0,y:y1}];
+  for(let i=0;i<vertices.length;i++){
+    const a=vertices[i],b=vertices[(i+1)%vertices.length];
+    if(circle){
+      const dx=b.x-a.x,dy=b.y-a.y;
+      const t=Math.max(0,Math.min(1,((c.x-a.x)*dx+(c.y-a.y)*dy)/(dx*dx+dy*dy)));
+      if(Math.hypot(c.x-(a.x+t*dx),c.y-(a.y+t*dy))<=c.radius)return false;
+    }else{
+      if((a.x>=x0&&a.x<=x1&&a.y>=y0&&a.y<=y1)||
+         (b.x>=x0&&b.x<=x1&&b.y>=y0&&b.y<=y1))return false;
+      for(let j=0;j<4;j++)
+        if(intersectsLinear(a,b,corners[j],corners[(j+1)%4]))return false;
+    }
+  }
+  return true;
+}
+
+function parseProfileRequest(value,linear=false) {
   const q=fields(value,['protocol','requestId','featureId','revision','units',
     'profile','cuts','exportStep'],'request');
-  if(q.protocol!==OCCT8_ORTHOGONAL_PROFILE_PROTOCOL)fail('unsupported protocol');
+  if(q.protocol!==(linear?OCCT8_LINEAR_PROFILE_PROTOCOL:OCCT8_ORTHOGONAL_PROFILE_PROTOCOL))
+    fail('unsupported protocol');
   if(typeof q.requestId!=='string'||!ID.test(q.requestId)||
      typeof q.featureId!=='string'||!ID.test(q.featureId)||
      !Number.isSafeInteger(q.revision)||q.revision<0||
@@ -109,7 +177,7 @@ export function parseOcct8OrthogonalProfileRequest(value) {
   if(typeof p.profileId!=='string'||!ID.test(p.profileId)||p.profileId===q.featureId)
     fail('invalid selected profile identity');
   number(p.thickness,'extrusion thickness',{positive:true});
-  const g=geometry(p.vertices);
+  const g=linear?linearGeometry(p.vertices):geometry(p.vertices);
   if(!Array.isArray(q.cuts)||q.cuts.length<2||q.cuts.length>16)
     fail('two to sixteen explicitly ordered cuts required');
   const cx=(g.xmin+g.xmax)/2,cy=(g.ymin+g.ymax)/2;
@@ -123,13 +191,17 @@ export function parseOcct8OrthogonalProfileRequest(value) {
   const cuts=parsed.cuts.map(c=>({...c,x:c.x+cx,y:c.y+cy}));
   for(const c of cuts){
     if(c.featureId===p.profileId)fail('cut conflicts with profile ID');
-    if(!clearOfContour(g.vertices,c))
+    if(!(linear?clearOfLinearContour(g.vertices,c):clearOfContour(g.vertices,c)))
       fail('cut touches contour boundary or lies in missing material');
   }
   return {...q,profile:{...p,vertices:g.vertices},cuts};
 }
+export const parseOcct8OrthogonalProfileRequest=value=>parseProfileRequest(value,false);
+export const parseOcct8LinearProfileRequest=value=>parseProfileRequest(value,true);
 export function expectedOcct8OrthogonalMetrics(q) {
-  const g=geometry(q.profile.vertices),t=q.profile.thickness;
+  const g=q.protocol===OCCT8_LINEAR_PROFILE_PROTOCOL?
+    linearGeometry(q.profile.vertices):geometry(q.profile.vertices);
+  const t=q.profile.thickness;
   let volumeMm3=g.area*t,surfaceAreaMm2=2*g.area+g.perimeter*t;
   for(const c of q.cuts){
     const footprint=c.kind==='circle'?Math.PI*c.radius*c.radius:c.width*c.depth;
@@ -160,8 +232,8 @@ function inspect(m,expected,circles,label) {
     if(!near(Math.abs(a.axisZ),1))fail(label+' wrong cylinder axis');
   }
 }
-export function assessOcct8OrthogonalResponse(input,raw,{currentRevision}={}) {
-  const q=parseOcct8OrthogonalProfileRequest(input);
+function assessProfileResponse(input,raw,{currentRevision}={},linear=false) {
+  const q=parseProfileRequest(input,linear);
   if(!Number.isSafeInteger(currentRevision)||currentRevision<0)
     fail('missing current revision');
   if(currentRevision!==q.revision)return {kind:'unresolved',code:'stale_revision',
@@ -205,3 +277,9 @@ export function assessOcct8OrthogonalResponse(input,raw,{currentRevision}={}) {
     artifactSha256:stepSha256??null,
     step:q.exportStep?'same_engine_readback_reported':'not_requested'};
 }
+
+export const expectedOcct8LinearMetrics=expectedOcct8OrthogonalMetrics;
+export const assessOcct8OrthogonalResponse=(input,raw,options)=>
+  assessProfileResponse(input,raw,options,false);
+export const assessOcct8LinearResponse=(input,raw,options)=>
+  assessProfileResponse(input,raw,options,true);
