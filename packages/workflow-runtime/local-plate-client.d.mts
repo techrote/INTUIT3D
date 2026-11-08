@@ -25,6 +25,8 @@ export interface VerifiedLocalStep {
 }
 export type LocalPlateClientResult =
   | Readonly<{kind:'unresolved';code:string;reason:string;artifact:null;
+      /** Features omitted by a plate-v1 one-body request; no STEP was made. */
+      unsupportedFeatureIds?:readonly string[];
       exactAuthority:false;independentInteroperability:false}>
   | Readonly<{kind:'experimental_plate_evaluated';
       source:{projectId:string;revision:number;archiveSha256:string};

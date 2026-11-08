@@ -124,3 +124,30 @@ test('missing cut-body link or competing body writer fails closed',async()=>{
     writeTargets:['body.plate'],payload:{}}]});
   assert.equal((await b.evaluate()).code,'unsupported_feature');
 });
+
+test('single-body native scope refuses independent and future body writers before dispatch',async()=>{
+  const extra={id:'extrude.independent',kind:'extrude',dependsOn:[],
+    writeTargets:['body.second'],payload:{}};
+  const multi=rig({features:[sketch,plate,cut,extra]});
+  const refused=await multi.evaluate({exportStep:true});
+  assert.equal(refused.kind,'unresolved');
+  assert.equal(refused.code,'unsupported_feature');
+  assert.deepEqual(refused.unsupportedFeatureIds,['extrude.independent']);
+  assert.match(refused.reason,/plate-v1 native STEP cannot represent/);
+  assert.equal(multi.calls(),0,'no partial single-body STEP may be dispatched');
+
+  const future=rig({features:[sketch,plate,cut,{
+    id:'future.body.operation',kind:'future-boolean',dependsOn:[],
+    writeTargets:['body.other'],payload:{},
+  }]});
+  assert.deepEqual((await future.evaluate()).unsupportedFeatureIds,['future.body.operation']);
+  assert.equal(future.calls(),0,'new unknown body-writing operations also fail closed');
+
+  const parameter=rig({features:[sketch,plate,cut,{
+    id:'parameter.height',kind:'parameter',dependsOn:[],
+    writeTargets:[],payload:{},
+  }]});
+  assert.equal((await parameter.evaluate()).kind,'experimental_plate_evaluated',
+    'non-geometric parameter history remains eligible');
+  assert.equal(parameter.calls(),1);
+});

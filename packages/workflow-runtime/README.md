@@ -74,8 +74,18 @@ stepOutput?, timeoutMs?, signal?})` derives the live INTENT report and
 SKETCH-admitted analytic profile, matches one explicit body-targeted dependent
 cut and rectangular extrude, and maps the **off-origin** SKETCH rectangle/circles
 to the centred plate-v1 native fixture. It refuses arbitrary/rotated polygons,
-unsupported profile geometry, ambiguous competing body writes, invalid sketch
-states or missing holes. The public KERNEL parser independently checks physical
+unsupported profile geometry, invalid sketch states or missing holes. **The
+plate-v1 backend emits only one physical body.** If the current authoritative
+project contains ANY additional active feature with a body `writeTargets`
+entry (including an independent second body, another cut or an unfamiliar
+future modelling operation), evaluation returns `unresolved` with
+`code:'unsupported_feature'` and `unsupportedFeatureIds` identifying the
+unrepresented operations, BEFORE dispatching the provider or publishing STEP.
+Sketches and parameters with no body writes remain legal. A user cannot
+export one of two authored bodies while presenting that STEP as the entire
+archive-backed CAD model. The user must either select a genuinely complete
+single-body model or wait for an independently qualified multi-body provider;
+RUNTIME never silently drops another solid. The public KERNEL parser independently checks physical
 plate dimensions, unsupported numerical ranges and hole contact. A revision
 callback checks the live model/solver snapshot, so altered same-revision source
 cannot be passed as current to native STEP publication. The trusted KERNEL

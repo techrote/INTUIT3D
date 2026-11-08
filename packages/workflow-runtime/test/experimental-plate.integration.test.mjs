@@ -105,3 +105,44 @@ test('native reply is refused after a different same-revision journal replaces t
   assert.equal(outcome.code,'stale_revision');
   assert.equal(outcome.artifact,null);
 });
+
+test('real archived multi-body INTENT refuses partial STEP; undo restores one-body eligibility',async()=>{
+  let history=plateProject(),calls=0;
+  const flow=createExperimentalPlateWorkflow({runtime,model,plateContract,
+    runExperimentalPlate:async request=>{
+      calls++;
+      assert.deepEqual(request,plateContract.parsePlateRequest(request));
+      return {kind:'unresolved',code:'worker_crash',artifact:null};
+    }});
+  const evaluate=()=>flow.evaluate(history,{cutFeatureId:'cut',
+    requestId:'native.multibody.1',exportStep:true,
+    readCurrentHistory:()=>history});
+  assert.equal((await evaluate()).code,'worker_crash');
+  assert.equal(calls,1,'original single plate is still dispatched');
+
+  const before=runtime.save(history);
+  history=runtime.commit(history,[
+    created('second.sketch.event',{id:'sketch.second',kind:'sketch',
+      dependsOn:[],writeTargets:[],
+      payload:{sketch:sketch.plateSketchFixture()}}),
+    created('second.extrude.event',{id:'extrude.second',kind:'extrude',
+      dependsOn:['sketch.second'],writeTargets:['body.second'],
+      payload:{sourceSketchId:'sketch.second',thicknessMm:6}}),
+  ]);
+  assert.equal(model.featuresOf(history.document).filter(f=>f.kind==='extrude').length,2);
+  history=runtime.reopen(runtime.save(history));
+  const blocked=await evaluate();
+  assert.equal(blocked.kind,'unresolved');
+  assert.equal(blocked.code,'unsupported_feature');
+  assert.deepEqual(blocked.unsupportedFeatureIds,['extrude.second']);
+  assert.equal(blocked.artifact,null);
+  assert.equal(calls,1,'a second authored body never produces a misleading one-body STEP');
+
+  history=runtime.undo(history,['undo.second.extrude','undo.second.sketch']);
+  assert.equal(model.featuresOf(history.document).filter(f=>f.kind==='extrude').length,1);
+  assert.equal((await evaluate()).code,'worker_crash');
+  assert.equal(calls,2,'undo removing the second body restores native eligibility');
+  history=runtime.reopen(before);
+  assert.equal((await evaluate()).code,'worker_crash');
+  assert.equal(calls,3,'reopened original archive remains native-eligible');
+});
