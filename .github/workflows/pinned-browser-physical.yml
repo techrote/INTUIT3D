@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        journey: [existing-plate, sketch-first-template]
+        journey: [existing-plate, sketch-first-template, drawn-from-empty]
     steps:
       - name: Checkout exact candidate Integration and accepted consumer source
         uses: actions/checkout@v4
@@ -73,6 +73,7 @@ jobs:
           INTUIT3D_OCCT8_WORKER_SHA256: a346489f79e49c1eb81a1bebe5987d31fbd6e92814c2f5a7028c1ecf4d3dbbc1
           INTUIT3D_PINNED_BROWSER_ARTIFACTS: pinned-browser-evidence
           INTUIT3D_BROWSER_SKETCH_FIRST: ${{ matrix.journey == 'sketch-first-template' && '1' || '0' }}
+          INTUIT3D_BROWSER_DRAWN_FROM_EMPTY: ${{ matrix.journey == 'drawn-from-empty' && '1' || '0' }}
         run: node tooling/qualify-pinned-browser-step.mjs
       # Separate source-pinned non-OCCT Rust STEP importer already executed in
       # CI; no additional Rust build or OCCT build needed in this workflow.
@@ -91,8 +92,17 @@ jobs:
           import hashlib,json,pathlib,sys,zipfile
           root=pathlib.Path('pinned-browser-evidence')
           report=json.loads((root/'browser-receipt.json').read_text())
-          assert report['status']=='PINNED_OCCT8_BROWSER_TWO_REVISION_ZIPS_CAPTURED',report
-          assert report['journey'] in ('preauthored-plate','sketch-first-template'),report
+          is_drawn=report['journey']=='drawn-from-empty'
+          assert report['status']==('PINNED_OCCT8_BROWSER_DRAWN_FROM_EMPTY_TWO_REVISIONS_CAPTURED' if is_drawn else 'PINNED_OCCT8_BROWSER_TWO_REVISION_ZIPS_CAPTURED'),report
+          assert report['journey'] in ('preauthored-plate','sketch-first-template','drawn-from-empty'),report
+          if is_drawn:
+              author=report['authoredFeatures']
+              assert author['pointerDrawnClosedProfile'] is True,author
+              assert author['sketchSource']=='four_real_pointer_clicks_from_zero_entities',author
+              assert author['extrusion']=='actual_browser_control',author
+              assert author['cut']=='actual_browser_control',author
+              assert author['earlierFeatureEdit']=='second_solver_admitted_bore',author
+              assert author['sourceRevocation'] is True,author
           if report['journey']=='sketch-first-template':
               author=report['authoredFeatures']
               assert author['pointerDrawnClosedProfile'] is False,author
@@ -104,7 +114,8 @@ jobs:
           sys.path.insert(0,'conformance/external-cad')
           from session_step import verify_capture
           identities={}
-          for stage,prefix in (('earlier','earlier-8mm'),('current','current-12mm')):
+          prefixes=(('earlier','earlier-one-bore'),('current','current-two-bores')) if is_drawn else (('earlier','earlier-8mm'),('current','current-12mm'))
+          for stage,prefix in prefixes:
               original=root/(prefix+'.zip')
               assert hashlib.sha256(original.read_bytes()).hexdigest()==report[stage]['sha256']
               with zipfile.ZipFile(original) as z:
@@ -124,8 +135,10 @@ jobs:
           assert early['producer']['cutFeatureId']==current['producer']['cutFeatureId']
           assert early['producer']['requestId']!=current['producer']['requestId']
           assert early['stepSha256']!=current['stepSha256']
-          assert current['source']['revision']==int(''.join(c for c in report['revision12'] if c.isdigit()))
-          assert early['source']['revision']==int(''.join(c for c in report['revision8'] if c.isdigit()))
+          earlier_label=report['revisionEarlier'] if is_drawn else report['revision8']
+          current_label=report['revisionCurrent'] if is_drawn else report['revision12']
+          assert current['source']['revision']==int(''.join(c for c in current_label if c.isdigit()))
+          assert early['source']['revision']==int(''.join(c for c in earlier_label if c.isdigit()))
           # Independently authored *physical* plate witness, not derived from
           # imported STEP: SKETCH 120 x 80 with bores at local x=-25/+25,
           # radius 6, retrospective 8 -> 12 mm extrusion. Expected mass
@@ -151,6 +164,33 @@ jobs:
           'RAY exterior.above 0 0 15 0 0 1 void',
           'RAY exterior.below 0 0 -3 0 0 -1 void',
           ]
+          if is_drawn:
+              # Independent oracle authored from the fixed *requested user gestures*:
+              # 120x80x8 mm rectangle, through-bores x=35/85,y=40,r=6.
+              # Native output is not consulted to construct these bounds.
+              # Analytic volume = (120*80-2*pi*6**2)*8 = 74990.4426 mm3.
+              # Two bores have centre X=-25,+25 in centred STEP coordinates.
+              lines=[
+              'INTUIT3D_3D_WITNESS_V2',
+              'VOLUME 74830 75160',
+              'AREA 22490 22620',
+              'CENTROID -0.15 0.15 -0.15 0.15 3.85 4.15',
+              'COVARIANCE 1211 1217 543 549 5.25 5.42 -0.10 0.10 -0.10 0.10 -0.10 0.10',
+              'RAY center.material 0 20 4 0 0 1 material',
+              'RAY southwest.material -50 -30 4 0 0 1 material',
+              'RAY northeast.material 50 30 4 0 0 1 material',
+              'RAY south.material 0 -20 4 0 0 1 material',
+              'RAY northwest.material -45 20 2 0 0 1 material',
+              'RAY southeast.material 45 -20 6 0 0 1 material',
+              'RAY left.bore -25 0 4 0 0 1 void',
+              'RAY right.bore 25 0 4 0 0 1 void',
+              'RAY left.bore.high -25 0 7 0 0 1 void',
+              'RAY right.bore.high 25 0 7 0 0 1 void',
+              'RAY exterior.right 70 0 4 1 0 0 void',
+              'RAY exterior.north 0 45 4 0 1 0 void',
+              'RAY exterior.above 0 0 12 0 0 1 void',
+              'RAY exterior.below 0 0 -3 0 0 -1 void',
+              ]
           (root/'independent-plate-12mm-witness.v2.txt').write_text('\n'.join(lines)+'\n')
           print('BROWSER_CURRENT_AND_EARLIER_SOURCE_CUSTODY_PASS',
                 json.dumps({k:{'revision':v['source']['revision'],
@@ -200,7 +240,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.journey == 'existing-plate' && 'real-browser-pinned-cxx-independent-step' || 'real-browser-sketch-first-pinned-cxx-independent-step' }}
+          name: ${{ matrix.journey == 'existing-plate' && 'real-browser-pinned-cxx-independent-step' || matrix.journey == 'sketch-first-template' && 'real-browser-sketch-first-pinned-cxx-independent-step' || 'real-browser-from-empty-pinned-cxx-independent-step' }}
           path: |
             pinned-browser-evidence/
           if-no-files-found: warn
