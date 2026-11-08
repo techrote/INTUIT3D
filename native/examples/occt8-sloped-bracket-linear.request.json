@@ -1,0 +1,57 @@
+{
+  "protocol": "intuit3d/kernel/linear-profile-cut-chain-v5",
+  "requestId": "selected.sloped.bracket.8",
+  "featureId": "body.sloped.bracket",
+  "revision": 14,
+  "units": "mm",
+  "profile": {
+    "profileId": "sketch.sloped.bracket",
+    "thickness": 8,
+    "vertices": [
+      {
+        "x": 0,
+        "y": 0
+      },
+      {
+        "x": 120,
+        "y": 0
+      },
+      {
+        "x": 120,
+        "y": 20
+      },
+      {
+        "x": 65,
+        "y": 20
+      },
+      {
+        "x": 45,
+        "y": 80
+      },
+      {
+        "x": 0,
+        "y": 80
+      }
+    ]
+  },
+  "cuts": [
+    {
+      "featureId": "cut.sloped.blind",
+      "kind": "circle",
+      "x": 15,
+      "y": 50,
+      "radius": 5,
+      "cutDepthMm": 3
+    },
+    {
+      "featureId": "cut.sloped.through",
+      "kind": "rectangle",
+      "x": 95,
+      "y": 10,
+      "width": 14,
+      "depth": 8,
+      "cutDepthMm": 8
+    }
+  ],
+  "exportStep": true
+}
