@@ -21,7 +21,7 @@ import subprocess
 import sys
 import tempfile
 
-from runtime_material_oracle import check_stage, MaterialOracleError
+from runtime_material_oracle import check_stage, MaterialOracleError, verify_runtime_sketch_fixture
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -157,6 +157,14 @@ def run_consumer(root: Path, source_sha: str, worker: Path,
     require(version.returncode == 0 and match is not None and
             (int(match[1]), int(match[2])) >= (22, 6),
             "real native RUNTIME demo requires Node.js 22.6+")
+    # Execute the actual immutable RUNTIME/SKETCH authoring fixture before
+    # comparing physical receipts to PLATFORM's independent material oracle.
+    # A stale copied expectation must fail even if synthetic receipts match it.
+    try:
+        source_fixture = verify_runtime_sketch_fixture(root, node)
+    except MaterialOracleError as exc:
+        raise DeliveryError("RUNTIME/SKETCH authored fixture disagrees with physical oracle: "
+                            + str(exc)) from exc
     # Do not inherit a host/vendor OCCT library or an unrelated optional CAD
     # reader. If independent geometry is required, STEP owns that separate gate.
     environment = {k: v for k, v in os.environ.items()
@@ -176,7 +184,7 @@ def run_consumer(root: Path, source_sha: str, worker: Path,
         raise DeliveryError("real RUNTIME returned no valid JSON physical evidence: "
                             + done.stdout[-900:]) from exc
     receipt = validate_demo(reported)
-    return {**receipt, "runtimeSourceCommit": source_sha,
+    return {**receipt, "authoredSketchFixture": source_fixture, "runtimeSourceCommit": source_sha,
             "workerSha256": worker_digest, "nodeVersion": version.stdout.strip()}
 
 
