@@ -171,6 +171,20 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         handle.dataset.axisX=String(axis.x);handle.dataset.axisY=String(axis.y);
       }catch{thicknessAxis.current=null;handle.hidden=true;}
     };
+    // A camera preset changes world matrices before Three's next render. Keep
+    // projected semantic-hole click markers source-matched to that camera,
+    // not one GPU frame behind a just-selected TOP orientation.
+    const publishHolePickMarkers=()=>{
+      if(!renderer)return;
+      camera.updateMatrixWorld(true);
+      const displayedHoles=geometry && Array.isArray(lastProfile?.holes) && lastProfile.holes.length<=256
+        ?lastProfile.holes:[];
+      renderer.domElement.dataset.holePickMarkers=JSON.stringify(displayedHoles.map(h=>{
+        const p=new THREE.Vector3(h.x,h.y,lastThickness??0).project(camera);
+        return {id:h.id,x:(p.x+1)*renderer!.domElement.clientWidth/2,
+          y:(1-p.y)*renderer!.domElement.clientHeight/2,depth:p.z};
+      }).filter(p=>[p.x,p.y,p.depth].every(Number.isFinite)&&p.depth>=-1&&p.depth<=1));
+    };
     // Demand-driven frames: OrbitControls emits changes during pointer drags
     // and damping, but the GPU does not render continuously while idle.
     const requestFrame=()=>{
@@ -180,18 +194,12 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         if(disposed||contextLost||!renderer)return;
         try{
           controls?.update();
+          camera.updateMatrixWorld(true);
           updateThicknessGrip();
           renderer.domElement.dataset.cameraPosition=[camera.position.x,camera.position.y,camera.position.z].map(x=>x.toFixed(4)).join(',');
           renderer.domElement.dataset.cameraTarget=[controls?.target.x??0,controls?.target.y??0,controls?.target.z??0].map(x=>x.toFixed(4)).join(',');
-          // Project solver-owned semantic hole IDs for real browser pointer testing.
-          // These display coordinates have no modelling or export authority.
-          const displayedHoles=geometry && Array.isArray(lastProfile?.holes) && lastProfile.holes.length<=256
-            ?lastProfile.holes:[];
-          renderer.domElement.dataset.holePickMarkers=JSON.stringify(displayedHoles.map(h=>{
-            const p=new THREE.Vector3(h.x,h.y,lastThickness??0).project(camera);
-            return {id:h.id,x:(p.x+1)*renderer!.domElement.clientWidth/2,
-              y:(1-p.y)*renderer!.domElement.clientHeight/2,depth:p.z};
-          }).filter(p=>[p.x,p.y,p.depth].every(Number.isFinite)&&p.depth>=-1&&p.depth<=1));
+          // Display-only semantic projections never become geometry authority.
+          publishHolePickMarkers();
           renderer.render(scene,camera);
         }catch{
           contextLost=true;
@@ -294,6 +302,8 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         camera.far=Math.max(1000,frame.distance+Math.hypot(
           frame.center.x,frame.center.y,frame.center.z)*10+1000);
         camera.updateProjectionMatrix();controls.update();
+        camera.updateMatrixWorld(true);
+        publishHolePickMarkers();
         // Publish the new camera pose *before* the next animation frame, so
         // actual browser click tests never read the preceding frame's pose.
         renderer.domElement.dataset.cameraPosition=[camera.position.x,camera.position.y,camera.position.z].map(x=>x.toFixed(4)).join(',');
