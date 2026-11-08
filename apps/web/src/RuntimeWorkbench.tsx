@@ -731,7 +731,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       </div>
     </header>
     <details className="runtime-local-recovery" data-testid="runtime-local-recovery">
-      <summary>Browser-local crash recovery · {recoveryStatus==='checking'?'checking local storage':recoveryStatus==='error'?'storage unavailable':recoveryEntries.length+' checkpoint(s)'}</summary>
+      <summary data-testid="runtime-local-recovery-toggle">Browser-local crash recovery · {recoveryStatus==='checking'?'checking local storage':recoveryStatus==='error'?'storage unavailable':recoveryEntries.length+' checkpoint(s)'}</summary>
       <p>After your first edit, a bounded, local-only RUNTIME model archive is checkpointed in this browser.
         It contains the actual journal and undo/redo frames, not meshes or STEP. Browser storage can be
         cleared or evicted: <strong>downloaded model archives remain essential.</strong>
