@@ -44,7 +44,7 @@ class LinearProfileTests(unittest.TestCase):
             changed(lambda x:x["cuts"][0].update(x=55,y=50)),
             changed(lambda x:x["cuts"][1].update(x=55,y=50)),
             changed(lambda x:x["cuts"][1].update(x=15,y=50)),
-            changed(lambda x:x["profile"]["vertices"].__setitem__(4,{"x":130,"y":50})),
+            changed(lambda x:x["profile"]["vertices"].__setitem__(4,{"x":110,"y":-10})),
             changed(lambda x:x["profile"]["vertices"].__setitem__(3,{"x":120,"y":0})),
             changed(lambda x:x.__setitem__("units","inch")),
             changed(lambda x:x["cuts"][1].__setitem__("cutDepthMm",9)),
