@@ -645,8 +645,19 @@ async function main() {
   const importWorkerInstrumented=await evaluate(`(() => {
     const PreviousWorker=window.Worker;
     window.__modelImportWorkerStarts=0;
+    window.__modelImportFilePayloads=[];
+    window.__modelMainFileTextReads=0;
+    File.prototype.text=function(){
+      window.__modelMainFileTextReads++;
+      throw Error('Main-thread File.text() is forbidden during model import');
+    };
     window.Worker=class extends PreviousWorker {
       constructor(...args){super(...args);window.__modelImportWorkerStarts++;}
+      postMessage(payload,...rest){
+        window.__modelImportFilePayloads.push(payload?.file instanceof File &&
+          !Object.hasOwn(payload,'source'));
+        return super.postMessage(payload,...rest);
+      }
     };
     return typeof window.Worker==='function';
   })()`);
@@ -695,6 +706,8 @@ async function main() {
     'valid multi-edit archive did not reach replacement review');
   check(await evaluate("window.__modelImportWorkerStarts===2"),
     'Valid archive did not pass through isolated Worker');
+  check(await evaluate("window.__modelMainFileTextReads===0 && window.__modelImportFilePayloads.length===2 && window.__modelImportFilePayloads.every(Boolean)"),
+    'The OS File was decoded on the UI thread or Worker received decoded JSON instead of the File');
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===beforeInvalidImport,
     'Validation replaced the existing model before user consent');
   await screenshot('23-worker-import-confirmation.png');
