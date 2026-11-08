@@ -126,6 +126,83 @@ test('stale revision, different project and equal-revision divergent journal rej
     ProjectRevisionError);
 });
 
+test('revert only historical payload while preserving later same-feature datum dependency',()=>{
+  let doc=fixture();
+  doc=commitEvent(doc,{eventId:'edit.saddle.datum',type:'feature.edit',
+    featureId:'extrude.saddle',
+    patch:{dependsOn:['sketch.saddle','sketch.gauge']}});
+  assert.ok(planProject(doc).features.every(row=>row.status==='ready'));
+  const original=serializeProject(doc);
+  const preview=previewFeatureEditRevert(doc,request(doc));
+  assert.deepEqual(preview.revertedFields,['payload']);
+  assert.deepEqual(find(preview.document,'extrude.saddle').dependsOn,
+    ['sketch.saddle','sketch.gauge']);
+  assert.equal(find(preview.document,'extrude.saddle').payload.thicknessMm,10);
+  assert.equal(find(preview.document,'sketch.gauge').payload.widthMm,40);
+  assert.deepEqual(preview.invalidatedBodyIds,['body.saddle','body.clamp']);
+  const manifest=planBodyRebuildManifest(doc,preview.document,{
+    format:BODY_REBUILD_MANIFEST_FORMAT,version:1,
+    expectedProjectId:doc.projectId,expectedFromRevision:doc.revision,
+    expectedToRevision:preview.document.revision,
+    bodyIds:['body.saddle','body.clamp','body.gauge'],
+  });
+  assert.deepEqual(manifest.bodies.map(row=>row.action),
+    ['rebuild','rebuild','preserve_candidate']);
+  assert.equal(serializeProject(doc),original);
+
+  let session=commitUndoableFeatureEditRevert(startUndoHistory(doc),request(doc));
+  session=deserializeModelArchive(serializeModelArchive(createModelArchive(session))).history;
+  assert.deepEqual(find(session.document,'extrude.saddle').dependsOn,
+    ['sketch.saddle','sketch.gauge']);
+  session=undoTransaction(session,['undo.saddle.disjoint']);
+  assert.equal(find(session.document,'extrude.saddle').payload.thicknessMm,16);
+  assert.deepEqual(find(session.document,'extrude.saddle').dependsOn,
+    ['sketch.saddle','sketch.gauge']);
+  session=redoTransaction(session,['redo.saddle.disjoint']);
+  assert.equal(find(session.document,'extrude.saddle').payload.thicknessMm,10);
+  assert.deepEqual(find(session.document,'extrude.saddle').dependsOn,
+    ['sketch.saddle','sketch.gauge']);
+});
+
+test('overlapping payload and kind edits remain blocked even if nested keys differ',()=>{
+  let doc=fixture();
+  for(const patch of [
+    {payload:{thicknessMm:16,label:'new independent-looking nested field'}},
+    {kind:'cut'},
+  ]){
+    const changed=commitEvent(doc,{
+      eventId:patch.kind?'later.kind':'later.payload',
+      type:'feature.edit',featureId:'extrude.saddle',patch,
+    });
+    assert.throws(()=>previewFeatureEditRevert(changed,request(changed)),
+      ProjectRevisionError);
+  }
+  // Reversing a multi-field edit must not erase a subsequent edit to just
+  // one of the originally edited top-level fields.
+  doc=commitEvent(doc,{eventId:'edit.saddle.multi',type:'feature.edit',
+    featureId:'extrude.saddle',
+    patch:{payload:{thicknessMm:18},dependsOn:['sketch.gauge','sketch.saddle']}});
+  doc=commitEvent(doc,{eventId:'edit.saddle.deps.again',type:'feature.edit',
+    featureId:'extrude.saddle',patch:{dependsOn:['sketch.saddle']}});
+  assert.throws(()=>previewFeatureEditRevert(doc,request(doc,{
+    targetEventId:'edit.saddle.multi',eventId:'revert.saddle.multi',
+  })),ProjectRevisionError);
+});
+
+test('same-feature disjoint rollback still requires exact canonical source identity',()=>{
+  const doc=commitEvent(fixture(),{eventId:'later.other.field',type:'feature.edit',
+    featureId:'extrude.saddle',patch:{dependsOn:['sketch.saddle','sketch.gauge']}});
+  const fork=commitEvent(fixture(),{eventId:'later.other.field',type:'feature.edit',
+    featureId:'extrude.saddle',patch:{dependsOn:['sketch.saddle','sketch.gauge'],
+      writeTargets:['body.saddle']}});
+  assert.equal(doc.revision,fork.revision);
+  assert.notEqual(serializeProject(doc),serializeProject(fork));
+  assert.throws(()=>previewFeatureEditRevert(fork,request(doc)),
+    ProjectRevisionError);
+  assert.throws(()=>previewFeatureEditRevert(doc,request(fork)),
+    ProjectRevisionError);
+});
+
 test('later edit, removal or restoration of selected feature forbids retroactive inverse',()=>{
   const doc=fixture();
   const revisions=[

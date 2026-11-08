@@ -568,6 +568,82 @@ export function createLivePlateSession({
         ...latest.step,bytes:Uint8Array.from(latest.step.bytes),
       }:null;
     },
+    /**
+     * Single-click source-bound native STEP receipt. No second journal or
+     * provider: the existing verified client result supplies the provenance.
+     */
+    currentStepReceipt({requiredBackend}={}) {
+      if(requiredBackend!==undefined &&
+          !['OCCT-cxx-8.0.1','OCP-python-prototype'].includes(requiredBackend))
+        throw new TypeError('live plate session: unsupported receipt backend');
+      const step=session.currentStep();
+      if(!step) return null;
+      const source=latest?.source, producer=latest?.result;
+      const current=synchronize();
+      if(!source||!producer||
+          source.projectId!==current.report.projectId||
+          source.revision!==current.report.revision||
+          !/^[a-f0-9]{64}$/.test(source.archiveSha256||'')||
+          !/^[a-f0-9]{64}$/.test(step.sha256||'')||
+          !ID.test(producer.requestId||'')||
+          producer.cutFeatureId!==cutFeatureId||
+          (requiredBackend!==undefined&&producer.backend!==requiredBackend)||
+          !((producer.backend==='OCCT-cxx-8.0.1'&&
+             producer.occtVersion==='8.0.1'&&
+             step.verification==='occt8_part21_plate_subset')||
+            (producer.backend==='OCP-python-prototype'&&
+             producer.occtVersion==='7.9.3.1'&&
+             step.verification==='same_engine_step_readback'))||
+          producer.artifact?.sha256!==step.sha256||
+          producer.artifact?.verification!==step.verification)
+        return null;
+      return Object.freeze({
+        format:'intuit3d.source-bound-step-receipt',version:1,
+        source:Object.freeze({
+          projectId:source.projectId,revision:source.revision,
+          archiveSha256:source.archiveSha256,
+        }),
+        producer:Object.freeze({
+          requestId:producer.requestId,cutFeatureId:cutFeatureId,
+          backend:producer.backend,occtVersion:producer.occtVersion,
+        }),
+        step,exactAuthority:false,independentInteroperability:false,
+      });
+    },
+    /**
+     * Capture the exact canonical archive, pinned native provenance and verified
+     * STEP bytes for an external CAD witness in ONE synchronous browser action.
+     * Never sample the archive in an unrelated React render or after an await.
+     * The receipt JSON deliberately excludes STEP bytes: independent STEP tools
+     * consume those as the separate, unchanged binary payload. This captures
+     * custody only; a real click, C++ source build and non-OCCT import still
+     * require independent evidence.
+     */
+    captureCurrentStepEvidence({requiredBackend='OCCT-cxx-8.0.1'}={}) {
+      const current=synchronize();
+      const receipt=session.currentStepReceipt({requiredBackend});
+      if(!receipt) return null;
+      // Even a caller-supplied, non-deterministic history reader may not mix
+      // this receipt with a different same-revision archive.
+      const after=synchronize();
+      if(after.archive!==current.archive||
+          receipt.source.projectId!==current.report.projectId||
+          receipt.source.revision!==current.report.revision)
+        return null;
+      const {filename,sha256,verification,bytes}=receipt.step;
+      const metadata=Object.freeze({
+        format:receipt.format,version:receipt.version,
+        source:receipt.source,producer:receipt.producer,
+        step:Object.freeze({filename,sha256,verification}),
+        exactAuthority:false,independentInteroperability:false,
+      });
+      return Object.freeze({
+        format:'intuit3d.current-step-evidence-capture',version:1,
+        archive:current.archive,receipt:metadata,
+        stepBytes:Uint8Array.from(bytes),
+        exactAuthority:false,independentInteroperability:false,
+      });
+    },
     /** Latest request wins, even if a cancelled provider ignores AbortSignal. */
     async evaluate({url,token,requestId,exportStep=true,signal,fetchImpl,
       deadlineMs=30000,requiredBackend}={}) {
@@ -633,7 +709,10 @@ export function createLivePlateSession({
           // its mutable Uint8Array for later downloads: a consumer may reuse,
           // transfer or overwrite those bytes after the promise resolves.
           latest=result.step?{
-            ...result,step:{...result.step,bytes:Uint8Array.from(result.step.bytes)},
+            ...result,
+            source:{...result.source},
+            result:structuredClone(result.result),
+            step:{...result.step,bytes:Uint8Array.from(result.step.bytes)},
           }:result;
           latestArchive=before.archive;
         }

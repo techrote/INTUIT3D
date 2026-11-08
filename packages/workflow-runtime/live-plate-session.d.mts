@@ -19,6 +19,41 @@ import type {LocalPlateClientResult,VerifiedLocalStep} from './local-plate-clien
 
 export declare const LIVE_PLATE_SESSION_FORMAT:'intuit3d.live-plate-session';
 export declare const LIVE_PLATE_SESSION_VERSION:1;
+/** Current journal + pinned producer + STEP bytes from one synchronous read.
+ * Neither a general exact B-rep certificate nor independent STEP import. */
+export interface SourceBoundStepReceipt {
+  readonly format:'intuit3d.source-bound-step-receipt';
+  readonly version:1;
+  readonly source:Readonly<{projectId:string;revision:number;archiveSha256:string}>;
+  readonly producer:Readonly<{
+    requestId:string;cutFeatureId:string;
+    backend:import('./local-plate-client.mjs').PinnedPlateBackend;
+    occtVersion:'7.9.3.1'|'8.0.1';
+  }>;
+  readonly step:VerifiedLocalStep;
+  readonly exactAuthority:false;
+  readonly independentInteroperability:false;
+}
+/** One synchronous, revision-fenced capture for the non-OCCT STEP V2 gate.
+ * receipt is directly JSON-serializable and deliberately omits raw STEP bytes.
+ * Save archive as UTF-8, JSON.stringify(receipt) as .receipt.json, and write
+ * stepBytes as the separate .step binary without awaiting between reads. */
+export interface CurrentStepEvidenceCapture {
+  readonly format:'intuit3d.current-step-evidence-capture';
+  readonly version:1;
+  readonly archive:string;
+  readonly receipt:Readonly<{
+    format:'intuit3d.source-bound-step-receipt';version:1;
+    source:SourceBoundStepReceipt['source'];
+    producer:SourceBoundStepReceipt['producer'];
+    step:Readonly<Omit<VerifiedLocalStep,'bytes'>>;
+    exactAuthority:false;independentInteroperability:false;
+  }>;
+  /** Caller-owned copy; transferable only after the synchronous capture. */
+  readonly stepBytes:Uint8Array;
+  readonly exactAuthority:false;
+  readonly independentInteroperability:false;
+}
 export interface LivePlateSessionState {
   format:typeof LIVE_PLATE_SESSION_FORMAT;
   version:typeof LIVE_PLATE_SESSION_VERSION;
@@ -219,6 +254,17 @@ export interface LivePlateSession {
    * edits, undo, replacement archives and external mutation revoke them.
    */
   currentStep():VerifiedLocalStep|null;
+  /** Recheck on the actual download click; null if any source/provider
+   * provenance is missing, mismatched or superseded by a model edit. */
+  currentStepReceipt(options?:Readonly<{
+    requiredBackend?:import('./local-plate-client.mjs').PinnedPlateBackend;
+  }>):SourceBoundStepReceipt|null;
+  /** One atomic browser-click handoff: canonical INTENT archive, native receipt
+   * metadata without bytes, and separately cloned STEP bytes. Default requires
+   * pinned OCCT8; null means no download/evidence must be published. */
+  captureCurrentStepEvidence(options?:Readonly<{
+    requiredBackend?:import('./local-plate-client.mjs').PinnedPlateBackend;
+  }>):CurrentStepEvidenceCapture|null;
   evaluate(options?:Readonly<LivePlateEvaluationOptions>):Promise<LocalPlateClientResult>;
   /** One consumer operation: model edit, then latest-revision experimental evaluation. */
   applyEditAndEvaluate(

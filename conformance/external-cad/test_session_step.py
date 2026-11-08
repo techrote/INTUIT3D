@@ -102,5 +102,37 @@ class SessionSourceGateTests(unittest.TestCase):
                 self.assertFalse(args.output_dir.exists())
 
 
+    def test_reject_unrelated_cut_as_retrospective_negative(self):
+        # A different cut in the same project can be a genuine solid but
+        # cannot establish that the user's selected feature changed correctly.
+        from argparse import Namespace
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            current = snapshot(root, 'current', 8, b'current STEP')
+            previous = snapshot(root, 'previous', 7, b'other STEP')
+            receipt = json.loads(previous[1].read_text())
+            receipt['producer']['cutFeatureId'] = 'cut.unrelated'
+            previous[1].write_text(json.dumps(receipt))
+            witness = root / 'witness'
+            witness.write_bytes(b'fake')
+            probe = root / 'probe'
+            probe.write_bytes(b'fake')
+            args = Namespace(
+                current_archive=current[0], current_receipt=current[1],
+                current_step=current[2],
+                negative_archive=previous[0], negative_receipt=previous[1],
+                negative_step=previous[2],
+                witness=witness, witness_sha256=sha(b'fake'),
+                probe=probe, probe_sha256=sha(b'fake'),
+                anvil_source_sha=ANVIL_PIN,
+                output_dir=root / 'out', timeout=10,
+            )
+            with patch('session_step.witness_version', return_value=2), \
+                 patch('session_step.witness_count', return_value=14):
+                with self.assertRaisesRegex(Rejected, 'same-feature'):
+                    execute(args)
+            self.assertFalse(args.output_dir.exists())
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -85,6 +85,25 @@ test('authoritative plate/hole edit -> pinned Part21 receipt -> undo/save/reopen
     assert.equal(before.exactAuthority,false);
     assert.equal(before.independentInteroperability,false);
     assert.equal(session.currentStep()?.sha256,before.step.sha256);
+    const receipt=session.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'});
+    assert.equal(receipt.format,'intuit3d.source-bound-step-receipt');
+    assert.equal(receipt.version,1);
+    assert.deepEqual(receipt.source,before.source);
+    assert.equal(receipt.producer.requestId,'occt8.first');
+    assert.equal(receipt.producer.cutFeatureId,'cut');
+    assert.equal(receipt.producer.backend,'OCCT-cxx-8.0.1');
+    assert.equal(receipt.producer.occtVersion,'8.0.1');
+    assert.equal(receipt.step.sha256,before.step.sha256);
+    assert.equal(hash(receipt.step.bytes),receipt.step.sha256);
+    assert.equal(receipt.exactAuthority,false);
+    assert.equal(receipt.independentInteroperability,false);
+    assert.equal(session.currentStepReceipt({requiredBackend:'OCP-python-prototype'}),null);
+    // Caller-owned response mutation must never change the retained proof.
+    before.source.archiveSha256='0'.repeat(64);
+    before.result.artifact.sha256='0'.repeat(64);
+    before.step.bytes.fill(0);
+    assert.deepEqual(session.currentStepReceipt().source,receipt.source);
+    assert.equal(hash(session.currentStepReceipt().step.bytes),receipt.step.sha256);
     const save=session.save();
     const edited=await session.applyEditAndEvaluate(h=>runtime.editSketchConstraints(h,{
       sketchFeatureId:'sketch.plate',eventId:'pinned.change.bore',
@@ -94,6 +113,9 @@ test('authoritative plate/hole edit -> pinned Part21 receipt -> undo/save/reopen
     assert.equal(edited.kind,'submitted',JSON.stringify(edited));
     assert.equal(edited.evaluation.kind,'experimental_plate_evaluated');
     assert.notEqual(edited.evaluation.step.sha256,before.step.sha256);
+    assert.equal(session.currentStepReceipt()?.source.revision,
+      edited.edit.history.document.revision);
+    assert.equal(session.currentStepReceipt()?.producer.requestId,'occt8.edited');
     assert.deepEqual(edited.edit.invalidation.invalidatedFeatureIds,
       ['sketch.plate','plate','cut']);
     assert.equal(session.currentStep().verification,'occt8_part21_plate_subset');
@@ -113,8 +135,101 @@ test('authoritative plate/hole edit -> pinned Part21 receipt -> undo/save/reopen
     assert.equal(reopened.evaluation.kind,'experimental_plate_evaluated');
     assert.equal(session.save(),save);
     assert.equal(reopened.evaluation.step.sha256,before.step.sha256);
+    assert.equal(session.currentStepReceipt()?.source.archiveSha256,
+      hash(Buffer.from(save,'utf8')));
+    assert.equal(session.currentStepReceipt()?.producer.requestId,'occt8.reopen');
     assert.equal(calls.length,4,'one native dispatch per requested revision');
     assert.ok(calls.every(c=>c.options.part21StepAudit===true));
+  });
+});
+test('single-click archive/receipt/STEP custody survives undo but rejects stale or wrong backend',async()=>{
+  let current=plateProject(),calls=[];
+  const session=createLivePlateSession({
+    runtime,readCurrentHistory:()=>current,publishHistory:h=>{current=h;},
+  });
+  const options=id=>({requestId:id,exportStep:true,requiredBackend:'OCCT-cxx-8.0.1'});
+  await withHost(fakePinnedFactory(calls),async host=>{
+    const evaluate=id=>session.evaluate({...options(id),url:host.url,token:host.token});
+    assert.equal(session.captureCurrentStepEvidence(),null,'no native STEP yet');
+    assert.equal((await evaluate('capture.initial')).kind,'experimental_plate_evaluated');
+    const first=session.captureCurrentStepEvidence();
+    assert.equal(first.format,'intuit3d.current-step-evidence-capture');
+    assert.equal(first.archive,session.save());
+    assert.equal(first.receipt.format,'intuit3d.source-bound-step-receipt');
+    assert.equal(hash(Buffer.from(first.archive,'utf8')),first.receipt.source.archiveSha256);
+    assert.equal(hash(first.stepBytes),first.receipt.step.sha256);
+    assert.equal(first.receipt.producer.requestId,'capture.initial');
+    assert.deepEqual(Object.keys(first.receipt.step).sort(),
+      ['filename','sha256','verification']);
+    assert.equal(JSON.stringify(first.receipt).includes('SYNTHETIC_NOT_REAL_STEP'),false);
+    assert.equal(first.exactAuthority,false);
+    assert.equal(first.independentInteroperability,false);
+    assert.equal(session.captureCurrentStepEvidence({requiredBackend:'OCP-python-prototype'}),null);
+    first.stepBytes.fill(0);
+    assert.equal(hash(session.captureCurrentStepEvidence().stepBytes),
+      first.receipt.step.sha256,'capture buffers must not mutate retained STEP');
+    const oldArchive=first.archive,oldRevision=first.receipt.source.revision;
+    const edit=session.applyEdit(h=>runtime.commit(h,[{
+      eventId:'capture.thickness.12',type:'feature.edit',featureId:'plate',
+      patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:12}},
+    }]));
+    assert.equal(edit.kind,'committed');
+    assert.equal(session.captureCurrentStepEvidence(),null,'stale STEP must not export');
+    assert.equal((await evaluate('capture.edited')).kind,'experimental_plate_evaluated');
+    const updated=session.captureCurrentStepEvidence();
+    assert.ok(updated.receipt.source.revision>oldRevision);
+    assert.notEqual(updated.receipt.source.archiveSha256,first.receipt.source.archiveSha256);
+    assert.notEqual(updated.receipt.step.sha256,first.receipt.step.sha256);
+    assert.equal(hash(Buffer.from(updated.archive,'utf8')),
+      updated.receipt.source.archiveSha256);
+    assert.equal(hash(updated.stepBytes),updated.receipt.step.sha256);
+    const undone=session.applyEdit(h=>runtime.undo(h,['capture.undo']));
+    assert.equal(undone.kind,'committed');
+    assert.equal(session.captureCurrentStepEvidence(),null,'undo revokes native receipt');
+    assert.equal(session.reopen(oldArchive).kind,'refused');
+    assert.equal(session.captureCurrentStepEvidence(),null);
+    assert.equal(session.reopen(oldArchive,{confirmReplacement:true}).kind,'opened');
+    assert.equal(session.captureCurrentStepEvidence(),null,'reopen requires native rebuild');
+    assert.equal((await evaluate('capture.reopened')).kind,'experimental_plate_evaluated');
+    const reopened=session.captureCurrentStepEvidence();
+    assert.equal(reopened.archive,oldArchive);
+    assert.equal(reopened.receipt.step.sha256,first.receipt.step.sha256);
+    assert.equal(reopened.receipt.producer.requestId,'capture.reopened');
+    assert.equal(calls.length,3,'exactly three explicit native dispatches');
+  });
+});
+test('source-bound STEP revoked immediately after edit and archive replacement',async()=>{
+  let current=plateProject();
+  const session=createLivePlateSession({
+    runtime,readCurrentHistory:()=>current,publishHistory:h=>{current=h;},
+  });
+  await withHost(fakePinnedFactory([]),async host=>{
+    const opts=id=>({url:host.url,token:host.token,requestId:id,
+      exportStep:true,requiredBackend:'OCCT-cxx-8.0.1'});
+    const initial=await session.evaluate(opts('receipt.before'));
+    assert.equal(initial.kind,'experimental_plate_evaluated');
+    const saved=session.save();
+    assert.ok(session.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'}));
+    const changed=session.applyEdit(h=>runtime.commit(h,[{
+      eventId:'receipt.thickness.change',type:'feature.edit',featureId:'plate',
+      patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:12}},
+    }]));
+    assert.equal(changed.kind,'committed');
+    assert.equal(session.currentStepReceipt(),null);
+    assert.equal(session.currentStep(),null);
+    const altered=await session.evaluate(opts('receipt.after'));
+    assert.equal(altered.kind,'experimental_plate_evaluated');
+    assert.notEqual(altered.step.sha256,initial.step.sha256);
+    assert.equal(session.currentStepReceipt().producer.requestId,'receipt.after');
+    assert.equal(session.currentStepReceipt().source.revision,current.document.revision);
+    assert.equal(session.reopen(saved,{confirmReplacement:true}).kind,'opened');
+    assert.equal(session.currentStepReceipt(),null,
+      'reopening previous source cannot revive a discarded STEP');
+    const rebuilt=await session.evaluate(opts('receipt.rebuilt'));
+    assert.equal(rebuilt.kind,'experimental_plate_evaluated');
+    assert.equal(session.currentStepReceipt().step.sha256,initial.step.sha256);
+    assert.equal(session.currentStepReceipt().source.archiveSha256,
+      hash(Buffer.from(saved,'utf8')));
   });
 });
 test('backend impersonation, missing Part21 evidence and replaced STEP digests are refused',async()=>{

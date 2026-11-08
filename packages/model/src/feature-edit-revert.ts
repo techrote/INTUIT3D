@@ -112,13 +112,27 @@ export function previewFeatureEditRevert(
   if (!target || target.type !== 'feature.edit') {
     fail('selected event is not a historical feature.edit');
   }
+  // Patches replace top-level semantic fields atomically. Later changes to
+  // DIFFERENT fields of this same feature can survive selective reversion;
+  // previously rejecting them made normal multi-step authoring unrecoverable.
+  // In particular, 'payload' is an indivisible JSON record: a later edit to
+  // any nested payload key conflicts rather than inviting an invented merge.
+  // A kind change also conflicts with all other edits, since it can change the
+  // interpretation of the original payload and dependencies.
+  const targetedFields = new Set(Object.keys(target.patch));
   for (const later of original.journal.slice(index + 1)) {
-    if (later.type !== 'feature.create' &&
-        later.featureId === target.featureId &&
-        later.type !== 'feature.move') {
-      throw new ProjectRevisionError(
-        'feature edit revert: selected feature was subsequently changed or retired');
+    if (later.type === 'feature.create' ||
+        later.type === 'feature.move' || later.featureId !== target.featureId) {
+      continue;
     }
+    if (later.type === 'feature.edit' &&
+        !targetedFields.has('kind') && later.patch.kind === undefined &&
+        Object.keys(later.patch).every((field) => !targetedFields.has(field))) {
+      continue;
+    }
+    throw new ProjectRevisionError(
+      'feature edit revert: selected feature was subsequently changed or retired ' +
+      'in an overlapping semantic field');
   }
   const before = parseProject({
     ...original, revision: index, journal: original.journal.slice(0, index),

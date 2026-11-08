@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Independently import a current-session STEP and an earlier wrong-geometry STEP.
 
-This consumes *captured* RUNTIME currentStepReceipt metadata and canonical archive
+This consumes atomic RUNTIME captureCurrentStepEvidence receipt metadata and archive
 bytes. It validates their mutual custody and executes the pinned non-OCCT
 AnvilCAD V2 importer. Browser click provenance, C++ compile provenance and
 production authority must still be attested externally by Integration.
@@ -105,11 +105,12 @@ def execute(args: argparse.Namespace) -> int:
     current = verify_capture(args.current_receipt, args.current_archive, args.current_step)
     negative = verify_capture(args.negative_receipt, args.negative_archive, args.negative_step)
     require(negative['source']['projectId'] == current['source']['projectId'] and
+            negative['producer']['cutFeatureId'] == current['producer']['cutFeatureId'] and
             negative['source']['revision'] < current['source']['revision'] and
             negative['source']['archiveSha256'] != current['source']['archiveSha256'] and
             negative['producer']['requestId'] != current['producer']['requestId'] and
             negative['stepSha256'] != current['stepSha256'],
-            "negative must be a distinct earlier same-project physical C++ export")
+            "negative must be an earlier same-project same-feature distinct physical C++ export")
     args.output_dir.mkdir(parents=True)
     frozen_witness = args.output_dir / 'witness.v2.txt'
     frozen_witness.write_bytes(witness)

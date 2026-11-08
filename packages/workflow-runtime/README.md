@@ -986,3 +986,56 @@ Run: `node --test packages/workflow-runtime/test/feature-lifecycle-session.integ
 ### Inspected lifecycle consent is target-bound
 
 The full-document journal fence alone is insufficient to prove that a user reviewed **this** feature and **these** descendants: changing a submitted feature ID or tombstone selection at the same revision could otherwise reuse a valid confirmation. For `cascade_descendants`, submit `confirmedCascadeIds` **exactly** as returned in `inspectFeatureRemoval().impact.cascadeIds`; omit it for other removal modes. For recovery, submit `confirmedRequiredFeatureIds` **exactly** as returned in `inspectFeatureRecovery().inspection.requiredFeatureIds` (dependency-first order). Runtime re-inspects inside the synchronous commit, rejects changed/omitted/reordered consent as `unreviewed_impact`, and MODEL separately enforces cascade, ancestor, unresolved-state and event-ID admission. Re-inspect after a refusal; never retry silently with broadened consent. This binds browser consent without creating a duplicate journal, solver or provider.
+
+## Source-bound native STEP download (single consumer handoff)
+
+Call `session.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'})`
+**inside WORKBENCH's download-click handler**. It returns the current
+canonical source `{projectId,revision,archiveSha256}`, the authenticated
+native producer `{requestId,cutFeatureId,backend,occtVersion}`, and
+verified STEP `{bytes,sha256,verification}` in one synchronous,
+revision-fenced handoff. It returns `null` after a new edit, undo or
+archive replacement, or when missing provenance or a different backend
+is detected. Each call copies the byte array and the retained receipt
+cannot be rewritten through a previously returned evaluation object.
+Do not cache it across edits. The legacy `currentStep()` is unchanged.
+
+Same-archive native refresh failures can leave a previously verified
+last-good receipt usable; display `session.refresh().lastResultKind`
+separately instead of claiming the latest attempt passed. The source
+digest is checked by the existing authenticated localhost client. The
+returned `exactAuthority:false` and `independentInteroperability:false`
+remain mandatory: this is **not** an independent external CAD import,
+a general-purpose OCCT B-rep certificate, or Windows Firefox acceptance.
+WORKBENCH owns its download UI; Integration owns guarded admission.
+The new regression uses real INTENT/SKETCH, HTTP and a synthetic OCCT8
+test provider, not an actual compiled C++ execution.
+
+
+## Single-click independent STEP custody capture (RUNTIME -> WORKBENCH -> STEP)
+
+For the independent external-CAD **session source** witness (STEP #275), call
+`const capture = session.captureCurrentStepEvidence()` synchronously on the
+actual native download click. The default requires `OCCT-cxx-8.0.1`; an
+OCP provider or a stale/missing native receipt returns `null` and **must not
+publish an external-CAD evidence package**. From this ONE returned object,
+write `capture.archive` as UTF-8 `current.archive.json`, write
+`JSON.stringify(capture.receipt)` as `current.receipt.json`, and write
+`capture.stepBytes` unchanged as `current.step`. Do not fetch a separately
+stored React revision, model archive or STEP after an await. The JSON receipt
+contains exactly the source, producer and STEP digest/verification metadata,
+**without the binary bytes**; the external gate verifies both actual files.
+
+Capture an earlier native-produced same-project revision the same way before
+making the retrospective edit; the earlier source/request/STEP digest must
+be distinct. A changed dimension, undo or archive replacement revokes the old
+session receipt until newly evaluated. Copy returned STEP bytes before any
+consumer-side transfer/mutation; the session retains an independent copy.
+
+This is an **atomic browser-side custody interface**, not a browser interaction
+attestation, a C++ source-to-binary compilation proof, an OCCT general exactness
+certificate or an independent non-OCCT STEP import. WORKBENCH must wire the
+actual button and capture the trace; Integration/STEP must run the separate
+independent physical importer and verify its versioned witness. Run
+`node --test packages/workflow-runtime/test/local-occt8-bridge.integration.test.mjs`
+and `npm run typecheck --workspace @intuit3d/workflow-runtime`.

@@ -155,6 +155,10 @@
     "./feature-edit-revert": {
       "types": "./src/feature-edit-revert.ts",
       "default": "./src/feature-edit-revert.ts"
+    },
+    "./historical-edit-inventory": {
+      "types": "./src/historical-edit-inventory.ts",
+      "default": "./src/historical-edit-inventory.ts"
     }
   },
   "scripts": {
