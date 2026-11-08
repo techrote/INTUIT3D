@@ -31,23 +31,28 @@ const reopened=parseSketch(serializeSketch(resized.sketch));
 const restored=inspectPointerEditableHandles(reopened,resized.selection);
 assert.equal(restored.kind,'pointer_editable_handles');
 assert.ok(restored.handles.some(h=>h.handleId===length.handle.handleId));
+const center=restored.handles.find(h=>h.handleId==='hole-center:L:holeLower');
+assert.ok(center);
+// The lower hole follows the edited L end reference. Never reuse its old XY.
+const currentCenter={...center.position};
 // A centre has two signed XY handles at the same coordinate: refuse to guess.
 const overlapped=pickProfileHandleAtPointer(reopened,resized.selection,{
   kind:'pick-profile-handle',version:1,
   sourceSignature:serializeSketch(reopened),
-  point:{x:90,y:15},maxDistanceMm:0.1,filter:'all'
+  point:currentCenter,maxDistanceMm:0.1,filter:'all'
 });
 assert.equal(overlapped.kind,'ambiguous');
 const holeCenter=pickProfileHandleAtPointer(reopened,resized.selection,{
   kind:'pick-profile-handle',version:1,
   sourceSignature:serializeSketch(reopened),
-  point:{x:90,y:15},maxDistanceMm:0.1,filter:'hole_center'
+  point:currentCenter,maxDistanceMm:0.1,filter:'hole_center'
 });
 assert.equal(holeCenter.kind,'picked');
 const moved=dragProfileHandleAtPointer(reopened,resized.selection,{
   kind:'drag-profile-handle',version:1,
   sourceSignature:serializeSketch(reopened),
-  handleId:holeCenter.handle.handleId,target:{x:85,y:17}
+  handleId:holeCenter.handle.handleId,
+  target:{x:currentCenter.x-5,y:currentCenter.y+2}
 });
 assert.equal(moved.kind,'accepted',JSON.stringify(moved));
 assert.deepEqual(moved.changedConstraintIds,
