@@ -50,10 +50,11 @@ export function stampSelectedModelHoles(h:ModelSession,request:SelectedHoleStamp
     throw Error('Stamp offset requires a nonzero finite X/Y displacement within ±10,000 mm.');
   const {profile,minX,maxX,minY,maxY}=admittedRectangularPlate(h);
   const existing=profile.holes.map(circle=>({
-    id:circle.id,x:circle.center.x,y:circle.center.y,radius:circle.radius,
+    id:circle.id,x:circle.x,y:circle.y,radius:circle.radius,
   }));
   const copies:typeof existing=[];
   const ids:string[]=[];
+  const authored=modelHoleValues(h);
   for(const [index,id] of holeIds.entries()){
     const source=existing.find(circle=>circle.id===id);
     if(!source||![source.x,source.y,source.radius].every(Number.isFinite)||source.radius<=0)
@@ -67,7 +68,7 @@ export function stampSelectedModelHoles(h:ModelSession,request:SelectedHoleStamp
         Math.hypot(x-circle.x,y-circle.y)<=source.radius+circle.radius))
       throw Error('Stamp would overlap an existing or another copied hole; model unchanged.');
     const newId=`stamp.${h.document.revision}:${index}`;
-    if(Object.hasOwn(modelHoleValues(h),newId))
+    if(Object.hasOwn(authored,newId))
       throw Error('Stamp semantic ID is already authored; model unchanged.');
     ids.push(newId);
     copies.push({id:newId,x,y,radius:source.radius});
