@@ -3,7 +3,6 @@
  * Does not replace the SKETCH solver or persist an independent browser sketch.
  * Before #319 is accepted, a user can draw/cancel but Close refuses clearly.
  */
-import * as model from '@intuit3d/model';
 import * as sketch from '@intuit3d/sketch';
 import {createClosedContour} from '@intuit3d/sketch/closed-contour-authoring/v1';
 import type {SelectedProfileSelection} from '@intuit3d/sketch/selected-profile/v1';

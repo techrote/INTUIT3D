@@ -1,7 +1,6 @@
 import type {MouseEvent} from 'react';
 import {
   canCloseBlankContour,type BlankContourDraft,type SketchLocalPoint,
-  undoBlankContourVertex,
 } from './blankContourDraft';
 
 const Y_ORIGIN=120;
