@@ -107,16 +107,60 @@ export function reconfigureProfileExtrusion(history, request, services) {
 
   const writers = features.filter(feature => feature.writeTargets?.includes(bodyId));
   const cuts = writers.filter(feature => feature.id !== extrudeId);
-  if (cuts.length > 1 ||
-      cuts.some(cut => cut.kind !== 'cut' ||
-        !same(cut.writeTargets,[bodyId]) ||
-        cut.payload?.targetBodyId !== bodyId ||
-        cut.payload?.units !== 'mm' || cut.payload?.frame !== 'local_xy' ||
-        typeof cut.payload?.sourceSketchId !== 'string' ||
-        byId.get(cut.payload.sourceSketchId)?.kind !== 'sketch' ||
-        !same(cut.dependsOn,cut.payload.sourceSketchId === oldSketchId ?
-          [extrudeId] : [extrudeId,cut.payload.sourceSketchId])))
+  // A machined variant may have several dependent cuts. Validate the entire
+  // model-owned execution chain rather than assuming creation chronology.
+  // Only the first cut can inherit its SKETCH edge through the extrusion;
+  // subsequent cuts always retain their own explicit SKETCH dependency.
+  if (cuts.length > 16 || cuts.some(cut =>
+      cut.kind !== 'cut' ||
+      !same(cut.writeTargets,[bodyId]) ||
+      cut.payload?.targetBodyId !== bodyId ||
+      cut.payload?.units !== 'mm' || cut.payload?.frame !== 'local_xy' ||
+      typeof cut.payload?.sourceSketchId !== 'string' ||
+      byId.get(cut.payload.sourceSketchId)?.kind !== 'sketch' ||
+      !Array.isArray(cut.dependsOn) || cut.dependsOn.length < 1 ||
+      cut.dependsOn.length > 2))
     fail('multiple, foreign or noncommuting body writers');
+  const cutById = new Map(cuts.map(cut => [cut.id,cut]));
+  const successor = new Map();
+  for (const cut of cuts) {
+    const predecessor = cut.dependsOn[0];
+    if ((predecessor !== extrudeId && !cutById.has(predecessor)) ||
+        predecessor === cut.id || successor.has(predecessor))
+      fail('multiple, foreign or noncommuting body writers');
+    const explicit = [predecessor,cut.payload.sourceSketchId];
+    const allowed = same(cut.dependsOn,explicit) ||
+      (predecessor === extrudeId &&
+       cut.payload.sourceSketchId === oldSketchId &&
+       same(cut.dependsOn,[extrudeId]));
+    if (!allowed) fail('multiple, foreign or noncommuting body writers');
+    successor.set(predecessor,cut);
+  }
+  const orderedCuts = [];
+  let cursor = extrudeId;
+  while (successor.has(cursor)) {
+    const cut = successor.get(cursor);
+    if (orderedCuts.includes(cut))
+      fail('multiple, foreign or noncommuting body writers');
+    orderedCuts.push(cut);
+    cursor = cut.id;
+  }
+  if (orderedCuts.length !== cuts.length)
+    fail('multiple, foreign or noncommuting body writers');
+  if (cuts.length > 1) {
+    // Accepted INTENT is the source of truth for uniquely ordered body
+    // writers; checking our own graph alone would duplicate that authority.
+    if (typeof services?.cutChain?.inspectBodyCutChain !== 'function')
+      fail('accepted INTENT body-cut-chain inspection required for multiple cuts');
+    const chain = services.cutChain.inspectBodyCutChain(history.document,bodyId);
+    if (chain?.status !== 'ready' ||
+        chain.projectId !== history.document.projectId ||
+        chain.revision !== history.document.revision ||
+        chain.eligibleAfterWriterId !== cursor ||
+        chain.bodyWriterIds?.length !== writers.length ||
+        !writers.every(feature => chain.bodyWriterIds.includes(feature.id)))
+      fail('multiple, foreign or noncommuting body writers');
+  }
   const current = runtime.inspect(history);
   const sourceDoc = sketch.validateSketch(source.payload.sketch);
   const found = discovery.discoverPlateProfiles(sourceDoc);
@@ -136,21 +180,33 @@ export function reconfigureProfileExtrusion(history, request, services) {
     patch:{dependsOn:[newSketchId],
       payload:{...oldExtrude.payload,sourceSketchId:newSketchId,thicknessMm:depthMm}}
   }];
-  let reboundCutId = null;
+  const cutDependencyChanges = [];
   let cutDependencies = null;
-  for (const cut of cuts) {
-    const dependencies = cut.payload.sourceSketchId === newSketchId ?
-      [extrudeId] : [extrudeId,cut.payload.sourceSketchId];
-    cutDependencies = dependencies;
+  for (let i = 0; i < orderedCuts.length; i++) {
+    const cut = orderedCuts[i];
+    const predecessor = i === 0 ? extrudeId : orderedCuts[i-1].id;
+    const dependencies = predecessor === extrudeId &&
+      cut.payload.sourceSketchId === newSketchId ?
+        [predecessor] : [predecessor,cut.payload.sourceSketchId];
+    if (orderedCuts.length === 1) cutDependencies = dependencies;
     if (!same(cut.dependsOn,dependencies)) {
+      // Preserve the historical single-cut derived event ID for existing
+      // consumers; multiple cut rebindings receive disjoint stable IDs.
+      const suffix = cutDependencyChanges.length === 0 ?
+        ':cut' : ':cut:' + cutDependencyChanges.length;
       events.push({
-        eventId:id(eventId + ':cut','derived cut eventId'),
+        eventId:id(eventId + suffix,'derived cut eventId'),
         type:'feature.edit',featureId:cut.id,
         patch:{dependsOn:dependencies}
       });
-      reboundCutId = cut.id;
+      cutDependencyChanges.push({
+        cutFeatureId:cut.id,
+        previousDependencies:[...cut.dependsOn],
+        nextDependencies:dependencies
+      });
     }
   }
+  const reboundCutId = cutDependencyChanges[0]?.cutFeatureId ?? null;
   const next = runtime.commit(history,events,request.expectedRevision);
   const report = runtime.inspect(next);
   const evaluated = reportFeature(report,extrudeId);
@@ -166,23 +222,38 @@ export function reconfigureProfileExtrusion(history, request, services) {
       stored.payload.thicknessMm !== depthMm ||
       !same(stored.writeTargets,[bodyId]))
     throw new Error('feature-ops extrusion edit: semantic extrusion/body identity not preserved');
-  for (const cut of cuts) {
+  for (let i = 0; i < orderedCuts.length; i++) {
+    const cut = orderedCuts[i];
+    const predecessor = i === 0 ? extrudeId : orderedCuts[i-1].id;
+    const dependencies = predecessor === extrudeId &&
+      cut.payload.sourceSketchId === newSketchId ?
+        [predecessor] : [predecessor,cut.payload.sourceSketchId];
     const revised = updated.find(feature => feature.id === cut.id);
-    if (!revised || !same(revised.dependsOn,cutDependencies) ||
+    if (!revised || !same(revised.dependsOn,dependencies) ||
         revised.payload.sourceSketchId !== cut.payload.sourceSketchId ||
-        !same(revised.writeTargets,[bodyId]))
+        !same(revised.writeTargets,[bodyId]) ||
+        JSON.stringify(revised.payload) !== JSON.stringify(cut.payload))
       throw new Error('feature-ops extrusion edit: dependent cut lineage not preserved');
     const oldState = reportFeature(current,cut.id)?.status;
+    const newState = reportFeature(report,cut.id)?.status;
     if (oldState === 'pending_exact_provider' &&
-        reportFeature(report,cut.id)?.status !== 'pending_exact_provider')
+        newState !== 'pending_exact_provider')
       throw new Error('feature-ops extrusion edit: previously pending cut lost its intent');
+    if (!['pending_exact_provider','blocked_dependency'].includes(newState))
+      throw new Error('feature-ops extrusion edit: cut acquired unsupported authority');
   }
+  const invalidation = runtime.diff(history,next);
+  if (![extrudeId,...orderedCuts.map(cut => cut.id)]
+    .every(featureId => invalidation.invalidatedFeatureIds?.includes(featureId)))
+    throw new Error('feature-ops extrusion edit: dependent body invalidation missing');
   return {
-    kind:'committed',history:next,report,invalidation:runtime.diff(history,next),
+    kind:'committed',history:next,report,invalidation,
     extrusionFeatureId:extrudeId,outputBodyId:bodyId,
     previousSourceSketchId:oldSketchId,sourceSketchId:newSketchId,
     previousDepthMm,depthMm,selectedProfileId:profileCandidateId,
     reboundCutId,cutDependencies,
+    reboundCutIds:cutDependencyChanges.map(change => change.cutFeatureId),
+    cutDependencyChanges,orderedCutFeatureIds:orderedCuts.map(cut => cut.id),
     status:'preview_only',
     nativeHandoff:null,
     exactAuthority:false,independentInteroperability:false
