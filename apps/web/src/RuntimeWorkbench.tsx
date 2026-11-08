@@ -12,6 +12,7 @@ import type { SketchDimensionHandle } from './runtimeSketchHandles';
 import { nextCircleDrawing, type CircleDrawingState } from './circleDrawing';
 import { patternModelCircularHoles } from './circularHolePattern';
 import { transformSelectedModelHoles } from './rigidHoleTransform';
+import { stampSelectedModelHoles, removeSelectedModelHoles } from './selectedHoleStamp';
 import { createLivePlateSession } from '@intuit3d/workflow-runtime/live-plate-session';
 import { experimentalStepFilename } from './localNativeStep';
 import { MAX_MODEL_ARCHIVE_BYTES, validateModelFileInWorker, type ModelImportStage } from './modelArchiveImport';
@@ -96,6 +97,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [layoutSelected,setLayoutSelected]=useState<string[]>(['holeA']);
   const [layoutDraft,setLayoutDraft]=useState({scaleX:'120',scaleY:'100',radiusScale:'100'});
   const [rigidDraft,setRigidDraft]=useState({translateXmm:'0',translateYmm:'0',rotateDegrees:'90'});
+  const [stampDraft,setStampDraft]=useState({deltaXmm:'20',deltaYmm:'0'});
   const [cascadeConfirmation,setCascadeConfirmation]=useState<string|null>(null);
   const [timeline,setTimeline]=useState<'authored'|'evaluated'>('authored');
   const [message,setMessage]=useState<string|null>(null);
@@ -430,6 +432,43 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       setSketchMode(true);
       setMessage(`Revision ${result.history.document.revision}: resized ${layoutIds.join(', ')} about their selected centre in ONE undoable SKETCH transaction; invalidated ${result.invalidation.invalidatedFeatureIds.join(' → ')}. Old STEP revoked; rebuild experimental solid.`);
     }catch(e){setMessage('Layout resize refused: '+(e instanceof Error?e.message:String(e)));}
+  };
+  const stampSelection=()=>{
+    try{
+      if(pendingImport)throw Error('Finish the pending project replacement first.');
+      if(Object.values(stampDraft).some(v=>!v.trim()))
+        throw Error('Enter signed X and Y copy displacements.');
+      const outcome=stampSelectedModelHoles(liveHistory.current,{
+        holeIds:layoutIds,deltaXmm:Number(stampDraft.deltaXmm),deltaYmm:Number(stampDraft.deltaYmm),
+      });
+      if(outcome.result.kind==='refused'){
+        setMessage('Selected-hole stamp refused by SKETCH: '+
+          (outcome.result.candidateFeature.diagnostics.join('; ')||outcome.result.reason));
+        return;
+      }
+      acceptHistory(outcome.result.history);
+      setLayoutSelected([...outcome.copiedHoleIds]);
+      setActiveHole(outcome.copiedHoleIds[0]??null);
+      setSketchMode(true);
+      setMessage(`Revision ${outcome.result.history.document.revision}: stamped ${outcome.copiedHoleIds.length} selected solved holes into independently editable cuts in ONE undoable SKETCH transaction. Original IDs retained; native STEP invalidated.`);
+    }catch(e){setMessage('Selected-hole stamp refused: '+(e instanceof Error?e.message:String(e)));}
+  };
+  const removeSelection=()=>{
+    try{
+      if(pendingImport)throw Error('Finish the pending project replacement first.');
+      const result=removeSelectedModelHoles(liveHistory.current,layoutIds);
+      if(result.kind==='refused'){
+        setMessage('Selected-hole removal refused by SKETCH: '+
+          (result.candidateFeature.diagnostics.join('; ')||result.reason));
+        return;
+      }
+      const count=layoutIds.length;
+      acceptHistory(result.history);
+      setLayoutSelected([]);
+      setActiveHole(null);
+      setSketchMode(true);
+      setMessage(`Revision ${result.history.document.revision}: removed ${count} selected custom holes in ONE undoable SKETCH transaction. Undo restores the same identities; STEP invalidated.`);
+    }catch(e){setMessage('Selected-hole removal refused: '+(e instanceof Error?e.message:String(e)));}
   };
   const removeHole=(id:ModelHole)=>{
     try{
@@ -1044,6 +1083,28 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             <small data-testid="runtime-layout-current-span">
               Current selected span: {layoutSpan?layoutSpan.x.toFixed(3):'—'} × {layoutSpan?layoutSpan.y.toFixed(3):'—'} mm (X × Y)
             </small>
+            <div className="runtime-hole-add" data-testid="runtime-selected-hole-stamp">
+              <strong>Duplicate selected holes · one-shot translation</strong>
+              <p className="microcopy">Select 1–32 existing solved holes above, choose a signed displacement and stamp independent copies in one undoable journal operation. The original centres/diameters are preserved. Physical plate-rim and overlap checks run before SKETCH admission; no unqualified geometry is published.</p>
+              {(['deltaXmm','deltaYmm'] as const).map(field=><label className="runtime-scalar" key={field}>
+                <span>{field==='deltaXmm'?'Copy offset X':'Copy offset Y'}</span>
+                <span className="runtime-scalar-control">
+                  <input type="number" step="any" data-testid={'runtime-stamp-'+field}
+                    aria-label={field==='deltaXmm'?'Stamp selected X offset':'Stamp selected Y offset'}
+                    value={stampDraft[field]}
+                    onChange={e=>setStampDraft(previous=>({...previous,[field]:e.target.value}))}/>
+                  <small>mm</small>
+                </span>
+              </label>)}
+              <button type="button" className="ribbon-button runtime-native-export"
+                data-testid="runtime-stamp-apply" disabled={!!pendingImport||layoutIds.length===0}
+                onClick={stampSelection}>Duplicate selected holes</button>
+              <button type="button" className="ribbon-button"
+                data-testid="runtime-stamp-remove-selected"
+                disabled={!!pendingImport||layoutIds.length===0||layoutIds.some(id=>id==='holeA'||id==='holeB')}
+                onClick={removeSelection}>Remove selected custom holes</button>
+              <p className="microcopy">Batch removal is also one undoable edit. Base holes A/B cannot be removed because plate dimensions reference them. A successful operation revokes cached native STEP and keeps the source sketch authoritative.</p>
+            </div>
             <div className="runtime-hole-add" data-testid="runtime-rigid-transform">
               <strong>Rigidly rotate/move selected holes · one transaction</strong>
               <p className="microcopy">Select two or more holes above, then rotate them about their authoritative centre (mean of selected fixed centres). Signed rotation is anticlockwise, followed by X/Y translation. This is a one-shot journal edit, not an associative transform.</p>
