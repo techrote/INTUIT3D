@@ -189,3 +189,46 @@ if(selectedEdgeControls.kind==='ready'){
   const rejected:true=selectedEdgeControls.notCommitted;
   void rejected;
 }
+
+
+/** Delete/recover semantic cross-body features through one source-fenced
+ * authoritative MODEL journal, without interpreting B-rep topology. */
+const lifecycleImpact=session.inspectFeatureRemoval({
+  projectId:state.projectId,expectedRevision:state.revision,
+  featureId:'extrude.datum',
+});
+if(lifecycleImpact.kind==='ready'){
+  const noExact:false=lifecycleImpact.exactAuthority;
+  const descendants:readonly string[]=lifecycleImpact.impact.transitiveDependents;
+  const removal=session.applyCommand({
+    kind:'model.feature.remove',
+    projectId:state.projectId,expectedRevision:state.revision,
+    request:{
+      format:'intuit3d.feature-lifecycle',version:1,action:'remove',
+      featureId:'extrude.datum',mode:'cascade_descendants',
+      confirmCascade:true,eventIds:descendants.map((_,i)=>'removal.'+i).concat(['removal.root']),
+      sourceDocumentFence:lifecycleImpact.sourceDocumentFence,
+    },
+  });
+  void [noExact,removal];
+}
+const lifecycleRecovery=session.inspectFeatureRecovery({
+  projectId:state.projectId,expectedRevision:state.revision,
+  selectedFeatureIds:['cut.guide'],
+});
+if(lifecycleRecovery.kind==='ready'){
+  const noExact:false=lifecycleRecovery.inspection.exactGeometryAuthority;
+  const ancestors:readonly string[]=lifecycleRecovery.inspection.additionalAncestorIds;
+  const recovery=session.applyCommand({
+    kind:'model.feature.recover-closure',
+    projectId:state.projectId,expectedRevision:state.revision,
+    request:{
+      format:'intuit3d.feature-recovery-closure',version:1,
+      selectedFeatureIds:['cut.guide'],
+      expectedDocumentFence:lifecycleRecovery.sourceDocumentFence,
+      eventIds:lifecycleRecovery.inspection.requiredFeatureIds.map((_,i)=>'recovery.'+i),
+      admission:'require_ready',confirmAncestorRestore:true,confirmUnresolved:false,
+    },
+  });
+  void [noExact,ancestors,recovery];
+}
