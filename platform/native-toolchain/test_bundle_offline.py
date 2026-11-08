@@ -49,6 +49,22 @@ class OfflineBundleTests(unittest.TestCase):
             ], check=True, capture_output=True)
             bundle.copy_toolkits(root / "prefix", dest)
             self.assertIn("libTKMath.so.8.0", bundle.validate_elf_resolution(exe, dest))
+            # Negative control: a real, otherwise functioning ELF which
+            # resolves OCCT-named libraries from its old prefix must FAIL.
+            # This protects the substantive bundle-custody invariant while
+            # allowing normal bin/../lib loader path spelling.
+            host_binary = root / "host-prefix-worker"
+            subprocess.run([
+                "cc", str(root / "main.c"), "-o", str(host_binary),
+                "-L" + str(prefix), "-l:libTKernel.so.8.0",
+                "-Wl,--disable-new-dtags", "-Wl,-rpath," + str(prefix),
+                "-Wl,-rpath-link," + str(prefix)
+            ], check=True, capture_output=True)
+            self.assertEqual(subprocess.check_output([str(host_binary)]).strip(),
+                             b"42")
+            with self.assertRaisesRegex(bundle.BundleError,
+                                        "unbundled OCCT library"):
+                bundle.validate_elf_resolution(host_binary, dest)
             self.assertEqual(subprocess.check_output([str(exe)]).strip(), b"42")
             shutil.rmtree(root / "prefix")
             self.assertEqual(subprocess.check_output([str(exe)]).strip(), b"42")
@@ -90,7 +106,20 @@ class OfflineBundleTests(unittest.TestCase):
             ], check=True, capture_output=True)
             shutil.rmtree(root / "vendor")
             self.assertEqual(subprocess.check_output([str(binary)]).strip(), b"42")
-            self.assertIn(str(staged), bundle.validate_elf_resolution(binary, dest))
+            # GNU ld.so can report $ORIGIN/../lib without lexical
+            # canonicalization. Verify the *actual resolved file*, not a
+            # string prefix (the production resolver already refuses host
+            # libraries and missing dependencies).
+            resolution = bundle.validate_elf_resolution(binary, dest)
+            resolved_math = [
+                line.split("=>", 1)[1].split(" (", 1)[0].strip()
+                for line in resolution.splitlines()
+                if "libTKMath.so.8.0 =>" in line
+            ]
+            self.assertEqual(len(resolved_math), 1, resolution)
+            self.assertEqual(Path(resolved_math[0]).resolve(strict=True),
+                             staged.resolve(strict=True))
+            self.assertNotIn(str(prefix), resolution)
 
     def test_standalone_hash_verifier_refuses_mutation(self):
         with tempfile.TemporaryDirectory() as temp:
