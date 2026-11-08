@@ -1,7 +1,7 @@
 /** Type-only browser consumer of the real public RUNTIME/INTENT package boundary. */
 import type {UndoHistory} from '@intuit3d/model/transactions';
 import type {WorkflowRuntime} from '../index.mjs';
-import {createLivePlateSession,type LivePlateSessionState,type LiveCadBatch} from '../live-plate-session.mjs';
+import {createLivePlateSession,type LivePlateSessionState,type LiveCadBatch,type SourceBoundStepReceipt} from '../live-plate-session.mjs';
 import type {VerifiedLocalStep,LocalPlateClientResult} from '../local-plate-client.mjs';
 
 declare const runtime:WorkflowRuntime;
@@ -53,6 +53,19 @@ async function browserDownload() {
     deadlineMs:30000,requiredBackend:'OCCT-cxx-8.0.1',
   });
   const step:VerifiedLocalStep|null=session.currentStep();
+  const receipt:SourceBoundStepReceipt|null=session.currentStepReceipt({
+    requiredBackend:'OCCT-cxx-8.0.1',
+  });
+  if(receipt) {
+    const project:string=receipt.source.projectId;
+    const revision:number=receipt.source.revision;
+    const archiveSha:string=receipt.source.archiveSha256;
+    const stepSha:string=receipt.step.sha256;
+    const bytes:Uint8Array=receipt.step.bytes;
+    const requestId:string=receipt.producer.requestId;
+    const unqualified:false=receipt.exactAuthority;
+    void [project,revision,archiveSha,stepSha,bytes,requestId,unqualified];
+  }
   if(result.kind==='experimental_plate_evaluated'&&step) {
     const bytes:Uint8Array=step.bytes;
     const verified:string=step.sha256;
