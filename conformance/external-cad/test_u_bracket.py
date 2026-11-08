@@ -253,7 +253,7 @@ class IndependentUBracketContracts(unittest.TestCase):
                 baseline.replace(claimed, claimed + " " + claimed),
             ):
                 with self.subTest(thickness=t, candidate=candidate[-130:]):
-                    with self.assertRaisesRegex(Rejected, "surface|summary"):
+                    with self.assertRaisesRegex(Rejected, "surface|duplicate|missing"):
                         parse_receipt(candidate, t)
 
     def test_native_sha_and_source_still_not_independent_acceptance(self):
