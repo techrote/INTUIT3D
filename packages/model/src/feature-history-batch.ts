@@ -9,7 +9,7 @@
  * This is semantic intent, never solved SKETCH or native B-rep authority.
  */
 import {
-  featuresOf, parseProject, planProject, serializeProject,
+  featuresOf, deserializeProject, parseProject, planProject, serializeProject,
   ProjectFormatError, ProjectRevisionError,
 } from './index.ts';
 import type {
@@ -231,4 +231,123 @@ export function commitUndoableFeatureHistoryBatch(
   const history = parseUndoHistory(input);
   const preview = previewFeatureHistoryBatch(history.document, request);
   return commitUndoableTransaction(history, preview.events, request.expectedRevision);
+}
+
+
+/**
+ * @intuit3d/model/feature-history-batch-recovery/v1
+ *
+ * A CAD history inspector can retain a user's selected *intent* after later
+ * edits, but may not reuse a stale preview or transfer consent to a new graph.
+ * Recovery is permitted only on a canonical, strictly append-only descendant
+ * of the originally inspected journal; a different branch or equal-revision
+ * replacement must be reselected, never silently rebased.
+ *
+ * This API is a read-only preflight. WORKBENCH must display the fresh impact
+ * before passing candidateRequest to the ordinary atomic batch commit path.
+ */
+export const FEATURE_HISTORY_BATCH_RECOVERY_FORMAT =
+  'intuit3d.feature-history-batch-recovery' as const;
+
+export interface FeatureHistoryBatchRecovery {
+  readonly format: typeof FEATURE_HISTORY_BATCH_RECOVERY_FORMAT;
+  readonly version: 1;
+  readonly sourceRevision: number;
+  readonly currentRevision: number;
+  readonly appendedEventCount: number;
+  readonly status: 'ready' | 'requires_unresolved_review' | 'blocked';
+  readonly reason: string | null;
+  /**
+   * A NEW, current-source-fenced request with NO carried-over permission to
+   * produce unresolved intent. Null for a blocked selection.
+   */
+  readonly candidateRequest: FeatureHistoryBatchRequest | null;
+  readonly preview: FeatureHistoryBatchPreview | null;
+  /** New body impacts must be made visible to the engineer on review. */
+  readonly newlyInvalidatedBodyIds: readonly string[];
+  /** Never treat an earlier permission or preview as consent on a new head. */
+  readonly requiresFreshReview: true;
+  readonly exactGeometryAuthority: false;
+}
+
+/**
+ * Re-evaluate the same 2–8 historical selections on a descendant document.
+ *
+ * No topology matching or semantic guesswork is performed. The old canonical
+ * fence is itself a complete project snapshot, so no separate, untrusted
+ * "original feature value" is needed. A source-prefix mismatch is a revision
+ * conflict; overlapping edits and lost event IDs produce an explicit blocked
+ * result, with no partial selection recovery.
+ */
+export function recoverFeatureHistoryBatchSelection(
+  currentInput: ProjectDocument,
+  inspectedRequest: FeatureHistoryBatchRequest,
+): FeatureHistoryBatchRecovery {
+  validate(inspectedRequest);
+  const origin = deserializeProject(inspectedRequest.expectedDocumentFence);
+  if (serializeProject(origin) !== inspectedRequest.expectedDocumentFence ||
+      origin.projectId !== inspectedRequest.expectedProjectId ||
+      origin.revision !== inspectedRequest.expectedRevision) {
+    throw new ProjectRevisionError(
+      'feature history batch recovery: invalid original document fence');
+  }
+  // Establish that this selection was meaningful on its original document.
+  // Inspection may examine unresolved outcomes, but cannot authorize them.
+  const oldPreview = previewFeatureHistoryBatch(origin, {
+    ...inspectedRequest, admission: 'permit_unresolved', confirmUnresolved: true,
+  });
+  const current = parseProject(currentInput);
+  if (current.projectId !== origin.projectId ||
+      current.revision < origin.revision ||
+      serializeProject({
+        ...current, revision: origin.revision,
+        journal: current.journal.slice(0, origin.revision),
+      }) !== inspectedRequest.expectedDocumentFence) {
+    throw new ProjectRevisionError(
+      'feature history batch recovery: journal is not the inspected append-only lineage');
+  }
+
+  const candidateRequest: FeatureHistoryBatchRequest = {
+    ...inspectedRequest,
+    expectedRevision: current.revision,
+    expectedDocumentFence: serializeProject(current),
+    // Previously given permission cannot migrate across a document change.
+    admission: 'require_ready',
+    confirmUnresolved: false,
+  };
+  const base = {
+    format: FEATURE_HISTORY_BATCH_RECOVERY_FORMAT,
+    version: 1 as const,
+    sourceRevision: origin.revision, currentRevision: current.revision,
+    appendedEventCount: current.revision - origin.revision,
+    requiresFreshReview: true as const, exactGeometryAuthority: false as const,
+  };
+  let preview: FeatureHistoryBatchPreview;
+  try {
+    // Evaluate structural admissibility independently of renewed human consent.
+    // The resulting strict candidate remains uncommittable if intent regresses.
+    preview = previewFeatureHistoryBatch(current, {
+      ...candidateRequest, admission: 'permit_unresolved', confirmUnresolved: true,
+    });
+  } catch (error) {
+    if (!(error instanceof ProjectFormatError ||
+          error instanceof ProjectRevisionError)) throw error;
+    return {
+      ...base, status: 'blocked', reason: error.message,
+      candidateRequest: null, preview: null, newlyInvalidatedBodyIds: [],
+    };
+  }
+
+  const previousBodies = new Set(oldPreview.invalidatedBodyIds);
+  const states = new Map(preview.plan.features.map((row) =>
+    [row.feature.id, row.status] as const));
+  const requiresUnresolved = preview.regressedReadyFeatureIds.length > 0 ||
+    preview.selections.some((row) => states.get(row.featureId) !== 'ready');
+  return {
+    ...base,
+    status: requiresUnresolved ? 'requires_unresolved_review' : 'ready',
+    reason: null, candidateRequest, preview,
+    newlyInvalidatedBodyIds: preview.invalidatedBodyIds.filter(
+      (id) => !previousBodies.has(id)),
+  };
 }
