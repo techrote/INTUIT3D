@@ -194,3 +194,18 @@ test('retrospective edits and archive reopen preserve semantic constraint IDs an
   assert.equal(b.selection.sourceSignature,serializeSketch(b.sketch));
   near(solveSketch(b.sketch).geometry.points.find(p=>p.id==='L:e').y,95);
 });
+
+
+test('published ESM consumer runs real solver, explicit conflict repair and archive replay',async()=>{
+  const {spawnSync}=await import('node:child_process');
+  const {fileURLToPath}=await import('node:url');
+  const fixture=fileURLToPath(new URL('../examples/selected-profile-dimensions.mjs',import.meta.url));
+  const run=spawnSync(process.execPath,[fixture],{encoding:'utf8',timeout:15000});
+  assert.equal(run.status,0,run.stderr||run.stdout);
+  const result=JSON.parse(run.stdout);
+  assert.equal(result.kind,'accepted');
+  assert.deepEqual([...result.holeIds].sort(),['L:holeLower','L:holeUpper']);
+  assert.equal(result.previewOnly,true);
+  assert.equal(result.nativeExact,false);
+  near(result.projectionDeviationMm,5);
+});
