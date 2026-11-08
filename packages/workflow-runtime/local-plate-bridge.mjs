@@ -174,7 +174,12 @@ export async function startLocalPlateBridge({
       }
     };
     res.once('close',onClose);
-    active=abort;
+    active={abort,shutdown() {
+      // A graceful bridge shutdown must not wait for a stuck native adapter.
+      abort.abort();
+      safeWrite(503,unresolved('host_shutdown','local native bridge is closing'),sameOrigin);
+      notifyDisconnect({kind:'disconnected'});
+    }};
     let folder=null,watchdog=null;
     try {
       const archiveSha256=sha256(Buffer.from(raw.archive,'utf8'));
@@ -252,7 +257,7 @@ export async function startLocalPlateBridge({
   return Object.freeze({
     url:'http://127.0.0.1:'+boundPort, token,
     async close() {
-      active?.abort();
+      active?.shutdown();
       await new Promise((resolve,reject)=>server.close(err=>err?reject(err):resolve()));
     },
   });
