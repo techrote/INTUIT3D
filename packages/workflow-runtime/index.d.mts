@@ -3,6 +3,8 @@ import type {UndoHistory} from '@intuit3d/model/transactions';
 import type {DimensionBindingEvaluation} from '@intuit3d/model/dimension-bindings';
 import type {DimensionBatchEditRequest} from '@intuit3d/model/dimension-batch-edit';
 import type {SketchDocument, SketchSolution, PlateProfile} from '@intuit3d/sketch';
+import type {SelectedProfileSelection} from '@intuit3d/sketch/selected-profile/v1';
+import type {SelectedEdgeHoleCommand,SelectedEdgeHoleRefusal} from '@intuit3d/sketch/selected-edge-hole-placement/v1';
 import type {ProfileDiscoveryResponse} from '@intuit3d/sketch/profile-discovery/v1';
 
 
@@ -169,6 +171,26 @@ export interface HoleLayoutResizeRequest {
   radiusScale?:number;
 }
 
+/** Selected-contour edge-local authoring against the actual SKETCH signature.
+ * No inferred body assignment, native B-rep, or exact STEP authority.
+ */
+export interface SelectedEdgeHoleRuntimeRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  selection:SelectedProfileSelection;
+  command:SelectedEdgeHoleCommand;
+}
+export type SelectedEdgeHoleRuntimeResult =
+  | Readonly<{kind:'refused';code:'stale_selection'|'selected_edge_edit_refused';
+      notCommitted:true;sourceRevision:number;reason:string;
+      review?:SelectedEdgeHoleRefusal}>
+  | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
+      invalidation:WorkflowInvalidation;sketchStatus:RuntimeStatus;
+      selection:SelectedProfileSelection;semanticProfileId:string;
+      changedConstraintIds:string[];createdHoleIds:string[];
+      reanchoredHoleIds:string[];exactAuthority:false}>;
+
 export interface RuntimeServices {
   model: { planProject(document: ProjectDocument): EvaluationPlan };
   transactions: {
@@ -209,6 +231,10 @@ export interface WorkflowRuntime {
   transformPlateHoles(history:UndoHistory,request:RigidHoleTransformRequest):SketchConstraintBatchResult;
   /** Resize solved hole spacing and radii in one undoable authoritative edit. */
   resizePlateHoleLayout(history:UndoHistory,request:HoleLayoutResizeRequest):SketchConstraintBatchResult;
+  /** One selected-edge hole operation, fully solved and journaled on success.
+   * An ambiguous multi-contour sketch may remain invalid_profile in RuntimeReport:
+   * selected-contour admission alone never authorizes physical native export. */
+  editSelectedEdgeHoles(history:UndoHistory,request:SelectedEdgeHoleRuntimeRequest):SelectedEdgeHoleRuntimeResult;
   undo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   redo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   save(history: UndoHistory): string;
