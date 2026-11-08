@@ -84,6 +84,31 @@ test('actual authored SKETCH body can be exported before cuts, after one and aft
       expectedOcct8FlexibleLinearMetrics(first).volumeMm3);
   }
 });
+test('v6 zero-cut export refuses untracked sketch dependencies and wrong source frame',()=>{
+  const fixture=buildAuthoredSlopedBracket({cutCount:0});
+  const features=fixture.model.featuresOf(fixture.history.document);
+  const baseFeature=features.find(f=>f.kind==='extrude'&&
+    f.writeTargets?.includes(SLOPED_BODY_ID));
+  assert.ok(baseFeature?.dependsOn?.includes(baseFeature.payload.sourceSketchId));
+  assert.equal(baseFeature.payload.units,'mm');
+  assert.equal(baseFeature.payload.frame,'local_xy');
+  const options={runtime:fixture.runtime,model:fixture.model,
+    requestId:'progressive.provenance.good',exportStep:false};
+  assert.equal(requestFromRuntimeOcct8Flexible(fixture.history,SLOPED_BODY_ID,
+    options).cuts.length,0);
+  for(const corrupt of [
+    f=>({...f,dependsOn:[]}),
+    f=>({...f,payload:{...f.payload,frame:'world_xy'}}),
+    f=>({...f,payload:{...f.payload,units:'inch'}}),
+  ]){
+    // Inject an inconsistent feature record without changing RUNTIME's
+    // original solved journal, isolating the native adapter's own admission.
+    const model={featuresOf:()=>features.map(f=>f===baseFeature?corrupt(f):f)};
+    assert.throws(()=>requestFromRuntimeOcct8Flexible(
+      fixture.history,SLOPED_BODY_ID,{...options,model}),
+      /base extrusion must depend on its selected local-mm SKETCH/);
+  }
+});
 test('v6 requires an explicit pinned native worker without preview fallback',async()=>{
   await assert.rejects(()=>runPinnedOcct8FlexibleLinear(request(0),{
     readCurrentRevision:()=>20,
