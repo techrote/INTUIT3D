@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assessPolygonBoundary, requireSimplePolygonBoundary } from '../boundary-guard.mjs';
+import { assessPolygonBoundary, requireSimplePolygonBoundary, assessSeparatedPolygonBoundaries } from '../boundary-guard.mjs';
 import { createSketch, solveSketch, buildPlateProfile, serializeSketch, parseSketch, plateSketchFixture } from '../index.mjs';
 import { discoverPlateProfiles } from '../profile-discovery.mjs';
 
@@ -63,4 +63,40 @@ test('classification is stable across winding reversal and cyclic reordering',()
     assert.equal(classify(shifted),'nonadjacent_intersection');
     assert.equal(classify([...shifted].reverse()),'nonadjacent_intersection');
   }
+});
+
+
+test('exact two-contour isolation admits concave cutaway despite overlapping bounding boxes',()=>{
+  const l=[[0,0],[120,0],[120,30],[40,30],[40,80],[0,80]];
+  const inCutaway=[[62,42],[82,42],[82,60],[62,60]];
+  const polygon=coords=>coords.map(([x,y])=>({x,y}));
+  const check=(a,b)=>assessSeparatedPolygonBoundaries(polygon(a),polygon(b));
+  assert.deepEqual(check(l,inCutaway),{version:1,status:'separated',reason:null});
+  assert.equal(check(inCutaway,l).status,'separated');
+  assert.equal(check([...l].reverse(),[...inCutaway].reverse()).status,'separated');
+  for(const other of [
+    [[10,10],[20,10],[20,20],[10,20]], // nested inside L
+    [[100,10],[140,10],[140,20],[100,20]], // intersection
+    [[120,0],[140,0],[140,20],[120,20]], // shared edge
+    [[35,25],[50,25],[50,45],[35,45]] // concave corner crossing
+  ]){
+    assert.equal(check(l,other).status,'refused',JSON.stringify(other));
+    assert.equal(check(other,l).status,'refused',JSON.stringify(other));
+  }
+  const enclosing=[[-10,-10],[150,-10],[150,100],[-10,100]];
+  assert.deepEqual(check(l,enclosing),{version:1,status:'refused',
+    reason:'nested_contour'});
+  assert.deepEqual(check(enclosing,l),{version:1,status:'refused',
+    reason:'nested_contour'});
+  assert.equal(check(l,[[0,0],[0,0],[3,3]]).reason,'invalid_boundary');
+  assert.equal(check(l,[[NaN,0],[1,0],[1,1]]).reason,'invalid_boundary');
+});
+
+test('exact two-contour isolation recognizes tiny encoded contact without tolerance changes',()=>{
+  const t=1e-170;
+  const a=[[0,0],[t,0],[t,t],[0,t]].map(([x,y])=>({x,y}));
+  const b=[[t,t/2],[2*t,t/2],[2*t,t],[t,t]].map(([x,y])=>({x,y}));
+  assert.deepEqual(assessSeparatedPolygonBoundaries(a,b),{
+    version:1,status:'refused',reason:'boundary_contact'
+  });
 });
