@@ -206,7 +206,8 @@ test('nested authored topology reference forbids dropping its body dependency',(
         anchor:{kind:'edge',featureId:'cut.axial',roleId:'edge.axial.entry'}}],
     }}},
   });
-  assert.throws(()=>previewBodyCutRelocate(doc,request(doc)),/authored topology still anchors/);
+  assert.throws(()=>previewBodyCutRelocate(doc,request(doc)),
+    /authored topology on cut.gallery requires earlier source writer cut.axial/);
 });
 
 
