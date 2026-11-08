@@ -795,18 +795,23 @@ fn witness_3d(args:&[String]) {
     if specification.len()>100_000 {fail("oversized physical witness");}
     let mut volume_interval:Option<(f64,f64)>=None;
     let mut area_interval:Option<(f64,f64)>=None;
+    // V2 adds an independently authored 3D mass-distribution oracle.
+    // Preserve the admitted V1 witness format without reinterpretation.
+    let mut centroid_intervals:Option<[(f64,f64);3]>=None;
+    let mut covariance_intervals:Option<[(f64,f64);6]>=None;
     let mut rays:Vec<(String,[f64;3],[f64;3],bool)>=Vec::new();
     let mut unique=std::collections::HashSet::new();
-    let mut header=false;
+    let mut version=0;
     for (line_number,line) in specification.lines().enumerate() {
         if line.is_empty(){continue;}
         if line.len()>256 {fail("oversized witness record");}
         let fields:Vec<&str>=line.split_whitespace().collect();
-        if !header {
-            if fields != ["INTUIT3D_3D_WITNESS_V1"] {
-                fail("wrong independent 3D witness version");
-            }
-            header=true;
+        if version==0 {
+            version=match fields.as_slice() {
+                ["INTUIT3D_3D_WITNESS_V1"]=>1,
+                ["INTUIT3D_3D_WITNESS_V2"]=>2,
+                _=>fail("wrong independent 3D witness version"),
+            };
             continue;
         }
         match fields.first().copied().unwrap_or("") {
@@ -821,6 +826,35 @@ fn witness_3d(args:&[String]) {
                     }
                 }else if area_interval.replace((lower,upper)).is_some(){
                     fail("duplicate witness area");
+                }
+            }
+            "CENTROID" if version==2 && fields.len()==7 => {
+                let mut intervals=[(0.0,0.0);3];
+                for i in 0..3 {
+                    let low=number(fields[1+2*i]);
+                    let high=number(fields[2+2*i]);
+                    if high<=low || high-low>0.5 {
+                        fail("independent 3D centroid interval invalid or too broad");
+                    }
+                    intervals[i]=(low,high);
+                }
+                if centroid_intervals.replace(intervals).is_some() {
+                    fail("duplicate independent 3D centroid");
+                }
+            }
+            "COVARIANCE" if version==2 && fields.len()==13 => {
+                let mut intervals=[(0.0,0.0);6];
+                for i in 0..6 {
+                    let low=number(fields[1+2*i]);
+                    let high=number(fields[2+2*i]);
+                    let permitted=0.03*low.abs().max(high.abs()).max(1.0)+0.5;
+                    if high<=low || high-low>permitted {
+                        fail("independent 3D covariance interval invalid or too broad");
+                    }
+                    intervals[i]=(low,high);
+                }
+                if covariance_intervals.replace(intervals).is_some() {
+                    fail("duplicate independent 3D covariance");
                 }
             }
             "RAY" if fields.len()==9 => {
@@ -841,6 +875,9 @@ fn witness_3d(args:&[String]) {
             }
             _ => fail(&format!("invalid witness command at line {}",line_number+1)),
         }
+    }
+    if version==2 && (centroid_intervals.is_none() || covariance_intervals.is_none()) {
+        fail("V2 independent mass witness requires centroid and full covariance");
     }
     let (vol_min,vol_max)=volume_interval.unwrap_or_else(||fail("missing witness volume"));
     let (area_min,area_max)=area_interval.unwrap_or_else(||fail("missing witness area"));
@@ -863,13 +900,26 @@ fn witness_3d(args:&[String]) {
     if mesh.vertices.len()<4 || mesh.faces.is_empty(){fail("empty witness solid");}
     let mut edges:HashMap<(u32,u32),usize>=HashMap::new();
     let (mut volume,mut surface,mut triangle_count)=(0.0f64,0.0f64,0usize);
+    let mut first_moment=[0.0f64;3];
+    let mut second_moment=[0.0f64;6];
+    let axes=[(0,0),(1,1),(2,2),(0,1),(0,2),(1,2)];
     for tri in mesh.faces.iter().flat_map(|face|&face.triangles) {
         let a=point(mesh,tri[0]);let b=point(mesh,tri[1]);let c=point(mesh,tri[2]);
         let cross=witness_cross(witness_sub(b,a),witness_sub(c,a));
         let twice_area=witness_dot(cross,cross).sqrt();
         if !twice_area.is_finite()||twice_area<1e-12 {fail("degenerate imported witness triangle");}
         surface+=twice_area/2.0;
-        volume+=witness_dot(a,witness_cross(b,c))/6.0;
+        let tetra=witness_dot(a,witness_cross(b,c))/6.0;
+        volume+=tetra;
+        for i in 0..3 {
+            first_moment[i]+=tetra*(a[i]+b[i]+c[i])/4.0;
+        }
+        for (k,(i,j)) in axes.iter().enumerate() {
+            let si=a[*i]+b[*i]+c[*i];
+            let sj=a[*j]+b[*j]+c[*j];
+            let diagonal=a[*i]*a[*j]+b[*i]*b[*j]+c[*i]*c[*j];
+            second_moment[k]+=tetra*(si*sj+diagonal)/20.0;
+        }
         triangle_count+=1;
         for i in 0..3{*edges.entry((tri[i],tri[(i+1)%3])).or_default()+=1;}
     }
@@ -877,6 +927,7 @@ fn witness_3d(args:&[String]) {
         edges.iter().any(|(&(a,b),&n)|n!=1||edges.get(&(b,a))!=Some(&1)) {
         fail("independent witness mesh is not closed/oriented");
     }
+    let signed_volume=volume;
     volume=volume.abs();
     if !volume.is_finite() || !surface.is_finite() ||
        !(vol_min<=volume && volume<=vol_max) {
@@ -885,6 +936,27 @@ fn witness_3d(args:&[String]) {
     if !(area_min<=surface && surface<=area_max) {
         fail(&format!("WITNESS_GEOMETRY: imported area {surface} outside [{area_min},{area_max}]"));
     }
+    let moments=if version==2 {
+        let expected_centre=centroid_intervals.unwrap();
+        let expected_covariance=covariance_intervals.unwrap();
+        let mut centre=[0.0f64;3];
+        for i in 0..3 {
+            centre[i]=first_moment[i]/signed_volume;
+            let (low,high)=expected_centre[i];
+            if !centre[i].is_finite() || centre[i]<low || centre[i]>high {
+                fail(&format!("WITNESS_GEOMETRY: imported centroid axis {i} {:.9} outside [{low},{high}]",centre[i]));
+            }
+        }
+        let mut covariance=[0.0f64;6];
+        for (k,(i,j)) in axes.iter().enumerate() {
+            covariance[k]=second_moment[k]/signed_volume-centre[*i]*centre[*j];
+            let (low,high)=expected_covariance[k];
+            if !covariance[k].is_finite() || covariance[k]<low || covariance[k]>high {
+                fail(&format!("WITNESS_GEOMETRY: imported covariance component {k} {:.9} outside [{low},{high}]",covariance[k]));
+            }
+        }
+        Some((centre,covariance))
+    } else {None};
     for (name,origin,direction,expected) in &rays {
         let hits=witness_hits(mesh,*origin,*direction);
         let material=hits.len()%2==1;
@@ -894,6 +966,11 @@ fn witness_3d(args:&[String]) {
                  if material{"material"}else{"void"},hits.len()));
         }
         println!("WITNESS_RAY {name} {} intersections={}",if material{"material"}else{"void"},hits.len());
+    }
+    if let Some((centre,covariance))=moments {
+        println!("WITNESS_MOMENTS centroid_x_mm={:.9} centroid_y_mm={:.9} centroid_z_mm={:.9} cov_xx_mm2={:.9} cov_yy_mm2={:.9} cov_zz_mm2={:.9} cov_xy_mm2={:.9} cov_xz_mm2={:.9} cov_yz_mm2={:.9}",
+            centre[0],centre[1],centre[2],covariance[0],covariance[1],
+            covariance[2],covariance[3],covariance[4],covariance[5]);
     }
     println!("WITNESS_ACCEPT solids=1 imported_exact=true warnings=0 rays={} triangles={} volume_mm3={:.9} area_mm2={:.9}",
         rays.len(),triangle_count,volume,surface);
