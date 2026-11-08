@@ -48,6 +48,19 @@ def expected_volume(thickness: int) -> float:
     return (120 * 80 - 70 * 50 - 10 * 12) * thickness - math.pi * 25 * 3
 
 
+def expected_surface_area(thickness: int) -> float:
+    """Analytic exposed area in mm², derived from authored CSG, not OCCT.
+
+    Two flat faces of the U footprint minus the through 10x12 window,
+    plus the U outline's 500-mm perimeter and the window's 44-mm
+    perimeter times extrusion thickness. The R5 blind pocket exchanges
+    a top disc for an equal floor disc and adds a 3-mm cylindrical wall.
+    """
+    require(thickness in (8, 12), "unsupported U-bracket fixture thickness")
+    return 2 * (120 * 80 - 70 * 50 - 10 * 12) + (
+        500 + 2 * (10 + 12)) * thickness + 2 * math.pi * 5 * 3
+
+
 def expected_centroid(thickness: int) -> tuple[float, float, float]:
     """Independent first-moment oracle for occupied material, in millimetres.
 
@@ -171,6 +184,7 @@ def parse_receipt(stdout: str, thickness: int) -> dict:
         "solids", "source_unit", "imported_exact", "tris", "open_edges",
         "volume_mm3", "expected_mm3", "centroid_x_mm",
         "centroid_y_mm", "centroid_z_mm", "warnings",
+        "surface_area_mm2", "expected_surface_mm2",
         *(f"cov_{axis}_mm2" for axis in ("xx", "yy", "zz", "xy", "xz", "yz")),
     }, "duplicate, unsupported or missing independent solid fields")
     require(summary["solids"] == "1" and summary["source_unit"] in
@@ -180,6 +194,8 @@ def parse_receipt(stdout: str, thickness: int) -> dict:
     try:
         triangles = int(summary["tris"])
         measured, claimed = float(summary["volume_mm3"]), float(summary["expected_mm3"])
+        surface, claimed_surface = (float(summary["surface_area_mm2"]),
+                                    float(summary["expected_surface_mm2"]))
         centroid = tuple(float(summary[f"centroid_{axis}_mm"]) for axis in "xyz")
         covariance = {axis: float(summary[f"cov_{axis}_mm2"])
                       for axis in ("xx", "yy", "zz", "xy", "xz", "yz")}
@@ -190,6 +206,11 @@ def parse_receipt(stdout: str, thickness: int) -> dict:
             and abs(claimed-oracle) <= 1e-5 and
             abs(measured-oracle) <= oracle*.01,
             "independently reconstructed U-bracket volume outside 1%")
+    surface_oracle = expected_surface_area(thickness)
+    require(all(map(math.isfinite, (surface, claimed_surface))) and
+            abs(claimed_surface-surface_oracle) <= 1e-5 and
+            abs(surface-surface_oracle) <= surface_oracle*.01,
+            "independently imported U-bracket surface area differs from authored CSG")
     expected_centre = expected_centroid(thickness)
     require(all(math.isfinite(p) and abs(p - e) <= .15
                 for p, e in zip(centroid, expected_centre)),
@@ -205,6 +226,8 @@ def parse_receipt(stdout: str, thickness: int) -> dict:
         require(math.isfinite(observed) and abs(observed-reference) <= tolerance,
                 f"independent mass covariance {axis} disagrees with source geometry")
     return dict(importedExactBRep=True, measuredVolumeMm3=measured,
+                measuredSurfaceAreaMm2=surface,
+                expectedSurfaceAreaMm2=surface_oracle,
                 expectedVolumeMm3=oracle,
                 measuredCentroidMm=dict(zip("xyz", centroid)),
                 measuredCovarianceMm2=covariance,
