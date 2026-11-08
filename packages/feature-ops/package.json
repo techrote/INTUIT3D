@@ -95,6 +95,10 @@
     "./cut-recipe-copy/v1": {
       "types": "./cut-recipe-copy.d.mts",
       "default": "./src/cut-recipe-copy.mjs"
+    },
+    "./adapted-cut-recipe/v1": {
+      "types": "./adapted-cut-recipe.d.mts",
+      "default": "./src/adapted-cut-recipe.mjs"
     }
   },
   "peerDependencies": {
