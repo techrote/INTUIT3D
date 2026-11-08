@@ -180,6 +180,40 @@ export function previewBodyCutRelocate(
   const newIds = reordered.map((f) => f.id);
   if (newIds.every((id, i) => id === oldIds[i])) fail('requested move is a no-op');
 
+  // A non-immediate historical writer can be an explicitly selected edge
+  // source. Structural rewiring alone would leave its topology identity in
+  // the payload while placing the consumer BEFORE that source. Validate every
+  // local writer, not just those whose immediate predecessor edge changed.
+  const positions = new Map(newIds.map((id, index) => [id, index] as const));
+  for (const writer of reordered) {
+    const sources = new Set<string>();
+    const visit = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        for (const entry of value) visit(entry);
+        return;
+      }
+      if (!plain(value)) return;
+      if (value.format === TOPOLOGY_REFERENCE_FORMAT && plain(value.anchor) &&
+          typeof value.anchor.featureId === 'string') {
+        sources.add(value.anchor.featureId);
+      }
+      for (const entry of Object.values(value)) visit(entry);
+    };
+    visit(writer.payload);
+    // selected-edge-cut/v1 also persists its explicit source writer ID.
+    if (typeof writer.payload.edgeSourceWriterId === 'string') {
+      sources.add(writer.payload.edgeSourceWriterId);
+    }
+    for (const source of sources) {
+      const sourcePosition = positions.get(source);
+      if (sourcePosition !== undefined && sourcePosition >= positions.get(writer.id)!) {
+        fail('authored topology on ' + writer.id +
+          ' requires earlier source writer ' + source);
+      }
+    }
+  }
+
+
   const oldPrevious = new Map<string, string>();
   for (let i = 1; i < original.length; i++) {
     oldPrevious.set(original[i]!.id, original[i - 1]!.id);

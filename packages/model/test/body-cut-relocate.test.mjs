@@ -209,6 +209,57 @@ test('nested authored topology reference forbids dropping its body dependency',(
   assert.throws(()=>previewBodyCutRelocate(doc,request(doc)),/authored topology still anchors/);
 });
 
+
+test('non-adjacent writer edge references cannot become future-facing topology',()=>{
+  const base=manifold();
+  const pocket=featuresOf(base).find(f=>f.id==='cut.pocket');
+  // This source is an earlier non-immediate writer, so no immediate chain
+  // predecessor is being dropped from this cut during relocation.
+  const doc=commitEvent(base,{
+    eventId:'bind.pocket.axial.role',type:'feature.edit',
+    featureId:'cut.pocket',patch:{payload:{...pocket.payload,selection:{
+      guide:{format:'intuit3d.semantic-topology-reference',version:1,
+        projectId:base.projectId,atRevision:base.revision,
+        anchor:{kind:'edge',featureId:'cut.axial',roleId:'edge.axial.source'}},
+    }}},
+  });
+  assert.ok(planProject(doc).features.every(f=>f.status==='ready'));
+  // Moving axial after pocket used to pass because pocket retains its
+  // original dependency on gallery and its payload was not rewritten.
+  assert.throws(()=>previewBodyCutRelocate(doc,request(doc)),
+    /authored topology on cut.pocket requires earlier source writer cut.axial/);
+});
+
+test('selected-edge source writer identity is guarded even without a topology mapping',()=>{
+  const base=manifold();
+  const pocket=featuresOf(base).find(f=>f.id==='cut.pocket');
+  const doc=commitEvent(base,{
+    eventId:'bind.pocket.edge.origin',type:'feature.edit',
+    featureId:'cut.pocket',
+    patch:{payload:{...pocket.payload,edgeSourceBodyId:'body.manifold',
+      edgeSourceWriterId:'cut.axial'}},
+  });
+  assert.throws(()=>previewBodyCutRelocate(doc,request(doc)),
+    /authored topology on cut.pocket requires earlier source writer cut.axial/);
+});
+
+test('a still-earlier authored topology source is preserved across relocation',()=>{
+  const base=manifold();
+  const pocket=featuresOf(base).find(f=>f.id==='cut.pocket');
+  const doc=commitEvent(base,{
+    eventId:'bind.pocket.root.role',type:'feature.edit',
+    featureId:'cut.pocket',patch:{payload:{...pocket.payload,selection:{
+      guide:{format:'intuit3d.semantic-topology-reference',version:1,
+        projectId:base.projectId,atRevision:base.revision,
+        anchor:{kind:'edge',featureId:'extrude.manifold',roleId:'edge.root'}},
+    }}},
+  });
+  const staged=previewBodyCutRelocate(doc,request(doc));
+  assert.equal(staged.plan.features.every(f=>f.status==='ready'),true);
+  assert.equal(staged.writerOrderAfter.indexOf('extrude.manifold') <
+    staged.writerOrderAfter.indexOf('cut.pocket'),true);
+});
+
 test('an unordered extra writer is never silently repaired',()=>{
   const doc=commitEvent(manifold(),create('cut.rogue','cut',
     ['extrude.manifold','sketch.axial'],['body.manifold'],
