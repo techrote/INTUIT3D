@@ -1039,3 +1039,25 @@ actual button and capture the trace; Integration/STEP must run the separate
 independent physical importer and verify its versioned witness. Run
 `node --test packages/workflow-runtime/test/local-occt8-bridge.integration.test.mjs`
 and `npm run typecheck --workspace @intuit3d/workflow-runtime`.
+
+## Canonical archive fence at native provider dispatch (8 Nov 2026)
+
+The experimental and pinned OCCT8 plate adapters now compare
+`runtime.save(readCurrentHistory())` with the entire canonical source archive
+captured before native command assembly, throughout the request, native
+progress callback and completion. Matching project IDs, revision numbers and
+`runtime.inspect()` feature reports alone are **insufficient**: distinct
+undo/event histories may generate the same evaluated geometry report. A changed
+archive at the same revision is returned as `stale_revision`, before any
+native dispatch if already changed, or after a dispatched provider resolves.
+No native result, output claim or STEP is promoted for that mismatched source.
+
+The accepted localhost client and browser session independently enforce their
+own SHA-256/archive fences. This change closes the *trusted provider adapter's*
+remaining report-only gap, including non-HTTP direct consumers, without adding
+a host or second session. The regression runs against actual INTENT/SKETCH
+histories with divergent event identities, plus adversarial synchronous
+provider unit cases. Run
+`node --test packages/workflow-runtime/test/experimental-plate.unit.test.mjs packages/workflow-runtime/test/experimental-plate.integration.test.mjs`.
+This remains source/dispatch qualification, **not** physical OCCT8 C++
+execution, native STEP readback or independent non-OCCT acceptance.
