@@ -17,7 +17,7 @@ test('private original-file probe executes read, parse, real reopen and inspect 
   const privateName=join(dir,'PRIVATE-original-do-not-publish.i3d-model.json');
   try {
     let history=newModelPlateSession('workbench.private.probe');
-    for(let i=0;i<11;i++)history=editModelDimension(history,'thickness',10+i);
+    for(let i=0;i<11;i++)history=editModelDimension(history,'thickness',11+i);
     writeFileSync(privateName,serializeModelSession(history));
     const result=run(privateName);
     assert.equal(result.status,0,result.stderr);
