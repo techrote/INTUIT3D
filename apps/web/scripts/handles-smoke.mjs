@@ -1065,7 +1065,7 @@ async function main() {
     if(!readout||!coordinates||!svg||!axis)return false;
     const b=readout.getBoundingClientRect(),[x,y,w,h]=svg.getAttribute('viewBox').split(' ').map(Number);
     return b.width>0&&b.height>0&&coordinates.textContent.includes('NEXT X 500.000')&&
-      axis.getAttribute('d')===`M ${x} 120 H ${x+w} M 0 ${y} V ${y+h}`;
+      axis.getAttribute('d')===('M '+x+' 120 H '+(x+w)+' M 0 '+y+' V '+(y+h));
   })()`),'off-origin navigation hid pointer coordinates or clipped the model axes');
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore,
     'off-extent drafting unexpectedly committed a CAD revision');
