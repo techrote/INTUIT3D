@@ -39,7 +39,8 @@ def json_object(path: Path, cap: int) -> dict:
 def source_bound_archive(path: Path) -> dict:
     archive = json_object(path, 32 * 1024 * 1024)
     require(archive.get('format') == 'intuit3d.model-archive' and
-            archive.get('version') == 1, "not a versioned canonical model archive")
+            type(archive.get('version')) is int and archive['version'] == 1,
+            "not a versioned canonical model archive")
     history = archive.get('history')
     require(type(history) is dict, 'missing authoritative undo history')
     doc = history.get('document')
@@ -47,7 +48,8 @@ def source_bound_archive(path: Path) -> dict:
             isinstance(archive.get('projectId'), str) and archive['projectId'] and
             type(archive.get('revision')) is int and 0 <= archive['revision'] < 2**53 and
             doc.get('projectId') == archive['projectId'] and
-            doc.get('revision') == archive['revision'],
+            type(doc.get('revision')) is int and
+            doc['revision'] == archive['revision'],
             "archive top-level project/revision differs from its journal")
     return {'projectId': archive['projectId'], 'revision': archive['revision'],
             'archiveSha256': sha(bound_bytes(path, 32 * 1024 * 1024))}
@@ -56,7 +58,7 @@ def source_bound_archive(path: Path) -> dict:
 def verify_capture(path: Path, archive: Path, step: Path) -> dict:
     captured = json_object(path, 100_000)
     require(captured.get('format') == 'intuit3d.source-bound-step-receipt' and
-            captured.get('version') == 1,
+            type(captured.get('version')) is int and captured['version'] == 1,
             "not a supported RUNTIME source-bound STEP receipt")
     require(captured.get('exactAuthority') is False and
             captured.get('independentInteroperability') is False,
@@ -64,7 +66,8 @@ def verify_capture(path: Path, archive: Path, step: Path) -> dict:
     source, producer, stepmeta = (captured.get(k) for k in ('source', 'producer', 'step'))
     require(all(type(v) is dict for v in (source, producer, stepmeta)),
             "missing source/producer/STEP receipt")
-    require(source == source_bound_archive(archive),
+    require(type(source.get('revision')) is int and
+            source == source_bound_archive(archive),
             "STEP receipt is not bound to exact current model archive bytes")
     require(producer.get('backend') == 'OCCT-cxx-8.0.1' and
             producer.get('occtVersion') == '8.0.1' and
