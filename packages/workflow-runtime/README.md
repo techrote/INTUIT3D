@@ -1079,8 +1079,10 @@ After starting a native evaluation, call `session.refresh()` to read the
 existing session, cancellation and verified STEP receipt, not a second model
 or independent geometry authority:
 
-- `providerState`: `idle`, `pending`, `evaluated`, or `provider_failed`.
-  An evaluated provider is experimental evidence, never an exactness claim.
+- `providerState`: `idle`, `pending`, `evaluated`, `blocked`,
+  `provider_failed`, or `cancelled`. Unsupported CAD operations are `blocked`,
+  not incorrectly labelled as an OCCT crash. An evaluated provider is
+  experimental evidence, never an exactness claim.
 - `stepAvailability`: `unavailable`, `current` or `last_good`.
   Last-good bytes are **still bound to the unchanged canonical source**,
   but a newer provider request is pending or failed. Do not label those
