@@ -588,7 +588,20 @@ fn sloped_profile(args: &[String]) {
         rays.push((format!("pocket.inner.{side}"),15.0+4.5*dx,50.0+4.5*dy,floor));
         rays.push((format!("pocket.outer.{side}"),15.0+5.5*dx,50.0+5.5*dy,Some(t)));
     }
-    if rays.len()!=34 { fail("incomplete generalized sloped-profile ray oracle"); }
+    // A circular R5 pocket and 10x10 square pocket have *identical*
+    // occupancy at the four cardinal wall probes. At (+/-4,+/-4),
+    // the point is outside the circle (r=5.657) but inside the square.
+    // This is an indispensable physical shape-discrimination predicate:
+    // volume and surface budgets alone cannot reliably reject a wrong cut.
+    let diagonal_top=if kind=="direct" { Some(t) } else { floor };
+    for (side,dx,dy) in [
+        ("ne",1.0,1.0),("nw",-1.0,1.0),
+        ("se",1.0,-1.0),("sw",-1.0,-1.0),
+    ] {
+        rays.push((format!("pocket.diagonal.{side}"),
+                   15.0+4.0*dx,50.0+4.0*dy,diagonal_top));
+    }
+    if rays.len()!=38 { fail("incomplete generalized sloped-profile ray oracle"); }
     for (name,x,y,expected) in rays {
         let zs=intersections(mesh,x,y);
         match expected {
