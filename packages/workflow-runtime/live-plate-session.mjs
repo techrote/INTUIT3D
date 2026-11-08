@@ -169,12 +169,26 @@ export function createLivePlateSession({
         const request={...command.request,expectedRevision:revision};
         switch(command.kind) {
           case 'model.feature.remove': {
-            const {sourceDocumentFence,...modelRequest}=request;
+            const {sourceDocumentFence,confirmedCascadeIds,...modelRequest}=request;
             if(typeof sourceDocumentFence!=='string' ||
                 sourceDocumentFence!==serializeProject(history.document))
               return lifecycleRefused('stale_source',
                 'feature removal was inspected against a different authoritative journal');
             try {
+              // A project fence alone does not bind user consent to the actual
+              // selected feature. A swapped feature ID could otherwise retire
+              // a different (potentially larger) descendant closure.
+              if(modelRequest.mode==='cascade_descendants') {
+                const impact=inspectModelRemoval(history.document,modelRequest.featureId);
+                if(!Array.isArray(confirmedCascadeIds) ||
+                    confirmedCascadeIds.length!==impact.cascadeIds.length ||
+                    confirmedCascadeIds.some((id,index)=>id!==impact.cascadeIds[index]))
+                  return lifecycleRefused('unreviewed_impact',
+                    'cascade target/descendants differ from the inspected removal impact');
+              } else if(confirmedCascadeIds!==undefined) {
+                return lifecycleRefused('unreviewed_impact',
+                  'cascade target approval is only valid for cascade mode');
+              }
               return commitUndoableFeatureRemoval(history,{
                 ...modelRequest,expectedProjectId:command.projectId,
                 expectedRevision:revision,
@@ -186,13 +200,28 @@ export function createLivePlateSession({
             }
           }
           case 'model.feature.recover-closure': {
-            if(typeof request.expectedDocumentFence!=='string' ||
-                request.expectedDocumentFence!==serializeProject(history.document))
+            const {confirmedRequiredFeatureIds,...modelRequest}=request;
+            if(typeof modelRequest.expectedDocumentFence!=='string' ||
+                modelRequest.expectedDocumentFence!==serializeProject(history.document))
               return lifecycleRefused('stale_source',
                 'feature recovery was inspected against a different authoritative journal');
             try {
+              // Explicit ancestor acknowledgement must describe the *same*
+              // selected tombstones and ordered closure that WORKBENCH showed.
+              // MODEL still revalidates readiness, dependencies and event IDs.
+              const inspection=inspectModelRecovery(history.document,{
+                format:'intuit3d.feature-recovery-closure',version:1,
+                expectedProjectId:command.projectId,expectedRevision:revision,
+                expectedDocumentFence:modelRequest.expectedDocumentFence,
+                selectedFeatureIds:modelRequest.selectedFeatureIds,
+              });
+              if(!Array.isArray(confirmedRequiredFeatureIds) ||
+                  confirmedRequiredFeatureIds.length!==inspection.requiredFeatureIds.length ||
+                  confirmedRequiredFeatureIds.some((id,index)=>id!==inspection.requiredFeatureIds[index]))
+                return lifecycleRefused('unreviewed_impact',
+                  'recovery selection/ancestors differ from the inspected restoration closure');
               return commitUndoableFeatureRecoveryClosure(history,{
-                ...request,expectedProjectId:command.projectId,
+                ...modelRequest,expectedProjectId:command.projectId,
                 expectedRevision:revision,
               });
             } catch(error) {
