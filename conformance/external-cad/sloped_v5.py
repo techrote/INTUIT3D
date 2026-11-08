@@ -120,7 +120,22 @@ def ray_oracle(kind: str, thickness: int, cut_count: int = 2) -> list[tuple[str,
     ):
         rays.append((f"pocket.diagonal.{side}", 15+4*dx,
                      50+4*dy, diagonal))
-    require(len(rays) == 38, "incomplete sloped selected-profile oracle")
+    # A complete angular wall fingerprint, bracketing each expected pocket
+    # boundary to 0.2 mm. The direct circular R5 wall has constant radius;
+    # the authored 10x10 rectangle has orientation-dependent radial distance.
+    # Uncut and through-only stages must have material at every sample.
+    for i in range(12):
+        angle = math.radians(15 + i * 30)
+        dx, dy = math.cos(angle), math.sin(angle)
+        wall = 5 if kind == "direct" else 5 / max(abs(dx), abs(dy))
+        inner, outer = wall - .2, wall + .2
+        rays.extend([
+            (f"pocket.radial.{i}.inner", 15 + inner*dx,
+             50 + inner*dy, z-3 if pocket else z),
+            (f"pocket.radial.{i}.outer", 15 + outer*dx,
+             50 + outer*dy, z),
+        ])
+    require(len(rays) == 62, "incomplete sloped selected-profile oracle")
     return rays
 
 
@@ -184,7 +199,7 @@ def parse_receipt(stdout: str, kind: str, thickness: int,
     progression = 2 if cut_count is None else cut_count
     expected = ray_oracle(kind, thickness, progression)
     lines = stdout.splitlines()
-    require(len(lines) == 39, "missing, extra or duplicate physical ray lines")
+    require(len(lines) == 63, "missing, extra or duplicate physical ray lines")
     observed = []
     for line, (name, x, y, top) in zip(lines[:-1], expected):
         parts = line.split()
@@ -272,7 +287,7 @@ def parse_receipt(stdout: str, kind: str, thickness: int,
         tolerance = max(abs(reference)*.01, .1) if i < 3 else max(abs(reference)*.05, .25)
         require(math.isfinite(actual) and abs(actual-reference) <= tolerance,
                 f"independent selected-profile material covariance {i} wrong")
-    return {"importedExactBRep": True, "cutCount": progression, "rayCount": 38,
+    return {"importedExactBRep": True, "cutCount": progression, "rayCount": 62,
             "measuredCentroidMm": list(centre),
             "expectedCentroidMm": list(analytic_centre),
             "measuredMaterialCovarianceMm2": list(covariance),

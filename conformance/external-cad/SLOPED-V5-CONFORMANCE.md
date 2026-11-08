@@ -22,10 +22,10 @@ and depth. Both have 8 mm and retrospectively edited 12 mm STEP outputs.
 
 The separately compiled, source-pinned AnvilCAD importer must reconstruct
 one exact closed warning-free solid per STEP, oriented watertight triangles,
-triangle-derived material volume and exposed area, and **38 world-space
+triangle-derived material volume and exposed area, and **62 world-space
 material/void/pocket-floor rays each**. The ray oracle crosses three distinct
 segments of the real diagonal, the re-entrant corner, each window wall,
-and both blind pocket variants. The four additional diagonal pocket rays distinguish the R5 circle from the 10x10 square even when cardinal walls and the 1% mass/area budgets match. **Four imports / 152 physical rays**.
+and both blind pocket variants. The four additional diagonal pocket rays distinguish the R5 circle from the 10x10 square even when cardinal walls and the 1% mass/area budgets match. **Four imports / 248 physical rays**.
 
 The Python runner checks original STEP byte SHA-256 against unmodified native
 producer receipts, exact KERNEL git SHA and C++ source hash, actual worker
@@ -60,7 +60,7 @@ does not implement this new mode.
       --output-dir /fresh/sloped-independent-evidence
 
 Success prints/records NON_OCCT_SLOPED_V5_FOUR_STEP_PHYSICAL_PASS only after
-the binary actually executes four non-OCCT imports and verifies all 152
+the binary actually executes four non-OCCT imports and verifies all 248
 material rays. **Still review the hosted C++ binary/source compile binding
 and independent AnvilCAD build log**; source and binary digests alone do not
 prove the producer was compiled at that source revision.
@@ -90,10 +90,10 @@ an assertion that v6 STEP files have been compiled/imported yet.
 Direct sequence: uncut stock → circular R5 blind pocket → that pocket and
 14×8 through-window. Authored sequence: uncut stock → rectangular through
 window → window and 10×10 square blind pocket. Each state at both 8 and 12 mm
-has its own analytic material/surface oracles and **38 material/void ray
+has its own analytic material/surface oracles and **62 material/void ray
 locations**, including no-cut solid where a future cutter will be, slope
 positions, walls/floors, and circle-versus-square diagonals. The complete
-next physical gate requires **12 genuine STEP files / 456 AnvilCAD rays**.
+next physical gate requires **12 genuine STEP files / 744 AnvilCAD rays**.
 
 Prerequisite: Integration/Native Build must execute the two immutable KERNEL
 #195 v6 producers using a source-matched OCCT 8.0.1 C++ binary:
@@ -115,7 +115,7 @@ receipts/old U fixtures do **not** qualify v6 physical correctness.
 
 After one exact-head hosted KERNEL #195 OCCT 8.0.1 build has produced the
 **original** six direct plus six authored progressive STEP outputs, the
-following command performs twelve independent physical imports, 456
+following command performs twelve independent physical imports, 744
 material/void/floor rays, **four physical adversarial re-imports** (missing
 blind, fabricated square pocket, circle vs square, incorrect thickness),
 source/binary/hash custody, and atomic fail-closed evidence status:
@@ -157,7 +157,7 @@ It refuses missing/nonfinite/displaced readings. The legacy original
 U-bracket mode is unchanged.
 
 A correct imported solid must satisfy all existing one-solid, closed
-topology, source/hash, volume, surface and 38 material/void rays **and**
+topology, source/hash, volume, surface and 62 material/void rays **and**
 the additional mass-distribution predicates. Acceptance thresholds:
 each centroid axis within 0.15 mm; diagonal covariance within the larger
 of 1% of the corresponding analytic reference or 0.1 mm²; mixed covariance
@@ -175,3 +175,20 @@ the synthetic tests as real C++ or AnvilCAD physical evidence.
 The v5/v6 source-matched pinned OCCT 8.0.1 producer build and its original
 STEP exports remain an explicit dependency on KERNEL #195 and Integration
 #74. The accepted older U-bracket physical evidence is not a substitute.
+
+## Candidate twelve-angle pocket-wall fingerprint (8 November)
+
+The v5/v6 independent importer now brackets the predicted blind-pocket
+boundary at twelve azimuths, each with a 0.2 mm inner and outer vertical
+material/floor ray. Direct circular R5 pockets use constant radial distance;
+authored 10x10 rectangular pockets use 5/max(|cos θ|,|sin θ|). Stages before
+the blind cutter must show continuous full-thickness material at both points.
+This adds **24 independently observed rays per imported STEP** beyond the
+existing 38, resulting in **62 per part**, **248 for the four v5 positives**
+and **744 for the twelve v6 positives**. It provides more discriminating
+radius, centre and curved-versus-polygonal wall evidence without trusting
+STEP text, native topology labels, or the source-side mass receipt.
+
+This capability is **source-only until the genuinely source-matched KERNEL
+#195 STEP outputs are independently imported with the newly compiled
+AnvilCAD probe**. Synthetic regression fixtures are not physical evidence.

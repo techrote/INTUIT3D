@@ -704,7 +704,24 @@ fn sloped_profile(args: &[String]) {
         rays.push((format!("pocket.diagonal.{side}"),
                    15.0+4.0*dx,50.0+4.0*dy,diagonal_top));
     }
-    if rays.len()!=38 { fail("incomplete generalized sloped-profile ray oracle"); }
+    // Twelve independent angular directions bracket the circular or square
+    // pocket wall at +/-0.2 mm in the imported B-rep triangulation. Unlike
+    // the four diagonal/cardinal rays, these constrain actual wall radius,
+    // selected centre and angular shape across every progressive cut stage.
+    // For stages before the pocket exists, both samples must remain material.
+    for i in 0..12 {
+        let angle=(15.0_f64+30.0*i as f64).to_radians();
+        let dx=angle.cos(); let dy=angle.sin();
+        let wall=if kind=="direct" {5.0}
+                 else {5.0/dx.abs().max(dy.abs())};
+        let inner=wall-0.2; let outer=wall+0.2;
+        rays.push((format!("pocket.radial.{i}.inner"),
+                   15.0+inner*dx,50.0+inner*dy,
+                   Some(if has_pocket {t-3.0} else {t})));
+        rays.push((format!("pocket.radial.{i}.outer"),
+                   15.0+outer*dx,50.0+outer*dy,Some(t)));
+    }
+    if rays.len()!=62 { fail("incomplete generalized sloped-profile ray oracle"); }
     for (name,x,y,expected) in rays {
         let zs=intersections(mesh,x,y);
         match expected {

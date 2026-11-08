@@ -237,7 +237,7 @@ def execute(args: argparse.Namespace) -> int:
                 "rejected": True,
             })
         require(len(report["cases"]) == 12 and
-                sum(case["rayCount"] for case in report["cases"]) == 456 and
+                sum(case["rayCount"] for case in report["cases"]) == 744 and
                 len(report["physicalNegatives"]) == 4,
                 "physical 12-STEP/456-ray/four-negative acceptance incomplete")
         report["status"] = "NON_OCCT_PROGRESSIVE_V6_PHYSICAL_GATE_PASS"

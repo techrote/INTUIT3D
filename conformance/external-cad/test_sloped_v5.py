@@ -90,8 +90,8 @@ class SlopedSourceOnlyTests(unittest.TestCase):
         self.assertAlmostEqual(expected_volume("direct", 12), 66820.3805509808)
         self.assertEqual(expected_volume("authored", 8), 44404)
         self.assertEqual(expected_volume("authored", 12), 66756)
-        self.assertEqual(len(ray_oracle("direct", 8)), 38)
-        self.assertEqual(len(set(name for name, *_ in ray_oracle("direct", 8))), 38)
+        self.assertEqual(len(ray_oracle("direct", 8)), 62)
+        self.assertEqual(len(set(name for name, *_ in ray_oracle("direct", 8))), 62)
         self.assertGreater(expected_surface("direct", 12),
                            expected_surface("direct", 8))
         with self.assertRaises(Rejected):
@@ -103,7 +103,7 @@ class SlopedSourceOnlyTests(unittest.TestCase):
                 with self.subTest(kind=kind, thickness=thickness):
                     receipt = parse_receipt(synthetic_receipt(kind, thickness),
                                             kind, thickness)
-                    self.assertEqual(receipt["rayCount"], 38)
+                    self.assertEqual(receipt["rayCount"], 62)
                     self.assertAlmostEqual(receipt["measuredVolumeMm3"],
                                            expected_volume(kind, thickness))
                     self.assertAlmostEqual(receipt["measuredSurfaceAreaMm2"],
@@ -217,16 +217,52 @@ class ProgressiveV6OracleTests(unittest.TestCase):
         )
         return "\n".join(rows) + "\n"
 
+    def test_radial_wall_fingerprint_all_stages(self):
+        # Analytic source-only oracle: angular wall brackets must detect
+        # displaced/wrong-radius circular pockets, square corners and absent cuts.
+        import math
+        for kind in ("direct", "authored"):
+            for count in (0, 1, 2):
+                for thickness in (8, 12):
+                    with self.subTest(kind=kind, count=count, thickness=thickness):
+                        rays = {name: (x, y, top) for name, x, y, top
+                                in ray_oracle(kind, thickness, count)}
+                        pocket = count >= 1 if kind == "direct" else count == 2
+                        self.assertEqual(len(rays), 62)
+                        for i in range(12):
+                            angle = math.radians(15 + 30*i)
+                            dx, dy = math.cos(angle), math.sin(angle)
+                            expected_wall = (5 if kind == "direct" else
+                                             5/max(abs(dx), abs(dy)))
+                            near = rays[f"pocket.radial.{i}.inner"]
+                            far = rays[f"pocket.radial.{i}.outer"]
+                            self.assertAlmostEqual(math.hypot(near[0]-15, near[1]-50),
+                                                   expected_wall-.2, places=8)
+                            self.assertAlmostEqual(math.hypot(far[0]-15, far[1]-50),
+                                                   expected_wall+.2, places=8)
+                            self.assertEqual(near[2], thickness-3 if pocket else thickness)
+                            self.assertEqual(far[2], thickness)
+                        # A wrong wall at any single azimuth must fail the
+                        # receipt contract even when its volume fields match.
+                        good = self.v6_receipt(kind, count, thickness)
+                        label = "pocket.radial.1.inner"
+                        row = next(r for r in good.splitlines()
+                                   if r.startswith(f"SLOPE_RAY {label} "))
+                        with self.assertRaises(Rejected):
+                            parse_receipt(good.replace(row, row.replace(
+                                "SLOPE_RAY "+label, "SLOPE_RAY pocket.radial.bad")),
+                                kind, thickness, cut_count=count)
+
     def test_progressive_twelve_stage_geometry(self):
         for kind in ("direct", "authored"):
             for count in (0, 1, 2):
                 for t in (8, 12):
                     with self.subTest(kind=kind, count=count, t=t):
-                        self.assertEqual(len(ray_oracle(kind, t, count)), 38)
+                        self.assertEqual(len(ray_oracle(kind, t, count)), 62)
                         receipt = parse_receipt(self.v6_receipt(kind, count, t),
                                                 kind, t, cut_count=count)
                         self.assertEqual(receipt["cutCount"], count)
-                        self.assertEqual(receipt["rayCount"], 38)
+                        self.assertEqual(receipt["rayCount"], 62)
                         self.assertAlmostEqual(receipt["measuredVolumeMm3"],
                                                expected_volume(kind, t, count))
         self.assertAlmostEqual(expected_volume("direct", 8, 0), 45600)
