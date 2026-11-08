@@ -152,5 +152,52 @@ class HermeticEnvironmentTests(unittest.TestCase):
             self.assertFalse(marker.exists())
 
 
+    @unittest.skipUnless(sys.platform.startswith("linux") and
+                         shutil.which("bash") and Path("/bin/sh").exists() and
+                         shutil.which("python3"),
+                         "real Bash startup-hook regression requires Linux")
+    def test_standalone_launcher_does_not_source_bash_env(self):
+        # Reproduce the regression at the actual executable entrypoint.
+        # The previous #!/usr/bin/env bash sourced BASH_ENV *before* the
+        # script could unset it. A noninteractive POSIX /bin/sh does not.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "native").mkdir()
+            (root / "bin").mkdir()
+            (root / "native/occt8_bridge.py").write_text(
+                "import json, os, sys\n"
+                "print(json.dumps({'executed': True, "
+                "'arguments': sys.argv[1:], "
+                "'shellHook': bool(os.environ.get('BASH_ENV')), "
+                "'envHook': bool(os.environ.get('ENV'))}))\n")
+            marker = root / "bash-startup-executed"
+            hook = root / "startup-hook.sh"
+            hook.write_text(
+                "printf '%s\\n' 'SHELL_HOOK_EXECUTED' > "
+                "\"$INTUIT3D_BASH_HOOK_MARKER\"\n")
+            hostile = dict(os.environ, BASH_ENV=str(hook), ENV=str(hook),
+                           INTUIT3D_BASH_HOOK_MARKER=str(marker))
+            # Negative control must actually execute the hostile startup
+            # hook, otherwise the absence of the marker is not evidence.
+            negative = subprocess.run(
+                ["bash", "-c", "printf 'BASELINE\\n'"], env=hostile,
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(negative.returncode, 0, negative.stderr)
+            self.assertTrue(marker.exists(), "BASH_ENV negative control failed")
+            marker.unlink()
+            launcher(root)
+            command = subprocess.run(
+                [str(root / "run.sh"), "--timeout", "60"],
+                env=hostile, cwd=root, capture_output=True, text=True, timeout=15)
+            self.assertEqual(command.returncode, 0, command.stderr)
+            payload = json.loads(command.stdout)
+            self.assertTrue(payload["executed"])
+            self.assertIn("--timeout", payload["arguments"])
+            self.assertFalse(payload["shellHook"])
+            self.assertFalse(payload["envHook"])
+            self.assertFalse(marker.exists(),
+                             "distributed launcher sourced ambient BASH_ENV")
+
+
 if __name__ == "__main__":
     unittest.main()
