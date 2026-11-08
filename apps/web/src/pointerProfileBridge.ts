@@ -12,7 +12,7 @@ import {
   inspectPointerEditableHandles, dragProfileHandleAtPointer,
 } from '@intuit3d/sketch/pointer-profile-edit/v1';
 import type {SelectedProfileSelection} from '@intuit3d/sketch/selected-profile/v1';
-import {runtime, type ModelSession} from './runtimeSession';
+import {runtime, type ModelSession} from './runtimeSession.ts';
 
 function sourceSketch(history:ModelSession):sketch.SketchDocument {
   const feature=model.featuresOf(history.document).find(item=>item.id==='sketch.plate'&&item.kind==='sketch');
