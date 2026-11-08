@@ -174,7 +174,11 @@ test('history menu distinguishes explicit consent from unresolved admission',()=
     featureId:'extrude.unresolved',patch:{payload:{thicknessMm:8}}});
   const other=inspectHistoricalFeatureEdits(unresolved,inventoryRequest(unresolved)).rows[0];
   assert.equal(other.status,'requires_unresolved_admission');
-  assert.equal(other.confirmUnresolved,false);
+  // Already-pending selected intent still requires an explicit decision:
+  // the menu must not construct a consent-free permitted command.
+  assert.equal(other.confirmUnresolved,true);
+  assert.equal(other.fieldChoices[0].confirmUnresolved,true);
+  assert.equal(other.scalarChoices[0].confirmUnresolved,true);
   assert.equal(other.admission,'permit_unresolved');
 });
 test('no-op edits are shown blocked rather than being silently hidden',()=>{
