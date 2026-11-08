@@ -142,9 +142,19 @@ export type SessionRecoveryInspection =
       sourceDocumentFence:string;inspection:FeatureRecoveryInspection;exactAuthority:false}>
   | SessionLifecycleRefusal;
 export type SessionEdit = UndoHistory | ClosedContourRuntimeResult | SketchConstraintBatchResult | SelectedEdgeHoleRuntimeResult | SelectedProfileHoleRuntimeResult | SelectedProfileHoleLayoutRuntimeResult;
+export interface CommittedContourReceipt {
+  readonly format:'intuit3d.runtime.contour-receipt';
+  readonly version:1;
+  readonly projectId:string;
+  readonly revision:number;
+  readonly contourId:string;
+  readonly selection:import('@intuit3d/sketch/selected-profile/v1').SelectedProfileSelection;
+  readonly nextSketchSignature:string;
+  readonly exactAuthority:false;
+}
 export type SessionEditResult =
   | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
-      invalidation:WorkflowInvalidation}>
+      invalidation:WorkflowInvalidation;contourReceipt?:CommittedContourReceipt}>
   | Readonly<{kind:'refused';reason:string;notCommitted?:boolean;
       [key:string]:unknown}>;
 /** Authored SKETCH/INTENT candidate; not a committed revision or native solid.
