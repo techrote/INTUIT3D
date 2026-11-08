@@ -311,12 +311,14 @@ async function runLocalPlate(requestInput, {
       // when a project is closed during export). Once linked, *every* failed
       // final fence must roll back the new artifact, including lookup failure.
       // A callback may also synchronously abort the request; recheck after it.
-      let finalFence = null;
-      try {
-        finalFence = revisionOf(readCurrentRevision) === request.revision
-          ? null : 'stale_revision';
-      } catch {
-        finalFence = 'requires_reconciliation';
+      let finalFence = signal?.aborted ? 'cancelled' : null;
+      if (finalFence === null) {
+        try {
+          finalFence = revisionOf(readCurrentRevision) === request.revision
+            ? null : 'stale_revision';
+        } catch {
+          finalFence = 'requires_reconciliation';
+        }
       }
       if (signal?.aborted) finalFence = 'cancelled';
       if (finalFence !== null) {
