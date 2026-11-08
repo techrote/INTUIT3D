@@ -1113,6 +1113,7 @@ async function main() {
   await eventually(()=>drawnVertexAt(originalDrawnVertex.x,originalDrawnVertex.y),
     'second undo failed to restore the actual pointer-drawn solver-authoritative vertex');
   check(await redoButton(),'redo unavailable after numeric vertex undo');
+  await eventually(()=>drawnVertexAt(135,90),'first redo did not reapply numeric semantic vertex edit');
   check(await redoButton(),'redo unavailable after direct vertex undo');
   await eventually(()=>drawnVertexAt(140,92),
     'redo failed to recover the fully edited drawn vertex');
