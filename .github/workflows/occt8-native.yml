@@ -21,12 +21,12 @@ on:
         description: "Platform ref; pinned accepted build source unless explicitly supplied"
         type: string
         required: true
-        default: c78a4be6050a38d98fbc577054393ee77ec0c0f7
+        default: b015036b565cae422f285a9bacfbb04b771f6918
       runtime_ref:
         description: "Immutable RUNTIME+Workbench consumer source; use exact admitted main SHA"
         type: string
         required: true
-        default: 15d846464840b3c197fc6a03136afb58c06a4c57
+        default: 324be5870efe4887c2656c992a71aa99f19375a3
       kernel_ref:
         description: "Kernel source ref, immutable KERNEL-001 extraction #158 by default"
         type: string
@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ (github.event_name == 'pull_request' && 'c78a4be6050a38d98fbc577054393ee77ec0c0f7') || (github.event_name == 'push' && github.sha) || inputs.platform_ref || 'c78a4be6050a38d98fbc577054393ee77ec0c0f7' }}
+          ref: ${{ (github.event_name == 'pull_request' && 'b015036b565cae422f285a9bacfbb04b771f6918') || (github.event_name == 'push' && github.sha) || inputs.platform_ref || 'b015036b565cae422f285a9bacfbb04b771f6918' }}
           path: platform-repo
           persist-credentials: false
       - name: Checkout KERNEL-001 #158 immutable source (or explicit KERNEL-002 ref)
@@ -68,7 +68,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && '15d846464840b3c197fc6a03136afb58c06a4c57') || inputs.runtime_ref || '15d846464840b3c197fc6a03136afb58c06a4c57' }}
+          ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && '324be5870efe4887c2656c992a71aa99f19375a3') || inputs.runtime_ref || '324be5870efe4887c2656c992a71aa99f19375a3' }}
           path: runtime-repo
           persist-credentials: false
       - name: Install native packaging, ELF audit and build dependencies
