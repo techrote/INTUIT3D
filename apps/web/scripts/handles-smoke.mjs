@@ -1033,8 +1033,8 @@ async function main() {
   await screenshot('32-from-empty-extrusion-hole-cut.png');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
     'undo unavailable after explicit drawn-project cut');
-  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-feature-cut]')"),
-    'cut undo failed to retire only the cut feature');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-cut]')?.classList.contains('removed')"),
+    'cut undo failed to tombstone only the cut feature');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()"),
     'redo unavailable after drawn-project cut undo');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-cut]')?.textContent?.includes('pending_exact_provider')"),
