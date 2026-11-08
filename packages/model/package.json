@@ -139,6 +139,10 @@
     "./selected-edge-batch-rebind": {
       "types": "./src/selected-edge-batch-rebind.ts",
       "default": "./src/selected-edge-batch-rebind.ts"
+    },
+    "./body-cut-relocate": {
+      "types": "./src/body-cut-relocate.ts",
+      "default": "./src/body-cut-relocate.ts"
     }
   },
   "scripts": {
