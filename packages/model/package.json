@@ -140,6 +140,10 @@
       "types": "./src/selected-edge-batch-rebind.ts",
       "default": "./src/selected-edge-batch-rebind.ts"
     },
+    "./feature-recovery-closure": {
+      "types": "./src/feature-recovery-closure.ts",
+      "default": "./src/feature-recovery-closure.ts"
+    },
     "./body-cut-relocate": {
       "types": "./src/body-cut-relocate.ts",
       "default": "./src/body-cut-relocate.ts"
