@@ -4,6 +4,8 @@ import type {HistoricalEditChoice} from '@intuit3d/model/historical-edit-invento
 import type {ModelSession} from './runtimeSession.ts';
 import {
   compensateWorkbenchHistoricalField,inspectWorkbenchHistoricalEdits,
+  previewWorkbenchHistoricalBatch,commitWorkbenchHistoricalBatch,
+  type BatchHistoricalFieldSelection,
 } from './historicalEditBridge.ts';
 
 type Reviewed={eventId:string;field:keyof FeaturePatch;fence:string;revision:number};
@@ -26,6 +28,11 @@ export function HistoricalEditInspector({history,disabled,onCommit,onMessage}:{
   const [cursor,setCursor]=useState<number|null>(null);
   const [review,setReview]=useState<Reviewed|null>(null);
   const [consent,setConsent]=useState(false);
+  const [batch,setBatch]=useState<BatchHistoricalFieldSelection[]>([]);
+  const [batchReview,setBatchReview]=useState<
+    ReturnType<typeof previewWorkbenchHistoricalBatch>|null>(null);
+  const [batchFence,setBatchFence]=useState<string|null>(null);
+  const [batchConsent,setBatchConsent]=useState(false);
   // Heavy historical replay is NEVER part of ordinary file selection or model
   // hydration: only an explicit user click starts bounded four-row inspection.
   const inspection=useMemo(()=>{
@@ -58,6 +65,53 @@ export function HistoricalEditInspector({history,disabled,onCommit,onMessage}:{
       onMessage('Historical compensation refused; journal unchanged: '+String(error));
     }
   };
+  const queueBatch=(entry:HistoricalEditChoice,field:keyof FeaturePatch)=>{
+    if(!inventory)return;
+    const selected=batch.some(item=>item.row.targetEventId===entry.targetEventId&&
+      item.field===field);
+    if(selected){
+      setBatch(items=>items.filter(item=>item.row.targetEventId!==entry.targetEventId||
+        item.field!==field));
+    }else {
+      if(batch.some(item=>item.row.featureId===entry.featureId)){
+        onMessage('Batch queue refused: choose only one historical edit per semantic feature.');
+        return;
+      }
+      if(batch.length>=8){onMessage('Batch queue limited to eight distinct features.');return;}
+      setBatch(items=>[...items,{row:entry,field,sourceFence:inventory.documentFence}]);
+    }
+    setBatchReview(null);setBatchFence(null);setBatchConsent(false);
+  };
+  const reviewBatch=()=>{
+    if(!inventory)return;
+    try{
+      const result=previewWorkbenchHistoricalBatch(history,batch,inventory.documentFence);
+      setBatchReview(result);setBatchFence(inventory.documentFence);setBatchConsent(false);
+    }catch(error){
+      setBatchReview(null);setBatchFence(null);
+      onMessage('Atomic history review refused; journal unchanged: '+String(error));
+    }
+  };
+  const commitBatch=()=>{
+    if(!batchReview||!batchFence)return;
+    try {
+      const next=commitWorkbenchHistoricalBatch(history,batch,batchFence,batchConsent);
+      if(!onCommit(next,history)){
+        onMessage('Atomic history batch refused: journal changed while reviewing. Inspect again.');
+        return;
+      }
+      const affected=batchReview.preview.invalidatedBodyIds;
+      setBatch([]);setBatchReview(null);setBatchFence(null);
+      setBatchConsent(false);setReview(null);setExpanded(false);setCursor(null);
+      onMessage('Compensated '+batch.length+' distinct historical features in ONE undo frame at revision '+
+        next.document.revision+'. Invalidated bodies: '+(affected.join(', ')||'none')+
+        '. All prior native STEP evidence revoked; rebuild before export.');
+    }catch(error){
+      onMessage('Atomic history batch refused; journal unchanged: '+String(error));
+    }
+  };
+  const currentBatchReview=!!(batchReview&&batchFence&&inventory&&
+    batchFence===inventory.documentFence);
   return <section className="inspector-section" data-testid="runtime-historical-edit-inspector">
     <div className="section-head">HISTORICAL EDITS · AUTHORITATIVE JOURNAL</div>
     <p className="microcopy">Inspect an earlier edit without undoing later unrelated authoring.
@@ -67,6 +121,7 @@ export function HistoricalEditInspector({history,disabled,onCommit,onMessage}:{
       disabled={disabled} aria-expanded={expanded}
       onClick={()=>{
         setExpanded(old=>!old);setCursor(null);setReview(null);setConsent(false);
+        setBatch([]);setBatchReview(null);setBatchFence(null);setBatchConsent(false);
       }}>{expanded?'Close historical edits':'Inspect historical edits'}</button>
     {expanded&&<div className="runtime-hole-add" data-testid="runtime-history-rows">
       {inspection.error&&<p role="alert">History inspection refused: {inspection.error}</p>}
@@ -99,6 +154,19 @@ export function HistoricalEditInspector({history,disabled,onCommit,onMessage}:{
                   fence:inventory.documentFence,revision:inventory.revision});
                 setConsent(false);
               }}>Review field compensation</button>
+            <button type="button" className="ribbon-button"
+              data-testid="runtime-history-batch-queue"
+              data-history-event={entry.targetEventId}
+              data-history-field={choice.field}
+              aria-pressed={batch.some(item=>item.row.targetEventId===entry.targetEventId&&
+                item.field===choice.field)}
+              disabled={disabled||choice.status==='blocked'||
+                (batch.length>=8&&!batch.some(item=>item.row.targetEventId===entry.targetEventId&&
+                  item.field===choice.field))}
+              onClick={()=>queueBatch(entry,choice.field)}>
+              {batch.some(item=>item.row.targetEventId===entry.targetEventId&&
+                item.field===choice.field)?'Remove from atomic batch':'Queue for atomic batch'}
+            </button>
           </div>;
         })}
       </div>)}
@@ -107,6 +175,51 @@ export function HistoricalEditInspector({history,disabled,onCommit,onMessage}:{
           onClick={()=>{
             setCursor(inventory.nextCursor);setReview(null);setConsent(false);
           }}>Older historical edits…</button>}
+      <div className="runtime-hole-add" data-testid="runtime-history-batch-panel">
+        <strong>ATOMIC MULTI-FEATURE COMPENSATION · {batch.length}/8 selected</strong>
+        <p className="microcopy">Select one reviewed field from each of 2–8 distinct semantic
+          features, even across history pages. MODEL preflights the combined dependency
+          frontier before one persisted undo frame. Multiple inverse journal events advance
+          the revision by their count; this is not exact geometry.</p>
+        {batch.map(item=><div key={item.row.featureId} className="microcopy">
+          {item.row.featureId} / {item.field} · {item.row.targetEventId}
+          <button className="ribbon-button" type="button"
+            data-testid="runtime-history-batch-remove"
+            onClick={()=>queueBatch(item.row,item.field)}>Remove</button>
+        </div>)}
+        <button className="ribbon-button" type="button"
+          data-testid="runtime-history-batch-review"
+          disabled={disabled||batch.length<2}
+          onClick={reviewBatch}>Review combined compensation</button>
+        {batch.length>0&&<button className="ribbon-button" type="button"
+          data-testid="runtime-history-batch-clear"
+          onClick={()=>{setBatch([]);setBatchReview(null);setBatchFence(null);
+            setBatchConsent(false);}}>Clear batch</button>}
+        {currentBatchReview&&batchReview&&<div className="runtime-lifecycle-confirm"
+          role="group" aria-label="Confirm atomic historical batch"
+          data-testid="runtime-history-batch-confirmation">
+          <strong>Combined MODEL preflight · {batchReview.preview.selections.length} features</strong>
+          <p className="microcopy">Invalidated bodies:
+            {' '}{batchReview.preview.invalidatedBodyIds.join(', ')||'none'}.
+            {' '}Regressed ready features:
+            {' '}{batchReview.preview.regressedReadyFeatureIds.join(', ')||'none'}.
+            {' '}Unchanged ready features:
+            {' '}{batchReview.preview.unaffectedReadyFeatureIds.join(', ')||'none'}.
+            All native physical results become stale until rebuilt and independently checked.</p>
+          {batchReview.requiresConsent&&<label>
+            <input type="checkbox" data-testid="runtime-history-batch-consent"
+              checked={batchConsent} onChange={event=>setBatchConsent(event.target.checked)}/>
+            I explicitly accept the combined unresolved/ready-regression outcome.
+          </label>}
+          <button className="ribbon-button" type="button"
+            data-testid="runtime-history-batch-apply"
+            disabled={disabled||(batchReview.requiresConsent&&!batchConsent)}
+            onClick={commitBatch}>Commit atomic historical batch</button>
+          <button className="ribbon-button" type="button"
+            onClick={()=>{setBatchReview(null);setBatchFence(null);
+              setBatchConsent(false);}}>Cancel combined review</button>
+        </div>}
+      </div>
       {currentReview&&row&&fieldChoice&&transition&&<div className="runtime-lifecycle-confirm"
           role="group" aria-label="Confirm historical field compensation"
           data-testid="runtime-history-confirmation">
