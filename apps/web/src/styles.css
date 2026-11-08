@@ -347,3 +347,28 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
 .runtime-formula-impact { padding: 9px; border-left: 3px solid #6bd9c2; margin-top: 9px; font-size: 11px; color: #d2e8ed; overflow-wrap: anywhere; }
 .runtime-formula-impact p { margin: 6px 0; }
 .runtime-formula-impact small { color: #86a9ba; }
+
+
+/* Compact, opt-in browser-local recovery chooser; no modal or automatic replacement. */
+.runtime-local-recovery {
+  border-bottom: 1px solid var(--border, #55616b);
+  padding: 0.35rem 0.85rem;
+  font-size: 0.82rem;
+  max-height: min(32vh, 260px);
+  overflow: auto;
+}
+.runtime-local-recovery summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.runtime-local-recovery p { margin: 0.4rem 0; }
+.runtime-local-recovery-entry {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--border, #55616b);
+}
+.runtime-local-recovery-entry span { flex: 1 1 18rem; overflow-wrap: anywhere; }
+.runtime-local-recovery-entry button { flex: 0 0 auto; }
