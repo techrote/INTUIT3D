@@ -107,6 +107,10 @@
     "./machined-body-variant/v1": {
       "types": "./machined-body-variant.d.mts",
       "default": "./src/machined-body-variant.mjs"
+    },
+    "./multi-target-cut-recipe/v1": {
+      "types": "./multi-target-cut-recipe.d.mts",
+      "default": "./src/multi-target-cut-recipe.mjs"
     }
   },
   "peerDependencies": {
