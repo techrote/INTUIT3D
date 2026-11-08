@@ -5,7 +5,8 @@
  */
 import {diffWorkflowPlans} from './invalidation.mjs';
 import {setSelectedEdgeHoles} from '@intuit3d/sketch/selected-edge-hole-placement/v1';
-import {editSelectedProfileHole as authorProfileHole} from '@intuit3d/sketch/selected-profile-hole-authoring/v1';
+import {editSelectedProfileHole as authorProfileHole, inspectSelectedProfileHoleAuthoring} from '@intuit3d/sketch/selected-profile-hole-authoring/v1';
+import {serializeSketch} from '@intuit3d/sketch';
 import {applyPlateHoleOperations,planRectangularHoleArray,planCircularHolePattern,planRigidHoleTransform,planHoleLayoutResize} from './hole-edit.mjs';
 export {WORKFLOW_INVALIDATION_FORMAT, WORKFLOW_INVALIDATION_VERSION, diffWorkflowPlans} from './invalidation.mjs';
 
@@ -429,6 +430,53 @@ export function createWorkflowRuntime(services) {
 
 
   /**
+   * Inspect selected-profile hole anchors directly from authoritative INTENT.
+   * No parallel SKETCH model, native request, exact B-rep or STEP claim.
+   */
+  function inspectSelectedProfileHoles(history,request) {
+    const previous=transactions.parseUndoHistory(history);
+    const {projectId,expectedRevision,sketchFeatureId,candidateId}=request??{};
+    if(typeof projectId!=='string'||!projectId||
+        !Number.isSafeInteger(expectedRevision)||expectedRevision<0||
+        typeof sketchFeatureId!=='string'||!sketchFeatureId||
+        (candidateId!==undefined&&(typeof candidateId!=='string'||
+          !candidateId.startsWith('cycle:')||candidateId.length>8192)))
+      throw new TypeError('runtime selected-profile inspection: project, revision, sketch and optional candidate ID required');
+    const refused=(code,reason,review)=>({
+      kind:'refused',code,reason,notCommitted:true,
+      sourceProjectId:previous.document.projectId,
+      sourceRevision:previous.document.revision,
+      ...(review?{review}:{}),exactAuthority:false
+    });
+    if(projectId!==previous.document.projectId||
+        expectedRevision!==previous.document.revision)
+      return refused('stale_command','inspected project/revision is no longer current');
+    const entry=model.planProject(previous.document).features.find(
+      x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      return refused('missing_sketch','selected authored sketch is unavailable');
+    const current=sketch.validateSketch(entry.feature.payload.sketch);
+    let chosen=candidateId;
+    if(chosen===undefined){
+      const found=discovery.discoverPlateProfiles(current);
+      if(found.status!=='ready'||found.candidates?.length!==1)
+        return refused('selection_required','an explicitly selected solved contour is required');
+      chosen=found.candidates[0].id;
+    }
+    const selection={candidateId:chosen,sourceSignature:serializeSketch(current)};
+    const inspection=inspectSelectedProfileHoleAuthoring(current,selection);
+    if(inspection.kind!=='selected_profile_hole_authoring')
+      return refused('profile_unavailable',inspection.reason,inspection);
+    if(inspection.sourceSignature!==selection.sourceSignature||
+        inspection.selection?.candidateId!==chosen||
+        inspection.selection?.sourceSignature!==selection.sourceSignature||
+        inspection.nativeExact!==false)
+      throw new Error('runtime selected-profile inspection: SKETCH provider source/authority mismatch');
+    return {kind:'ready',projectId,sourceRevision:expectedRevision,
+      sketchFeatureId,inspection,exactAuthority:false};
+  }
+
+  /**
    * Author an explicitly selected profile hole through the accepted SKETCH
    * anchor provider, committing exactly one source-fenced INTENT journal event.
    * Never interpret selected 2D topology as a native body/STEP selection.
@@ -498,5 +546,5 @@ export function createWorkflowRuntime(services) {
   function reopen(serialized) {
     return archive.deserializeModelArchive(serialized).history;
   }
-  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, editSelectedEdgeHoles, editSelectedProfileHole, undo, redo, save, reopen});
+  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, editSelectedEdgeHoles, inspectSelectedProfileHoles, editSelectedProfileHole, undo, redo, save, reopen});
 }

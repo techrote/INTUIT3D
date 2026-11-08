@@ -8,7 +8,8 @@ import type {WorkflowRuntime,WorkflowInvalidation,RuntimeReport,SketchConstraint
   SketchConstraintBatchRequest,PlateHoleBatchRequest,RectangularHoleArrayRequest,
   CircularHolePatternRequest,RigidHoleTransformRequest,HoleLayoutResizeRequest,
   SelectedEdgeHoleRuntimeRequest,SelectedEdgeHoleRuntimeResult,
-   SelectedProfileHoleRuntimeRequest,SelectedProfileHoleRuntimeResult} from './index.mjs';
+   SelectedProfileHoleRuntimeRequest,SelectedProfileHoleRuntimeResult,
+  SelectedProfileHoleRuntimeInspectionRequest,SelectedProfileHoleRuntimeInspectionResult} from './index.mjs';
 import type {LocalPlateClientResult,VerifiedLocalStep} from './local-plate-client.mjs';
 
 export declare const LIVE_PLATE_SESSION_FORMAT:'intuit3d.live-plate-session';
@@ -121,6 +122,9 @@ export interface LivePlateSession {
   refresh():LivePlateSessionState;
   /** Genuine synchronous INTENT/ SKETCH transaction; never a private journal. */
   applyEdit(edit:(history:UndoHistory)=>SessionEdit):SessionEditResult;
+  /** Return current source-fenced SKETCH controls, without edits or native work. */
+  inspectSelectedProfileHoles(request:SelectedProfileHoleRuntimeInspectionRequest):
+    SelectedProfileHoleRuntimeInspectionResult;
   /** Execute a versioned, project/revision-fenced semantic CAD command. */
   applyCommand(command:LiveCadCommand):SessionEditResult;
   /** Atomically publish the result of 1–16 ordered model/SKETCH commands.

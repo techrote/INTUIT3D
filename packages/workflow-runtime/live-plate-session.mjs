@@ -184,6 +184,13 @@ export function createLivePlateSession({
         hasActivePreview:activePreview!==null && editPreviews.has(activePreview),
         lastResultKind:lastOutcomeKind,exactAuthority:false};
     },
+    /** Current source-fenced selected-profile inspector; never a second journal. */
+    inspectSelectedProfileHoles(request) {
+      const state=synchronize();
+      if(typeof runtime.inspectSelectedProfileHoles!=='function')
+        throw new TypeError('live plate session: selected-profile inspection requires runtime provider');
+      return runtime.inspectSelectedProfileHoles(state.history,request);
+    },
     /** Delegate a genuine INTENT command; commit only if revision/project fences hold. */
     applyEdit(edit) {
       const candidate=prepareEdit(edit);

@@ -916,3 +916,18 @@ geometry evidence follows from these SKETCH/INTENT tests.
 
 Package tests: `npm test --workspace @intuit3d/workflow-runtime` and
 `npm run typecheck --workspace @intuit3d/workflow-runtime`.
+
+### Discover current selected-profile hole anchors from the authoritative session
+
+WORKBENCH can read `session.inspectSelectedProfileHoles({projectId,expectedRevision,
+sketchFeatureId,candidateId?})` using the current `session.refresh()` fence. A
+unique solved contour needs no `candidateId`; ambiguous contours require the
+user's explicit selected `cycle:` candidate. A successful `kind:'ready'`
+response supplies `inspection.anchors`, `inspection.holes` (including
+removal dependencies), and `inspection.selection`. Pass that exact
+source-fenced selection into the existing
+`sketch.holes.selected-profile` add/reanchor/remove command. A stale project,
+missing sketch, obsolete contour or unresolved selection returns a typed
+`kind:'refused'` without mutating the archive, starting native work or
+invalidating current verified STEP. Always inspect again after any edit, undo
+or reopen. Analytic selection is not a body target, B-rep, exact geometry or STEP.

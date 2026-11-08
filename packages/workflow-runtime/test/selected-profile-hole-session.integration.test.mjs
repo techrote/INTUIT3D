@@ -129,3 +129,46 @@ test('stale source, mismatched signature, invalid anchor and overlapping holes r
   assert.equal(view(current).holes.some(h=>h.holeId==='mount:profile'),true);
   session.cancel();
 });
+
+test('session inspector exposes current profile anchors and refuses stale/foreign selection without native dispatch',()=>{
+  let current=initial(),nativeCalls=0,publications=0;
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>current,
+    publishHistory:h=>{publications++;current=h;},
+    evaluateImpl:async()=>{nativeCalls++;throw new Error('inspector must not dispatch native');}});
+  const state=session.refresh(),archiveBefore=session.save();
+  const request={projectId:state.projectId,expectedRevision:state.revision,
+    sketchFeatureId:'sketch.L'};
+  const inspected=session.inspectSelectedProfileHoles(request);
+  assert.equal(inspected.kind,'ready',JSON.stringify(inspected));
+  assert.equal(inspected.inspection.nativeExact,false);
+  assert.equal(inspected.exactAuthority,false);
+  assert.equal(inspected.inspection.selection.sourceSignature,sketch.serializeSketch(source(current)));
+  assert.ok(inspected.inspection.anchors.some(x=>x.pointId==='L:a'));
+  assert.equal(publications,0);
+  assert.equal(nativeCalls,0);
+  assert.equal(session.save(),archiveBefore);
+  assert.equal(session.inspectSelectedProfileHoles({...request,
+    projectId:'different.project'}).code,'stale_command');
+  assert.equal(session.inspectSelectedProfileHoles({...request,
+    sketchFeatureId:'sketch.missing'}).code,'missing_sketch');
+  assert.equal(session.inspectSelectedProfileHoles({...request,
+    candidateId:'cycle:absent'}).code,'profile_unavailable');
+  assert.equal(publications,0);
+  const result=submit(session,edit(inspected.inspection.selection,'mount.inspect.add',{
+    kind:'add-hole',holeId:'mount:inspected',anchorPointId:'L:a',
+    xMm:60,yMm:15,radiusMm:4}));
+  assert.equal(result.kind,'committed');
+  assert.equal(publications,1);
+  assert.equal(session.inspectSelectedProfileHoles(request).code,'stale_command');
+  const next=session.refresh();
+  const currentView=session.inspectSelectedProfileHoles({
+    projectId:next.projectId,expectedRevision:next.revision,sketchFeatureId:'sketch.L'});
+  assert.equal(currentView.kind,'ready');
+  assert.equal(currentView.inspection.holes.find(h=>h.holeId==='mount:inspected')
+    .xReferencePointId,'L:a');
+  assert.notEqual(currentView.inspection.sourceSignature,inspected.inspection.sourceSignature);
+  assert.equal(nativeCalls,0);
+  assert.equal(session.currentStep(),null);
+  session.cancel();
+});
