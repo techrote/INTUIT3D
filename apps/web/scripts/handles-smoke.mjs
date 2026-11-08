@@ -1014,6 +1014,43 @@ async function main() {
   check(await evaluate("!document.querySelector('[data-testid=runtime-blank-sketch]')"),
     'reopened authoritative contour was discarded or replaced by empty sketch');
   await screenshot('31-from-empty-authoritative-save-reopen.png');
+
+  // Continue on the SAME genuinely drawn project: model-backed extrusion,
+  // accepted circular-hole operation, explicitly body-targeted cut and archive.
+  await clickControl('[data-testid="runtime-create-extrusion"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-plate]')?.textContent?.includes('preview_only')"),
+    'drawn contour failed to author a preview-only extrusion');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-feature-cut]')"),
+    'cut was authored without user consent on the drawn project');
+  await clickControl('[data-testid="runtime-add-hole"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-inspector] .section-head')?.textContent?.includes('1')"),
+    'actual selected sketch did not admit a user-authored circular hole');
+  check(await evaluate("Boolean(document.querySelector('[data-testid=runtime-create-cut]:not([disabled])'))"),
+    'explicit body-targeted cut did not become available after hole acceptance');
+  await clickControl('[data-testid="runtime-create-cut"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-cut]')?.textContent?.includes('pending_exact_provider')"),
+    'drawn-project cut did not retain honest pending native-exact status');
+  await screenshot('32-from-empty-extrusion-hole-cut.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'undo unavailable after explicit drawn-project cut');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-feature-cut]')"),
+    'cut undo failed to retire only the cut feature');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    'redo unavailable after drawn-project cut undo');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-cut]')?.textContent?.includes('pending_exact_provider')"),
+    'cut redo failed to restore semantic target and pending native status');
+  const drawnCutSavedCount=await evaluate('window.__modelArchiveBlobs.length');
+  await clickControl('[data-testid="runtime-save-archive"]');
+  await eventually(()=>evaluate('window.__modelArchiveBlobs.length === '+(drawnCutSavedCount+1)),
+    'complete drawn contour / extrusion / cut archive not downloaded');
+  check(await evaluate("((async()=>{const data=await window.__modelArchiveBlobs.at(-1).text();const dt=new DataTransfer();dt.items.add(new File([data],'drawn-cut.i3d-model.json',{type:'application/json'}));const el=document.querySelector('.runtime-file-input');el.files=dt.files;el.dispatchEvent(new Event('change',{bubbles:true}));return true})())"),
+    'cannot reselect complete drawn CAD project in real Chromium File input');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'complete drawn CAD archive did not reach isolated Worker review');
+  await clickControl('[data-testid="runtime-import-review-confirm"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-cut]')?.textContent?.includes('pending_exact_provider')"),
+    'complete drawn CAD archive lost cut or falsely promoted native state');
+  await screenshot('33-from-empty-extrusion-cut-reopened.png');
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -1030,7 +1067,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -1048,6 +1085,7 @@ async function main() {
     actualChromiumSelectedHoleStampAndBatchDeleteUndo: true,
     actualChromiumSelectedEdgeHoleCreateUndoRedoArchive: true,
     genuineEmptySketchFourPointerVerticesAuthoritativeContourUndoRedoSaveReopen: true,
+    genuineDrawnContourExtrusionHoleCutUndoRedoSaveReopen: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
