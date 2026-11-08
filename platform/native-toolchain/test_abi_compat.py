@@ -67,7 +67,7 @@ class AbiProfileTests(unittest.TestCase):
         root = Path(self.h.name)
         hook = root/'host-preload.sh'
         marker = root/'ldd-hook-executed'
-        hook.write_text('printf injected > ' + shlex.quote(str(marker)) + '\\n')
+        hook.write_text('printf injected > ' + shlex.quote(str(marker)) + '\n')
         hostile = dict(os.environ, BASH_ENV=str(hook))
         control = subprocess.run(['ldd', '--version'], env=hostile,
                                  capture_output=True, text=True, timeout=15)
