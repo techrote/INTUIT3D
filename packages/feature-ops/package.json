@@ -91,6 +91,10 @@
     "./cut-block-placement/v1": {
       "types": "./cut-block-placement.d.mts",
       "default": "./src/cut-block-placement.mjs"
+    },
+    "./cut-recipe-copy/v1": {
+      "types": "./cut-recipe-copy.d.mts",
+      "default": "./src/cut-recipe-copy.mjs"
     }
   },
   "peerDependencies": {
