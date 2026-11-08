@@ -169,6 +169,14 @@ async function main() {
     "document.querySelector('input[aria-label=\"Plate width\"]')?.value==='120'"
   ),'numeric semantic undo');
   await screenshot('00b-model-numeric-profile-undo.png');
+  // The edited authoritative journal is deliberately protected by the
+  // browser's beforeunload guard, even after undo. Request its archive first,
+  // as an actual user must do, before navigating to the legacy preview.
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-save-archive]');b?.click();return !!b})()"),
+    'Model-backed archive save control missing');
+  await eventually(()=>evaluate(
+    "document.querySelector('[data-testid=runtime-archive-state]')?.textContent?.includes('ARCHIVE DOWNLOAD REQUESTED')"
+  ),'model archive save request before navigating away');
 
   // Legacy preview regression remains available only by explicit opt-in.
   await send('Page.navigate', { url: origin + '/?mode=preview' });
