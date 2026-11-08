@@ -42,9 +42,13 @@ export type LiveCadCommand = Readonly<{projectId:string;expectedRevision:number}
   | Readonly<{kind:'model.undo'|'model.redo';eventIds:readonly string[]}>
   | Readonly<{kind:'model.feature.remove';
       request:Omit<FeatureRemovalRequest,'expectedProjectId'|'expectedRevision'> &
-        Readonly<{sourceDocumentFence:string}>}>
+        Readonly<{sourceDocumentFence:string;
+          /** Required for cascade: exact impact.cascadeIds the user approved. */
+          confirmedCascadeIds?:readonly string[]}>}>
   | Readonly<{kind:'model.feature.recover-closure';
-      request:Omit<FeatureRecoveryCommitRequest,'expectedProjectId'|'expectedRevision'>}>
+      request:Omit<FeatureRecoveryCommitRequest,'expectedProjectId'|'expectedRevision'> &
+        Readonly<{/** Exact inspection.requiredFeatureIds shown to the user. */
+          confirmedRequiredFeatureIds:readonly string[]}>}>
   | Readonly<{kind:'dimensions.batch';request:Omit<DimensionBatchEditRequest,'expectedRevision'>}>
   | Readonly<{kind:'sketch.constraints';request:Omit<SketchConstraintBatchRequest,'expectedRevision'>}>
   | Readonly<{kind:'sketch.holes';request:Omit<PlateHoleBatchRequest,'expectedRevision'>}>

@@ -53,17 +53,20 @@ function select(session,kind,extras={}){
       selectedFeatureIds:['cut.frame.guide'],...extras});
 }
 function removeCommand(inspection,more={}){
-  return {kind:'model.feature.remove',
-    request:{format:'intuit3d.feature-lifecycle',version:1,action:'remove',
-      featureId:'extrude.datum',mode:'cascade_descendants',confirmCascade:true,
-      eventIds:['remove.guide','remove.cut','remove.extrude'],
-      sourceDocumentFence:inspection.sourceDocumentFence,...more}};
+  const request={format:'intuit3d.feature-lifecycle',version:1,action:'remove',
+    featureId:'extrude.datum',mode:'cascade_descendants',confirmCascade:true,
+    eventIds:['remove.guide','remove.cut','remove.extrude'],
+    sourceDocumentFence:inspection.sourceDocumentFence,
+    confirmedCascadeIds:inspection.impact.cascadeIds,...more};
+  if(request.mode!=='cascade_descendants') delete request.confirmedCascadeIds;
+  return {kind:'model.feature.remove',request};
 }
 function recoverCommand(inspection,more={}){
   return {kind:'model.feature.recover-closure',
     request:{format:'intuit3d.feature-recovery-closure',version:1,
       expectedDocumentFence:inspection.sourceDocumentFence,
       selectedFeatureIds:['cut.frame.guide'],
+      confirmedRequiredFeatureIds:inspection.inspection.requiredFeatureIds,
       eventIds:['recover.extrude','recover.cut','recover.guide'],
       admission:'require_ready',confirmAncestorRestore:true,
       confirmUnresolved:false,...more}};
@@ -220,5 +223,73 @@ test('one atomic authoring batch can stage removal and never leak it after later
   assert.equal(writes,0);
   assert.equal(session.save(),original);
   assert.equal(session.currentStep(),null);
+  session.cancel();
+});
+
+test('cascade and recovery consent cannot be reused for a different semantic selection',async()=>{
+  let current=initial(),publications=0,nativeCalls=0;
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>current,
+    publishHistory:next=>{current=next;publications++;},
+    evaluateImpl:async()=>{nativeCalls++;throw new Error('unreviewed edit dispatched native');},
+  });
+  const initialArchive=session.save(),removal=select(session,'removal');
+  assert.equal(removal.kind,'ready');
+
+  // A still-current document fence alone previously allowed a button/command
+  // to switch from the inspected datum extrusion to a different body and
+  // cascade that body's descendants under the *old* confirmation flag.
+  const switched=await session.applyCommandAndEvaluate({
+    ...removeCommand(removal,{
+      featureId:'extrude.frame',
+      eventIds:['switch.guide','switch.cut','switch.extrude'],
+    }),projectId:session.refresh().projectId,
+    expectedRevision:session.refresh().revision,
+  });
+  assert.equal(switched.kind,'refused');
+  assert.equal(switched.edit.code,'unreviewed_impact');
+  assert.equal(switched.evaluation,null);
+  assert.equal(session.save(),initialArchive);
+  assert.equal(publications,0);
+  assert.equal(nativeCalls,0);
+
+  const omitted=submit(session,removeCommand(removal,{confirmedCascadeIds:undefined}));
+  assert.equal(omitted.kind,'refused');
+  assert.equal(omitted.code,'unreviewed_impact');
+  const reordered=submit(session,removeCommand(removal,{
+    confirmedCascadeIds:[...removal.impact.cascadeIds].reverse(),
+  }));
+  assert.equal(reordered.code,'unreviewed_impact');
+  assert.equal(session.save(),initialArchive);
+
+  assert.equal(submit(session,removeCommand(removal)).kind,'committed');
+  const removedArchive=session.save(),recovery=select(session,'recovery');
+  assert.equal(recovery.kind,'ready');
+
+  // Even when every tombstone belongs to the same journal revision, the
+  // authorization must not be carried to a different selected feature.
+  const switchedRecovery=await session.applyCommandAndEvaluate({
+    ...recoverCommand(recovery,{selectedFeatureIds:['cut.datum']}),
+    projectId:session.refresh().projectId,
+    expectedRevision:session.refresh().revision,
+  });
+  assert.equal(switchedRecovery.kind,'refused');
+  assert.equal(switchedRecovery.edit.code,'unreviewed_impact');
+  assert.equal(switchedRecovery.evaluation,null);
+  const omittedRecovery=submit(session,recoverCommand(recovery,{
+    confirmedRequiredFeatureIds:undefined,
+  }));
+  assert.equal(omittedRecovery.code,'unreviewed_impact');
+  const reorderedRecovery=submit(session,recoverCommand(recovery,{
+    confirmedRequiredFeatureIds:[...recovery.inspection.requiredFeatureIds].reverse(),
+  }));
+  assert.equal(reorderedRecovery.code,'unreviewed_impact');
+  assert.equal(session.save(),removedArchive);
+  assert.equal(publications,1);
+  assert.equal(nativeCalls,0);
+
+  assert.equal(submit(session,recoverCommand(recovery)).kind,'committed');
+  assert.equal(publications,2);
+  assert.ok(active(session).includes('cut.frame.guide'));
   session.cancel();
 });

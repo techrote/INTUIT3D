@@ -208,6 +208,7 @@ if(lifecycleImpact.kind==='ready'){
       featureId:'extrude.datum',mode:'cascade_descendants',
       confirmCascade:true,eventIds:descendants.map((_,i)=>'removal.'+i).concat(['removal.root']),
       sourceDocumentFence:lifecycleImpact.sourceDocumentFence,
+      confirmedCascadeIds:lifecycleImpact.impact.cascadeIds,
     },
   });
   void [noExact,removal];
@@ -226,6 +227,7 @@ if(lifecycleRecovery.kind==='ready'){
       format:'intuit3d.feature-recovery-closure',version:1,
       selectedFeatureIds:['cut.guide'],
       expectedDocumentFence:lifecycleRecovery.sourceDocumentFence,
+      confirmedRequiredFeatureIds:lifecycleRecovery.inspection.requiredFeatureIds,
       eventIds:lifecycleRecovery.inspection.requiredFeatureIds.map((_,i)=>'recovery.'+i),
       admission:'require_ready',confirmAncestorRestore:true,confirmUnresolved:false,
     },
