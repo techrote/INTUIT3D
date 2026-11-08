@@ -27,6 +27,7 @@ test('real multi-body mechanical recipe transaction preserves source, undo and a
     ['cut.shim.relief.batch','cut.shim.bore.batch']]);
   assert.ok(x.negativeSelectionsRefused>=14);
   assert.equal(x.sourceTailPreserved,true);
+  assert.deepEqual(x.bodyActions,['preserve_candidate','rebuild','rebuild']);
   assert.ok(x.crossBodyInvalidation.includes('cut.backer.bore.batch'));
   assert.ok(x.crossBodyInvalidation.includes('cut.shim.bore.batch'));
   assert.ok(!x.crossBodyInvalidation.includes('cut.guard.bore'));
