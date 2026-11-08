@@ -135,8 +135,8 @@ function selection(
   }
   const writers = featuresOf(doc).filter((f) =>
     f.writeTargets.includes(request.targetBodyId as string));
-  if (writers.length < 4 || writers.length > 129) {
-    fail('requires one extrusion and 3–128 ordered body cuts');
+  if (writers.length < 3 || writers.length > 129) {
+    fail('requires one extrusion and 2–128 ordered body cuts');
   }
   const byId = new Map(writers.map((f) => [f.id, f] as const));
   const followers = new Map<string, Feature>();
@@ -356,9 +356,15 @@ export function inspectBodyCutBlockDestinations(
     try {
       const { rewires } = propose(chain,request.cutFeatureIds,destination.id);
       const candidate = preview(doc,{
-        ...request,afterBodyWriterId:destination.id,
+        format:request.format,version:request.version,
+        expectedProjectId:request.expectedProjectId,
+        expectedRevision:request.expectedRevision,
+        expectedDocumentFence:request.expectedDocumentFence,
+        targetBodyId:request.targetBodyId,
+        cutFeatureIds:request.cutFeatureIds,
+        afterBodyWriterId:destination.id,
         eventIds:freshProbeIds(doc,rewires.length),
-      } as BodyCutBlockRelocateRequest);
+      },{doc,chain,indices});
       rows.push({
         afterBodyWriterId:destination.id,eligibility:'available',
         proposedWriterOrder:candidate.writerOrderAfter,
