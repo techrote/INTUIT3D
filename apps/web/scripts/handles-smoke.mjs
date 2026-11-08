@@ -967,6 +967,54 @@ async function main() {
   const blankBefore=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
   check(await evaluate("!document.querySelector('[data-testid=runtime-sketch]') && Boolean(document.querySelector('[data-testid=runtime-structural-sketch-dimensions]'))"),
     'empty sketch was replaced with a fabricated seeded profile');
+  // A fixed 240 x 160 SVG used to trap actual from-empty authoring at one
+  // scale. Exercise native DOM/CDP wheel + middle-pointer navigation BEFORE
+  // any profile exists. Neither changes INTENT nor an unfinished sketch draft.
+  const blankCanvasBox=await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-blank-sketch]');
+    const b=s.getBoundingClientRect();
+    return {x:b.left+b.width/2,y:b.top+b.height/2};
+  })()`);
+  check(blankCanvasBox&&Number.isFinite(blankCanvasBox.x),'blank SVG has no screen bounds');
+  const anchorBefore=await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-blank-sketch]');
+    const p=new DOMPoint(${blankCanvasBox.x},${blankCanvasBox.y}).matrixTransform(s.getScreenCTM().inverse());
+    return {x:p.x,y:p.y};
+  })()`);
+  await send('Input.dispatchMouseEvent',{type:'mouseWheel',x:blankCanvasBox.x,
+    y:blankCanvasBox.y,deltaX:0,deltaY:-260});
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox').split(' ')[2])<240`),
+    'actual browser wheel failed to zoom the first empty sketch');
+  const anchorAfter=await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-blank-sketch]');
+    const p=new DOMPoint(${blankCanvasBox.x},${blankCanvasBox.y}).matrixTransform(s.getScreenCTM().inverse());
+    return {x:p.x,y:p.y};
+  })()`);
+  check(Math.hypot(anchorAfter.x-anchorBefore.x,anchorAfter.y-anchorBefore.y)<0.01,
+    'wheel zoom moved the sketch coordinate beneath the pointer');
+  const beforePan=await evaluate(`document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox')`);
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',
+    x:blankCanvasBox.x,y:blankCanvasBox.y,buttons:0});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',
+    x:blankCanvasBox.x,y:blankCanvasBox.y,button:'middle',buttons:4,clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',
+    x:blankCanvasBox.x+42,y:blankCanvasBox.y+24,button:'middle',buttons:4});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',
+    x:blankCanvasBox.x+42,y:blankCanvasBox.y+24,button:'middle',buttons:0,clickCount:1});
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox')!==${JSON.stringify(beforePan)}`),
+    'actual middle-button pointer drag did not pan the empty sketch');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore,
+    'wheel or middle-pan mutated the authoritative empty sketch revision');
+  await screenshot('29-blank-sketch-wheel-middle-pan.png');
+  await clickControl('[data-testid="runtime-blank-view-reset"]');
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox')==='-20 -20 240 160'`),
+    'Reset view failed to restore the original pointer drawing extent');
+  await clickControl('[data-testid="runtime-blank-zoom-in"]');
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox').split(' ')[2])<240`),
+    'Zoom in button failed on blank canvas');
+  await clickControl('[data-testid="runtime-blank-view-reset"]');
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox')==='-20 -20 240 160'`),
+    'Zoom/reset controls did not restore the real pointer mapping');
   // Adversarial *real pointer* admission before the successful journey:
   // a bow-tie's four legitimate clicks must never silently author a profile.
   // Escape after SKETCH's refusal must discard only ephemeral draft vertices.
