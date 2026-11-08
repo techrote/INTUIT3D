@@ -137,3 +137,41 @@ NOT_QUALIFIED rejection, not crash or timeout. A physical PASS remains
 **unavailable** until genuine source-matched producer data and exact-head
 compiler log are independently inspected. Synthetic tests cover contract
 refusals only, never imported geometry.
+
+## Independent mass-distribution acceptance (candidate, 8 November)
+
+The sloped v5 and progressive v6 modes now also reconstruct **the 3D
+material centroid and all six material-covariance components (XX, YY, ZZ,
+XY, XZ, YZ)** from the independently imported, oriented closed triangle
+mesh. These are real volume integrals of that CAD reconstruction, not
+readback of the producer's mass-properties report or STEP text.
+
+A separate analytic oracle applies Green's theorem to the immutable
+six-edge selected polygon, extrudes its planar area/moments, then subtracts
+the real cutter volumes with their actual 3D centres and intrinsic moments.
+It covers both cutter histories and **all twelve direct/authored,
+zero/one/two-cut, 8/12 mm stages**, rather than calibrating one historical
+finished part. The Python receipt validator independently reconstructs
+the same analytic reference and requires the nine measured observables.
+It refuses missing/nonfinite/displaced readings. The legacy original
+U-bracket mode is unchanged.
+
+A correct imported solid must satisfy all existing one-solid, closed
+topology, source/hash, volume, surface and 38 material/void rays **and**
+the additional mass-distribution predicates. Acceptance thresholds:
+each centroid axis within 0.15 mm; diagonal covariance within the larger
+of 1% of the corresponding analytic reference or 0.1 mm²; mixed covariance
+within the larger of 5% or 0.25 mm². No physical threshold was enlarged
+on the earlier U-bracket gate.
+
+The source-only adversaries deliberately add 10 mm to individual centroid
+or covariance receipt fields, or inject nonfinite values, across all
+progressions. These verify only the parser's fail-closed contract. The
+Rust implementation measures actual mesh tetrahedra, and **the physical
+adversarial property is unqualified until a real sloped native STEP
+is independently imported with this compiled candidate**. Do not report
+the synthetic tests as real C++ or AnvilCAD physical evidence.
+
+The v5/v6 source-matched pinned OCCT 8.0.1 producer build and its original
+STEP exports remain an explicit dependency on KERNEL #195 and Integration
+#74. The accepted older U-bracket physical evidence is not a substitute.
