@@ -318,5 +318,52 @@ class OfflineBundleTests(unittest.TestCase):
             self.assertIn("added=['unexpected.txt']", added.stderr)
 
 
+    @unittest.skipUnless(shutil.which("ldd") and shutil.which("bash"),
+                         "real Bash-based ELF loader inspection required")
+    def test_elf_resolution_suppresses_host_bash_startup_hook(self):
+        # ldd can be a Bash script: unlike readelf, ambient BASH_ENV can
+        # execute before any library-resolution stdout is inspected.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            lib = root / "lib"
+            bin_dir = root / "bin"
+            lib.mkdir()
+            bin_dir.mkdir()
+            (root / "lib.c").write_text("int answer(void) {return 42;}\n")
+            (root / "main.c").write_text(
+                "extern int answer(void);\n"
+                "int main(void) {return answer() != 42;}\n")
+            subprocess.run(
+                ["cc", "-shared", "-fPIC",
+                 "-Wl,-soname,libTKMath.so.8.0", "-o",
+                 str(lib / "libTKMath.so.8.0"), str(root / "lib.c")],
+                check=True, capture_output=True, text=True)
+            (lib / "libTKMath.so").symlink_to("libTKMath.so.8.0")
+            worker = bin_dir / "worker"
+            subprocess.run(
+                ["cc", "-o", str(worker), str(root / "main.c"),
+                 "-L" + str(lib), "-lTKMath",
+                 "-Wl,-rpath,$ORIGIN/../lib"],
+                check=True, capture_output=True, text=True)
+            hook = root / "host-startup.sh"
+            marker = root / "host-hook-executed"
+            hook.write_text(
+                "printf '%s\\n' 'HOOK' > \"$INTUIT3D_BASH_HOOK_MARKER\"\n")
+            hostile = dict(os.environ, BASH_ENV=str(hook),
+                           INTUIT3D_BASH_HOOK_MARKER=str(marker))
+            negative = subprocess.run(
+                ["ldd", str(worker)], env=hostile,
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(negative.returncode, 0, negative.stderr)
+            if not marker.exists():
+                self.skipTest("host ldd is not susceptible to BASH_ENV")
+            marker.unlink()
+            with unittest.mock.patch.dict(os.environ, hostile, clear=True):
+                resolved = bundle.validate_elf_resolution(worker, lib)
+            self.assertIn("libTKMath.so.8.0", resolved)
+            self.assertFalse(marker.exists(),
+                             "bundler ldd inspection executed a host Bash hook")
+
+
 if __name__ == "__main__":
     unittest.main()
