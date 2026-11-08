@@ -86,18 +86,35 @@ function requireHole(h:ModelSession,hole:ModelHole):void {
     throw Error('Unknown authoritative sketch hole: '+hole);
 }
 
-/** Read authored constraints, never cached preview circles or tessellation. */
+/** A legacy hole has a directly editable fixed centre and radius. Relative
+ * edge-anchored holes must instead use the selected-contour RUNTIME editor. */
+export function modelHoleIsCartesian(h: ModelSession, hole: ModelHole): boolean {
+  const source = sketchSource(h);
+  const centre = source.constraints.find(c=>c.id===hole+':fixed');
+  return source.circles.some(c=>c.id===hole) && centre?.kind==='fixed' &&
+    source.constraints.some(c=>c.kind==='radius'&&c.circle===hole);
+}
+
+/** Read real solved SKETCH centres (never preview triangles or cached mesh).
+ * For an invalid/unsolved sketch, retain authored seed coordinates ONLY as
+ * editable diagnostics; the separate RuntimeReport marks geometry unresolved.
+ * Relative edge holes have distanceX/Y anchors, not fabricated fixed centres. */
 export function modelHoleValues(h: ModelSession): Record<ModelHole, ModelHoleDimensions> {
-  const constraints = sketchSource(h).constraints;
-  const read = (hole: ModelHole): ModelHoleDimensions => {
-    const center = constraints.find(c => c.id === hole + ':fixed');
-    const radius = constraints.find(c => c.id === hole + ':diameter');
-    if (center?.kind !== 'fixed' || radius?.kind !== 'radius') {
-      throw Error('Missing authoritative hole constraints: ' + hole);
-    }
-    return {x:center.x,y:center.y,diameter:radius.value * 2};
+  const source = sketchSource(h), constraints = source.constraints;
+  const requiresSolve = source.circles.some(c=>!modelHoleIsCartesian(h,c.id));
+  const solution = requiresSolve ? sketch.solveSketch(source) : null;
+  const read = (circle: SketchDocument['circles'][number]): ModelHoleDimensions => {
+    const hole=circle.id, fixed=constraints.find(c=>c.id===hole+':fixed');
+    const authored=source.points.find(p=>p.id===circle.center);
+    const solved=solution?.status==='solved'
+      ?solution.geometry?.points.find(p=>p.id===circle.center):null;
+    const point=fixed?.kind==='fixed'?fixed:solved??authored;
+    const radius=constraints.find(c=>c.kind==='radius'&&c.circle===hole);
+    if(!point||!radius||radius.kind!=='radius')
+      throw Error('Missing authored sketch circle/constraints: '+hole);
+    return {x:point.x,y:point.y,diameter:radius.value*2};
   };
-  return Object.fromEntries(sketchSource(h).circles.map(c=>[c.id,read(c.id)]));
+  return Object.fromEntries(source.circles.map(c=>[c.id,read(c)]));
 }
 
 /** Create a durable SKETCH circle/centre/radius through RUNTIME as ONE undoable
