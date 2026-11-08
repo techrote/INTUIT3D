@@ -312,6 +312,20 @@ export function rebaseSelectedEdgeRoundSlot(authoring,source,selection,command){
   try{doc=createSketch(source);}
   catch(error){return refusal(stamp,'invalid_replacement_source',
     String(error?.message||error));}
+  // Distinguish semantic rebinding from a downstream analytic profile
+  // rejection. In a retrospective edit, no feature may quietly attach to
+  // a new contour just because its slot still compiles into a valid wire.
+  const nextSelection=inspectSelectedEdgeHolePlacement(doc,selection);
+  if(nextSelection.kind!=='selected_edge_hole_placement')
+    return refusal(stamp,'replacement_profile_not_ready',
+      nextSelection.reason??null,nextSelection.sourceStatus??null,
+      nextSelection.diagnostics??[]);
+  const newEdge=nextSelection.edges.find(e=>e.edgeId===view.originalEdgeId);
+  if(nextSelection.semanticProfileId!==view.originalProfileId||
+     !newEdge||newEdge.startPointId!==view.originalStartPointId||
+     newEdge.endPointId!==view.originalEndPointId||
+     JSON.stringify(nextSelection.profile.holeIds)!==JSON.stringify(view.holeIds))
+    return refusal(stamp,'source_semantic_reference_changed');
   const result=compile(doc,selection,view.slot);
   if(result.kind!=='selected_edge_round_slot')return result;
   if(result.originalProfileId!==view.originalProfileId||
