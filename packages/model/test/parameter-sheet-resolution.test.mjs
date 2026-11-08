@@ -209,10 +209,10 @@ test('second writer revision race and false ancestry fail closed after preview',
     newer,resolved.resolvedRequest),ProjectRevisionError);
   assert.throws(()=>resolveParameterSheetConflict(base.document,newer.document,
     draft,consent(base,current)),ProjectRevisionError);
-  const unrelated=setup();
-  const divergent=commitUndoableParameterFormulaTableEdit(unrelated,
-    edit(unrelated.document,[{eventId:'divergent.width',
-      featureId:'p.width',formula:'10'}]));
+  const divergentEvents=structuredClone(base.document.journal);
+  divergentEvents[0].feature.payload.parameter.expression.value=9;
+  const divergent=commitUndoableTransaction(
+    startUndoHistory(newProject('conflict.plate')),divergentEvents);
   assert.throws(()=>resolveParameterSheetConflict(base.document,
     divergent.document,draft,consent(base,divergent)),ProjectRevisionError);
 });
