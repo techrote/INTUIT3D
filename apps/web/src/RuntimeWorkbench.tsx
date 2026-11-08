@@ -1201,8 +1201,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       {needsArchiveExport&&<p data-testid="runtime-import-unexported"><strong>Current model has changes not exported since the last download request.</strong> Cancel and save its archive first to retain them.</p>}
       <p>Replace discards the current in-memory undo/redo journal. The incoming archive was validated in an isolated worker; no cached B-rep, STEP or exact-solid authority is imported.</p>
       <div className="recovery-actions">
-        <button onClick={()=>{cancelActiveImport();setPendingImport(null);}}>Cancel</button>
-        <button onClick={useIncoming}>Replace with model archive</button>
+        <button data-testid="runtime-import-review-cancel" onClick={()=>{cancelActiveImport();setPendingImport(null);}}>Cancel</button>
+        <button data-testid="runtime-import-review-confirm" onClick={useIncoming}>Replace with model archive</button>
       </div>
     </section></div>}
   </div>;
