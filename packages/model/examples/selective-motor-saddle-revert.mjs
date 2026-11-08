@@ -38,6 +38,9 @@ const spec={
     {id:'gauge.left',xMm:-14,yMm:0,radiusMm:2},
     {id:'gauge.right',xMm:14,yMm:0,radiusMm:2}]},
 };
+// Parsed MODEL payloads intentionally have null prototypes. Compare JSON semantics,
+// including nested sketch dimensions, without changing authoritative document data.
+const semanticJson=(value)=>JSON.parse(JSON.stringify(value));
 const find=(doc,id)=>model.featuresOf(doc).find(f=>f.id===id);
 const sketchFor=(s)=>featureops.mountingFlangeSketch({
   units:'mm',frame:'local_centered_xy',
@@ -103,7 +106,8 @@ export function runSelectiveMotorSaddleRevert(){
   const preview=previewFeatureEditRevert(prior,req);
   assert.deepEqual(preview.invalidatedBodyIds,['body.motor','body.clamp']);
   history=commitUndoableFeatureEditRevert(history,req);
-  assert.deepEqual(find(history.document,'sketch.motor').payload,originalMotor);
+  assert.deepEqual(semanticJson(find(history.document,'sketch.motor').payload),
+    semanticJson(originalMotor));
   const manifest=planBodyRebuildManifest(prior,history.document,{
     format:BODY_REBUILD_MANIFEST_FORMAT,version:1,
     expectedProjectId:prior.projectId,
@@ -115,11 +119,12 @@ export function runSelectiveMotorSaddleRevert(){
   assert.deepEqual(actions,['rebuild','rebuild','preserve_candidate']);
   history=runtime.reopen(runtime.save(history));
   history=runtime.undo(history,['undo.motor.width.revert']);
-  assert.deepEqual(find(history.document,'sketch.motor').payload.sketch,sketchFor(expanded));
+  assert.deepEqual(semanticJson(find(history.document,'sketch.motor').payload.sketch),
+    semanticJson(sketchFor(expanded)));
   history=runtime.redo(history,['redo.motor.width.revert']);
   assert.deepEqual(find(history.document,'sketch.motor').payload,originalMotor);
-  assert.deepEqual(find(history.document,'sketch.gauge').payload.sketch,
-    sketchFor({...spec.gauge,widthMm:50}));
+  assert.deepEqual(semanticJson(find(history.document,'sketch.gauge').payload.sketch),
+    semanticJson(sketchFor({...spec.gauge,widthMm:50})));
   return {
     format:'intuit3d.feature-edit-revert-demo',bodyActions:actions,
     revertedFeatureId:'sketch.motor',preservedIndependentEdit:true,
