@@ -45,11 +45,12 @@ export function createLivePlateSession({
   }
   let observed=snapshot().archive;
   let serial=0,controller=null,latest=null,latestArchive=null,lastOutcomeKind=null;
-  let lastOutcomeCode=null,lastOutcomeReason=null;
+  let lastOutcomeCode=null,lastOutcomeReason=null,lastOutcomeProducedStep=false;
   // A bounded diagnostic for the current journal, not another native result
   // cache. It is invalidated alongside receipts on every authoritative edit.
   function recordOutcome(result) {
     lastOutcomeKind=result.kind;
+    lastOutcomeProducedStep=result.kind==='experimental_plate_evaluated' && !!result.step;
     lastOutcomeCode=result.kind==='unresolved' && typeof result.code==='string'
       ? result.code : result.kind==='unresolved'?'requires_reconciliation':null;
     lastOutcomeReason=result.kind==='unresolved' && typeof result.reason==='string'
@@ -80,6 +81,7 @@ export function createLivePlateSession({
     lastOutcomeKind=null;
     lastOutcomeCode=null;
     lastOutcomeReason=null;
+    lastOutcomeProducedStep=false;
   }
   function synchronize() {
     const current=snapshot();
@@ -273,7 +275,9 @@ export function createLivePlateSession({
             :sourceRefusals.includes(lastOutcomeCode)?'blocked':'provider_failed')
           :lastOutcomeKind==='experimental_plate_evaluated'?'evaluated':'idle';
       const stepAvailability=!hasVerifiedStep?'unavailable'
-        :(inFlight||lastOutcomeKind==='unresolved'?'last_good':'current');
+        :(inFlight||lastOutcomeKind==='unresolved'||
+          (lastOutcomeKind==='experimental_plate_evaluated'&&!lastOutcomeProducedStep)
+          ?'last_good':'current');
       return {format:LIVE_PLATE_SESSION_FORMAT,version:LIVE_PLATE_SESSION_VERSION,
         projectId:state.report.projectId,revision:state.report.revision,
         inFlight,hasVerifiedStep,providerState,stepAvailability,
