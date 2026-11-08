@@ -18,6 +18,7 @@ import tarfile
 import tempfile
 
 from abi_compat import ABIError, verify_abi
+from execution_environment import sealed_env
 
 
 ROOT_NAME = "offline-occt801"
@@ -81,7 +82,8 @@ def validate_archive(tar: tarfile.TarFile) -> None:
 
 def run_gate(command: list[str], cwd: Path, label: str, timeout: int) -> str:
     completed = subprocess.run(command, cwd=cwd, capture_output=True,
-                               text=True, timeout=timeout, check=False)
+                               text=True, timeout=timeout, check=False,
+                               env=sealed_env())
     require(completed.returncode == 0,
             f"{label} failed (exit={completed.returncode}): "
             + (completed.stderr + completed.stdout)[-1400:])
