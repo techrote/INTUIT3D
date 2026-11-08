@@ -656,6 +656,10 @@ async function main() {
       postMessage(payload,...rest){
         window.__modelImportFilePayloads.push(payload?.file instanceof File &&
           !Object.hasOwn(payload,'source'));
+        if(window.__modelHoldNextWorkerRequest){
+          window.__modelHoldNextWorkerRequest=false;
+          return; // Simulate indefinitely delayed disk access on this Worker.
+        }
         return super.postMessage(payload,...rest);
       }
     };
@@ -718,6 +722,34 @@ async function main() {
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")!==beforeInvalidImport,
     'Confirmed archive did not replace model journal');
   await screenshot('24-worker-import-reopened.png');
+
+  // A stalled file read must leave React responsive, expose cancellation and
+  // never replace the journal. This holds just ONE real Worker request rather
+  // than trying to fake a slow synchronous UI-thread parser.
+  const beforeCancelledFile=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  check(await evaluate(`(() => {
+    window.__modelHoldNextWorkerRequest=true;
+    window.__modelImportHeartbeat=0;
+    const dt=new DataTransfer();
+    dt.items.add(new File(['{}'],'stalled.i3d-model.json',{type:'application/json'}));
+    const input=document.querySelector('.runtime-file-input');
+    input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+    setTimeout(()=>{window.__modelImportHeartbeat++},0);
+    return true;
+  })()`),'Cannot simulate stalled File Worker');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-processing]'))"),
+    'stalled Worker did not expose cancellable progress');
+  await eventually(()=>evaluate("window.__modelImportHeartbeat===1"),'UI thread stopped processing timers during stalled file import');
+  check(await evaluate("document.querySelector('[data-testid=runtime-import-stage]')?.textContent?.includes('Reading selected file')"),
+    'Stalled file import has no visible reading-stage diagnostic');
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-import-processing-cancel]');b?.click();return !!b})()"),
+    'Cancel control unavailable while Worker is stalled');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-processing]')"),
+    'Cancelling stalled Worker did not restore editor');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===beforeCancelledFile,
+    'Cancelling stalled File Worker mutated authoritative document');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-import-review]') && window.__modelImportWorkerStarts===3 && window.__modelMainFileTextReads===0"),
+    'Cancellation accepted unverified archive or main-thread read');
 
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
