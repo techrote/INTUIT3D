@@ -139,7 +139,7 @@ test('divergent equal-revision branches and all malformed selections fail closed
     {selectedFields:['missingMm']},{selectedFields:['sourceSketchId']},
     {selectedFields:['__proto__']},{selectedFields:['thicknessMm','clearanceMm','missingMm']},
     {eventId:'edit.housing.compound'},
-    {targetEventId:'edit.gauge.later'},
+    {targetEventId:'create.extrude.housing'},
     {unsupported:true},
   ]) assert.throws(()=>previewFeaturePayloadScalarRevert(doc,req(doc,extra)),
     (e)=>e instanceof ProjectFormatError || e instanceof ProjectRevisionError);
