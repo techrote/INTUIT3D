@@ -110,6 +110,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
     const solidPicker=new THREE.Raycaster();
     const onSolidPointerDown=(event:PointerEvent)=>{
       solidPointerStart={pointerId:event.pointerId,x:event.clientX,y:event.clientY,button:event.button};
+      if(renderer)renderer.domElement.dataset.pickTrace='down '+event.pointerId+'/'+event.button;
     };
     const markUserView=()=>{
       if(renderer)renderer.domElement.dataset.cameraPreset='custom';
@@ -127,6 +128,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
     const onSolidPointerUp=(event:PointerEvent)=>{
       const start=solidPointerStart;
       solidPointerStart=null;
+      if(renderer)renderer.domElement.dataset.pickTrace='up '+event.pointerId+'/'+event.button+' start '+JSON.stringify(start);
       if(!start||start.pointerId!==event.pointerId||start.button!==0||event.button!==0||
          Math.hypot(event.clientX-start.x,event.clientY-start.y)>4||
          !renderer||!geometry||!lastProfile||lastThickness===null||contextLost||!solidSelect.current)return;
@@ -141,6 +143,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       const plane=new THREE.Plane(new THREE.Vector3(0,0,1),-lastThickness);
       const hit=solidPicker.ray.intersectPlane(plane,new THREE.Vector3());
       const id=hit&&pickTopFaceHole(hit,lastProfile.holes);
+      renderer.domElement.dataset.pickTrace=JSON.stringify({dirZ:solidPicker.ray.direction.z,hit:hit&&[hit.x,hit.y],id,holes:lastProfile.holes.map(h=>[h.id,h.x,h.y])});
       if(id)solidSelect.current(id,event.ctrlKey||event.metaKey);
     };
     const dropMesh=()=>{
