@@ -25,6 +25,10 @@ export async function browserConsumer():Promise<LocalPlateClientResult> {
     const hash:string=outcome.step.sha256;
     void [bytes,hash];
   }
+  if(outcome.kind==='unresolved' && outcome.code==='unsupported_feature') {
+    const skipped:readonly string[]|undefined=outcome.unsupportedFeatureIds;
+    void skipped; // Browser may show this list but never publish a partial STEP.
+  }
   const observedFalse:false=outcome.exactAuthority;
   void observedFalse;
   return outcome;
