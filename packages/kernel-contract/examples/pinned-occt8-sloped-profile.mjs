@@ -3,6 +3,9 @@
  *   /absolute/pinned/worker /fresh/output
  */
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {resolve,join} from 'node:path';
 import {runPinnedOcct8LinearProfileChain}
@@ -17,6 +20,22 @@ if(!binary||!target){
 }
 const folder=resolve(target);
 await mkdir(folder,{recursive:true});
+const sourceSha=execFileSync('git',['rev-parse','HEAD'],{
+  cwd:fileURLToPath(new URL('../../../',import.meta.url)),
+  encoding:'utf8',
+}).trim();
+if(process.env.INTUIT3D_SOURCE_SHA)
+  assert.equal(sourceSha,process.env.INTUIT3D_SOURCE_SHA,
+    'pinned physical evidence checkout differs from requested source SHA');
+const workerExecutable=resolve(binary);
+const workerSha256=createHash('sha256').update(await readFile(workerExecutable)).digest('hex');
+const cppSourceSha256=createHash('sha256').update(
+  await readFile(new URL('../../../native/occt8/plate_worker.cpp',import.meta.url))
+).digest('hex');
+const provenance={sourceSha,workerSha256,cppSourceSha256,
+  pinnedVersionRequired:'OCCT-cxx-8.0.1',
+  qualifiedBinarySourceBinding:'requires-exact-head-build-log'};
+
 const base=parseOcct8LinearProfileRequest(JSON.parse(await readFile(
   new URL('../../../native/examples/occt8-sloped-bracket-linear.request.json',import.meta.url)
 )));
@@ -51,8 +70,8 @@ for(const thickness of [8,12]){
 }
 assert.notEqual(receipts[0].stepSha256,receipts[1].stepSha256);
 await writeFile(join(folder,'sloped-receipts.json'),JSON.stringify({
-  status:'PINNED_OCCT8_LINEAR_V5_PHYSICAL_WORKER_EXECUTED',receipts,
+  status:'PINNED_OCCT8_LINEAR_V5_PHYSICAL_WORKER_EXECUTED',provenance,receipts,
   limitations:['same_engine_STEP_readback_only','no_browser_or_human_qualification',
     'not_an_independent_CAD_import'],
 },null,2)+'\n',{flag:'wx'});
-console.log(JSON.stringify({status:'PINNED_OCCT8_LINEAR_V5_PASS',receipts},null,2));
+console.log(JSON.stringify({status:'PINNED_OCCT8_LINEAR_V5_PASS',provenance,receipts},null,2));
