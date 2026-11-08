@@ -528,6 +528,7 @@ test('native state preserves actionable refusal and source-valid last-good STEP 
   assert.match(failed.lastResultReason,/additional authored body/);
   assert.deepEqual([...session.currentStep().bytes],[1,2,3],
     'same canonical archive retains previously verified bytes after refusal');
+  const originalArchive=session.save();
   const timedOut=await session.evaluate({requestId:'diagnostic.timeout',deadlineMs:75});
   assert.equal(timedOut.code,'timeout');
   assert.equal(session.refresh().lastResultCode,'timeout');
@@ -543,6 +544,18 @@ test('native state preserves actionable refusal and source-valid last-good STEP 
   assert.equal(revised.lastResultCode,null);
   assert.equal(revised.lastResultReason,null);
   assert.equal(session.currentStep(),null);
+  assert.equal((await session.evaluate({requestId:'diagnostic.revised'})).kind,
+    'experimental_plate_evaluated');
+  assert.equal(session.refresh().stepAvailability,'current');
+  history=runtime.undo(history,['diagnostic.undo']);
+  assert.equal(session.refresh().stepAvailability,'unavailable',
+    'undo of a source revision immediately revokes native bytes');
+  assert.equal(session.currentStep(),null);
+  const reopened=session.reopen(originalArchive,{confirmReplacement:true});
+  assert.equal(reopened.kind,'opened');
+  assert.equal(session.refresh().providerState,'idle');
+  assert.equal(session.refresh().stepAvailability,'unavailable',
+    'reopening a prior archive cannot resurrect an old native receipt');
 });
 
 test('malformed native reply is a terminal visible provider failure',async()=>{
