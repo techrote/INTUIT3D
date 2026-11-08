@@ -132,6 +132,13 @@ async function main(){
   ws.addEventListener('message',event=>{
     const packet=JSON.parse(event.data);
     if(packet.method==='Runtime.exceptionThrown')exceptions.push(packet.params?.exceptionDetails?.text);
+    // The app correctly warns on reload with unexported changes. This test
+    // deliberately accepts that native browser dialog while simulating a
+    // renderer restart, so that IndexedDB continuity can be verified.
+    if(packet.method==='Page.javascriptDialogOpening' && packet.params?.type==='beforeunload'){
+      void send('Page.handleJavaScriptDialog',{accept:true}).catch(error=>
+        exceptions.push('beforeunload replay dialog: '+String(error)));
+    }
     const wait=pending.get(packet.id);
     if(!wait)return;
     pending.delete(packet.id);clearTimeout(wait.timer);
