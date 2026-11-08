@@ -7,6 +7,8 @@ export const OCCT8_ORTHOGONAL_PROFILE_PROTOCOL=
   'intuit3d/kernel/orthogonal-profile-cut-chain-v4';
 export const OCCT8_LINEAR_PROFILE_PROTOCOL=
   'intuit3d/kernel/linear-profile-cut-chain-v5';
+export const OCCT8_FLEXIBLE_LINEAR_PROTOCOL=
+  'intuit3d/kernel/flexible-linear-profile-v6';
 const ID=/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
 const fail=msg=>{throw new KernelContractError('OCCT8 selected profile: '+msg);};
 function fields(o,n,label) {
@@ -163,10 +165,11 @@ function clearOfLinearContour(vertices,c){
   return true;
 }
 
-function parseProfileRequest(value,linear=false) {
+function parseProfileRequest(value,linear=false,flexible=false) {
   const q=fields(value,['protocol','requestId','featureId','revision','units',
     'profile','cuts','exportStep'],'request');
-  if(q.protocol!==(linear?OCCT8_LINEAR_PROFILE_PROTOCOL:OCCT8_ORTHOGONAL_PROFILE_PROTOCOL))
+  if(q.protocol!==(flexible?OCCT8_FLEXIBLE_LINEAR_PROTOCOL:
+    linear?OCCT8_LINEAR_PROFILE_PROTOCOL:OCCT8_ORTHOGONAL_PROFILE_PROTOCOL))
     fail('unsupported protocol');
   if(typeof q.requestId!=='string'||!ID.test(q.requestId)||
      typeof q.featureId!=='string'||!ID.test(q.featureId)||
@@ -178,16 +181,16 @@ function parseProfileRequest(value,linear=false) {
     fail('invalid selected profile identity');
   number(p.thickness,'extrusion thickness',{positive:true});
   const g=linear?linearGeometry(p.vertices):geometry(p.vertices);
-  if(!Array.isArray(q.cuts)||q.cuts.length<2||q.cuts.length>16)
+  if(!Array.isArray(q.cuts)||q.cuts.length<(flexible?0:2)||q.cuts.length>16)
     fail('two to sixteen explicitly ordered cuts required');
   const cx=(g.xmin+g.xmax)/2,cy=(g.ymin+g.ymax)/2;
   const shifted=q.cuts.map(c=>({...c,x:c?.x-cx,y:c?.y-cy}));
-  const parsed=parseOcct8MixedCutRequest({
+  const parsed=q.cuts.length?parseOcct8MixedCutRequest({
     protocol:'intuit3d/kernel/plate-mixed-cut-chain-v2',
     requestId:q.requestId,featureId:q.featureId,revision:q.revision,
     units:'mm',exportStep:q.exportStep,
     plate:{width:g.xmax-g.xmin,depth:g.ymax-g.ymin,
-      thickness:p.thickness,holes:[]},cuts:shifted});
+      thickness:p.thickness,holes:[]},cuts:shifted}):{cuts:[]};
   const cuts=parsed.cuts.map(c=>({...c,x:c.x+cx,y:c.y+cy}));
   for(const c of cuts){
     if(c.featureId===p.profileId)fail('cut conflicts with profile ID');
@@ -198,8 +201,9 @@ function parseProfileRequest(value,linear=false) {
 }
 export const parseOcct8OrthogonalProfileRequest=value=>parseProfileRequest(value,false);
 export const parseOcct8LinearProfileRequest=value=>parseProfileRequest(value,true);
+export const parseOcct8FlexibleLinearRequest=value=>parseProfileRequest(value,true,true);
 export function expectedOcct8OrthogonalMetrics(q) {
-  const g=q.protocol===OCCT8_LINEAR_PROFILE_PROTOCOL?
+  const g=[OCCT8_LINEAR_PROFILE_PROTOCOL,OCCT8_FLEXIBLE_LINEAR_PROTOCOL].includes(q.protocol)?
     linearGeometry(q.profile.vertices):geometry(q.profile.vertices);
   const t=q.profile.thickness;
   let volumeMm3=g.area*t,surfaceAreaMm2=2*g.area+g.perimeter*t;
@@ -232,8 +236,8 @@ function inspect(m,expected,circles,label) {
     if(!near(Math.abs(a.axisZ),1))fail(label+' wrong cylinder axis');
   }
 }
-function assessProfileResponse(input,raw,{currentRevision}={},linear=false) {
-  const q=parseProfileRequest(input,linear);
+function assessProfileResponse(input,raw,{currentRevision}={},linear=false,flexible=false) {
+  const q=parseProfileRequest(input,linear,flexible);
   if(!Number.isSafeInteger(currentRevision)||currentRevision<0)
     fail('missing current revision');
   if(currentRevision!==q.revision)return {kind:'unresolved',code:'stale_revision',
@@ -283,3 +287,6 @@ export const assessOcct8OrthogonalResponse=(input,raw,options)=>
   assessProfileResponse(input,raw,options,false);
 export const assessOcct8LinearResponse=(input,raw,options)=>
   assessProfileResponse(input,raw,options,true);
+
+export const assessOcct8FlexibleLinearResponse=(input,raw,options)=>
+  assessProfileResponse(input,raw,options,true,true);
