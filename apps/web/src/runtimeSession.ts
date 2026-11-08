@@ -413,6 +413,33 @@ export function newModelPlateSession(projectId = 'workbench.plate.one'): ModelSe
  * Unlike the complete mounting-plate example, the user authors extrusion and
  * cut separately. The profile contains two circular construction candidates;
  * neither is a solid cut until the user commits the cut feature. */
+/** Truly empty solver-owned sketch source: no template vertices, edges or holes. */
+export function newModelEmptySketchSession(projectId = 'workbench.empty.one'): ModelSession {
+  const empty=sketch.validateSketch({
+    version:1,units:'mm',points:[],lines:[],circles:[],constraints:[],
+  });
+  const seeded=runtime.commit(initial(projectId),[
+    created('create.empty.sketch',feature('sketch.plate','sketch',[],[],
+      {sketch:empty as unknown as model.JsonValue})),
+  ]);
+  return transactions.startUndoHistory(seeded.document);
+}
+
+/** Generic drawn contours do not have the historical fixture's dimension IDs. */
+export function modelSketchHasPlateDimensions(h:ModelSession):boolean {
+  const ids=new Set(sketchSource(h).constraints.map(c=>c.id));
+  return ['width','height','holeA:fixed','holeB:fixed',
+    'holeA:diameter'].every(id=>ids.has(id));
+}
+export function modelSketchIsEmpty(h:ModelSession):boolean {
+  const source=sketchSource(h);
+  return !source.points.length&&!source.lines.length&&!source.circles.length&&
+    !source.constraints.length;
+}
+export function modelCurrentSketch(h:ModelSession):SketchDocument {
+  return sketchSource(h);
+}
+
 export function newModelSketchSession(projectId = 'workbench.sketch.one'): ModelSession {
   const seeded=runtime.commit(initial(projectId), [
     created('create.sketch', feature('sketch.plate', 'sketch', [], [],
@@ -807,8 +834,11 @@ export function reopenModelSession(text: string): ModelSession {
   // unsupported solid/mesh. Keep the rest of this plate workbench's bounded
   // feature inventory while preserving genuine multi-row archive history.
   modelHoleValues(h);
-  modelSketchDimensionValues(h);
-  if(rows.some(t=>t.featureId==='plate'&&t.active))modelDimensionValues(h);
+  // A genuine user-drawn contour is not obliged to contain seeded fixture IDs.
+  if(modelSketchHasPlateDimensions(h)) {
+    modelSketchDimensionValues(h);
+    if(rows.some(t=>t.featureId==='plate'&&t.active))modelDimensionValues(h);
+  }
   runtime.inspect(h);
   return h;
 }

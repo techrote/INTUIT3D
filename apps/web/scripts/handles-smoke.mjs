@@ -955,6 +955,243 @@ async function main() {
     'reopened edge-anchored journal lost semantic hole');
   await screenshot('28-model-edge-hole-archive-reopened.png');
 
+  // Genuine browser pointer test: from zero sketch entities, not a seeded plate.
+  // All mouse events travel through Chromium CDP → SVG coordinate conversion
+  // → ephemeral preview → SKETCH acceptance → RUNTIME one-event journal.
+  await clickControl('[data-testid="runtime-new-empty-sketch"]');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'empty-sketch project requires explicit replacement consent');
+  await clickControl('[data-testid="runtime-import-review-confirm"]');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-blank-sketch]'))"),
+    'real blank SVG canvas did not render without an admitted profile');
+  const blankBefore=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  check(await evaluate("!document.querySelector('[data-testid=runtime-sketch]') && Boolean(document.querySelector('[data-testid=runtime-structural-sketch-dimensions]'))"),
+    'empty sketch was replaced with a fabricated seeded profile');
+  // Adversarial *real pointer* admission before the successful journey:
+  // a bow-tie's four legitimate clicks must never silently author a profile.
+  // Escape after SKETCH's refusal must discard only ephemeral draft vertices.
+  const clickBlankVertex=async(x,y)=>{
+    const point=await evaluate('(() => {const svg=document.querySelector("[data-testid=runtime-blank-sketch]");const m=svg?.getScreenCTM();if(!m)return null;const p=new DOMPoint('+x+','+(120-y)+').matrixTransform(m);return {x:p.x,y:p.y}})()');
+    check(point&&Number.isFinite(point.x)&&Number.isFinite(point.y),
+      'no real screen-matrix mapping for blank sketch vertex');
+    await mouse('mouseMoved',point.x,point.y);
+    await mouse('mousePressed',point.x,point.y,1);
+    await mouse('mouseReleased',point.x,point.y);
+  };
+  await clickControl('[data-testid="runtime-outline-tool"]');
+  for(const [x,y] of [[0,0],[120,80],[0,80],[120,0]])
+    await clickBlankVertex(x,y);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent?.includes('4 / 12')"),
+    'crossing sketch did not collect four actual pointer vertices');
+  await clickControl('[data-testid="runtime-close-contour"]');
+  await eventually(()=>evaluate("document.querySelector('.runtime-message')?.textContent?.includes('SKETCH refused this outline')"),
+    'crossing contour did not surface an authoritative SKETCH refusal');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore &&
+    await evaluate("!document.querySelector('[data-testid=runtime-sketch]')"),
+    'crossing contour refusal mutated the journal or published a solved profile');
+  await screenshot('29a-crossing-outline-refused.png');
+  await key('Escape','Escape',27);
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-contour-vertex-count]')"),
+    'Escape did not cancel the invalid pointer draft');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore &&
+    await evaluate("Boolean(document.querySelector('[data-testid=runtime-blank-sketch]'))"),
+    'Escape after crossing refusal changed the original empty model');
+  await screenshot('29b-crossing-outline-escape.png');
+  // A new independent gesture on the unchanged zero-entity sketch succeeds.
+  await clickControl('[data-testid="runtime-outline-tool"]');
+  for(const [x,y] of [[0,0],[120,0],[120,80],[0,80]])
+    await clickBlankVertex(x,y);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent?.includes('4 / 12')"),
+    'four genuine pointer clicks did not create ephemeral vertices');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore,
+    'unclosed pointer vertices incorrectly modified the INTENT journal');
+  await screenshot('29-from-empty-pointer-four-vertices.png');
+  await clickControl('[data-testid="runtime-close-contour"]');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch]'))"),
+    'Close did not commit SKETCH through versioned RUNTIME structural authoring');
+  const closedRevision=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  check(closedRevision!==blankBefore,'Close did not commit one authoritative revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent?.includes('4 outline vertices')"),
+    'user-created polygon did not become the admitted analytic sketch preview');
+  await screenshot('30-from-empty-authoritative-closed-contour.png');
+  // One authoritative Undo removes the whole contour, not a single point.
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'undo button unavailable after contour close');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-blank-sketch]'))"),
+    'undo did not remove the full original contour in one history frame');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")!==closedRevision,
+    'undo failed to advance the immutable revision');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    'redo button unavailable after contour undo');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch]'))"),
+    'redo did not re-admit the source-bound contour');
+  const savedCount=await evaluate('window.__modelArchiveBlobs.length');
+  await clickControl('[data-testid="runtime-save-archive"]');
+  await eventually(()=>evaluate('window.__modelArchiveBlobs.length === '+(savedCount+1)),
+    'drawn sketch failed to download an authoritative model archive');
+  check(await evaluate("((async()=>{const blob=window.__modelArchiveBlobs.at(-1);const text=await blob.text();const dt=new DataTransfer();dt.items.add(new File([text],'blank-drawn.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})())"),
+    'cannot select saved drawn-sketch archive through real browser File input');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'drawn-sketch archive did not reach isolated Worker validation review');
+  await clickControl('[data-testid="runtime-import-review-confirm"]');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch]'))"),
+    'drawn-sketch archive reopened without authored contour');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-blank-sketch]')"),
+    'reopened authoritative contour was discarded or replaced by empty sketch');
+  await screenshot('31-from-empty-authoritative-save-reopen.png');
+  const originalDrawnVertex=await evaluate(`(() => {
+    const text=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
+    const pair=text.trim().split(/\\s+/)[2]?.split(',').map(Number);
+    return pair?.length===2&&pair.every(Number.isFinite)?{x:pair[0],y:pair[1]}:null;
+  })()`);
+  check(originalDrawnVertex&&Number.isFinite(originalDrawnVertex.x),
+    'missing solver-derived original drawn vertex for undo baseline');
+
+
+  // Re-select the genuinely authored contour after archive import, not a
+  // template-based pointer fixture. The persisted SKETCH vertices are handles.
+  await clickControl('[data-testid="runtime-profile-select-mode"]');
+  const drawnPick=await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=runtime-sketch]');
+    if(!svg||!svg.getScreenCTM())return null;
+    const p=new DOMPoint(45,35).matrixTransform(svg.getScreenCTM());
+    return {x:p.x,y:p.y};
+  })()`);
+  check(drawnPick&&Number.isFinite(drawnPick.x),'drawn contour selection had no real SVG projection');
+  await mouse('mouseMoved',drawnPick.x,drawnPick.y);
+  await mouse('mousePressed',drawnPick.x,drawnPick.y,1);
+  await mouse('mouseReleased',drawnPick.x,drawnPick.y);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-pointer-profile-selected]')?.textContent?.includes('Drawn outline')"),
+    'user-drawn profile could not be semantically reselected after reopening');
+  check(await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-drawn-vertex-select]');
+    if(!s)return false;
+    const o=[...s.options].find(item=>item.value.endsWith(':handle:2'));
+    if(!o)return false;s.value=o.value;s.dispatchEvent(new Event('change',{bubbles:true}));return true;
+  })()`),'semantic drawn vertex #2 not offered');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-drawn-contour-vertex-editor]'))"),
+    'drawn vertex did not expose a numeric model-backed editor');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-drawn-vertex-x]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'drawn vertex X cannot receive actual keyboard focus');
+  await send('Input.insertText',{text:'135'});
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-drawn-vertex-y]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'drawn vertex Y cannot receive actual keyboard focus');
+  await send('Input.insertText',{text:'90'});
+  check(await evaluate("document.querySelector('[data-testid=runtime-drawn-vertex-x]')?.value==='135' && document.querySelector('[data-testid=runtime-drawn-vertex-y]')?.value==='90'"),
+    'physical keyboard values were not entered into the drawn vertex editor');
+  await clickControl('[data-testid="runtime-drawn-vertex-commit"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('135,90')"),
+    'numeric drawn-vertex edit was not admitted as changed sketch geometry');
+  await screenshot('34-drawn-vertex-numeric-edit.png');
+
+  // Direct manipulation of the same explicitly chosen semantic handle goes
+  // through the same versioned RUNTIME transaction, not a pixel-only preview.
+  const vertexGesture=await evaluate(`(() => {
+    const h=document.querySelector('[data-testid=runtime-profile-drag-handle]');
+    if(!h||!h.getScreenCTM())return null;
+    const matrix=h.getScreenCTM();
+    const from=new DOMPoint(Number(h.getAttribute('cx')),Number(h.getAttribute('cy'))).matrixTransform(matrix);
+    const to=new DOMPoint(140,92).matrixTransform(matrix);
+    return {from:{x:from.x,y:from.y},to:{x:to.x,y:to.y}};
+  })()`);
+  check(vertexGesture&&Number.isFinite(vertexGesture.from.x),
+    'semantic vertex drag marker did not project into screen coordinates');
+  await mouse('mouseMoved',vertexGesture.from.x,vertexGesture.from.y);
+  await mouse('mousePressed',vertexGesture.from.x,vertexGesture.from.y,1);
+  await mouse('mouseMoved',vertexGesture.to.x,vertexGesture.to.y,1);
+  await mouse('mouseReleased',vertexGesture.to.x,vertexGesture.to.y);
+  // SVG screen-to-sketch inversion can have low-order floating-point noise.
+  // Assert the real solved millimetre position, not a string representation
+  // of a binary number such as 139.99999717325736.
+  const drawnVertexAt=(x,y)=>evaluate(`(() => {
+    const text=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
+    return text.trim().split(/\\s+/).some(item=>{
+      const [px,py]=item.split(',').map(Number);
+      return Number.isFinite(px)&&Number.isFinite(py)&&Math.hypot(px-${x},py-${y})<0.01;
+    });
+  })()`);
+  try{
+    await eventually(()=>drawnVertexAt(140,92),
+      'actual pointer drag of a committed drawn vertex failed');
+  }catch(failure){
+    const detail=await evaluate(`(() => ({
+      polygon:document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points'),
+      vertexHandle:document.querySelector('[data-testid=runtime-profile-drag-handle]')?.getAttribute('cx'),
+      vertexY:document.querySelector('[data-testid=runtime-profile-drag-handle]')?.getAttribute('cy'),
+      selected:document.querySelector('[data-testid=runtime-pointer-profile-selected]')?.textContent,
+      message:document.querySelector('[data-testid=runtime-panel] [role="alert"]')?.textContent,
+      allAlerts:[...document.querySelectorAll('[role="alert"]')].map(x=>x.textContent),
+      status:[...document.querySelectorAll('.runtime-message')].map(x=>x.textContent),
+      revision:document.querySelector('[data-testid=runtime-revision]')?.textContent,
+      marker:document.querySelector('[data-testid=runtime-profile-drag-handle]')?.outerHTML?.slice(0,400)
+    }))()`);
+    await screenshot('35-drawn-vertex-pointer-failed.png');
+    throw Error(String(failure)+'; drag diagnostics='+JSON.stringify(detail));
+  }
+  await screenshot('35-drawn-vertex-pointer-drag.png');
+  const undoButton=()=>evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()");
+  const redoButton=()=>evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()");
+  check(await undoButton(),'undo unavailable after real drawn vertex drag');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('135,90')"),
+    'undo of pointer movement failed to restore the precise numeric vertex');
+  check(await undoButton(),'undo unavailable after drawn vertex numeric edit');
+  await eventually(()=>drawnVertexAt(originalDrawnVertex.x,originalDrawnVertex.y),
+    'second undo failed to restore the actual pointer-drawn solver-authoritative vertex');
+  check(await redoButton(),'redo unavailable after numeric vertex undo');
+  await eventually(()=>drawnVertexAt(135,90),'first redo did not reapply numeric semantic vertex edit');
+  check(await redoButton(),'redo unavailable after direct vertex undo');
+  await eventually(()=>drawnVertexAt(140,92),
+    'redo failed to recover the fully edited drawn vertex');
+  await screenshot('36-drawn-vertex-undo-redo.png');
+  const editedSavedCount=await evaluate('window.__modelArchiveBlobs.length');
+  await clickControl('[data-testid="runtime-save-archive"]');
+  await eventually(()=>evaluate('window.__modelArchiveBlobs.length === '+(editedSavedCount+1)),
+    'edited drawn contour failed to save');
+  check(await evaluate("((async()=>{const text=await window.__modelArchiveBlobs.at(-1).text();const dt=new DataTransfer();dt.items.add(new File([text],'drawn-vertex.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})())"),
+    'edited drawn contour archive could not be selected');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'edited contour archive did not reach Worker validation');
+  await clickControl('[data-testid="runtime-import-review-confirm"]');
+  await eventually(()=>drawnVertexAt(140,92),
+    'reopened authored contour lost the moved vertex');
+  await screenshot('37-drawn-vertex-edit-reopened.png');
+
+  // Continue on the SAME genuinely drawn project: model-backed extrusion,
+  // accepted circular-hole operation, explicitly body-targeted cut and archive.
+  await clickControl('[data-testid="runtime-create-extrusion"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-plate]')?.textContent?.includes('preview_only')"),
+    'drawn contour failed to author a preview-only extrusion');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-feature-cut]')"),
+    'cut was authored without user consent on the drawn project');
+  await clickControl('[data-testid="runtime-add-hole"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-inspector] .section-head')?.textContent?.includes('1')"),
+    'actual selected sketch did not admit a user-authored circular hole');
+  check(await evaluate("Boolean(document.querySelector('[data-testid=runtime-create-cut]:not([disabled])'))"),
+    'explicit body-targeted cut did not become available after hole acceptance');
+  await clickControl('[data-testid="runtime-create-cut"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-cut]')?.textContent?.includes('pending_exact_provider')"),
+    'drawn-project cut did not retain honest pending native-exact status');
+  await screenshot('32-from-empty-extrusion-hole-cut.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'undo unavailable after explicit drawn-project cut');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-cut]')?.classList.contains('removed')"),
+    'cut undo failed to tombstone only the cut feature');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    'redo unavailable after drawn-project cut undo');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-cut]')?.textContent?.includes('pending_exact_provider')"),
+    'cut redo failed to restore semantic target and pending native status');
+  const drawnCutSavedCount=await evaluate('window.__modelArchiveBlobs.length');
+  await clickControl('[data-testid="runtime-save-archive"]');
+  await eventually(()=>evaluate('window.__modelArchiveBlobs.length === '+(drawnCutSavedCount+1)),
+    'complete drawn contour / extrusion / cut archive not downloaded');
+  check(await evaluate("((async()=>{const data=await window.__modelArchiveBlobs.at(-1).text();const dt=new DataTransfer();dt.items.add(new File([data],'drawn-cut.i3d-model.json',{type:'application/json'}));const el=document.querySelector('.runtime-file-input');el.files=dt.files;el.dispatchEvent(new Event('change',{bubbles:true}));return true})())"),
+    'cannot reselect complete drawn CAD project in real Chromium File input');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'complete drawn CAD archive did not reach isolated Worker review');
+  await clickControl('[data-testid="runtime-import-review-confirm"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-feature-cut]')?.textContent?.includes('pending_exact_provider')"),
+    'complete drawn CAD archive lost cut or falsely promoted native state');
+  await screenshot('33-from-empty-extrusion-cut-reopened.png');
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -971,7 +1208,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -988,6 +1225,10 @@ async function main() {
     multiUndoHistoryWorkerImportRequiresConfirmation: true,
     actualChromiumSelectedHoleStampAndBatchDeleteUndo: true,
     actualChromiumSelectedEdgeHoleCreateUndoRedoArchive: true,
+    actualCrossingContourRefusedAndEscapePreservesEmptyHistory: true,
+    genuineEmptySketchFourPointerVerticesAuthoritativeContourUndoRedoSaveReopen: true,
+    genuineDrawnContourExtrusionHoleCutUndoRedoSaveReopen: true,
+    genuinelyDrawnVertexNumericAndPointerEditUndoRedoReopen: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
