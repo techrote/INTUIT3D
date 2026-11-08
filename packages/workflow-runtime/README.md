@@ -986,3 +986,27 @@ Run: `node --test packages/workflow-runtime/test/feature-lifecycle-session.integ
 ### Inspected lifecycle consent is target-bound
 
 The full-document journal fence alone is insufficient to prove that a user reviewed **this** feature and **these** descendants: changing a submitted feature ID or tombstone selection at the same revision could otherwise reuse a valid confirmation. For `cascade_descendants`, submit `confirmedCascadeIds` **exactly** as returned in `inspectFeatureRemoval().impact.cascadeIds`; omit it for other removal modes. For recovery, submit `confirmedRequiredFeatureIds` **exactly** as returned in `inspectFeatureRecovery().inspection.requiredFeatureIds` (dependency-first order). Runtime re-inspects inside the synchronous commit, rejects changed/omitted/reordered consent as `unreviewed_impact`, and MODEL separately enforces cascade, ancestor, unresolved-state and event-ID admission. Re-inspect after a refusal; never retry silently with broadened consent. This binds browser consent without creating a duplicate journal, solver or provider.
+
+## Source-bound native STEP download (single consumer handoff)
+
+Call `session.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'})`
+**inside WORKBENCH's download-click handler**. It returns the current
+canonical source `{projectId,revision,archiveSha256}`, the authenticated
+native producer `{requestId,cutFeatureId,backend,occtVersion}`, and
+verified STEP `{bytes,sha256,verification}` in one synchronous,
+revision-fenced handoff. It returns `null` after a new edit, undo or
+archive replacement, or when missing provenance or a different backend
+is detected. Each call copies the byte array and the retained receipt
+cannot be rewritten through a previously returned evaluation object.
+Do not cache it across edits. The legacy `currentStep()` is unchanged.
+
+Same-archive native refresh failures can leave a previously verified
+last-good receipt usable; display `session.refresh().lastResultKind`
+separately instead of claiming the latest attempt passed. The source
+digest is checked by the existing authenticated localhost client. The
+returned `exactAuthority:false` and `independentInteroperability:false`
+remain mandatory: this is **not** an independent external CAD import,
+a general-purpose OCCT B-rep certificate, or Windows Firefox acceptance.
+WORKBENCH owns its download UI; Integration owns guarded admission.
+The new regression uses real INTENT/SKETCH, HTTP and a synthetic OCCT8
+test provider, not an actual compiled C++ execution.
