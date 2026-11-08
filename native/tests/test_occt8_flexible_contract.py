@@ -3,6 +3,7 @@ import copy
 import hashlib
 import json
 import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -91,6 +92,78 @@ class ProgressiveV6Tests(unittest.TestCase):
                     self.assertEqual(refused["status"],"requires_reconciliation")
                     self.assertEqual(hashlib.sha256(output.read_bytes()).hexdigest(),digest)
             self.assertEqual(len(digests),6)
+
+    @unittest.skipUnless(WORKER,"PINNED_CXX_SKIPPED: real OCCT 8.0.1 worker absent")
+    def test_real_cpp_refuses_bad_v6_canonical_wires_without_artifacts(self):
+        """Exercise the compiled C++ parser directly, not Python's preflight.
+
+        The ordinary bridge validates before spawning the C++ worker; these
+        deliberately malformed canonical wires must instead be rejected by
+        the *actual* pinned executable before STEP/report publication.
+        """
+        worker=Path(WORKER).resolve()
+        self.assertTrue(worker.is_file(),WORKER)
+        good=canonical_flexible_linear_request(request(2))
+
+        def malformed(change):
+            q=request(2)
+            change(q)
+            return canonical_flexible_linear_request(q)
+
+        def reverse_vertices(q):
+            q["profile"]["vertices"].reverse()
+
+        def repeat_vertex(q):
+            q["profile"]["vertices"][1]=dict(q["profile"]["vertices"][0])
+
+        def move_cut_outside(q):
+            q["cuts"][0]["x"]=130
+
+        def overlap_cuts(q):
+            q["cuts"][1]["x"]=q["cuts"][0]["x"]
+            q["cuts"][1]["y"]=q["cuts"][0]["y"]
+
+        def duplicate_cut_identity(q):
+            q["cuts"][1]["featureId"]=q["cuts"][0]["featureId"]
+
+        bad_cases=(
+            ("unknown-protocol",good.replace(
+                "INTUIT3D_OCCT8_FLEX_LINEAR_CHAIN_V6",
+                "INTUIT3D_OCCT8_FLEX_LINEAR_CHAIN_V7",1),
+                "invalid canonical request protocol"),
+            ("trailing-token",good+"UNEXPECTED_TOKEN\\n","trailing request data"),
+            ("clockwise-wire",malformed(reverse_vertices),
+                "linear contour needs CCW positive area"),
+            ("zero-length-edge",malformed(repeat_vertex),
+                "invalid linear contour coordinates or edge"),
+            ("outside-cutter",malformed(move_cut_outside),
+                "invalid ordered cut extent"),
+            ("overlapping-cutters",malformed(overlap_cuts),
+                "cut footprints overlap or touch"),
+            ("duplicate-feature-id",malformed(duplicate_cut_identity),
+                "duplicate cut feature identity"),
+        )
+        with tempfile.TemporaryDirectory(prefix="intuit-v6-native-refusal-") as d:
+            directory=Path(d)
+            for name,wire,diagnostic in bad_cases:
+                with self.subTest(case=name):
+                    request_path=directory/f"{name}.request"
+                    report_path=directory/f"{name}.json"
+                    step_path=directory/f"{name}.step"
+                    request_path.write_text(wire,encoding="ascii")
+                    completed=subprocess.run(
+                        [str(worker),str(request_path),str(report_path),
+                         str(step_path)],cwd=directory,
+                        stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                        timeout=30,check=False)
+                    self.assertEqual(completed.returncode,2,
+                        (name,completed.stdout,completed.stderr))
+                    self.assertIn(diagnostic,
+                        completed.stderr.decode("utf-8","replace"),name)
+                    self.assertFalse(report_path.exists(),
+                        name+": rejected C++ request published a report")
+                    self.assertFalse(step_path.exists(),
+                        name+": rejected C++ request published STEP bytes")
 
 if __name__=="__main__":
     unittest.main()
