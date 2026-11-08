@@ -521,7 +521,8 @@ test('native state preserves actionable refusal and source-valid last-good STEP 
   release();
   assert.equal((await awaiting).code,'unsupported_feature');
   const failed=session.refresh();
-  assert.equal(failed.providerState,'provider_failed');
+  assert.equal(failed.providerState,'blocked',
+    'an unsupported CAD feature is not a native provider crash');
   assert.equal(failed.stepAvailability,'last_good');
   assert.equal(failed.lastResultKind,'unresolved');
   assert.equal(failed.lastResultCode,'unsupported_feature');
