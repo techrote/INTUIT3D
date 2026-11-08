@@ -10,8 +10,8 @@ import type {LivePlateSession} from '@intuit3d/workflow-runtime/live-plate-sessi
 import {
   modelCurrentSketch,modelSketchIsEmpty,runtime,serializeModelSession,
   type ModelSession,
-} from './runtimeSession';
-import {beginBlankContourDraft,type BlankContourDraft} from './blankContourDraft';
+} from './runtimeSession.ts';
+import {beginBlankContourDraft,type BlankContourDraft} from './blankContourDraft.ts';
 
 export type BlankContourCommit =
   | Readonly<{kind:'committed';history:ModelSession;selection:SelectedProfileSelection}>
