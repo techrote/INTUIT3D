@@ -181,3 +181,7 @@ test('retrospective authored dimensions remain explicit and revision-replayable'
   assert.equal(inspection.vertices[2].x,95);
   assert.equal(inspection.handles[2].handleId,'custom:handle:2');
 });
+
+test('public closed-contour consumer example executes against real SKETCH modules',async()=>{
+  await import('../examples/closed-contour-authoring.mjs');
+});
