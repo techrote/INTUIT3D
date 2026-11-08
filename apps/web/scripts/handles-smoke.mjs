@@ -1014,6 +1014,14 @@ async function main() {
   check(await evaluate("!document.querySelector('[data-testid=runtime-blank-sketch]')"),
     'reopened authoritative contour was discarded or replaced by empty sketch');
   await screenshot('31-from-empty-authoritative-save-reopen.png');
+  const originalDrawnVertex=await evaluate(`(() => {
+    const text=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
+    const pair=text.trim().split(/\\s+/)[2]?.split(',').map(Number);
+    return pair?.length===2&&pair.every(Number.isFinite)?{x:pair[0],y:pair[1]}:null;
+  })()`);
+  check(originalDrawnVertex&&Number.isFinite(originalDrawnVertex.x),
+    'missing solver-derived original drawn vertex for undo baseline');
+
 
   // Re-select the genuinely authored contour after archive import, not a
   // template-based pointer fixture. The persisted SKETCH vertices are handles.
@@ -1102,8 +1110,8 @@ async function main() {
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('135,90')"),
     'undo of pointer movement failed to restore the precise numeric vertex');
   check(await undoButton(),'undo unavailable after drawn vertex numeric edit');
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('120,80')"),
-    'second undo failed to restore original solver-authoritative vertex');
+  await eventually(()=>drawnVertexAt(originalDrawnVertex.x,originalDrawnVertex.y),
+    'second undo failed to restore the actual pointer-drawn solver-authoritative vertex');
   check(await redoButton(),'redo unavailable after numeric vertex undo');
   check(await redoButton(),'redo unavailable after direct vertex undo');
   await eventually(()=>drawnVertexAt(140,92),
