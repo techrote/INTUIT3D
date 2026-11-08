@@ -240,10 +240,10 @@ test('history inventory exposes field-level safe actions even when full edit is 
     .find(x=>x.targetEventId==='edit.motor.compound');
   assert.equal(row.status,'blocked');
   assert.deepEqual(row.fieldChoices.map(x=>[x.field,x.status]),
-    [['payload','available'],['dependsOn','blocked']]);
-  assert.deepEqual(row.fieldChoices[0].invalidatedBodyIds,['body.motor']);
-  assert.equal(row.fieldChoices[0].admission,'require_ready');
-  assert.equal(row.fieldChoices[1].admission,null);
+    [['dependsOn','blocked'],['payload','available']]);
+  assert.deepEqual(row.fieldChoices[1].invalidatedBodyIds,['body.motor']);
+  assert.equal(row.fieldChoices[1].admission,'require_ready');
+  assert.equal(row.fieldChoices[0].admission,null);
   const snapshot=serializeProject(doc);
   assert.throws(()=>inspectHistoricalFeatureEdits(doc,inventoryRequest(doc,{
     expectedDocumentFence:serializeProject(baseline()),
