@@ -1158,7 +1158,7 @@ async function main(){
   await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:contourPick.x,y:contourPick.y});
   await send('Input.dispatchMouseEvent',{type:'mousePressed',x:contourPick.x,y:contourPick.y,button:'left',clickCount:1});
   await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:contourPick.x,y:contourPick.y,button:'left',clickCount:1});
-  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-pointer-profile-selected]')?.textContent?.includes('profile'))"),
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-pointer-profile-selected]')?.textContent?.startsWith('cycle:'))"),
     'Real browser click failed to select solver-admitted semantic contour');
   const widthHandleIndex=await evaluate(`(() => {
     const options=[...document.querySelector('[data-testid=runtime-pointer-profile-handle]')?.options||[]];
