@@ -79,8 +79,10 @@ const finish=(before,next,contourId,count,oldTarget=null)=>{
       after.solved.status,after.solved.diagnostics);
   const beforePoints=new Map(before.solved.geometry.points.map(p=>[p.id,p]));
   const afterPoints=new Map(after.solved.geometry.points.map(p=>[p.id,p]));
+  const ownedVertices=new Set(oldTarget?Array.from({length:count},(_,i)=>
+    ids(contourId,i).point):[]);
   for(const [id,p] of beforePoints){
-    if(oldTarget && id.startsWith(contourId+':vertex:'))continue;
+    if(ownedVertices.has(id))continue;
     const q=afterPoints.get(id);
     if(!q||p.x!==q.x||p.y!==q.y)
       return refuse(before.stamp,'unselected_geometry_would_move',id,
@@ -116,8 +118,8 @@ const accepted=(before,result,contourId,changed,created=[])=>{
   return {kind:'accepted',version:1,sourceSignature:before.stamp,
     nextSourceSignature:result.context.stamp,sketch:result.context.doc,
     selection:result.selection,profile:result.profile,contourId,
-    previousCandidateId:before.discovery.candidates.length===1?
-      before.discovery.candidates[0].id:null,
+    previousCandidateId:created.length?null:
+      candidateFor(before.discovery,result.profile.lineIds)?.id??null,
     nextCandidateId:result.profile.candidateId,
     createdEntityIds:created,changedConstraintIds:changed,handles:inspection.handles,
     solverStatus:result.context.solved.status,
