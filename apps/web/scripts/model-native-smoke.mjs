@@ -184,6 +184,53 @@ async function main(){
   // thickness edit, undo and direct drag replace the preview tessellation.
   check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');if(!c)return false;window.__intuit3dTest3DCanvas=c;window.__intuit3dTest3DContext=c.getContext('webgl2');return Boolean(window.__intuit3dTest3DContext)})()"),
     '3D editor has no actual WebGL2 context to preserve');
+  // Physical Chromium clicks exercise the real Three camera and canvas.
+  const cameraRev=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  for(const preset of ['top','front','right','isometric']){
+    await pointerClick('runtime-camera-'+preset);
+    const pose=await eventually(()=>evaluate(`(() => {
+      const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');
+      if(!c||c.dataset.cameraPreset!==${JSON.stringify(preset)})return null;
+      const pos=(c.dataset.cameraPosition||'').split(',').map(Number);
+      const target=(c.dataset.cameraTarget||'').split(',').map(Number);
+      return pos.length===3&&target.length===3&&pos.every(Number.isFinite)&&target.every(Number.isFinite)?{pos,target}:null;
+    })()`),'3D camera preset '+preset);
+    if(preset==='top')check(pose.pos[2]>pose.target[2]&&Math.abs(pose.pos[0]-pose.target[0])<.01,'Top camera alignment');
+    if(preset==='front')check(pose.pos[1]<pose.target[1]&&Math.abs(pose.pos[2]-pose.target[2])<.01,'Front camera alignment');
+    if(preset==='right')check(pose.pos[0]>pose.target[0]&&Math.abs(pose.pos[1]-pose.target[1])<.01,'Right camera alignment');
+    check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');return c===window.__intuit3dTest3DCanvas&&c?.getContext('webgl2')===window.__intuit3dTest3DContext})()"),'Camera preset reset WebGL2 context');
+    check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,'Camera preset authored model revision');
+  }
+  // Select a real authored hole from the actual Three.js canvas using real
+  // CDP pointer events, not a DOM callback or synthetic model edit.
+  await pointerClick('runtime-camera-top');
+  const visibleHole=await eventually(()=>evaluate(`(() => {
+    const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');
+    if(!c||c.dataset.cameraPreset!=='top')return null;
+    const h=JSON.parse(c.dataset.holePickMarkers||'[]').find(x=>x.id==='holeA');
+    if(!h)return null;
+    const rect=c.getBoundingClientRect();
+    return {x:rect.left+h.x,y:rect.top+h.y};
+  })()`),'projected actual 3D holeA');
+  check(visibleHole.x>0&&visibleHole.x<1360&&visibleHole.y>0&&visibleHole.y<900,
+    '3D hole projection is outside the browser viewport');
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:visibleHole.x,y:visibleHole.y});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:visibleHole.x,y:visibleHole.y,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:visibleHole.x,y:visibleHole.y,button:'left',clickCount:1});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-solid-selected-hole]')?.textContent?.includes('holeA')"),
+    '3D hole click did not select existing solver holeA');
+  check(await evaluate("document.querySelector('[data-testid=runtime-3d-viewport] canvas')?.dataset.cameraPreset==='top'"),
+    'Stationary hole selection was mistaken for a camera drag');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,
+    '3D hole selection accidentally authored a CAD revision');
+  check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');return c===window.__intuit3dTest3DCanvas&&c?.getContext('webgl2')===window.__intuit3dTest3DContext})()"),
+    '3D hole selection recreated the GPU context');
+  await pointerClick('runtime-camera-isometric');
+  await pointerClick('runtime-camera-fit');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,'FIT authored model revision');
+  await screenshot('native-00-camera-views.png');
+  check(await evaluate("(() => {const h=document.querySelector('[data-testid=runtime-thickness-handle]');h?.focus();return document.activeElement===h})()"),
+    '3D camera controls did not return keyboard focus to thickness grip');
   await key('ArrowUp','ArrowUp',38);
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='9'"),
     '3D keyboard thickness did not edit the actual parameter');
@@ -970,8 +1017,27 @@ async function main(){
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
     'recovered checkpoint did not pass Worker validation after reload');
   await pointerClick('runtime-import-review-confirm');
-  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-revision]')?.textContent.match(/\\d+/)?.[0])==="+recoveryRevision),
-    'explicit recovery did not restore the original authoritative revision');
+  // Decode the browser's visible revision outside the CDP expression string.
+  // Backslash escapes inside nested JS strings can silently turn /\d+/ into /d+/.
+  // A passing check also requires the confirmation dialog to have closed.
+  try{
+    await eventually(async()=>{
+      const label=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+      const got=Number(String(label??'').match(/[0-9]+/)?.[0]);
+      return got===recoveryRevision &&
+        await evaluate("document.querySelector('[data-testid=runtime-import-review]')===null");
+    },'explicit recovery did not restore the original authoritative revision');
+  }catch(error){
+    const observed=await evaluate(`(() => JSON.stringify({
+      revision:document.querySelector('[data-testid=runtime-revision]')?.textContent??null,
+      reviewVisible:Boolean(document.querySelector('[data-testid=runtime-import-review]')),
+      processing:document.querySelector('[data-testid=runtime-import-stage]')?.textContent??null,
+      message:document.querySelector('.runtime-message')?.textContent??null,
+      archiveState:document.querySelector('[data-testid=runtime-archive-state]')?.textContent??null,
+    }))()`);
+    await screenshot('native-11-recovery-revision-failure.png').catch(()=>{});
+    throw Error(`Recovery revision mismatch (expected ${recoveryRevision}; observed ${observed}): ${String(error)}`);
+  }
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===2"),
     'recovering an archive lost newly authored circular holes');
   check(await evaluate("document.querySelector('[data-testid=runtime-archive-state]')?.textContent.includes('UNEXPORTED')"),
@@ -985,12 +1051,31 @@ async function main(){
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===2"),
     'reopened recovery failed redo of authored circular holes');
+  // Real Chromium pointer-selection and keyboard input, not a synthetic React call.
+  await pointerClick('runtime-mode-sketch');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch-outline-hole-holeA]'))"),
+    'fresh admitted plate sketch not visible');
+  await pointerClick('runtime-sketch-outline-hole-holeA');
+  const beforeNudge=Number(await evaluate("document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value"));
+  const beforeNudgeRevision=Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
+  await key('ArrowRight','ArrowRight',39);
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)===${beforeNudge+1}`),
+    'arrow-key nudge did not move selected hole through the authoritative model');
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===beforeNudgeRevision+1,
+    'arrow-key nudge did not commit precisely one journal revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'arrow-key nudge retained a stale native STEP receipt');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)===${beforeNudge}`),
+    'keyboard nudge undo failed to restore the authored centre');
+  await pointerClick('runtime-mode-solid');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder with schema-compatible OCP identity, NOT OCP/native/STEP interoperability',
     downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,realPhysicalGeometry:false,
-    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,localRecoveryIndexedDbReload:true,recoveryWorkerReviewCancel:true,recoveryUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
+    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,keyboardHoleNudge:true,keyboardNudgeUndo:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,localRecoveryIndexedDbReload:true,recoveryWorkerReviewCancel:true,recoveryUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
       'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png','native-10a-selected-rigid-rotation.png','native-10-circular-bolt-array.png','native-11-local-recovery-after-reload.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');

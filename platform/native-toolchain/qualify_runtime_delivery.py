@@ -22,6 +22,7 @@ import sys
 import tempfile
 
 from runtime_material_oracle import check_stage, MaterialOracleError, verify_runtime_sketch_fixture
+from execution_environment import sealed_env
 
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -57,11 +58,13 @@ def sha256(path: Path) -> str:
 def runtime_checkout_sha(root: Path, expected: str) -> str:
     require(bool(SHA.fullmatch(expected)), "runtime source must be a full immutable Git SHA")
     result = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
-                            capture_output=True, text=True, timeout=15, check=False)
+                            capture_output=True, text=True, timeout=15, check=False,
+                            env=sealed_env())
     require(result.returncode == 0 and result.stdout.strip() == expected,
             "RUNTIME checkout is not the required exact source commit")
     clean = subprocess.run(["git", "-C", str(root), "diff", "--quiet", "HEAD", "--"],
-                           capture_output=True, text=True, timeout=15, check=False)
+                           capture_output=True, text=True, timeout=15, check=False,
+                           env=sealed_env())
     require(clean.returncode == 0, "checkout has modified tracked source files")
     return expected
 
@@ -152,7 +155,8 @@ def run_consumer(root: Path, source_sha: str, worker: Path,
     require(bool(SHA256.fullmatch(worker_digest)) and sha256(worker) == worker_digest,
             "source-matched native worker SHA-256 mismatch")
     version = subprocess.run([node, "--version"], capture_output=True,
-                             text=True, timeout=15, check=False)
+                             text=True, timeout=15, check=False,
+                             env=sealed_env())
     match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)\s*", version.stdout)
     require(version.returncode == 0 and match is not None and
             (int(match[1]), int(match[2])) >= (22, 6),
@@ -165,12 +169,10 @@ def run_consumer(root: Path, source_sha: str, worker: Path,
     except MaterialOracleError as exc:
         raise DeliveryError("RUNTIME/SKETCH authored fixture disagrees with physical oracle: "
                             + str(exc)) from exc
-    # Do not inherit a host/vendor OCCT library or an unrelated optional CAD
-    # reader. If independent geometry is required, STEP owns that separate gate.
-    environment = {k: v for k, v in os.environ.items()
-                   if k not in ("LD_LIBRARY_PATH", "LD_PRELOAD", "LD_AUDIT",
-                                "LD_DEBUG", "INTUIT3D_ANVIL_STEP_PROBE",
-                                "INTUIT3D_ANVIL_PROBE_SHA256")}
+    # Host NODE_OPTIONS --import can otherwise manufacture a valid-looking
+    # receipt then exit before the native consumer executes. Do not inherit
+    # Python/shell startup hooks or an external CAD/provider override either.
+    environment = sealed_env()
     environment["INTUIT3D_OCCT8_WORKER"] = str(worker)
     environment["PYTHON"] = sys.executable
     done = subprocess.run([node, DEMO], cwd=root, env=environment,

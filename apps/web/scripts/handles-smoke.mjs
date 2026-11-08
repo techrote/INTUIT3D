@@ -831,6 +831,52 @@ async function main() {
   ),'batch removal single-step undo');
   await screenshot('26-model-batch-delete-undo.png');
 
+  // Actual Chromium controlled inputs and clicks for the newly admitted
+  // selected-edge RUNTIME editor. The edge selector is populated from the
+  // authoritative solved contour, not DOM/mesh edge-number inference.
+  check(await evaluate("Boolean(document.querySelector('[data-testid=runtime-edge-hole-profile]'))"),
+    'selected-edge RUNTIME inspector is not ready on a solved plate');
+  const edgeBefore=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  for(const [field,value] of [['alongMm','12'],['insetMm','12'],['radiusMm','3']]){
+    const selector='[data-testid="runtime-edge-hole-'+field+'"]';
+    check(await evaluate(`(() => {const e=document.querySelector(${JSON.stringify(selector)});e?.focus();return document.activeElement===e})()`),
+      'cannot focus real edge field '+field);
+    await send('Input.insertText',{text:value});
+    await eventually(()=>evaluate(`document.querySelector(${JSON.stringify(selector)})?.value===${JSON.stringify(value)}`),
+      'selected-edge input '+field+' not accepted');
+  }
+  await clickControl('[data-testid="runtime-edge-hole-commit"]');
+  const createdEdge=await eventually(()=>evaluate(
+    "document.querySelector('[data-testid^=\"runtime-anchored-hole-hole.edge.\"]')?.dataset.testid || null"),
+    'real selected-edge hole did not become authored SKETCH constraints');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")!==edgeBefore,
+    'selected-edge edit did not advance the authoritative model revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent?.toLowerCase().includes('exact')"),
+    'exactness state disappeared after anchored-hole authoring');
+  await screenshot('27-model-edge-anchored-hole.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'Undo unavailable after selected-edge hole');
+  await eventually(()=>evaluate(`!document.querySelector(${JSON.stringify('[data-testid="'+createdEdge+'"]')})`),
+    'selected-edge one-step undo retained the authored hole');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent?.trim()==='Redo');b?.click();return Boolean(b)})()"),
+    'Redo unavailable after anchored hole undo');
+  await eventually(()=>evaluate(`Boolean(document.querySelector(${JSON.stringify('[data-testid="'+createdEdge+'"]')}))`),
+    'selected-edge one-step redo lost stable hole ID');
+  const beforeEdgeSave=await evaluate('window.__modelArchiveBlobs.length');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Save model archive');b?.click();return !!b})()"),
+    'cannot save an edge-anchored authoritative journal');
+  await eventually(()=>evaluate('window.__modelArchiveBlobs.length==='+String(beforeEdgeSave+1)),
+    'edge-anchored model archive download absent');
+  check(await evaluate("((async()=>{const data=await window.__modelArchiveBlobs.at(-1).text();const dt=new DataTransfer();dt.items.add(new File([data],'edge-anchor.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})())"),
+    'cannot reopen edge-anchored model archive');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'edge-anchored archive validation did not reach review');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
+    'edge-anchored archive confirmation unavailable');
+  await eventually(()=>evaluate(`Boolean(document.querySelector(${JSON.stringify('[data-testid="'+createdEdge+'"]')}))`),
+    'reopened edge-anchored journal lost semantic hole');
+  await screenshot('28-model-edge-hole-archive-reopened.png');
+
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -847,7 +893,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -863,6 +909,7 @@ async function main() {
     malformedAndOversizedFileSelectionPreservesExistingModel: true,
     multiUndoHistoryWorkerImportRequiresConfirmation: true,
     actualChromiumSelectedHoleStampAndBatchDeleteUndo: true,
+    actualChromiumSelectedEdgeHoleCreateUndoRedoArchive: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');

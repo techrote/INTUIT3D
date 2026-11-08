@@ -968,3 +968,45 @@ WORKBENCH reads `session.inspectSelectedProfileHoleLayout({projectId,expectedRev
 Up to 16 simultaneous changes are admitted by the accepted SKETCH selected-profile-hole-layout/v1 solver before one INTENT journal commit and one durable archive write. A swap may succeed even if sequential intermediate hole positions would collide. Omitted `anchorPointId` preserves the authored reference; an explicit anchor rebinds both axes. Rejections (including stale signatures, overlapping holes, unattainable explicit targets and unsolved source) leave the archive, undo history and still-current STEP receipt intact, and never dispatch native evaluation. Successful edits, undo/reopen and retrospective SKETCH dimension edits invalidate older native receipts. This interface remains **analytic-only**; selected L-profile holes do not prove OCCT 8.0.1 STEP qualification or independent non-OCCT import.
 
 Reproduce: `node --test packages/workflow-runtime/test/selected-profile-hole-layout-session.integration.test.mjs`, then `npm test --workspace @intuit3d/workflow-runtime`, `npm run typecheck --workspace @intuit3d/workflow-runtime`, `npm run check:workspace`.
+
+## Source-fenced feature removal and ancestor recovery (MODEL v1)
+
+WORKBENCH can now delete a semantic feature (optionally cascading its dependent authoring) and recover a selected tombstone with all required deleted ancestors using **the existing authoritative INTENT history**. These operations do not generate, qualify or retain B-rep or STEP geometry; committed changes revoke previous STEP receipts.
+
+1. Capture `const {projectId,revision}=session.refresh()`, then `const removal=session.inspectFeatureRemoval({projectId,expectedRevision:revision,featureId:'extrude.datum'})`. On `kind:'ready'`, show `removal.impact.directDependents`, `transitiveDependents` and `cascadeIds`. Do **not** silently cascade.
+2. After explicit user consent, call `session.applyCommand({kind:'model.feature.remove',projectId,expectedRevision:revision,request:{format:'intuit3d.feature-lifecycle',version:1,action:'remove',featureId:'extrude.datum',mode:'cascade_descendants',confirmCascade:true,eventIds:['retire.guide','retire.cut','retire.extrude'],sourceDocumentFence:removal.sourceDocumentFence,confirmedCascadeIds:removal.impact.cascadeIds}})`. Event IDs follow the accepted MODEL lifecycle contract (one fresh ID per removed feature, descendants first). `reject_if_referenced` and `keep_dependents_pending` remain supported without forced cascades.
+3. Reinspect the **current** revision: `const recovery=session.inspectFeatureRecovery({projectId,expectedRevision:session.refresh().revision,selectedFeatureIds:['cut.frame.guide']})`. Present `recovery.inspection.requiredFeatureIds`, `additionalAncestorIds`, `unresolved`, `regressedReadyFeatureIds`, and `canRequireReady`. Ask for explicit acknowledgement of extra ancestors and unresolved authoring.
+4. Submit `session.applyCommand({kind:'model.feature.recover-closure',projectId,expectedRevision:session.refresh().revision,request:{format:'intuit3d.feature-recovery-closure',version:1,expectedDocumentFence:recovery.sourceDocumentFence,selectedFeatureIds:['cut.frame.guide'],confirmedRequiredFeatureIds:recovery.inspection.requiredFeatureIds,eventIds:['recover.extrude','recover.cut','recover.guide'],admission:'require_ready',confirmAncestorRestore:true,confirmUnresolved:false}})`. Allocate recovery event IDs in the exact `requiredFeatureIds` order. The MODEL provider validates the full journal, acknowledgements, ready-feature preservation, event IDs and atomic undo frame.
+5. On `kind:'refused'`, keep the draft/selection, show `code` and `reason`, and re-inspect before retrying. Equal-revision divergent journals are refused by the full-document signature, not merely the revision scalar. Successful remove/recovery uses the same persistent archive, dependency invalidation and `model.undo`/`model.redo` commands as other CAD operations. STEP download remains gated by `session.currentStep()` after a fresh provider rebuild.
+
+The removal and recovery commands also work in `commands.batch` with per-intermediate authoritative revision checks; any later refusal abandons *all* staged changes. These APIs are semantic edit lifecycle only. Existing source-matched pinned OCCT C++ and independent STEP/browser acceptance remain distinct Integration gates.
+
+Run: `node --test packages/workflow-runtime/test/feature-lifecycle-session.integration.test.mjs` and `npm run typecheck --workspace @intuit3d/workflow-runtime`.
+
+### Inspected lifecycle consent is target-bound
+
+The full-document journal fence alone is insufficient to prove that a user reviewed **this** feature and **these** descendants: changing a submitted feature ID or tombstone selection at the same revision could otherwise reuse a valid confirmation. For `cascade_descendants`, submit `confirmedCascadeIds` **exactly** as returned in `inspectFeatureRemoval().impact.cascadeIds`; omit it for other removal modes. For recovery, submit `confirmedRequiredFeatureIds` **exactly** as returned in `inspectFeatureRecovery().inspection.requiredFeatureIds` (dependency-first order). Runtime re-inspects inside the synchronous commit, rejects changed/omitted/reordered consent as `unreviewed_impact`, and MODEL separately enforces cascade, ancestor, unresolved-state and event-ID admission. Re-inspect after a refusal; never retry silently with broadened consent. This binds browser consent without creating a duplicate journal, solver or provider.
+
+## Source-bound native STEP download (single consumer handoff)
+
+Call `session.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'})`
+**inside WORKBENCH's download-click handler**. It returns the current
+canonical source `{projectId,revision,archiveSha256}`, the authenticated
+native producer `{requestId,cutFeatureId,backend,occtVersion}`, and
+verified STEP `{bytes,sha256,verification}` in one synchronous,
+revision-fenced handoff. It returns `null` after a new edit, undo or
+archive replacement, or when missing provenance or a different backend
+is detected. Each call copies the byte array and the retained receipt
+cannot be rewritten through a previously returned evaluation object.
+Do not cache it across edits. The legacy `currentStep()` is unchanged.
+
+Same-archive native refresh failures can leave a previously verified
+last-good receipt usable; display `session.refresh().lastResultKind`
+separately instead of claiming the latest attempt passed. The source
+digest is checked by the existing authenticated localhost client. The
+returned `exactAuthority:false` and `independentInteroperability:false`
+remain mandatory: this is **not** an independent external CAD import,
+a general-purpose OCCT B-rep certificate, or Windows Firefox acceptance.
+WORKBENCH owns its download UI; Integration owns guarded admission.
+The new regression uses real INTENT/SKETCH, HTTP and a synthetic OCCT8
+test provider, not an actual compiled C++ execution.

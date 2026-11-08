@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 import subprocess
 
+from execution_environment import sealed_env
+
 
 class MaterialOracleError(ValueError):
     pass
@@ -66,7 +68,7 @@ def verify_runtime_sketch_fixture(runtime_tree: Path, node: str = "node") -> dic
         result = subprocess.run([node, "--input-type=module", "--eval",
                                  _SKETCH_FIXTURE_EVAL],
                                 cwd=runtime_tree, capture_output=True, text=True,
-                                timeout=30, check=False)
+                                timeout=30, check=False, env=sealed_env())
     except (OSError, subprocess.SubprocessError) as exc:
         raise MaterialOracleError("cannot evaluate source-matched SKETCH fixture") from exc
     if result.returncode:

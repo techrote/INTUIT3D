@@ -83,6 +83,18 @@
     "./shared-cut-source-retrofit/v1": {
       "types": "./shared-cut-source-retrofit.d.mts",
       "default": "./src/shared-cut-source-retrofit.mjs"
+    },
+    "./compound-pocket-reconfigure/v1": {
+      "types": "./compound-pocket-reconfigure.d.mts",
+      "default": "./src/compound-pocket-reconfigure.mjs"
+    },
+    "./cut-block-placement/v1": {
+      "types": "./cut-block-placement.d.mts",
+      "default": "./src/cut-block-placement.mjs"
+    },
+    "./cut-recipe-copy/v1": {
+      "types": "./cut-recipe-copy.d.mts",
+      "default": "./src/cut-recipe-copy.mjs"
     }
   },
   "peerDependencies": {

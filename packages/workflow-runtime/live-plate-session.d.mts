@@ -1,5 +1,7 @@
 import type {UndoHistory} from '@intuit3d/model/transactions';
 import type {JournalEvent} from '@intuit3d/model';
+import type {FeatureRemovalImpact,FeatureRemovalRequest} from '@intuit3d/model/feature-lifecycle';
+import type {FeatureRecoveryCommitRequest,FeatureRecoveryInspection} from '@intuit3d/model/feature-recovery-closure';
 import type {ParameterFormulaTableRequest} from '@intuit3d/model/parameter-formula-table';
 import type {ParameterSheetRebaseResult} from '@intuit3d/model/parameter-sheet-rebase';
 import type {ParameterSheetResolutionRequest,ParameterSheetResolutionResult} from '@intuit3d/model/parameter-sheet-resolution';
@@ -17,6 +19,21 @@ import type {LocalPlateClientResult,VerifiedLocalStep} from './local-plate-clien
 
 export declare const LIVE_PLATE_SESSION_FORMAT:'intuit3d.live-plate-session';
 export declare const LIVE_PLATE_SESSION_VERSION:1;
+/** Current journal + pinned producer + STEP bytes from one synchronous read.
+ * Neither a general exact B-rep certificate nor independent STEP import. */
+export interface SourceBoundStepReceipt {
+  readonly format:'intuit3d.source-bound-step-receipt';
+  readonly version:1;
+  readonly source:Readonly<{projectId:string;revision:number;archiveSha256:string}>;
+  readonly producer:Readonly<{
+    requestId:string;cutFeatureId:string;
+    backend:import('./local-plate-client.mjs').PinnedPlateBackend;
+    occtVersion:'7.9.3.1'|'8.0.1';
+  }>;
+  readonly step:VerifiedLocalStep;
+  readonly exactAuthority:false;
+  readonly independentInteroperability:false;
+}
 export interface LivePlateSessionState {
   format:typeof LIVE_PLATE_SESSION_FORMAT;
   version:typeof LIVE_PLATE_SESSION_VERSION;
@@ -38,6 +55,15 @@ export interface LivePlateSessionState {
 export type LiveCadCommand = Readonly<{projectId:string;expectedRevision:number}> & (
   | Readonly<{kind:'model.events';events:readonly JournalEvent[]}>
   | Readonly<{kind:'model.undo'|'model.redo';eventIds:readonly string[]}>
+  | Readonly<{kind:'model.feature.remove';
+      request:Omit<FeatureRemovalRequest,'expectedProjectId'|'expectedRevision'> &
+        Readonly<{sourceDocumentFence:string;
+          /** Required for cascade: exact impact.cascadeIds the user approved. */
+          confirmedCascadeIds?:readonly string[]}>}>
+  | Readonly<{kind:'model.feature.recover-closure';
+      request:Omit<FeatureRecoveryCommitRequest,'expectedProjectId'|'expectedRevision'> &
+        Readonly<{/** Exact inspection.requiredFeatureIds shown to the user. */
+          confirmedRequiredFeatureIds:readonly string[]}>}>
   | Readonly<{kind:'dimensions.batch';request:Omit<DimensionBatchEditRequest,'expectedRevision'>}>
   | Readonly<{kind:'sketch.constraints';request:Omit<SketchConstraintBatchRequest,'expectedRevision'>}>
   | Readonly<{kind:'sketch.holes';request:Omit<PlateHoleBatchRequest,'expectedRevision'>}>
@@ -73,6 +99,18 @@ export interface SessionParameterDraft {
 }
 export type SessionParameterDraftReview =
   ParameterSheetRebaseResult | ParameterSheetResolutionResult;
+/** Read-only, source-fenced feature lifecycle planning from the current INTENT journal. */
+export type SessionLifecycleRefusal = Readonly<{
+  kind:'refused';code:string;reason:string;notCommitted:true;exactAuthority:false;
+}>;
+export type SessionRemovalInspection =
+  | Readonly<{kind:'ready';projectId:string;sourceRevision:number;
+      sourceDocumentFence:string;impact:FeatureRemovalImpact;exactAuthority:false}>
+  | SessionLifecycleRefusal;
+export type SessionRecoveryInspection =
+  | Readonly<{kind:'ready';projectId:string;sourceRevision:number;
+      sourceDocumentFence:string;inspection:FeatureRecoveryInspection;exactAuthority:false}>
+  | SessionLifecycleRefusal;
 export type SessionEdit = UndoHistory | SketchConstraintBatchResult | SelectedEdgeHoleRuntimeResult | SelectedProfileHoleRuntimeResult | SelectedProfileHoleLayoutRuntimeResult;
 export type SessionEditResult =
   | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
@@ -126,6 +164,14 @@ export interface LivePlateSession {
   refresh():LivePlateSessionState;
   /** Genuine synchronous INTENT/ SKETCH transaction; never a private journal. */
   applyEdit(edit:(history:UndoHistory)=>SessionEdit):SessionEditResult;
+  /** Inspect removal impact and current full-document fence; no journal mutation. */
+  inspectFeatureRemoval(request:Readonly<{
+    projectId:string;expectedRevision:number;featureId:string;
+  }>):SessionRemovalInspection;
+  /** Inspect tombstoned ancestor closure and acknowledgement obligations. */
+  inspectFeatureRecovery(request:Readonly<{
+    projectId:string;expectedRevision:number;selectedFeatureIds:readonly string[];
+  }>):SessionRecoveryInspection;
   /** Return source-fenced edge-local SKETCH controls without edits or native work. */
   inspectSelectedEdgeHoles(request:SelectedEdgeHoleRuntimeInspectionRequest):
     SelectedEdgeHoleRuntimeInspectionResult;
@@ -188,6 +234,11 @@ export interface LivePlateSession {
    * edits, undo, replacement archives and external mutation revoke them.
    */
   currentStep():VerifiedLocalStep|null;
+  /** Recheck on the actual download click; null if any source/provider
+   * provenance is missing, mismatched or superseded by a model edit. */
+  currentStepReceipt(options?:Readonly<{
+    requiredBackend?:import('./local-plate-client.mjs').PinnedPlateBackend;
+  }>):SourceBoundStepReceipt|null;
   evaluate(options?:Readonly<LivePlateEvaluationOptions>):Promise<LocalPlateClientResult>;
   /** One consumer operation: model edit, then latest-revision experimental evaluation. */
   applyEditAndEvaluate(

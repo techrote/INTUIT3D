@@ -147,6 +147,18 @@
     "./body-cut-relocate": {
       "types": "./src/body-cut-relocate.ts",
       "default": "./src/body-cut-relocate.ts"
+    },
+    "./body-cut-block-relocate": {
+      "types": "./src/body-cut-block-relocate.ts",
+      "default": "./src/body-cut-block-relocate.ts"
+    },
+    "./feature-edit-revert": {
+      "types": "./src/feature-edit-revert.ts",
+      "default": "./src/feature-edit-revert.ts"
+    },
+    "./historical-edit-inventory": {
+      "types": "./src/historical-edit-inventory.ts",
+      "default": "./src/historical-edit-inventory.ts"
     }
   },
   "scripts": {

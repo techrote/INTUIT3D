@@ -465,3 +465,24 @@ In the model-backed CAD workbench, choose **Sketch** and Ctrl/Cmd-click hole cen
 **Remove selected custom holes** deletes the explicitly selected user-added/copy holes in one undoable operation. The two base circles are intentionally protected because plate dimensions depend on their identities. An invalid selection, zero/NaN offset, collision, outside-plate rim, stale ID or SKETCH refusal does not publish a partial model revision. Rectangular physical plate containment is checked against the admitted solved profile, not a fabricated arbitrary-contour bounding box. Any successful operation invalidates previously built STEP receipts; the onscreen solid remains an **analytic preview**, not an independently qualified production C++ geometry result.
 
 To verify: start the local workbench, select both seed holes, stamp X=20/Y=0 and observe two independently editable new holes, then Undo/Redo. With only the two new IDs selected, remove them, Undo, save the archive, reopen and inspect the restored IDs/history. Automated checks: `npm test --workspace @intuit3d/web` and `npm run test:browser:handles --workspace @intuit3d/web`. The browser suite runs actual Chromium pointer events; Windows Firefox original private archive issue #177 remains a separate unqualified human gate.
+
+## Real 3D CAD preview camera controls
+
+The authoritative RUNTIME workbench offers clickable **ISO, TOP, FRONT,
+RIGHT, FIT** presets. Orthogonal views follow the actual solved sketch axes.
+FIT conservatively frames the entire current body (including extrusion
+thickness) without changing the user's chosen orbit. Manual orbit/pan marks
+the preset as custom. Editing dimensions preserves camera, GPU canvas and
+WebGL context; camera operations never author an INTENT event or change STEP
+validity. These are analytic display views, **not exact geometry**.
+
+Unit tests cover orientations, narrow viewport bounds and invalid inputs.
+Real Chromium smoke clicks the presets, checks actual Three.js camera
+coordinates, unchanged journal revision and WebGL2 context. Windows Firefox
+and private #177 archive acceptance remain unqualified.
+
+## Selecting sketch holes from the real 3D canvas
+
+In **Solid** mode, switch to **TOP** or **ISO**. Click a visible circular opening in the actual WebGL canvas, rather than its thickness grip or a toolbar button. The selected hole ID appears at the upper left and in the model-backed inspector; Ctrl/Cmd-click adds another ID to the existing group. A pointer drag or wheel gesture remains camera navigation, not a model edit. **FRONT/RIGHT** do not infer occluded hole identities through the solid.
+
+The preview ray is intersected with the current top plane and matched only against existing solver-authored circular holes; it never creates triangle/face IDs or modifies the INTENT journal. Selection does not advance revision, invalidate or manufacture native STEP, nor recreate the WebGL context. Editing the chosen hole remains an authoritative sketch/inspector operation. For acceptance, the Chromium browser smoke uses a real CDP pointer click on the projected solved hole, verifies selection and unchanged revision/context, and ensures a stationary click does not misleadingly mark the camera as manually orbited. Firefox/Windows original archive #177 remains unqualified.

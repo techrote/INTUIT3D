@@ -1,13 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelHoleGroup, moveModelFeature, removeModelHole,
+  addModelHole, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDimensionValues, modelHoleValues, moveModelHoleCenter, moveModelHoleGroup, nudgeModelHoleSelection, moveModelFeature, removeModelHole,
   editNamedThicknessParameter, inspectNamedThicknessParameter, makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, patternModelHoles, previewModelProfile, redoModelSession, resizeModelHoleLayout,
   reopenModelSession, runtime, serializeModelSession, undoModelSession,
 } from './runtimeSession.ts';
 
 const state=(r:ReturnType<typeof inspectModelSession>, id:string)=>
   r.features.find(f=>f.featureId===id)?.status;
+
+test('direct single-hole move refuses physical rim escape, and keyboard nudge replays',()=>{
+  const h=newModelPlateSession('workbench.direct.guard');
+  const saved=serializeModelSession(h);
+  assert.throws(()=>moveModelHoleCenter(h,'holeA',115,40),/rim outside the plate/);
+  assert.throws(()=>nudgeModelHoleSelection(h,['holeA'],1000,0),/rim outside the plate/);
+  assert.throws(()=>nudgeModelHoleSelection(h,[],1,0),/distinct/);
+  assert.throws(()=>nudgeModelHoleSelection(h,['holeA','holeA'],1,0),/distinct/);
+  assert.throws(()=>nudgeModelHoleSelection(h,['missing'],1,0),/unknown/);
+  assert.equal(serializeModelSession(h),saved,'failed direct edit never changes authoritative history');
+  const moved=nudgeModelHoleSelection(h,['holeA'],1,0);
+  assert.equal(moved.kind,'committed');
+  if(moved.kind!=='committed')return;
+  assert.equal(moved.history.document.revision,h.document.revision+1);
+  assert.equal(modelHoleValues(moved.history).holeA.x,36);
+  const reopened=reopenModelSession(serializeModelSession(moved.history));
+  assert.equal(modelHoleValues(reopened).holeA.x,36);
+  assert.equal(modelHoleValues(undoModelSession(reopened)).holeA.x,35);
+  assert.equal(modelHoleValues(redoModelSession(undoModelSession(reopened))).holeA.x,36);
+});
+
+test('selected group nudge preserves stable IDs and is one undoable operation',()=>{
+  const h=newModelPlateSession('workbench.multi.nudge');
+  const moved=nudgeModelHoleSelection(h,['holeA','holeB'],2,1);
+  assert.equal(moved.kind,'committed');
+  if(moved.kind!=='committed')return;
+  assert.deepEqual(modelHoleValues(moved.history).holeA,{x:37,y:41,diameter:12});
+  assert.deepEqual(modelHoleValues(moved.history).holeB,{x:87,y:41,diameter:12});
+  assert.equal(moved.history.document.revision,h.document.revision+1);
+  assert.deepEqual(modelHoleValues(undoModelSession(moved.history)),modelHoleValues(h));
+});
 
 test('browser plate consumes real INTENT/SKETCH/RUNTIME and preserves retrospective order',()=>{
   const h=newModelPlateSession(), report=inspectModelSession(h);

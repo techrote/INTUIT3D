@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { frameCadCamera, type CameraViewPreset } from './cameraViews';
+import { pickTopFaceHole } from './solidHolePick';
 import type { PlateProfile } from '@intuit3d/sketch';
 import { handleDimensionAtPoint, nudgeSketchHandle, type SketchDimensionHandle } from './runtimeSketchHandles';
 import { circleDrawingPreview, type CircleDrawingState } from './circleDrawing';
@@ -26,6 +28,9 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   onThicknessEdit?: (millimetres:number)=>void;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  // A long-lived Three.js canvas must always call the latest React selection callback.
+  const solidSelect = useRef(onHoleSelect);
+  solidSelect.current = onHoleSelect;
   const thicknessGrip = useRef<HTMLButtonElement>(null);
   const thicknessAxis = useRef<ScreenPoint|null>(null);
   const thicknessMove = useRef<(ThicknessDrag & { pointerId:number })|null>(null);
@@ -76,6 +81,9 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   // A CAD revision changes the mesh, not the camera, OrbitControls, canvas or
   // WebGL context. These are browser presentation resources, never CAD state.
   const previewScene = useRef<{update:(profile:PlateProfile,thickness:number)=>void}|null>(null);
+  // Only a disposable preview camera; this state never changes CAD authority.
+  const cameraCommand = useRef<((view:CameraViewPreset|'fit')=>void)|null>(null);
+  const [cameraView,setCameraView] = useState<CameraViewPreset|'custom'>('isometric');
   const [previewError,setPreviewError] = useState<string|null>(null);
   useEffect(() => {
     if (sketchMode || !host.current) return;
@@ -98,6 +106,43 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
     let lastCenter:THREE.Vector3|null=null;
     let projectedMaxX=0, projectedMidY=0, projectedThickness=0;
     let frameId=0, disposed=false, contextLost=false;
+    let solidPointerStart:{pointerId:number;x:number;y:number;button:number}|null=null;
+    const solidPicker=new THREE.Raycaster();
+    const onSolidPointerDown=(event:PointerEvent)=>{
+      solidPointerStart={pointerId:event.pointerId,x:event.clientX,y:event.clientY,button:event.button};
+    };
+    const markUserView=()=>{
+      if(renderer)renderer.domElement.dataset.cameraPreset='custom';
+      setCameraView('custom');
+    };
+    const onSolidPointerMove=(event:PointerEvent)=>{
+      if(solidPointerStart && solidPointerStart.pointerId===event.pointerId &&
+         Math.hypot(event.clientX-solidPointerStart.x,event.clientY-solidPointerStart.y)>4){
+        solidPointerStart=null; // A drag must never accidentally pick a hole.
+        markUserView();
+      }
+    };
+    const onSolidWheel=()=>markUserView();
+    const onSolidPointerCancel=()=>{solidPointerStart=null;};
+    const onSolidPointerUp=(event:PointerEvent)=>{
+      const start=solidPointerStart;
+      solidPointerStart=null;
+      if(!start||start.pointerId!==event.pointerId||start.button!==0||event.button!==0||
+         Math.hypot(event.clientX-start.x,event.clientY-start.y)>4||
+         !renderer||!geometry||!lastProfile||lastThickness===null||contextLost||!solidSelect.current)return;
+      const rect=renderer.domElement.getBoundingClientRect();
+      if(rect.width<=0||rect.height<=0)return;
+      solidPicker.setFromCamera(new THREE.Vector2(
+        (event.clientX-rect.left)/rect.width*2-1,
+        1-(event.clientY-rect.top)/rect.height*2),camera);
+      // The front and underside do not expose the top-face hole openings.
+      // Do not select an occluded hole through the solid from these views.
+      if(solidPicker.ray.direction.z>=-0.2)return;
+      const plane=new THREE.Plane(new THREE.Vector3(0,0,1),-lastThickness);
+      const hit=solidPicker.ray.intersectPlane(plane,new THREE.Vector3());
+      const id=hit&&pickTopFaceHole(hit,lastProfile.holes);
+      if(id)solidSelect.current(id,event.ctrlKey||event.metaKey);
+    };
     const dropMesh=()=>{
       if(body)scene.remove(body);
       if(edges)scene.remove(edges);
@@ -133,6 +178,17 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         try{
           controls?.update();
           updateThicknessGrip();
+          renderer.domElement.dataset.cameraPosition=[camera.position.x,camera.position.y,camera.position.z].map(x=>x.toFixed(4)).join(',');
+          renderer.domElement.dataset.cameraTarget=[controls?.target.x??0,controls?.target.y??0,controls?.target.z??0].map(x=>x.toFixed(4)).join(',');
+          // Project solver-owned semantic hole IDs for real browser pointer testing.
+          // These display coordinates have no modelling or export authority.
+          const displayedHoles=geometry && Array.isArray(lastProfile?.holes) && lastProfile.holes.length<=256
+            ?lastProfile.holes:[];
+          renderer.domElement.dataset.holePickMarkers=JSON.stringify(displayedHoles.map(h=>{
+            const p=new THREE.Vector3(h.x,h.y,lastThickness??0).project(camera);
+            return {id:h.id,x:(p.x+1)*renderer!.domElement.clientWidth/2,
+              y:(1-p.y)*renderer!.domElement.clientHeight/2,depth:p.z};
+          }).filter(p=>[p.x,p.y,p.depth].every(Number.isFinite)&&p.depth>=-1&&p.depth<=1));
           renderer.render(scene,camera);
         }catch{
           contextLost=true;
@@ -208,6 +264,40 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         requestFrame();
       }
     };
+    const switchCameraView=(preset:CameraViewPreset|'fit')=>{
+      if(!renderer||!controls||!lastCenter||!lastProfile||lastThickness===null||contextLost)return;
+      try{
+        const xs=lastProfile.outer.map(p=>p.x),ys=lastProfile.outer.map(p=>p.y);
+        const frame=frameCadCamera({
+          minX:Math.min(...xs),maxX:Math.max(...xs),
+          minY:Math.min(...ys),maxY:Math.max(...ys),thickness:lastThickness,
+        },Math.max(.1,node.clientWidth/Math.max(1,node.clientHeight)),
+        preset==='fit'?'isometric':preset);
+        const target=new THREE.Vector3(frame.center.x,frame.center.y,frame.center.z);
+        // FIT keeps a manually chosen view direction. Presets align to the
+        // sketch axes; neither operation reconstructs the canvas/renderer.
+        const direction=preset==='fit'
+          ?camera.position.clone().sub(controls.target).normalize()
+          :new THREE.Vector3(frame.offset.x,frame.offset.y,frame.offset.z);
+        if(direction.lengthSq()<.5)direction.set(1,-1,1).normalize();
+        if(preset!=='fit'){
+          camera.up.set(frame.up.x,frame.up.y,frame.up.z);
+          renderer.domElement.dataset.cameraPreset=preset;
+          setCameraView(preset);
+        }
+        controls.target.copy(target);
+        camera.position.copy(target).addScaledVector(direction,frame.distance);
+        camera.near=Math.max(.01,frame.distance/10000);
+        camera.far=Math.max(1000,frame.distance+Math.hypot(
+          frame.center.x,frame.center.y,frame.center.z)*10+1000);
+        camera.updateProjectionMatrix();controls.update();
+        // Publish the new camera pose *before* the next animation frame, so
+        // actual browser click tests never read the preceding frame's pose.
+        renderer.domElement.dataset.cameraPosition=[camera.position.x,camera.position.y,camera.position.z].map(x=>x.toFixed(4)).join(',');
+        renderer.domElement.dataset.cameraTarget=[controls.target.x,controls.target.y,controls.target.z].map(x=>x.toFixed(4)).join(',');
+        requestFrame();
+      }catch{setPreviewError('Cannot frame this preview. The model remains unchanged.');}
+    };
     const onContextLost=(event:Event)=>{
       event.preventDefault();
       contextLost=true;thicknessAxis.current=null;
@@ -224,9 +314,15 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       renderer.domElement.addEventListener('webglcontextlost',onContextLost);
       renderer.domElement.addEventListener('webglcontextrestored',onContextRestored);
       node.appendChild(renderer.domElement);
+      renderer.domElement.addEventListener('pointerdown',onSolidPointerDown);
+      renderer.domElement.addEventListener('pointerup',onSolidPointerUp);
+      renderer.domElement.addEventListener('pointermove',onSolidPointerMove);
+      renderer.domElement.addEventListener('wheel',onSolidWheel);
+      renderer.domElement.addEventListener('pointercancel',onSolidPointerCancel);
       controls=new OrbitControls(camera,renderer.domElement);
       controls.enableDamping=true;
       controls.addEventListener('change',requestFrame);
+      renderer.domElement.dataset.cameraPreset='isometric';
       const resize=()=>{
         if(!renderer)return;
         const rect=node.getBoundingClientRect();
@@ -241,17 +337,23 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       resize();
       previewScene.current={update};
       update(profile,thickness);
+      cameraCommand.current=switchCameraView;
     }catch{
       setPreviewError('WebGL preview could not start. Sketch, history and file operations remain available.');
     }
     return ()=>{
-      disposed=true;previewScene.current=null;
+      disposed=true;previewScene.current=null;cameraCommand.current=null;
       if(frameId)cancelAnimationFrame(frameId);
       observer?.disconnect();
       controls?.dispose();
       dropMesh();material.dispose();edgeMaterial.dispose();
       if(renderer){
         renderer.domElement.removeEventListener('webglcontextlost',onContextLost);
+        renderer.domElement.removeEventListener('pointerdown',onSolidPointerDown);
+        renderer.domElement.removeEventListener('pointerup',onSolidPointerUp);
+        renderer.domElement.removeEventListener('pointermove',onSolidPointerMove);
+        renderer.domElement.removeEventListener('wheel',onSolidWheel);
+        renderer.domElement.removeEventListener('pointercancel',onSolidPointerCancel);
         renderer.domElement.removeEventListener('webglcontextrestored',onContextRestored);
         renderer.dispose();
         // Release this single context on actual 3D→Sketch unmount. Model
@@ -457,6 +559,22 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       D {dimensionPreview?.id==='depth'?dimensionPreview.value:height} mm
     </text>}
   </svg> : <div ref={host} className="runtime-3d-canvas" data-testid="runtime-3d-viewport">
+    <div className="runtime-solid-selection-hint" data-testid="runtime-solid-selected-hole" role="status">
+      {selectedHoleIds?.length ? `Selected sketch holes: ${selectedHoleIds.join(', ')}`
+        : 'ISO/TOP: click a visible hole opening to select; drag to orbit.'}
+    </div>
+    <nav className="runtime-camera-toolbar" aria-label="3D preview camera views">
+      {(['isometric','top','front','right'] as const).map(preset=>
+        <button key={preset} type="button" data-testid={'runtime-camera-'+preset}
+          aria-pressed={cameraView===preset}
+          title={'Frame '+preset+' view, display only; no CAD edit'}
+          onClick={()=>cameraCommand.current?.(preset)}>
+          {preset==='isometric'?'ISO':preset.toUpperCase()}
+        </button>)}
+      <button type="button" data-testid="runtime-camera-fit"
+        title="Fit the current 3D preview, retaining its orbit direction"
+        onClick={()=>cameraCommand.current?.('fit')}>FIT</button>
+    </nav>
     {onThicknessEdit&&<button type="button" ref={thicknessGrip}
       className="runtime-3d-thickness-grip" data-testid="runtime-thickness-handle"
       role="slider" aria-label="Extrusion thickness direct handle in millimetres"

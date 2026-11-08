@@ -7,6 +7,9 @@
  * current. Cancelling and superseding also fences non-cooperative old providers.
  */
 import {evaluateLocalPlate} from './local-plate-client.mjs';
+import {ProjectFormatError, ProjectRevisionError, serializeProject} from '@intuit3d/model';
+import {inspectFeatureRemoval as inspectModelRemoval, commitUndoableFeatureRemoval} from '@intuit3d/model/feature-lifecycle';
+import {inspectFeatureRecoveryClosure as inspectModelRecovery, commitUndoableFeatureRecoveryClosure} from '@intuit3d/model/feature-recovery-closure';
 import {rebaseParameterSheetEdit} from '@intuit3d/model/parameter-sheet-rebase';
 import {resolveParameterSheetConflict} from '@intuit3d/model/parameter-sheet-resolution';
 import {commitUndoableParameterFormulaTableEdit} from '@intuit3d/model/parameter-formula-table';
@@ -14,6 +17,9 @@ import {commitUndoableParameterFormulaTableEdit} from '@intuit3d/model/parameter
 export const LIVE_PLATE_SESSION_FORMAT='intuit3d.live-plate-session';
 export const LIVE_PLATE_SESSION_VERSION=1;
 const ID=/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/;
+const lifecycleRefused=(code,reason)=>({
+  kind:'refused',code,reason,notCommitted:true,exactAuthority:false,
+});
 const refuse=(code,reason)=>({kind:'unresolved',code,reason,artifact:null,
   exactAuthority:false,independentInteroperability:false});
 
@@ -122,7 +128,8 @@ export function createLivePlateSession({
           !Number.isSafeInteger(command.expectedRevision) ||
           command.expectedRevision<0 ||
           ![
-            'model.events','model.undo','model.redo','dimensions.batch',
+            'model.events','model.undo','model.redo',
+            'model.feature.remove','model.feature.recover-closure','dimensions.batch',
             'sketch.constraints','sketch.holes','sketch.holes.rectangular',
             'sketch.holes.circular','sketch.holes.transform',
             'sketch.holes.resize','sketch.holes.selected-edge',
@@ -161,6 +168,68 @@ export function createLivePlateSession({
           throw new TypeError('live plate session: command request must omit expectedRevision');
         const request={...command.request,expectedRevision:revision};
         switch(command.kind) {
+          case 'model.feature.remove': {
+            const {sourceDocumentFence,confirmedCascadeIds,...modelRequest}=request;
+            if(typeof sourceDocumentFence!=='string' ||
+                sourceDocumentFence!==serializeProject(history.document))
+              return lifecycleRefused('stale_source',
+                'feature removal was inspected against a different authoritative journal');
+            try {
+              // A project fence alone does not bind user consent to the actual
+              // selected feature. A swapped feature ID could otherwise retire
+              // a different (potentially larger) descendant closure.
+              if(modelRequest.mode==='cascade_descendants') {
+                const impact=inspectModelRemoval(history.document,modelRequest.featureId);
+                if(!Array.isArray(confirmedCascadeIds) ||
+                    confirmedCascadeIds.length!==impact.cascadeIds.length ||
+                    confirmedCascadeIds.some((id,index)=>id!==impact.cascadeIds[index]))
+                  return lifecycleRefused('unreviewed_impact',
+                    'cascade target/descendants differ from the inspected removal impact');
+              } else if(confirmedCascadeIds!==undefined) {
+                return lifecycleRefused('unreviewed_impact',
+                  'cascade target approval is only valid for cascade mode');
+              }
+              return commitUndoableFeatureRemoval(history,{
+                ...modelRequest,expectedProjectId:command.projectId,
+                expectedRevision:revision,
+              });
+            } catch(error) {
+              if(error instanceof ProjectFormatError || error instanceof ProjectRevisionError)
+                return lifecycleRefused('feature_removal_refused',error.message);
+              throw error;
+            }
+          }
+          case 'model.feature.recover-closure': {
+            const {confirmedRequiredFeatureIds,...modelRequest}=request;
+            if(typeof modelRequest.expectedDocumentFence!=='string' ||
+                modelRequest.expectedDocumentFence!==serializeProject(history.document))
+              return lifecycleRefused('stale_source',
+                'feature recovery was inspected against a different authoritative journal');
+            try {
+              // Explicit ancestor acknowledgement must describe the *same*
+              // selected tombstones and ordered closure that WORKBENCH showed.
+              // MODEL still revalidates readiness, dependencies and event IDs.
+              const inspection=inspectModelRecovery(history.document,{
+                format:'intuit3d.feature-recovery-closure',version:1,
+                expectedProjectId:command.projectId,expectedRevision:revision,
+                expectedDocumentFence:modelRequest.expectedDocumentFence,
+                selectedFeatureIds:modelRequest.selectedFeatureIds,
+              });
+              if(!Array.isArray(confirmedRequiredFeatureIds) ||
+                  confirmedRequiredFeatureIds.length!==inspection.requiredFeatureIds.length ||
+                  confirmedRequiredFeatureIds.some((id,index)=>id!==inspection.requiredFeatureIds[index]))
+                return lifecycleRefused('unreviewed_impact',
+                  'recovery selection/ancestors differ from the inspected restoration closure');
+              return commitUndoableFeatureRecoveryClosure(history,{
+                ...modelRequest,expectedProjectId:command.projectId,
+                expectedRevision:revision,
+              });
+            } catch(error) {
+              if(error instanceof ProjectFormatError || error instanceof ProjectRevisionError)
+                return lifecycleRefused('feature_recovery_refused',error.message);
+              throw error;
+            }
+          }
           case 'dimensions.batch': return runtime.editDimensions(history,request);
           case 'sketch.constraints': return runtime.editSketchConstraints(history,request);
           case 'sketch.holes': return runtime.editPlateHoles(history,request);
@@ -184,6 +253,61 @@ export function createLivePlateSession({
         inFlight:controller!==null,hasVerifiedStep:!!latest?.step,
         hasActivePreview:activePreview!==null && editPreviews.has(activePreview),
         lastResultKind:lastOutcomeKind,exactAuthority:false};
+    },
+    /**
+     * Inspect removal impact against the one durable INTENT document. The
+     * returned exact document fence MUST accompany a subsequently confirmed
+     * model.feature.remove command, including after concurrent same-revision
+     * journal divergence. No model mutation or native request occurs here.
+     */
+    inspectFeatureRemoval({projectId,expectedRevision,featureId}={}) {
+      if(typeof projectId!=='string'||!projectId||
+          !Number.isSafeInteger(expectedRevision)||expectedRevision<0||
+          typeof featureId!=='string'||!ID.test(featureId))
+        throw new TypeError('live plate session: removal inspection requires project/revision and feature ID');
+      const current=synchronize();
+      if(projectId!==current.report.projectId||
+          expectedRevision!==current.report.revision)
+        return lifecycleRefused('stale_command','removal inspection is not for current project/revision');
+      try {
+        const impact=inspectModelRemoval(current.history.document,featureId);
+        return {kind:'ready',projectId,sourceRevision:expectedRevision,
+          sourceDocumentFence:serializeProject(current.history.document),
+          impact,exactAuthority:false};
+      } catch(error) {
+        if(error instanceof ProjectFormatError || error instanceof ProjectRevisionError)
+          return lifecycleRefused('feature_removal_refused',error.message);
+        throw error;
+      }
+    },
+    /**
+     * Inspect the transitive set of tombstoned ancestors needed to recover a
+     * selected feature. The source fence and semantic IDs come from MODEL,
+     * not timeline indices, preview geometry, or a second document.
+     */
+    inspectFeatureRecovery({projectId,expectedRevision,selectedFeatureIds}={}) {
+      if(typeof projectId!=='string'||!projectId||
+          !Number.isSafeInteger(expectedRevision)||expectedRevision<0||
+          !Array.isArray(selectedFeatureIds))
+        throw new TypeError('live plate session: recovery inspection requires project/revision and tombstone IDs');
+      const current=synchronize();
+      if(projectId!==current.report.projectId||
+          expectedRevision!==current.report.revision)
+        return lifecycleRefused('stale_command','recovery inspection is not for current project/revision');
+      const sourceDocumentFence=serializeProject(current.history.document);
+      try {
+        const inspection=inspectModelRecovery(current.history.document,{
+          format:'intuit3d.feature-recovery-closure',version:1,
+          expectedProjectId:projectId,expectedRevision,
+          expectedDocumentFence:sourceDocumentFence,selectedFeatureIds,
+        });
+        return {kind:'ready',projectId,sourceRevision:expectedRevision,
+          sourceDocumentFence,inspection,exactAuthority:false};
+      } catch(error) {
+        if(error instanceof ProjectFormatError || error instanceof ProjectRevisionError)
+          return lifecycleRefused('feature_recovery_refused',error.message);
+        throw error;
+      }
     },
     /** Current source-fenced edge-local controls, with no second journal. */
     inspectSelectedEdgeHoles(request) {
@@ -444,6 +568,48 @@ export function createLivePlateSession({
         ...latest.step,bytes:Uint8Array.from(latest.step.bytes),
       }:null;
     },
+    /**
+     * Single-click source-bound native STEP receipt. No second journal or
+     * provider: the existing verified client result supplies the provenance.
+     */
+    currentStepReceipt({requiredBackend}={}) {
+      if(requiredBackend!==undefined &&
+          !['OCCT-cxx-8.0.1','OCP-python-prototype'].includes(requiredBackend))
+        throw new TypeError('live plate session: unsupported receipt backend');
+      const step=session.currentStep();
+      if(!step) return null;
+      const source=latest?.source, producer=latest?.result;
+      const current=synchronize();
+      if(!source||!producer||
+          source.projectId!==current.report.projectId||
+          source.revision!==current.report.revision||
+          !/^[a-f0-9]{64}$/.test(source.archiveSha256||'')||
+          !/^[a-f0-9]{64}$/.test(step.sha256||'')||
+          !ID.test(producer.requestId||'')||
+          producer.cutFeatureId!==cutFeatureId||
+          (requiredBackend!==undefined&&producer.backend!==requiredBackend)||
+          !((producer.backend==='OCCT-cxx-8.0.1'&&
+             producer.occtVersion==='8.0.1'&&
+             step.verification==='occt8_part21_plate_subset')||
+            (producer.backend==='OCP-python-prototype'&&
+             producer.occtVersion==='7.9.3.1'&&
+             step.verification==='same_engine_step_readback'))||
+          producer.artifact?.sha256!==step.sha256||
+          producer.artifact?.verification!==step.verification)
+        return null;
+      return Object.freeze({
+        format:'intuit3d.source-bound-step-receipt',version:1,
+        source:Object.freeze({
+          projectId:source.projectId,revision:source.revision,
+          archiveSha256:source.archiveSha256,
+        }),
+        producer:Object.freeze({
+          requestId:producer.requestId,cutFeatureId:cutFeatureId,
+          backend:producer.backend,occtVersion:producer.occtVersion,
+        }),
+        step,exactAuthority:false,independentInteroperability:false,
+      });
+    },
     /** Latest request wins, even if a cancelled provider ignores AbortSignal. */
     async evaluate({url,token,requestId,exportStep=true,signal,fetchImpl,
       deadlineMs=30000,requiredBackend}={}) {
@@ -509,7 +675,10 @@ export function createLivePlateSession({
           // its mutable Uint8Array for later downloads: a consumer may reuse,
           // transfer or overwrite those bytes after the promise resolves.
           latest=result.step?{
-            ...result,step:{...result.step,bytes:Uint8Array.from(result.step.bytes)},
+            ...result,
+            source:{...result.source},
+            result:structuredClone(result.result),
+            step:{...result.step,bytes:Uint8Array.from(result.step.bytes)},
           }:result;
           latestArchive=before.archive;
         }

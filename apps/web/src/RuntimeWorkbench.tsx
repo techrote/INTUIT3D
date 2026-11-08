@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import {
-  addModelHole, createModelExtrusion, createModelThroughCut, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelSketchDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, moveModelFeature, moveModelHoleCenter, moveModelHoleGroup, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
+  addModelHole, createModelExtrusion, createModelThroughCut, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelSketchDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, modelHoleIsCartesian, moveModelFeature, moveModelHoleCenter, moveModelHoleGroup, nudgeModelHoleSelection, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
   editNamedThicknessParameter, inspectNamedThicknessParameter, makeModelThicknessIndependent, modelThicknessBinding, newModelPlateSession, newModelSketchSession, previewModelProfile, previewModelSketchProfile, redoModelSession,
   runtime, serializeModelSession, undoModelSession,
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
+import { SelectedEdgeHoleEditor } from './SelectedEdgeHoleEditor';
+import { removeModelEdgeHole } from './selectedEdgeHole';
 import { ParameterFormulaTable } from './ParameterFormulaTable';
 import type { SketchDimensionHandle } from './runtimeSketchHandles';
 import { nextCircleDrawing, type CircleDrawingState } from './circleDrawing';
@@ -307,6 +309,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   };
   const editHole=(hole:ModelHole,field:ModelHoleField,value:number)=>{
     try{
+      if(!modelHoleIsCartesian(liveHistory.current,hole))
+        throw Error('Edge-anchored hole: edit its source-fenced along/inset/radius dimensions in the selected-edge panel.');
       const previous=liveHistory.current;
       const result=editModelHole(previous,hole,field,value,'preserve_unresolved');
       if(result.kind==='refused'){setMessage(result.reason);return;}
@@ -472,7 +476,9 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   };
   const removeHole=(id:ModelHole)=>{
     try{
-      const result=removeModelHole(liveHistory.current,id);
+      const result=modelHoleIsCartesian(liveHistory.current,id)
+        ?removeModelHole(liveHistory.current,id)
+        :removeModelEdgeHole(liveHistory.current,id);
       if(result.kind==='refused'){setMessage('Remove refused: '+result.reason);return;}
       acceptHistory(result.history);
       setMessage(`Removed ${id}; undo restores the same semantic identity; native STEP requires rebuild.`);
@@ -481,6 +487,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const dragHole=(hole:ModelHole,x:number,y:number,selectedIds:readonly ModelHole[]=[hole])=>{
     try{
       const previous=liveHistory.current;
+      if(selectedIds.some(id=>!modelHoleIsCartesian(previous,id)))
+        throw Error('Edge-anchored holes must be repositioned with the selected-edge dimensions; no unanchored drag was applied.');
       const isGroup=selectedIds.length>1&&selectedIds.includes(hole);
       const source=isGroup?modelHoleValues(previous)[hole]:null;
       if(isGroup&&!source)throw Error('Dragged hole no longer exists.');
@@ -498,8 +506,37 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         :`Moved ${hole} center to (${x}, ${y}) mm in one undoable sketch transaction; native STEP requires rebuild.`);
     }catch(e){setMessage('Hole drag refused: '+String(e));}
   };
+  const nudgeActiveHoles=(direction:string,fast:boolean)=>{
+    if(!renderSketch||!displayedActiveHole||circleDrawing.phase!=='idle'||
+        pendingImport||loadingFile)return false;
+    const step=fast?10:1;
+    const dx=direction==='ArrowRight'?step:direction==='ArrowLeft'?-step:0;
+    const dy=direction==='ArrowUp'?step:direction==='ArrowDown'?-step:0;
+    if(!dx&&!dy)return false;
+    const ids=layoutIds.length>1&&layoutIds.includes(displayedActiveHole)
+      ?layoutIds:[displayedActiveHole];
+    try{
+      if(ids.some(id=>!modelHoleIsCartesian(liveHistory.current,id))){
+        setMessage('Nudge blocked: edit edge-anchored holes via the source-fenced along/inset/radius dimensions.');
+        return true;
+      }
+      const result=nudgeModelHoleSelection(liveHistory.current,ids,dx,dy);
+      if(result.kind==='refused'){
+        setMessage('Hole nudge refused by SKETCH: '+
+          (result.candidateFeature.diagnostics.join('; ')||result.reason));
+      }else{
+        acceptHistory(result.history);
+        setActiveHole(displayedActiveHole);
+        setLayoutSelected([...ids]);
+        setMessage(`Nudged ${ids.length} hole(s) by (${dx}, ${dy}) mm in ONE undoable SKETCH transaction. Native STEP revoked.`);
+      }
+    }catch(e){setMessage('Hole nudge refused: '+(e instanceof Error?e.message:String(e)));}
+    return true;
+  };
   const dragHoleDiameter=(hole:ModelHole,diameterMm:number)=>{
     try{
+      if(!modelHoleIsCartesian(liveHistory.current,hole))
+        throw Error('Use the selected-edge panel to edit the edge-anchored radius.');
       const result=editModelHole(liveHistory.current,hole,'diameter',diameterMm,'require_admissible');
       if(result.kind==='refused'){
         setMessage('Diameter resize refused by SKETCH: '+
@@ -720,7 +757,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       if(command&&!e.altKey&&letter==='s'){e.preventDefault();save();return;}
       if(command&&!e.altKey&&letter==='o'){e.preventDefault();fileInput.current?.click();return;}
       if(command&&!e.altKey&&letter==='n'){e.preventDefault();prepareNewSketch();return;}
+      // Global Undo/Redo must still work with focused thickness/diameter sliders.
+      // Only arrow nudges defer to their own local keyboard handlers.
       if(target?.closest('input,textarea,select,[contenteditable=true]'))return;
+      if(!command&&!e.altKey&&!target?.closest('[role=slider]') &&
+          ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key) &&
+          nudgeActiveHoles(e.key,e.shiftKey)){
+        e.preventDefault();return;
+      }
       if(!command&&!e.altKey&&!e.shiftKey && letter==='e' &&
           circleDrawing.phase==='idle'){
         e.preventDefault();openFeatureCombo();return;
@@ -878,7 +922,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           </div>}
           <div className="viewport-hint">{renderSketch?(circleDrawing.phase!=='idle'?
             'Circle tool: centre click → radius click; profile admission rejects overlaps or outside holes':
-            'Drag edge/diameter handles or hole centers; arrow keys nudge focused dimensions (Shift = 0.1 mm)'):
+            'Drag edge/diameter handles or hole centres. Focus a dimension and press arrows (Shift: 0.1 mm); click a hole then press arrows to nudge 1 mm (Shift: 10 mm), Ctrl-select for a group.'):
             'Drag extrusion-thickness grip or use ↑/↓ · Drag background to orbit · Wheel to zoom · Right-drag to pan'}</div>
         </div>
         <section className="timeline" aria-label="Authoritative history versus dependency schedule">
@@ -1008,6 +1052,9 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               data-testid="runtime-add-hole" disabled={!!pendingImport}
               onClick={addHole}>Add circular cut</button>
           </div>
+          <SelectedEdgeHoleEditor history={history} disabled={!!pendingImport||!!loadingFile}
+            onAccept={(next,id)=>{acceptHistory(next);setSketchMode(true);setActiveHole(id);}}
+            onMessage={setMessage}/>
           <div className="runtime-hole-add" data-testid="runtime-hole-pattern">
             <strong>Rectangular circular-hole array · one-shot</strong>
             <label className="runtime-scalar">
@@ -1143,9 +1190,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             <strong>{hole==='holeA'?'Hole A':hole==='holeB'?'Hole B':'Added hole'} · {hole}</strong>
             {hole!=='holeA'&&hole!=='holeB'&&<button type="button" className="ribbon-button"
               data-testid={`runtime-remove-hole-${hole}`} onClick={()=>removeHole(hole)}>Remove hole</button>}
-            {HOLE_FIELDS.map(field=><HoleScalarInput
+            {modelHoleIsCartesian(history,hole)?HOLE_FIELDS.map(field=><HoleScalarInput
               key={`${hole}.${field}.${history.document.revision}`}
-              hole={hole} field={field} value={holes[hole][field]} onCommit={editHole}/>)}
+              hole={hole} field={field} value={holes[hole][field]} onCommit={editHole}/>):
+              <p className="microcopy" data-testid={`runtime-anchored-hole-${hole}`}>
+                Edge-anchored position and radius use signed relative constraints. Edit or remove them in the selected-contour edge panel; generic fixed-centre gestures are intentionally blocked.
+              </p>}
           </div>)}
           <p className="microcopy">Every added circle has a stable authored ID and fixed-centre/radius constraints. Drag its centre or amber diameter handle, edit its diameter here, undo/redo, or save and reopen the authoritative model. The base A/B diameter handles also drag. Add/remove requires SKETCH admission; preview and native STEP must rebuild after edits.</p>
         </div>
