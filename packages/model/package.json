@@ -151,6 +151,10 @@
     "./body-cut-block-relocate": {
       "types": "./src/body-cut-block-relocate.ts",
       "default": "./src/body-cut-block-relocate.ts"
+    },
+    "./feature-edit-revert": {
+      "types": "./src/feature-edit-revert.ts",
+      "default": "./src/feature-edit-revert.ts"
     }
   },
   "scripts": {
