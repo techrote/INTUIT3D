@@ -21,7 +21,9 @@ test('real SKETCH/INTENT/RUNTIME new-body + two-cut one-gesture variants',()=>{
   assert.deepEqual(out.createdVariantBodies,
     ['body.variant.adapted','body.variant.shared']);
   assert.equal(out.atomicBodyAndTwoCuts,true);
-  assert.equal(out.negativeSelectionsRefused,21);
+  assert.equal(out.negativeSelectionsRefused,22);
+  assert.equal(out.sourceBlockNonTerminal,true);
+  assert.equal(out.sourceTailPreserved,true);
   assert.equal(out.undoRedoAndArchive,true);
   assert.equal(out.independentVariantSketchInvalidation,true);
   assert.equal(out.unchangedShimDepthMm,3);

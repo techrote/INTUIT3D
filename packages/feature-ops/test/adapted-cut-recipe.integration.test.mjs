@@ -19,7 +19,9 @@ test('real SKETCH/INTENT/RUNTIME independent-target mechanical workflow',()=>{
   const out=JSON.parse(run.stdout);
   assert.equal(out.oneUndoFrame,true);
   assert.equal(out.archiveUndoRedo,true);
-  assert.equal(out.negativeSelectionsRefused,16);
+  assert.equal(out.negativeSelectionsRefused,17);
+  assert.equal(out.sourceBlockNonTerminal,true);
+  assert.equal(out.sourceTailPreserved,true);
   assert.deepEqual(out.bodyActions,
     ['preserve_candidate','rebuild','preserve_candidate']);
   assert.equal(out.exactAuthority,false);

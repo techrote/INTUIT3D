@@ -2,15 +2,15 @@
 
 Public API: `@intuit3d/feature-ops/adapted-cut-recipe/v1`,
 `inspectAdaptableCutRecipe` and `applyAdaptedCutRecipe`.
-Unlike shared-source `cut-recipe-copy/v1`, this operation transfers the last
-2–8 ordered cuts from one explicitly chosen body to another, substituting an
+Unlike shared-source `cut-recipe-copy/v1`, this operation transfers any
+2–8 consecutive explicitly selected cuts from one explicitly chosen body to another, substituting an
 **explicitly selected SKETCH profile and blind/through extent for each cut**.
 It creates new stable cut IDs, never alters source cuts, never clones sketches,
 and never guesses profile geometry or coordinate transforms.
 
 ### Browser and RUNTIME contract
 
-1. Select source 2–8 ordered terminal cuts, a different target body and its
+1. Select source 2–8 consecutive cuts (interior blocks permitted), a different target body and its
    unique terminal writer. Call `inspectAdaptableCutRecipe(history,selection,services)`.
    Supply `format:ADAPTED_RECIPE_FORMAT,version:1,expectedProjectId,
    expectedRevision,expectedDocumentFence:model.serializeProject(history.document),
@@ -26,6 +26,11 @@ and never guesses profile geometry or coordinate transforms.
    authoritative session history with `result.history`, propagate
    `result.invalidation`, display `copiedCuts` statuses and the provider
    `nativeHandoff`. No duplicate browser-side transaction.
+
+The inspector returns the source writer order, including later unselected
+cuts. The selected block is copied to a new target chain and later source
+machining remains unchanged. Nonconsecutive or topology-specific source
+selections still refuse.
 
 All selected sketches must be authoritatively admitted by SKETCH/RUNTIME.
 Canonical project/revision, source writer lineage, target terminal, exact cut

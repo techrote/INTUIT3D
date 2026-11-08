@@ -33,7 +33,9 @@ test('real guard/backer: distinct cuts, explicit bodies, one undo, negative fenc
   assert.ok(!result.sharedSketchAffects.includes('extrude.shim'));
   assert.equal(result.guardThicknessMm,14);
   assert.equal(result.independentShimThicknessMm,3);
-  assert.equal(result.negativeSelectionsRefused,14);
+  assert.equal(result.negativeSelectionsRefused,15);
+  assert.equal(result.sourceBlockNonTerminal,true);
+  assert.equal(result.sourceTailPreserved,true);
   assert.equal(result.archiveUndoRedo,true);
   assert.equal(result.exactAuthority,false);
   assert.equal(result.nativeSTEP,'not_executed');
