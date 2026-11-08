@@ -236,8 +236,8 @@ export function ParameterFormulaTable({
         <label>
           {canApprove(item.code)&&<input type="checkbox"
             data-testid={'runtime-formula-approve-'+i} checked={approved.includes(i)}
-            onChange={e=>setApproved(previous=>e.target.checked?[...previous,i]:
-              previous.filter(index=>index!==i))}/>}
+            onChange={e=>{setReview(null);setApproved(previous=>e.target.checked?[...previous,i]:
+              previous.filter(index=>index!==i));}}/>}
           <span>{item.code} · {item.featureId??'model'} · {item.relatedId??'—'}: {item.detail}</span>
         </label>
         {item.code==='event_id_taken'&&item.featureId&&<label>
@@ -245,7 +245,7 @@ export function ParameterFormulaTable({
           <input type="text" autoComplete="off" spellCheck={false}
             data-testid={'runtime-formula-replacement-'+i}
             value={replacements[item.featureId]??''}
-            onChange={e=>setReplacements(prev=>({...prev,[item.featureId!]:e.target.value}))}/>
+            onChange={e=>{setReview(null);setReplacements(prev=>({...prev,[item.featureId!]:e.target.value}));}}/>
         </label>}
       </div>)}
       <button type="button" className="ribbon-button runtime-native-export"
