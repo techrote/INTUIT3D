@@ -1105,3 +1105,76 @@ independent STEP import is implied**.
 
 Run `node --test packages/workflow-runtime/test/live-plate-session.integration.test.mjs`
 and `npm run typecheck --workspace @intuit3d/workflow-runtime`.
+
+## From-empty structural contour authoring — one RUNTIME journal (v1)
+
+SKETCH **createClosedContour** creates points, edges and constraints; it cannot be
+committed with **editSketchConstraints** (which modifies existing constraint IDs
+only). RUNTIME exposes **commitClosedContour** and the live-session command
+**sketch.contour/v1**. They reuse one authoritative INTENT journal and the
+accepted SKETCH solve/selection contracts, never a second scene model.
+
+A real WORKBENCH consumer must capture the same canonical session archive,
+current authoritative sketch and serialized SKETCH signature *before* the
+user's first pointer gesture. It must retain SKETCH's complete accepted
+result and the exact command used to obtain it. For the first closed contour
+of an existing empty sketch feature, the full typed command is:
+
+~~~js
+import {createClosedContour} from '@intuit3d/sketch/closed-contour-authoring/v1';
+import * as sketch from '@intuit3d/sketch';
+import * as model from '@intuit3d/model';
+import {CLOSED_CONTOUR_TRANSACTION_FORMAT} from '@intuit3d/workflow-runtime';
+// currentHistory and session are the EXISTING WORKBENCH authorities.
+const state=session.refresh();
+const source=sketch.validateSketch(
+  model.featuresOf(currentHistory.document)
+    .find(f=>f.id==='sketch.plate').payload.sketch);
+const expectedArchive=session.save();
+const expectedSketchSignature=sketch.serializeSketch(source);
+const command={kind:'create-closed-contour',version:1,
+  sourceSignature:expectedSketchSignature,contourId:'drawn.first',
+  vertices:[{x:0,y:0},{x:120,y:0},{x:120,y:80},{x:0,y:80}]};
+const acceptance=createClosedContour(source,command);
+if(acceptance.kind!=='accepted') throw Error(acceptance.reason);
+const edit=session.applyCommand({
+  kind:'sketch.contour/v1',projectId:state.projectId,
+  expectedRevision:state.revision,
+  request:{format:CLOSED_CONTOUR_TRANSACTION_FORMAT,version:1,
+    expectedArchive,expectedSketchSignature,
+    sketchFeatureId:'sketch.plate',eventId:'create.contour.first',
+    operation:'create',admission:'require_admissible',
+    command,acceptance}
+});
+if(edit.kind!=='committed') throw Error(edit.reason);
+const successorSelection=edit.contourReceipt.selection;
+// Discard earlier selection/handles; only the new journal selection is current.
+~~~
+
+Vertex editing reuses this command with **operation:'edit'**, accepted
+**editClosedContourVertices** output and the previous source-bound selection,
+or **operation:'drag'** and **dragClosedContourVertex**. RUNTIME re-executes
+the SKETCH operation on the authoritative source and compares the entire
+accepted result, source and successor signatures, selected profile and handles.
+It then commits exactly one INTENT feature.edit undo frame, or returns a
+refusal without changing the journal or native custody.
+
+Fences include project ID, expected revision, **entire canonical archive**,
+previous serialized SKETCH and successor selected contour. Equal-revision
+divergent journal histories cannot reuse an approval. Invalid crossings,
+foreign selection, hidden geometry loss and forged SDK results are refused.
+The existing SKETCH authoring operation is responsible for preserving all
+unrelated contours and holes and for solving the admitted replacement.
+**require_admissible** needs one usable whole-sketch analytic profile.
+**preserve_unresolved** explicitly retains valid structural authoring even
+if a multi-contour sketch remains unsupported by the single-plate native
+adapter; no exact STEP is implied.
+
+Use the existing live-session publication and native cancellation machinery.
+Edits, undo and reopening revoke any stale STEP; no second native provider
+or local host is created. WORKBENCH must wire actual pointer gestures and
+empty-sketch creation to this API; Integration must separately qualify real
+browser-to-pinned-C++ and independent non-OCCT STEP.
+
+Executable regression: node --test
+packages/workflow-runtime/test/closed-contour-transaction.integration.test.mjs
