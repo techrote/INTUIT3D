@@ -21,7 +21,7 @@ on:
         description: "Platform ref; pinned accepted build source unless explicitly supplied"
         type: string
         required: true
-        default: a4e66c5443ea32091316b79c8f8f322d7cb5de88
+        default: 468ad9148cda550ffecf3a9f3b1175f066b5235d
       runtime_ref:
         description: "Immutable RUNTIME+Workbench consumer source; use exact admitted main SHA"
         type: string
@@ -50,7 +50,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ (github.event_name == 'pull_request' && 'a4e66c5443ea32091316b79c8f8f322d7cb5de88') || (github.event_name == 'push' && github.sha) || inputs.platform_ref || 'a4e66c5443ea32091316b79c8f8f322d7cb5de88' }}
+          ref: ${{ (github.event_name == 'pull_request' && '468ad9148cda550ffecf3a9f3b1175f066b5235d') || (github.event_name == 'push' && github.sha) || inputs.platform_ref || '468ad9148cda550ffecf3a9f3b1175f066b5235d' }}
           path: platform-repo
           persist-credentials: false
       - name: Checkout KERNEL-001 #158 immutable source (or explicit KERNEL-002 ref)
