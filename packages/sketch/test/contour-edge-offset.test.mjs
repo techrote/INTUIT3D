@@ -131,6 +131,55 @@ test('real pointer-selected edge moves by displacement without off-edge grab jum
   assert.equal(serializeSketch(a.sketch),stamp);
 });
 
+test('oblique edge drag preserves true normal distance and associative hole replay',()=>{
+  // A sloped mounting flange must move as a rigid semantic edge; the edit is
+  // not two unrelated freehand vertex drags or an axis-aligned approximation.
+  const a=make([{x:0,y:0},{x:100,y:0},{x:120,y:60},{x:0,y:80}]);
+  const bore=editSelectedProfileHole(a.sketch,a.selection,{
+    kind:'add-hole',sourceSignature:a.nextSourceSignature,
+    holeId:'flange-bolt',anchorPointId:'panel:vertex:2',
+    xMm:105,yMm:40,radiusMm:4
+  });
+  assert.equal(bore.kind,'accepted',JSON.stringify(bore));
+  const view=inspect(bore);
+  assert.equal(view.kind,'contour_edges');
+  const edge=view.edges[1],normal=edge.normal;
+  assert.ok(normal.x>0&&normal.y<0,'outward direction is oblique');
+  const start={x:edge.midpoint.x+normal.x*2,
+    y:edge.midpoint.y+normal.y*2};
+  const target={x:start.x+normal.x*10+normal.y*3,
+    y:start.y+normal.y*10-normal.x*3};
+  const result=dragClosedContourEdge(bore.sketch,bore.selection,{
+    version:1,sourceSignature:bore.nextSourceSignature,
+    contourId:'panel',edgeId:edge.edgeId,start,target
+  });
+  accept(result);
+  const close=(a,b)=>Math.abs(a-b)<1e-9;
+  assert.ok(close(result.offsetMm,10),'normal displacement exactly projected');
+  assert.ok(close(result.appliedOffsetMm,10));
+  assert.ok(close(result.gesture.tangentialDeviationMm,3));
+  const sourcePoints=pointPositions(bore),nextPoints=pointPositions(result.acceptance);
+  for(const index of [0,3])
+    assert.deepEqual(nextPoints[index],sourcePoints[index],
+      'unselected flange corners remain unchanged');
+  for(const index of [1,2]){
+    assert.ok(close(nextPoints[index].x-sourcePoints[index].x,10*normal.x));
+    assert.ok(close(nextPoints[index].y-sourcePoints[index].y,10*normal.y));
+  }
+  assert.deepEqual(result.acceptance.movedDependentHoles.map(h=>h.holeId),
+    ['flange-bolt']);
+  const hole=result.acceptance.movedDependentHoles[0];
+  assert.ok(close(hole.to.x-hole.from.x,10*normal.x));
+  assert.ok(close(hole.to.y-hole.from.y,10*normal.y));
+  assert.deepEqual(editClosedContourVertices(bore.sketch,bore.selection,
+    result.editCommand),result.acceptance,'RUNTIME structural replay remains exact');
+  const restored=inspectClosedContourEdges(
+    parseSketch(serializeSketch(result.acceptance.sketch)),
+    result.acceptance.selection,'panel');
+  assert.equal(restored.kind,'contour_edges');
+  assert.equal(restored.edges[1].edgeId,edge.edgeId);
+});
+
 test('associated hole follows selected edge endpoint and preserves its dimensions',()=>{
   const a=make();
   const bored=editSelectedProfileHole(a.sketch,a.selection,{
