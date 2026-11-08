@@ -23,8 +23,8 @@ import qualify_runtime_delivery as delivery
 
 
 def fixture() -> dict:
-    initial = [{"x": -30, "y": 0, "radius": 6},
-               {"x": 30, "y": 0, "radius": 6}]
+    initial = [{"x": -25, "y": 0, "radius": 6},
+               {"x": 25, "y": 0, "radius": 6}]
     resized = [{"x": -20, "y": 0, "radius": 4.5},
                {"x": 20, "y": 0, "radius": 4.5}]
     # Analytic material volumes of the authored 120 x 80 mm plate, not
@@ -101,6 +101,20 @@ if(!path||!existsSync(path)||process.env.INTUIT3D_ANVIL_STEP_PROBE||process.env.
   process.exit(19);
 console.log(JSON.stringify(''' + json.dumps(fixture()) + '''));
 ''')
+        # The consumer's authored sketch is independently evaluated by Node
+        # before any native receipt can be admitted. This tiny test-only
+        # module is deliberately synthetic, not evidence of pinned CAD.
+        sketch = self.checkout / 'packages/sketch/index.mjs'
+        sketch.parent.mkdir(parents=True)
+        sketch.write_text("""export function plateSketchFixture(){
+          return {units:'mm',
+            points:[{id:'p0',x:0,y:0},{id:'p1',x:120,y:0},
+                    {id:'p2',x:120,y:80},{id:'p3',x:0,y:80},
+                    {id:'ha',x:35,y:40},{id:'hb',x:85,y:40}],
+            lines:[{start:'p0',end:'p1'},{start:'p1',end:'p2'},
+                   {start:'p2',end:'p3'},{start:'p3',end:'p0'}],
+            circles:[{center:'ha',radius:6},{center:'hb',radius:6}]};
+        }""")
         subprocess.run(['git','-C',str(self.checkout),'init','-q'], check=True)
         subprocess.run(['git','-C',str(self.checkout),'add','.'], check=True)
         subprocess.run(['git','-C',str(self.checkout),'-c','user.name=Test',
@@ -119,6 +133,21 @@ console.log(JSON.stringify(''' + json.dumps(fixture()) + '''));
         self.assertEqual(result['runtimeSourceCommit'], self.sha)
         self.assertEqual(result['workerSha256'], self.digest)
         self.assertEqual(result['nativeStepCount'], 7)
+
+    def test_rejects_stale_source_fixture_even_with_plausible_native_receipts(self):
+        # A wrong immutable SKETCH fixture is a fail-closed product mismatch,
+        # not permission to weaken native physical measurements.
+        sketch = self.checkout / 'packages/sketch/index.mjs'
+        sketch.write_text(sketch.read_text().replace('x:35,y:40','x:30,y:40'))
+        subprocess.run(['git','-C',str(self.checkout),'add','.'],check=True)
+        subprocess.run(['git','-C',str(self.checkout),
+                        '-c','user.name=Test','-c','user.email=test@example.invalid',
+                        'commit','-qm','changed sketch baseline'],check=True)
+        self.sha=subprocess.check_output(
+            ['git','-C',str(self.checkout),'rev-parse','HEAD'],
+            text=True).strip()
+        with self.assertRaisesRegex(delivery.DeliveryError, 'SKETCH authored fixture disagrees'):
+            delivery.run_consumer(self.checkout,self.sha,self.worker,self.digest)
 
     def test_refuses_wrong_git_head_and_worker_hash(self):
         with self.assertRaisesRegex(delivery.DeliveryError, 'exact source'):
