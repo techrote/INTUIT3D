@@ -21,12 +21,12 @@ on:
         description: "Platform ref; pinned accepted build source unless explicitly supplied"
         type: string
         required: true
-        default: 72a324b16f921dd9634fce79ac92ebdf6942bb8b
+        default: c78a4be6050a38d98fbc577054393ee77ec0c0f7
       runtime_ref:
         description: "Immutable RUNTIME+Workbench consumer source; use exact admitted main SHA"
         type: string
         required: true
-        default: 09fd567c16163e9104532dca19eb0b3102d1fad5
+        default: 15d846464840b3c197fc6a03136afb58c06a4c57
       kernel_ref:
         description: "Kernel source ref, immutable KERNEL-001 extraction #158 by default"
         type: string
@@ -45,12 +45,14 @@ jobs:
     name: Ubuntu / real pinned OCCT C++ and STEP
     runs-on: ubuntu-24.04
     timeout-minutes: 115
+    env:
+      PYTHONDONTWRITEBYTECODE: '1' # prevent runtime-derived .pyc/__pycache__ from entering immutable archive
     steps:
       - name: Checkout pinned accepted Platform source
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ (github.event_name == 'pull_request' && '72a324b16f921dd9634fce79ac92ebdf6942bb8b') || (github.event_name == 'push' && github.sha) || inputs.platform_ref || '72a324b16f921dd9634fce79ac92ebdf6942bb8b' }}
+          ref: ${{ (github.event_name == 'pull_request' && 'c78a4be6050a38d98fbc577054393ee77ec0c0f7') || (github.event_name == 'push' && github.sha) || inputs.platform_ref || 'c78a4be6050a38d98fbc577054393ee77ec0c0f7' }}
           path: platform-repo
           persist-credentials: false
       - name: Checkout KERNEL-001 #158 immutable source (or explicit KERNEL-002 ref)
@@ -66,7 +68,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && '09fd567c16163e9104532dca19eb0b3102d1fad5') || inputs.runtime_ref || '09fd567c16163e9104532dca19eb0b3102d1fad5' }}
+          ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && '15d846464840b3c197fc6a03136afb58c06a4c57') || inputs.runtime_ref || '15d846464840b3c197fc6a03136afb58c06a4c57' }}
           path: runtime-repo
           persist-credentials: false
       - name: Install native packaging, ELF audit and build dependencies
