@@ -86,7 +86,7 @@ export function runMachinedFamily(){
     {...req,edits:[req.edits[0],{
       ...req.edits[1],outputBodyId:'body.shim'}]},
     {...req,edits:[req.edits[0],{
-      ...req.edits[1],to:{...req.edits[1].to,profileCandidateId:'cycle:stale'}}}
+      ...req.edits[1],to:{...req.edits[1].to,profileCandidateId:'cycle:stale'}}]}
   ];
   for(const bad of invalid){
     assert.throws(()=>applyMachinedFamilyBase(history,bad,services));
