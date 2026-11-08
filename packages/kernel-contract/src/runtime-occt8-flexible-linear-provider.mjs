@@ -67,6 +67,15 @@ export function requestFromRuntimeOcct8Flexible(history,targetBodyId,{
   const base=bases[0];
   ensure(typeof base.payload?.sourceSketchId==='string'&&
     ID.test(base.payload.sourceSketchId),'missing selected source SKETCH ID');
+  // The zero-cut path must retain exactly the same source dependency,
+  // selected local frame and millimetre semantics as the cut-chain path.
+  // Otherwise a stale or untracked source SKETCH could be exported as a
+  // current native body without being invalidated by retrospective edits.
+  ensure(base.payload?.units==='mm'&&base.payload?.frame==='local_xy'&&
+    Array.isArray(base.dependsOn)&&
+    base.dependsOn.includes(base.payload.sourceSketchId)&&
+    base.writeTargets?.length===1&&base.writeTargets[0]===targetBodyId,
+    'base extrusion must depend on its selected local-mm SKETCH and target body');
   let source,cutEntries;
   if(writers.length===1){
     // Directly consume the accepted RUNTIME/INTENT solved extrusion report.
