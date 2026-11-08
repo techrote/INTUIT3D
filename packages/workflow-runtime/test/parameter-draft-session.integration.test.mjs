@@ -174,10 +174,10 @@ test('approval is never reusable across revisions, unrelated project ancestry or
     const receipt=await session.evaluate({url:host.url,token:host.token,
       requestId:'negative.current',exportStep:true});
     const archiveBefore=session.save(),digest=receipt.step.sha256,writes=storage.writes;
-    const bad=session.applyParameterDraft({baseArchive,draft,
-      resolution:consent(base,current,[{...ack,featureId:'p.offset'}])});
-    assert.equal(bad.kind,'refused','unreported approval must not become consent');
-    assert.equal(bad.code,'parameter_sheet_conflict');
+    assert.throws(()=>session.applyParameterDraft({baseArchive,draft,
+      resolution:consent(base,current,[{...ack,featureId:'p.offset'}])}),
+      /unreported conflict acknowledgement/,
+      'forged acknowledgement must be rejected by the accepted model contract');
     assert.equal(session.save(),archiveBefore);
     assert.equal(session.currentStep()?.sha256,digest);
     const stale=session.applyParameterDraft({baseArchive,draft,
