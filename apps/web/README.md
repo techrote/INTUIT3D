@@ -508,3 +508,39 @@ is replaced by these edits; cached STEP bytes are revoked. This is a
 semantic sketch edit and tessellated preview, **not physical OCCT proof**.
 The original Windows Firefox private-archive import #177 remains an
 independent unqualified acceptance gate.
+
+
+## Pinned C++ STEP source-custody download (not independent acceptance)
+
+The **LOCAL NATIVE STEP** panel retains the existing experimental OCP path,
+but additionally exposes **Download pinned STEP evidence ZIP** when RUNTIME
+has produced a verified **OCCT-cxx-8.0.1**, same-revision native STEP. This
+action calls `captureCurrentStepEvidence()` synchronously on the actual
+button click, then stores its *single returned snapshot* in an uncompressed
+ZIP with exactly three files:
+
+- `current.archive.json`: canonical authoritative INTENT model + undo archive
+- `current.receipt.json`: source, pinned producer and STEP checksum metadata
+- `current.step`: unmodified verified native STEP bytes
+
+Rebuild a model with a pinned OCCT8 C++ provider, click this button, extract
+the ZIP and supply these unchanged files to the independent STEP session
+consumer described in `conformance/external-cad/SESSION-STEP-GATE.md`.
+Capture an **earlier same-project revision of the same cut feature** before
+making a retrospective edit, then rebuild and capture the edited revision.
+Edits, undo, archive replacement and provider changes revoke the native
+receipt; a stale or OCP-only result leaves the pinned evidence action disabled.
+The ZIP filename is sanitized, and only one browser download is requested.
+
+This is source **custody**, not proof of which C++ binary was compiled or
+that a non-OCCT importer accepted the geometry. The actual native worker must
+run and the independent consumer must verify both physical shapes before #74
+can close. Browser test fixtures using synthetic HTTP STEP cannot qualify
+that gate. No owner-private #177 archive is bundled automatically; the ZIP
+contains only the current intentionally exported user model.
+
+Unit acceptance: `node --experimental-strip-types --test
+apps/web/src/stepEvidenceBundle.test.ts` (or `npm test --workspace
+@intuit3d/web`). Chromium browser smoke additionally asserts the OCP/synthetic
+test host cannot enable pinned-custody export. The real pinned C++ browser
+click and Windows Firefox original-archive replay require separate evidence.
