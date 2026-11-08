@@ -184,6 +184,26 @@ async function main(){
   // thickness edit, undo and direct drag replace the preview tessellation.
   check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');if(!c)return false;window.__intuit3dTest3DCanvas=c;window.__intuit3dTest3DContext=c.getContext('webgl2');return Boolean(window.__intuit3dTest3DContext)})()"),
     '3D editor has no actual WebGL2 context to preserve');
+  // Physical Chromium clicks exercise the real Three camera and canvas.
+  const cameraRev=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  for(const preset of ['top','front','right','isometric']){
+    await pointerClick('runtime-camera-'+preset);
+    const pose=await eventually(()=>evaluate(`(() => {
+      const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');
+      if(!c||c.dataset.cameraPreset!==${JSON.stringify(preset)})return null;
+      const pos=(c.dataset.cameraPosition||'').split(',').map(Number);
+      const target=(c.dataset.cameraTarget||'').split(',').map(Number);
+      return pos.length===3&&target.length===3&&pos.every(Number.isFinite)&&target.every(Number.isFinite)?{pos,target}:null;
+    })()`),'3D camera preset '+preset);
+    if(preset==='top')check(pose.pos[2]>pose.target[2]&&Math.abs(pose.pos[0]-pose.target[0])<.01,'Top camera alignment');
+    if(preset==='front')check(pose.pos[1]<pose.target[1]&&Math.abs(pose.pos[2]-pose.target[2])<.01,'Front camera alignment');
+    if(preset==='right')check(pose.pos[0]>pose.target[0]&&Math.abs(pose.pos[1]-pose.target[1])<.01,'Right camera alignment');
+    check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');return c===window.__intuit3dTest3DCanvas&&c?.getContext('webgl2')===window.__intuit3dTest3DContext})()"),'Camera preset reset WebGL2 context');
+    check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,'Camera preset authored model revision');
+  }
+  await pointerClick('runtime-camera-fit');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,'FIT authored model revision');
+  await screenshot('native-00-camera-views.png');
   await key('ArrowUp','ArrowUp',38);
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='9'"),
     '3D keyboard thickness did not edit the actual parameter');
