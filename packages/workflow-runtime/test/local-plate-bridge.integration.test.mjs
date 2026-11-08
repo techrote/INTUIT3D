@@ -331,3 +331,41 @@ test('disconnected browser cannot permanently occupy trusted native slot',async(
     await host.close();
   }
 });
+
+
+test('closing a bridge with an uncooperative worker terminates the HTTP attempt promptly',async()=>{
+  // The provider intentionally ignores abort, as a wedged child could.
+  const current=plateProject();
+  let started,release,providerSignal,closing=false;
+  const entered=new Promise(resolve=>{started=resolve;});
+  const gate=new Promise(resolve=>{release=resolve;});
+  const provider=async(_request,options)=>{
+    providerSignal=options.signal;
+    started();
+    await gate;
+    return {kind:'unresolved',code:'late_shutdown'};
+  };
+  const host=await startLocalPlateBridge({
+    runtime,model,plateContract,runExperimentalPlate:provider,timeoutMs:5000,
+  });
+  const bounded=(promise)=>Promise.race([promise,new Promise((_,reject)=>
+    setTimeout(()=>reject(Error('bridge shutdown blocked on uncooperative provider')),1500))]);
+  try {
+    const pending=evaluateLocalPlate({
+      url:host.url,token:host.token,runtime,
+      readCurrentHistory:()=>current,cutFeatureId:'cut',
+      requestId:'host.shutdown.old',exportStep:true,
+    });
+    await entered;
+    closing=true;
+    const finished=host.close();
+    const response=await bounded(pending);
+    assert.equal(response.kind,'unresolved');
+    assert.equal(response.code,'host_shutdown');
+    await bounded(finished);
+    assert.equal(providerSignal.aborted,true);
+  } finally {
+    release();
+    if(!closing) await host.close();
+  }
+});
