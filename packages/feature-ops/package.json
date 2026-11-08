@@ -51,6 +51,10 @@
     "./multi-feature-dimensions/v1": {
       "types": "./multi-feature-dimensions.d.mts",
       "default": "./src/multi-feature-dimensions.mjs"
+    },
+    "./rectangular-grid-placement/v1": {
+      "types": "./rectangular-grid-placement.d.mts",
+      "default": "./src/rectangular-grid-placement.mjs"
     }
   },
   "peerDependencies": {
