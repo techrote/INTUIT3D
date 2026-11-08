@@ -13,7 +13,7 @@ import { projectThicknessAxis, proposeThicknessDrag, nudgeThickness, type Screen
 /** A visually useful, disposable tessellation of the ACTUAL admitted SKETCH
  * profile. Never used as document state, a STEP source, or geometric proof. */
 type HoleId = string;
-export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick, onThicknessEdit }: {
+export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick, onThicknessEdit, onProfilePick, profileEditHandle, onProfileHandleDrag }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
   onHoleMove?: (id: HoleId,x:number,y:number,selectedIds?:readonly HoleId[])=>void;
   onDimensionEdit?: (id: SketchDimensionHandle, millimetres:number)=>void;
@@ -26,6 +26,11 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   onCirclePick?: (x:number,y:number)=>void;
   /** Commits extrusion thickness through the authoritative INTENT/RUNTIME journal. */
   onThicknessEdit?: (millimetres:number)=>void;
+  /** Explicitly select a solver-admitted contour; pixel positions are never CAD authority. */
+  onProfilePick?: (x:number,y:number)=>void;
+  /** One explicitly chosen semantic handle; colocated handles require user choice. */
+  profileEditHandle?: {handleId:string;position:{x:number;y:number}}|null;
+  onProfileHandleDrag?: (handleId:string,x:number,y:number)=>void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   // A long-lived Three.js canvas must always call the latest React selection callback.
@@ -42,6 +47,8 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   const [circleHover,setCircleHover]=useState<{x:number;y:number}|null>(null);
   const dimensionMove=useRef<{id:SketchDimensionHandle;pointerId:number;source:PlateProfile;original:number}|null>(null);
   const [dimensionPreview,setDimensionPreview]=useState<{id:SketchDimensionHandle;value:number}|null>(null);
+  const profileMove=useRef<{handleId:string;pointerId:number;source:PlateProfile}|null>(null);
+  const [profilePreview,setProfilePreview]=useState<{x:number;y:number}|null>(null);
   const xs = profile.outer.map(p => p.x), ys = profile.outer.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
@@ -383,15 +390,18 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
 
   return sketchMode ? <svg data-testid="runtime-sketch" className="runtime-sketch-svg"
     viewBox={frame} aria-label="Solved SKETCH boundary and circular holes in millimetres"
-    style={onCirclePick?{cursor:'crosshair'}:undefined}
+    style={onCirclePick||onProfilePick?{cursor:'crosshair'}:undefined}
     onPointerMove={event=>{
       if(onCirclePick)setCircleHover(pointFromScreen(event.currentTarget,event.clientX,event.clientY));
     }}
     onPointerLeave={()=>setCircleHover(null)}
     onClick={event=>{
-      if(!onCirclePick||event.button!==0)return;
+      if(event.button!==0||(!onCirclePick&&!onProfilePick))return;
       const point=pointFromScreen(event.currentTarget,event.clientX,event.clientY);
-      if(point)onCirclePick(point.x,point.y);
+      if(point){
+        if(onCirclePick)onCirclePick(point.x,point.y);
+        else onProfilePick?.(point.x,point.y);
+      }
     }}>
     {onCirclePick&&<rect x={minX-width*.12} y={minY-height*.12}
       width={width*1.24} height={height*1.24}
@@ -559,6 +569,41 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         r={Math.max(2.5,Math.min(width,height)/30)}
         fill="#6af0cd55" stroke="#84f2d3" strokeDasharray="1 1"
         strokeWidth=".6" pointerEvents="none"/>}
+      {profileEditHandle&&onProfileHandleDrag&&<circle
+        data-testid="runtime-profile-drag-handle"
+        aria-label={'Drag selected semantic profile handle '+profileEditHandle.handleId}
+        role="slider" tabIndex={0}
+        cx={profilePreview?.x??profileEditHandle.position.x}
+        cy={profilePreview?.y??profileEditHandle.position.y}
+        r={Math.max(3,Math.min(width,height)/28)}
+        fill="#ffdb7c" stroke="#312913" strokeWidth=".9"
+        style={{cursor:'move',touchAction:'none'}}
+        onPointerDown={event=>{
+          if(event.button!==0)return;
+          event.preventDefault();event.stopPropagation();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          profileMove.current={handleId:profileEditHandle.handleId,pointerId:event.pointerId,source:profile};
+          setProfilePreview(profileEditHandle.position);
+        }}
+        onPointerMove={event=>{
+          const active=profileMove.current;
+          if(!active||active.handleId!==profileEditHandle.handleId||
+             active.pointerId!==event.pointerId||active.source!==profile)return;
+          const at=pointerPosition(event);
+          if(at)setProfilePreview(at);
+        }}
+        onPointerUp={event=>{
+          const active=profileMove.current;
+          if(!active||active.pointerId!==event.pointerId)return;
+          event.stopPropagation();
+          profileMove.current=null;setProfilePreview(null);
+          if(active.source!==profile)return;
+          const at=pointerPosition(event);
+          if(at)onProfileHandleDrag(active.handleId,at.x,at.y);
+        }}
+        onPointerCancel={()=>{profileMove.current=null;setProfilePreview(null);}}
+        onLostPointerCapture={()=>{profileMove.current=null;setProfilePreview(null);}}
+      />}
     </g>
     <text x={minX+2} y={minY+8} fontSize={Math.max(2,width/30)} fill="#d1e5f1">
       SKETCH solver · analytic profile only
