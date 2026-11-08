@@ -15,7 +15,7 @@ import {
   featuresOf, parseProject, planProject, ProjectFormatError, ProjectRevisionError,
 } from './index.ts';
 import type {
-  EvaluationPlan, Feature, FeatureStatus, JournalEvent, ProjectDocument,
+  EvaluationPlan, Feature, FeatureStatus, JournalEvent, ProjectDocument, JsonValue,
 } from './index.ts';
 import {
   previewTransaction, commitUndoableTransaction, parseUndoHistory,
@@ -223,7 +223,7 @@ export function previewSelectedEdgeCut(
       ...created.feature.payload,
       edgeSourceBodyId: origin.bodyId,
       edgeSourceWriterId: origin.bodyWriterId,
-      selectedEdge: origin.reference,
+      selectedEdge: origin.reference as unknown as JsonValue,
     },
   };
   const staged = previewTransaction(doc, [{
@@ -318,7 +318,7 @@ export function previewSelectedEdgeCutRebind(
         ...cut.payload,
         edgeSourceBodyId: origin.bodyId,
         edgeSourceWriterId: origin.bodyWriterId,
-        selectedEdge: origin.reference,
+        selectedEdge: origin.reference as unknown as JsonValue,
       },
     },
   };
