@@ -100,12 +100,9 @@ export function planClosedContourEdgeOffset(source,selection,request){
   const delta=scale(edge.normal,request.offsetMm);
   if(!validPoint(delta))return refuse(stamp,'unrepresentable_offset',edge.edgeId);
   const doc=createSketch(source);
-  const points=new Map(doc.points.map(p=>[p.id,p]));
-  // The inspected vertices are solved positions, not stale document seeds.
-  const handles=view.edges.map(e=>({index:e.startIndex,
-    handleId:e.startHandleId,pointId:e.edgeId.replace(/:edge:\d+$/,':vertex:'+e.startIndex),
-    position:e.start}));
-  const targets=handles.map(h=>({...h.position}));
+  // Use solved, source-admitted positions directly. Never synthesize point IDs
+  // from edge names or use stale document seeds as geometry authority.
+  const targets=view.edges.map(e=>({...e.start}));
   targets[edge.startIndex]=add(targets[edge.startIndex],delta);
   targets[edge.endIndex]=add(targets[edge.endIndex],delta);
   if(targets.some(p=>!validPoint(p)))
