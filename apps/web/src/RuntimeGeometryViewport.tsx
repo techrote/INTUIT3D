@@ -240,7 +240,12 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         camera.near=Math.max(.01,frame.distance/10000);
         camera.far=Math.max(1000,frame.distance+Math.hypot(
           frame.center.x,frame.center.y,frame.center.z)*10+1000);
-        camera.updateProjectionMatrix();controls.update();requestFrame();
+        camera.updateProjectionMatrix();controls.update();
+        // Publish the new camera pose *before* the next animation frame, so
+        // actual browser click tests never read the preceding frame's pose.
+        renderer.domElement.dataset.cameraPosition=[camera.position.x,camera.position.y,camera.position.z].map(x=>x.toFixed(4)).join(',');
+        renderer.domElement.dataset.cameraTarget=[controls.target.x,controls.target.y,controls.target.z].map(x=>x.toFixed(4)).join(',');
+        requestFrame();
       }catch{setPreviewError('Cannot frame this preview. The model remains unchanged.');}
     };
     const onContextLost=(event:Event)=>{
