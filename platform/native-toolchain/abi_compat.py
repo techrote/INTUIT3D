@@ -6,11 +6,12 @@ replay, and cannot promise compatibility on other Linux distributions.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import platform
 import re
 import subprocess
+
+from execution_environment import sealed_env
 
 FAMILIES = ('GLIBC', 'GLIBCXX', 'CXXABI')
 MAX_OBJECTS = 128
@@ -29,10 +30,11 @@ def require(ok: bool, message: str) -> None:
 
 
 def command(argv: list[str], timeout: int = 30) -> str:
-    env = {k: v for k, v in os.environ.items()
-           if k not in ('LD_LIBRARY_PATH', 'LD_PRELOAD', 'LD_AUDIT', 'LD_DEBUG')}
+    # ldd is itself a Bash script on supported Linux hosts. Filtering only
+    # LD_* leaves BASH_ENV able to run arbitrary host code before ELF checks.
+    # Apply the same source-custody environment as the native consumer gate.
     proc = subprocess.run(argv, text=True, capture_output=True, timeout=timeout,
-                          check=False, env=env)
+                          check=False, env=sealed_env())
     require(proc.returncode == 0,
             'ELF inspection failed: ' + ' '.join(argv) + ' ' + proc.stderr[-500:])
     return proc.stdout
