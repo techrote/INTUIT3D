@@ -45,21 +45,69 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def copy_toolkits(prefix: Path, target: Path) -> None:
-    """Keep verified DT_NEEDED SONAME links, not a system OCCT fallback."""
+TOOLKIT_NAME = re.compile(r"libTK[A-Za-z0-9]+\\.so(?:\\.[0-9]+)*\\Z")
+NEEDED_NAME = re.compile(r"\\(NEEDED\\).*?\\[([^\\]]+)\\]")
+
+
+def _needed_toolkits(obj: Path) -> set[str]:
+    """Read real ELF DT_NEEDED records, never infer runtime closure from a name list."""
+    proc = subprocess.run(["readelf", "-W", "-d", str(obj)],
+                          capture_output=True, text=True, timeout=30, check=False)
+    require(proc.returncode == 0 and "(NEEDED)" in proc.stdout,
+            f"cannot inspect physical ELF dependencies: {obj}: {proc.stderr[-300:]}")
+    return {name for name in NEEDED_NAME.findall(proc.stdout)
+            if TOOLKIT_NAME.fullmatch(name)}
+
+
+def copy_toolkits(prefix: Path, target: Path, worker: Path | None = None) -> None:
+    """Ship the exact pinned OCCT toolkit DT_NEEDED closure, not merely build seeds.
+
+    OCCT can install *additional* toolkits as dependencies of the explicitly
+    pinned 14 CMake seed toolkits. TKDESTEP, for example, may depend on
+    TKXCAF/TKLCAF. Omitting those produces an archive that builds successfully
+    but fails the relocated worker loader. Discover the transitive closure
+    from actual installed ELF objects (and the compiled worker), preserving
+    every SONAME/linker alias for selected libraries. Never resolve via host.
+    """
     source = prefix / "lib"
     require(source.is_dir(), "pinned OCCT prefix lacks lib/")
-    candidates = {
-        p.name: p for p in source.iterdir()
-        if any(re.fullmatch(r"lib" + re.escape(name) + r"\.so(?:\..*)?", p.name)
-               for name in TOOLKITS)
-    }
+    source_root = source.resolve(strict=True)
+    candidates = {p.name: p for p in source.iterdir()
+                  if TOOLKIT_NAME.fullmatch(p.name)}
     require(all(f"lib{name}.so" in candidates for name in TOOLKITS),
             "missing OCCT toolkit linker aliases")
+    pending = {f"lib{name}.so" for name in TOOLKITS}
+    if worker is not None:
+        pending.update(_needed_toolkits(worker))
+    inspected: set[Path] = set()
+    selected: set[Path] = set()
+    seen_names: set[str] = set()
+    while pending:
+        name = min(pending)
+        pending.remove(name)
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        original = candidates.get(name)
+        require(original is not None and original.is_file(),
+                f"missing transitive pinned OCCT toolkit: {name}")
+        resolved = original.resolve(strict=True)
+        require(resolved.is_relative_to(source_root),
+                f"toolkit points outside pinned prefix: {original}")
+        require(resolved in (p for p in candidates.values()
+                             if not p.is_symlink()),
+                f"unlisted physical toolkit in SONAME chain: {name}")
+        selected.add(resolved)
+        if resolved not in inspected:
+            pending.update(_needed_toolkits(resolved) - seen_names)
+            inspected.add(resolved)
+
     target.mkdir()
     for name, original in sorted(candidates.items()):
-        require(original.is_file(), f"broken OCCT toolkit link: {original}")
-        require(original.resolve().is_relative_to(source.resolve()),
+        # Only install aliases for an actually needed physical OCCT library.
+        if not original.is_file() or original.resolve(strict=True) not in selected:
+            continue
+        require(original.resolve(strict=True).is_relative_to(source_root),
                 f"toolkit points outside pinned prefix: {original}")
         destination = target / name
         if original.is_symlink():
@@ -71,6 +119,8 @@ def copy_toolkits(prefix: Path, target: Path) -> None:
             shutil.copy2(original, destination)
     require(all((target / f"lib{name}.so").resolve().is_file()
                 for name in TOOLKITS), "incomplete toolkit SONAME chain")
+    require(all((target / name).is_file() for name in seen_names),
+            "incomplete physical DT_NEEDED OCCT toolkit closure")
 
 
 def _imported_kernel_contracts(path: Path) -> set[str]:
@@ -312,7 +362,7 @@ def build(args: argparse.Namespace) -> dict:
     try:
         (output / "bin").mkdir()
         relocate_worker(worker, output / "bin/intuit3d_occt8_plate")
-        copy_toolkits(args.prefix, output / "lib")
+        copy_toolkits(args.prefix, output / "lib", worker)
         relocate_toolkits(output / "lib")
         copy_bridge(args.kernel_tree, output / "native")
         (output / "requests").mkdir()
@@ -352,6 +402,8 @@ def build(args: argparse.Namespace) -> dict:
             "workerSha256": sha256(output / "bin/intuit3d_occt8_plate"),
             "machine": platform.machine(), "host": platform.platform(),
             "abiResolution": resolution, "elfAbiProfile": elf_abi,
+            "occtToolkitClosure": sorted(p.name for p in (output / "lib").iterdir()
+                                         if p.is_file() and not p.is_symlink()),
             "nativeCppExecuted": True,
             "independentCadInteroperability": False,
             "relocatedSmoke": smoke,
