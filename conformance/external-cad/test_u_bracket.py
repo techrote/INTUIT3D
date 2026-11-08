@@ -11,7 +11,7 @@ import unittest
 import zipfile
 
 from u_bracket import (ARTIFACT_SHA, CASES, KERNEL_SHA, OCCT_SHA, Rejected,
-                       SOURCE_FIXTURE_SHA, expected_volume, expected_centroid,
+                       SOURCE_FIXTURE_SHA, expected_volume, expected_centroid, expected_covariance,
                        parse_receipt, rays, sha, verify_native_source)
 
 
@@ -22,11 +22,15 @@ def synthetic_receipt(thickness: int = 8) -> str:
         lines.append(f"U_RAY {name} {x:.9f} {y:.9f} {hits} {low:.9f} {high:.9f}")
     vol = expected_volume(thickness)
     cx, cy, cz = expected_centroid(thickness)
+    covariance = expected_covariance(thickness)
     lines.append("U_ACCEPT solids=1 source_unit=millimetre imported_exact=true "
                  f"tris=300 open_edges=0 volume_mm3={vol:.9f} "
                  f"expected_mm3={vol:.9f} "
                  f"centroid_x_mm={cx:.9f} centroid_y_mm={cy:.9f} "
-                 f"centroid_z_mm={cz:.9f} warnings=0")
+                 f"centroid_z_mm={cz:.9f} " +
+                 " ".join(f"cov_{axis}_mm2={covariance[axis]:.9f}"
+                          for axis in ("xx", "yy", "zz", "xy", "xz", "yz")) +
+                 " warnings=0")
     return "\n".join(lines) + "\n"
 
 
@@ -94,6 +98,16 @@ class IndependentUBracketContracts(unittest.TestCase):
         self.assertAlmostEqual(expected_centroid(12)[0], -0.7914208478289264)
         self.assertAlmostEqual(expected_centroid(12)[1], -9.042457823583678)
         self.assertAlmostEqual(expected_centroid(12)[2], 5.985175858743288)
+        for t, expected in (
+            (8, (1639.59116178, 520.42680392, 5.32493100,
+                 -13.64132799, 0.57272055, -0.23601693)),
+            (12, (1640.42364343, 520.17814815, 11.97013196,
+                  -15.07059812, 0.68500250, -0.28228808)),
+        ):
+            got = expected_covariance(t)
+            for key, reference in zip(("xx", "yy", "zz", "xy", "xz", "yz"),
+                                      expected):
+                self.assertAlmostEqual(got[key], reference, places=6)
         self.assertEqual(len(rays(8)), len(rays(12)))
         self.assertEqual(len(rays(8)), 40)
         names = [r[0] for r in rays(8)]
@@ -112,6 +126,9 @@ class IndependentUBracketContracts(unittest.TestCase):
             self.assertEqual(observed["rayCount"], 40)
             self.assertAlmostEqual(observed["measuredVolumeMm3"], expected_volume(thickness))
             self.assertEqual(len(observed["rays"]), 40)
+            for axis, predicted in expected_covariance(thickness).items():
+                self.assertAlmostEqual(observed["measuredCovarianceMm2"][axis],
+                                       predicted, places=7)
             for axis, predicted in zip("xyz", expected_centroid(thickness)):
                 self.assertAlmostEqual(observed["measuredCentroidMm"][axis],
                                        predicted, places=7)
@@ -173,6 +190,40 @@ class IndependentUBracketContracts(unittest.TestCase):
                                f"centroid_{axis}_mm={invalid}", baseline)
             with self.assertRaises(Rejected):
                 parse_receipt(candidate, 8)
+
+    def test_volume_centroid_preserving_wrong_material_distribution_rejected(self):
+        # Identical mass, first moments and 40 ray receipts can conceal
+        # compensated additions/removals that alter the second moment.
+        baseline = synthetic_receipt(8)
+        expected = expected_covariance(8)
+        for component, delta in (
+            ("xx", 34.0), ("yy", 11.0), ("zz", 0.5),
+            ("xy", 1.5), ("xz", 0.5), ("yz", -0.5),
+        ):
+            with self.subTest(component=component):
+                old = f"cov_{component}_mm2={expected[component]:.9f}"
+                changed = baseline.replace(
+                    old, f"cov_{component}_mm2={expected[component]+delta:.9f}")
+                self.assertNotEqual(changed, baseline)
+                # The synthetic adversary preserves all other original
+                # source evidence fields, including volume and centroid.
+                with self.assertRaisesRegex(Rejected, "covariance"):
+                    parse_receipt(changed, 8)
+
+    def test_nonfinite_missing_duplicated_mass_moments_rejected(self):
+        base = synthetic_receipt(12)
+        for axis in ("xx", "yy", "zz", "xy", "xz", "yz"):
+            token = f"cov_{axis}_mm2={expected_covariance(12)[axis]:.9f}"
+            self.assertIn(token, base)
+            for altered in (
+                base.replace(token, f"cov_{axis}_mm2=nan"),
+                base.replace(token, f"cov_{axis}_mm2=inf"),
+                base.replace(token, ""),
+                base.replace(token, token + " " + token),
+            ):
+                with self.subTest(component=axis, payload=altered[-110:]):
+                    with self.assertRaises(Rejected):
+                        parse_receipt(altered, 12)
 
     def test_native_sha_and_source_still_not_independent_acceptance(self):
         with zipfile.ZipFile(synthetic_archive()) as z:
