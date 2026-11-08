@@ -295,7 +295,13 @@ class OfflineBundleTests(unittest.TestCase):
                                       capture_output=True, text=True)
             self.assertEqual(check().returncode, 0)
             binary.write_bytes(binary.read_bytes() + b"tamper")
-            self.assertEqual(check().returncode, 2)
+            altered = check()
+            self.assertEqual(altered.returncode, 2)
+            self.assertIn("changed=['bin/intuit3d_occt8_plate']", altered.stderr)
+            (root / "unexpected.txt").write_text("injected")
+            added = check()
+            self.assertEqual(added.returncode, 2)
+            self.assertIn("added=['unexpected.txt']", added.stderr)
 
 
 if __name__ == "__main__":

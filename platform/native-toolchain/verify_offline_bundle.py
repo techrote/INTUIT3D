@@ -34,7 +34,15 @@ def main() -> int:
             elif path.is_file():
                 files[rel] = sha256(path)
         if files != manifest["files"]:
-            raise ValueError("bundle file missing, added or SHA-256 mismatch")
+            # Preserve a bounded path-level diagnosis from the *real* archive,
+            # without accepting any missing, injected or changed payload.
+            expected = manifest["files"]
+            missing = sorted(expected.keys() - files.keys())[:8]
+            added = sorted(files.keys() - expected.keys())[:8]
+            changed = sorted(name for name in files.keys() & expected.keys()
+                             if files[name] != expected[name])[:8]
+            raise ValueError(f"bundle file missing, added or SHA-256 mismatch: "
+                             f"missing={missing}; added={added}; changed={changed}")
         if links != manifest["links"]:
             raise ValueError("bundle symlink missing, added or redirected")
         if sha256(root / "bin/intuit3d_occt8_plate") != manifest["workerSha256"]:
