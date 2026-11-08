@@ -203,10 +203,15 @@ async function main(){
   }
   // Select a real authored hole from the actual Three.js canvas using real
   // CDP pointer events, not a DOM callback or synthetic model edit.
+  // Camera preset state is published synchronously, whereas the projected hole
+  // markers are republished by the following animation frame. Never click a
+  // stale ISO marker while the camera has already moved to TOP.
+  const beforeTopMarkers=await evaluate("document.querySelector('[data-testid=runtime-3d-viewport] canvas')?.dataset.holePickMarkers");
   await pointerClick('runtime-camera-top');
   const visibleHole=await eventually(()=>evaluate(`(() => {
     const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');
-    if(!c||c.dataset.cameraPreset!=='top')return null;
+    if(!c||c.dataset.cameraPreset!=='top'||
+       c.dataset.holePickMarkers===${JSON.stringify(beforeTopMarkers)})return null;
     const h=JSON.parse(c.dataset.holePickMarkers||'[]').find(x=>x.id==='holeA');
     if(!h)return null;
     const rect=c.getBoundingClientRect();
