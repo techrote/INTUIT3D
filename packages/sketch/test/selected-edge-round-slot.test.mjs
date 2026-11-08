@@ -206,6 +206,41 @@ test('source-independent authoring metadata cannot be added or silently accepted
   assert.deepEqual(inspectSelectedEdgeRoundSlot(r.authoring).profile,
     r.profile);
 });
+test('vertical selected edge preserves tangent cap orientation and hole clearance',()=>{
+  const doc=createDimensionedLPlateSketch();
+  const r=createSelectedEdgeRoundSlot(doc,selection(doc),
+    createCommand(doc,{id:'verticalSlot',edgeId:'L:edge1',
+      fromMm:5,toMm:25,straightDepthMm:10}));
+  assert.equal(r.kind,'accepted',JSON.stringify(r));
+  const cap=r.profile.boundary.find(x=>x.id==='verticalSlot:cap');
+  assert.equal(cap.kind,'arc');
+  near(Math.abs(cap.sweepRad),Math.PI);
+  near(cap.radiusMm,10);
+  near(r.profile.materialAreaMm2,5400-100*Math.PI);
+  assert.equal(r.solution.degreesOfFreedom,0);
+  assert.deepEqual(r.holeIds,['L:holeLower','L:holeUpper']);
+});
+
+test('retrospective contour topology changes cannot silently reattach slot',()=>{
+  const {result:r}=make();
+  const doc=structuredClone(r.authoring.source);
+  doc.points.push({id:'split:point',x:80,y:30});
+  doc.lines.find(e=>e.id==='L:edge2').end='split:point';
+  doc.lines.push({id:'split:edge',start:'split:point',end:'L:d'});
+  doc.constraints.push(
+    {id:'split:x',kind:'distanceX',a:'L:a',b:'split:point',value:80},
+    {id:'split:y',kind:'distanceY',a:'L:a',b:'split:point',value:30},
+    {id:'split:horizontal',kind:'horizontal',line:'split:edge'}
+  );
+  const changed=createSketch(doc);
+  const response=rebaseSelectedEdgeRoundSlot(r.authoring,changed,
+    selection(changed),{
+      kind:'rebase-selected-edge-round-slot',version:1,
+      sourceSignature:r.authoringSignature});
+  assert.equal(response.kind,'refused',JSON.stringify(response));
+  assert.equal(response.reason,'source_semantic_reference_changed');
+});
+
 test('documented public consumer example executes',async()=>{
   await import('../examples/selected-edge-round-slot.mjs');
 });
