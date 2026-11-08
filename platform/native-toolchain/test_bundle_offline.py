@@ -10,6 +10,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 
 import bundle_offline as bundle
 
@@ -358,7 +359,7 @@ class OfflineBundleTests(unittest.TestCase):
             if not marker.exists():
                 self.skipTest("host ldd is not susceptible to BASH_ENV")
             marker.unlink()
-            with unittest.mock.patch.dict(os.environ, hostile, clear=True):
+            with mock.patch.dict(os.environ, hostile, clear=True):
                 resolved = bundle.validate_elf_resolution(worker, lib)
             self.assertIn("libTKMath.so.8.0", resolved)
             self.assertFalse(marker.exists(),
