@@ -110,7 +110,7 @@ jobs:
               assert author['extrusion']=='actual_browser_control',author
               assert author['cut']=='actual_browser_control',author
           assert report['nativeWorkerSha256']=='a346489f79e49c1eb81a1bebe5987d31fbd6e92814c2f5a7028c1ecf4d3dbbc1'
-          assert report['revision8']!=report['revision12']
+          assert (report['revisionEarlier']!=report['revisionCurrent'] if is_drawn else report['revision8']!=report['revision12'])
           sys.path.insert(0,'conformance/external-cad')
           from session_step import verify_capture
           identities={}
