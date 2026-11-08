@@ -77,6 +77,21 @@ if(resizedLayout.kind==='committed'){
   const stableIds:readonly string[]=resizedLayout.invalidation.invalidatedFeatureIds;
   void stableIds;
 }
+const edgeResult=runtime.editSelectedEdgeHoles(session,{
+  sketchFeatureId:'sketch.plate',eventId:'type.selected.edge',
+  expectedRevision:session.document.revision,
+  selection:{candidateId:'contour',sourceSignature:'sketch-signature'},
+  command:{kind:'set-edge-holes',sourceSignature:'sketch-signature',
+    edits:[{holeId:'holeC',edgeId:'edge0',alongMm:10,insetMm:5,radiusMm:2}]},
+});
+if(edgeResult.kind==='committed'){
+  const stableProfile:string=edgeResult.semanticProfileId;
+  const analyticalOnly:false=edgeResult.exactAuthority;
+  void [stableProfile,analyticalOnly];
+}else{
+  const refused:true=edgeResult.notCommitted;
+  void refused;
+}
 const delta:WorkflowInvalidation=runtime.diff(session,session);
 const direct:WorkflowInvalidation=diffWorkflowPlans(model.planProject(session.document),model.planProject(session.document));
 const exact:false=delta.exactReuseAllowed;

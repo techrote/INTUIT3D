@@ -4,6 +4,7 @@
  * Services MUST be accepted public package modules; no parallel CAD policy here.
  */
 import {diffWorkflowPlans} from './invalidation.mjs';
+import {setSelectedEdgeHoles} from '@intuit3d/sketch/selected-edge-hole-placement/v1';
 import {applyPlateHoleOperations,planRectangularHoleArray,planCircularHolePattern,planRigidHoleTransform,planHoleLayoutResize} from './hole-edit.mjs';
 export {WORKFLOW_INVALIDATION_FORMAT, WORKFLOW_INVALIDATION_VERSION, diffWorkflowPlans} from './invalidation.mjs';
 
@@ -368,6 +369,63 @@ export function createWorkflowRuntime(services) {
     return editSketchConstraints(previous,{sketchFeatureId,eventId,expectedRevision,admission,edits});
   }
 
+  /**
+   * Commit a genuine SKETCH selected-contour edge-hole proposal through ONE
+   * undoable INTENT feature.edit. The accepted selected-edge provider owns
+   * solver, anchor, topology and semantic-profile admission. In particular,
+   * an ambiguous multi-contour report remains visibly non-exact rather than
+   * being silently converted into a guessed plate or a native export.
+   */
+  function editSelectedEdgeHoles(history,request) {
+    const {sketchFeatureId,eventId,expectedRevision,selection,command}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if(!Number.isSafeInteger(expectedRevision) ||
+        expectedRevision!==previous.document.revision)
+      throw new Error('runtime selected-edge holes: stale or missing expectedRevision');
+    if(typeof sketchFeatureId!=='string'||!sketchFeatureId||
+       typeof eventId!=='string'||!eventId||
+       !selection||typeof selection!=='object'||Array.isArray(selection)||
+       !command||typeof command!=='object'||Array.isArray(command))
+      throw new TypeError('runtime selected-edge holes: explicit feature/event, selection and command required');
+    const entry=model.planProject(previous.document).features.find(
+      x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      throw new TypeError('runtime selected-edge holes: authoritative sketch feature required');
+    const current=sketch.validateSketch(entry.feature.payload.sketch);
+    // A selection and the pointer command must refer to the SAME source
+    // snapshot. SKETCH also re-derives and checks the canonical signature.
+    if(selection.sourceSignature!==command.sourceSignature)
+      return {kind:'refused',code:'stale_selection',notCommitted:true,
+        sourceRevision:expectedRevision,
+        reason:'edge selection and edit use different sketch signatures'};
+    const proposal=setSelectedEdgeHoles(current,selection,command);
+    if(proposal.kind!=='accepted')
+      return {kind:'refused',code:'selected_edge_edit_refused',notCommitted:true,
+        sourceRevision:expectedRevision,reason:proposal.reason,review:proposal};
+    if(proposal.nativeExact!==false||
+       proposal.semanticProfileId!==selection.candidateId||
+       proposal.selection.candidateId!==selection.candidateId)
+      throw new Error('runtime selected-edge holes: provider semantic/authority mismatch');
+    const nextSketch=sketch.validateSketch(proposal.sketch);
+    const candidate=commit(previous,[{
+      eventId,type:'feature.edit',featureId:sketchFeatureId,
+      patch:{payload:{...entry.feature.payload,sketch:nextSketch}},
+    }],expectedRevision);
+    const report=inspect(candidate);
+    const feature=report.features.find(x=>x.featureId===sketchFeatureId);
+    if(!feature) throw new Error('runtime selected-edge holes: committed sketch was lost');
+    // 'invalid_profile' is expected for deliberately ambiguous multi-loop
+    // sketches. A SELECTED contour was solved/admitted, but native evaluation
+    // must remain blocked until the consumer supplies an explicit body path.
+    return {kind:'committed',history:candidate,report,
+      invalidation:diff(previous,candidate),sketchStatus:feature.status,
+      selection:proposal.selection,semanticProfileId:proposal.semanticProfileId,
+      changedConstraintIds:proposal.changedConstraintIds,
+      createdHoleIds:proposal.createdHoleIds,
+      reanchoredHoleIds:proposal.reanchoredHoleIds,
+      exactAuthority:false};
+  }
+
   /** Explicitly delegated, revision-fenced authoritative commands. */
   function commit(history, events, expectedRevision = history.document.revision) {
     return transactions.commitUndoableTransaction(history, events, expectedRevision);
@@ -388,5 +446,5 @@ export function createWorkflowRuntime(services) {
   function reopen(serialized) {
     return archive.deserializeModelArchive(serialized).history;
   }
-  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, undo, redo, save, reopen});
+  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, editSelectedEdgeHoles, undo, redo, save, reopen});
 }
