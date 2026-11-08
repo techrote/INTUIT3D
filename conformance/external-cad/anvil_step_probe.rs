@@ -280,6 +280,17 @@ fn u_bracket_covariance_expected(thickness: f64, centre: [f64;3], volume: f64) -
 // Genuine selected eight-edge U-bracket with one circular BLIND and one
 // rectangular THROUGH cut. All predicates run on separately imported
 // non-OCCT CAD mesh vertices, never on the producer's STEP metadata.
+fn u_bracket_surface_expected(thickness: f64) -> f64 {
+    // Exposed U stock: top/bottom footprint (6100 mm2), less 10x12
+    // through cut on each face. The U's eight-edge outer + inner
+    // perimeter is 500 mm, the window adds 44 mm of wall perimeter.
+    // The blind R5, depth-3 pocket exchanges its top disc for a floor
+    // (zero net flat area), and adds a 2*pi*r*depth cylindrical wall.
+    2.0*(120.0*80.0-70.0*50.0-10.0*12.0)
+        +(500.0+2.0*(10.0+12.0))*thickness
+        +2.0*std::f64::consts::PI*5.0*3.0
+}
+
 fn u_bracket(args: &[String]) {
     if args.len()!=4 { fail("usage: --u-bracket STEP 8|12"); }
     let thickness=number(&args[3]);
@@ -307,6 +318,7 @@ fn u_bracket(args: &[String]) {
     // moments without trusting the native producer's mass-properties receipt.
     let mut first_moment=[0.0f64;3];
     let mut second_moment=[0.0f64;6];
+    let mut surface_area=0.0f64;
     let moment_axes=[(0,0),(1,1),(2,2),(0,1),(0,2),(1,2)];
     let mut tris=0usize;
     for tri in mesh.faces.iter().flat_map(|face| &face.triangles) {
@@ -315,6 +327,19 @@ fn u_bracket(args: &[String]) {
         let cross=[b[1]*c[2]-b[2]*c[1],b[2]*c[0]-b[0]*c[2],b[0]*c[1]-b[1]*c[0]];
         let tetra=(a[0]*cross[0]+a[1]*cross[1]+a[2]*cross[2])/6.0;
         signed_volume+=tetra;
+        // Direct oriented-mesh surface measure, independent of the
+        // OCCT source's area report and unaffected by triangle winding.
+        // Use edge differences (not the origin-relative volume cross).
+        let u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]];
+        let v=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
+        let area_cross=[
+            u[1]*v[2]-u[2]*v[1],
+            u[2]*v[0]-u[0]*v[2],
+            u[0]*v[1]-u[1]*v[0],
+        ];
+        surface_area+=0.5*(area_cross[0]*area_cross[0]
+            +area_cross[1]*area_cross[1]
+            +area_cross[2]*area_cross[2]).sqrt();
         for axis in 0..3 {
             first_moment[axis]+=tetra*(a[axis]+b[axis]+c[axis])/4.0;
         }
@@ -335,6 +360,12 @@ fn u_bracket(args: &[String]) {
     if tris<8 || open!=0 || !measured.is_finite() || measured<1.0 ||
         (measured-expected).abs()>expected*0.01 {
         fail(&format!("wrong independent U-bracket topology/volume: {measured} vs {expected}, open={open}"));
+    }
+    let expected_surface=u_bracket_surface_expected(thickness);
+    if !surface_area.is_finite() || surface_area<=0.0 ||
+       (surface_area-expected_surface).abs()>expected_surface*0.01 {
+        fail(&format!("independent U-bracket physical surface area wrong: {:.6} vs {:.6} mm²",
+                      surface_area,expected_surface));
     }
     // Analytic first moments of source fixture: 120x80 stock less 70x50
     // notch centred at Y=15; through 10x12 at (47,10); R5 blind pocket
@@ -442,10 +473,11 @@ fn u_bracket(args: &[String]) {
                  zs.len(),zs.first().copied().unwrap_or(-1.0),
                  zs.last().copied().unwrap_or(-1.0));
     }
-    println!("U_ACCEPT solids=1 source_unit={} imported_exact=true tris={} open_edges=0 volume_mm3={measured:.9} expected_mm3={expected:.9} centroid_x_mm={:.9} centroid_y_mm={:.9} centroid_z_mm={:.9} cov_xx_mm2={:.9} cov_yy_mm2={:.9} cov_zz_mm2={:.9} cov_xy_mm2={:.9} cov_xz_mm2={:.9} cov_yz_mm2={:.9} warnings=0",
+    println!("U_ACCEPT solids=1 source_unit={} imported_exact=true tris={} open_edges=0 volume_mm3={measured:.9} expected_mm3={expected:.9} centroid_x_mm={:.9} centroid_y_mm={:.9} centroid_z_mm={:.9} cov_xx_mm2={:.9} cov_yy_mm2={:.9} cov_zz_mm2={:.9} cov_xy_mm2={:.9} cov_xz_mm2={:.9} cov_yz_mm2={:.9} surface_area_mm2={:.9} expected_surface_mm2={:.9} warnings=0",
              cad.length_unit,tris,measured_centroid[0],measured_centroid[1],measured_centroid[2],
              measured_covariance[0],measured_covariance[1],measured_covariance[2],
-             measured_covariance[3],measured_covariance[4],measured_covariance[5]);
+             measured_covariance[3],measured_covariance[4],measured_covariance[5],
+             surface_area,expected_surface);
 }
 
 fn main() {
