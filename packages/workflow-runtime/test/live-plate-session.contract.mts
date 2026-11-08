@@ -138,3 +138,18 @@ const submitBatch=session.applyCommandsAndEvaluate(grouped,{
   requiredBackend:'OCCT-cxx-8.0.1',exportStep:true,
 });
 void submitBatch;
+
+const selectedProfileControls=session.inspectSelectedProfileHoles({
+  projectId:state.projectId,expectedRevision:state.revision,
+  sketchFeatureId:'sketch.plate'
+});
+if(selectedProfileControls.kind==='ready') {
+  const noPhysical:false=selectedProfileControls.exactAuthority;
+  const selected:string=selectedProfileControls.inspection.selection.candidateId;
+  const source:string=selectedProfileControls.inspection.selection.sourceSignature;
+  const anchor:string|undefined=selectedProfileControls.inspection.anchors[0]?.pointId;
+  void [noPhysical,selected,source,anchor];
+}else{
+  const stale:boolean=selectedProfileControls.notCommitted;
+  void stale;
+}

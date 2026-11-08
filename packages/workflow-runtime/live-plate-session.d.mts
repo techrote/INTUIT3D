@@ -193,7 +193,8 @@ export interface LivePlateSession {
   ):Promise<SessionReopenAndEvaluateResult>;
 }
 export declare function createLivePlateSession(options:Readonly<{
-  runtime:Pick<WorkflowRuntime,'save'|'reopen'|'inspect'|'diff'>;
+  runtime:Pick<WorkflowRuntime,'save'|'reopen'|'inspect'|'diff'> &
+    Partial<Pick<WorkflowRuntime,'inspectSelectedProfileHoles'>>;
   /** Same synchronous source of truth used by the actual browser/editor. */
   readCurrentHistory:()=>UndoHistory;
   /** Must immediately update the state returned by readCurrentHistory. */
