@@ -23,6 +23,8 @@ import {BODY_REBUILD_MANIFEST_FORMAT,planBodyRebuildManifest}
   from '@intuit3d/model/body-rebuild-manifest';
 import {FEATURE_EDIT_REVERT_FORMAT,previewFeatureEditRevert,
   commitUndoableFeatureEditRevert} from '@intuit3d/model/feature-edit-revert';
+import {HISTORICAL_EDIT_INVENTORY_FORMAT,inspectHistoricalFeatureEdits}
+  from '@intuit3d/model/historical-edit-inventory';
 
 const runtime=createWorkflowRuntime({
   model,transactions,bindings,dimensions,archive,sketch,discovery,
@@ -103,6 +105,19 @@ export function runSelectiveMotorSaddleRevert(){
     targetEventId:'edit.motor.width',eventId:'revert.motor.width',
     admission:'require_ready',confirmUnresolved:false,
   };
+  // A real Workbench history panel can list and select the exact old edit
+  // before dispatching its existing revision-fenced revert command.
+  const choices=inspectHistoricalFeatureEdits(prior,{
+    format:HISTORICAL_EDIT_INVENTORY_FORMAT,version:1,
+    expectedProjectId:prior.projectId,expectedRevision:prior.revision,
+    expectedDocumentFence:model.serializeProject(prior),
+    probeEventId:'probe.motor.history.choice',cursor:null,limit:16,
+  });
+  const choice=choices.rows.find(x=>x.targetEventId===req.targetEventId);
+  assert.equal(choice?.status,'available');
+  assert.deepEqual(choice.invalidatedBodyIds,['body.motor','body.clamp']);
+  assert.equal(choice.admission,req.admission);
+  assert.equal(choice.confirmUnresolved,req.confirmUnresolved);
   const preview=previewFeatureEditRevert(prior,req);
   assert.deepEqual(preview.invalidatedBodyIds,['body.motor','body.clamp']);
   history=commitUndoableFeatureEditRevert(history,req);
@@ -128,6 +143,8 @@ export function runSelectiveMotorSaddleRevert(){
   return {
     format:'intuit3d.feature-edit-revert-demo',bodyActions:actions,
     revertedFeatureId:'sketch.motor',preservedIndependentEdit:true,
+    historicalEditChoice:choice.status,
+    historyChoiceInvalidatedBodies:choice.invalidatedBodyIds,
     archiveUndoRedo:true,requiresNativeRebuild:true,
     exactGeometryAuthority:false,nativeSTEP:'not_executed',
   };
