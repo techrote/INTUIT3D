@@ -185,3 +185,24 @@ test('retrospective authored dimensions remain explicit and revision-replayable'
 test('public closed-contour consumer example executes against real SKETCH modules',async()=>{
   await import('../examples/closed-contour-authoring.mjs');
 });
+
+
+test('external dependent vertex with similar ID cannot be moved as part of selected contour',()=>{
+  const created=create();ok(created);
+  const doc=structuredClone(created.sketch);
+  doc.points.push({id:'custom:vertex:external',x:10,y:12});
+  doc.constraints.push({id:'external:dx',kind:'distanceX',
+    a:'custom:vertex:0',b:'custom:vertex:external',value:10});
+  doc.constraints.push({id:'external:dy',kind:'distanceY',
+    a:'custom:vertex:0',b:'custom:vertex:external',value:12});
+  const source=createSketch(doc),before=stamp(source);
+  const selection={candidateId:created.selection.candidateId,sourceSignature:before};
+  assert.equal(inspectClosedContour(source,selection,'custom').kind,'closed_contour');
+  const result=dragClosedContourVertex(source,selection,{
+    version:1,sourceSignature:before,contourId:'custom',
+    handleId:'custom:handle:0',target:{x:5,y:0}});
+  assert.equal(result.kind,'refused');
+  assert.equal(result.reason,'unselected_geometry_would_move');
+  assert.equal(result.detail,'custom:vertex:external');
+  assert.equal(stamp(source),before);
+});
