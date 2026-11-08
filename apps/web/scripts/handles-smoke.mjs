@@ -967,15 +967,40 @@ async function main() {
   const blankBefore=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
   check(await evaluate("!document.querySelector('[data-testid=runtime-sketch]') && Boolean(document.querySelector('[data-testid=runtime-structural-sketch-dimensions]'))"),
     'empty sketch was replaced with a fabricated seeded profile');
-  await clickControl('[data-testid="runtime-outline-tool"]');
-  for(const [x,y] of [[0,0],[120,0],[120,80],[0,80]]){
+  // Adversarial *real pointer* admission before the successful journey:
+  // a bow-tie's four legitimate clicks must never silently author a profile.
+  // Escape after SKETCH's refusal must discard only ephemeral draft vertices.
+  const clickBlankVertex=async(x,y)=>{
     const point=await evaluate('(() => {const svg=document.querySelector("[data-testid=runtime-blank-sketch]");const m=svg?.getScreenCTM();if(!m)return null;const p=new DOMPoint('+x+','+(120-y)+').matrixTransform(m);return {x:p.x,y:p.y}})()');
     check(point&&Number.isFinite(point.x)&&Number.isFinite(point.y),
       'no real screen-matrix mapping for blank sketch vertex');
     await mouse('mouseMoved',point.x,point.y);
     await mouse('mousePressed',point.x,point.y,1);
     await mouse('mouseReleased',point.x,point.y);
-  }
+  };
+  await clickControl('[data-testid="runtime-outline-tool"]');
+  for(const [x,y] of [[0,0],[120,80],[0,80],[120,0]])
+    await clickBlankVertex(x,y);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent?.includes('4 / 12')"),
+    'crossing sketch did not collect four actual pointer vertices');
+  await clickControl('[data-testid="runtime-close-contour"]');
+  await eventually(()=>evaluate("document.querySelector('.runtime-message')?.textContent?.includes('SKETCH refused this outline')"),
+    'crossing contour did not surface an authoritative SKETCH refusal');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore &&
+    await evaluate("!document.querySelector('[data-testid=runtime-sketch]')"),
+    'crossing contour refusal mutated the journal or published a solved profile');
+  await screenshot('29a-crossing-outline-refused.png');
+  await key('Escape','Escape',27);
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-contour-vertex-count]')"),
+    'Escape did not cancel the invalid pointer draft');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore &&
+    await evaluate("Boolean(document.querySelector('[data-testid=runtime-blank-sketch]'))"),
+    'Escape after crossing refusal changed the original empty model');
+  await screenshot('29b-crossing-outline-escape.png');
+  // A new independent gesture on the unchanged zero-entity sketch succeeds.
+  await clickControl('[data-testid="runtime-outline-tool"]');
+  for(const [x,y] of [[0,0],[120,0],[120,80],[0,80]])
+    await clickBlankVertex(x,y);
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent?.includes('4 / 12')"),
     'four genuine pointer clicks did not create ephemeral vertices');
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore,
@@ -1183,7 +1208,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -1200,6 +1225,7 @@ async function main() {
     multiUndoHistoryWorkerImportRequiresConfirmation: true,
     actualChromiumSelectedHoleStampAndBatchDeleteUndo: true,
     actualChromiumSelectedEdgeHoleCreateUndoRedoArchive: true,
+    actualCrossingContourRefusedAndEscapePreservesEmptyHistory: true,
     genuineEmptySketchFourPointerVerticesAuthoritativeContourUndoRedoSaveReopen: true,
     genuineDrawnContourExtrusionHoleCutUndoRedoSaveReopen: true,
     genuinelyDrawnVertexNumericAndPointerEditUndoRedoReopen: true,
