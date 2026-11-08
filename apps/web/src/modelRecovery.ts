@@ -4,7 +4,7 @@
  * No network, no unsandboxed filesystem access, and no implicit project reopen.
  */
 import type { ModelSession } from './runtimeSession';
-import { modelArchiveSummary, checkedModelArchiveSize } from './modelFileLifecycle';
+import { modelArchiveSummary, checkedModelArchiveSize } from './modelFileLifecycle.ts';
 
 export const LOCAL_RECOVERY_DB = 'intuit3d-local-recovery-v1';
 const STORE = 'snapshots';
