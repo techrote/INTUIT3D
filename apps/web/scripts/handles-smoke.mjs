@@ -141,15 +141,27 @@ async function main() {
   ),'numeric semantic editor');
   check(await evaluate(`(() => {
     const el=document.querySelector('[data-testid=runtime-profile-numeric-value]');
-    if(!el)return false;el.focus();return document.activeElement===el;
+    if(!el)return false;el.focus();el.select();return document.activeElement===el;
   })()`),'numeric semantic dimension input cannot focus');
-  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',windowsVirtualKeyCode:65,modifiers:2});
-  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',windowsVirtualKeyCode:65,modifiers:2});
   await send('Input.insertText',{text:'135'});
+  const typedNumericValue=await evaluate("document.querySelector('[data-testid=runtime-profile-numeric-value]')?.value");
+  check(typedNumericValue==='135','Chromium number entry mismatch: '+JSON.stringify(typedNumericValue));
   await key('Enter','Enter',13);
-  await eventually(()=>evaluate(
-    "document.querySelector('input[aria-label=\"Plate width\"]')?.value==='135'"
-  ),'numeric semantic edit through RUNTIME');
+  try{
+    await eventually(()=>evaluate(
+      "document.querySelector('input[aria-label=\"Plate width\"]')?.value==='135'"
+    ),'numeric semantic edit through RUNTIME');
+  }catch(err){
+    const diagnostic=await evaluate(`(() => ({
+      revision:document.querySelector('[data-testid=runtime-revision]')?.textContent,
+      selected:document.querySelector('[data-testid=runtime-pointer-profile-selected]')?.textContent,
+      typed:document.querySelector('[data-testid=runtime-profile-numeric-value]')?.value,
+      width:document.querySelector('input[aria-label="Plate width"]')?.value,
+      error:document.querySelector('[data-testid=runtime-profile-numeric-error]')?.textContent,
+      message:document.querySelector('.runtime-message')?.textContent,
+    }))()`);
+    throw Error(String(err)+'; diagnostic='+JSON.stringify(diagnostic));
+  }
   await screenshot('00a-model-numeric-profile.png');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-panel] button')].find(el=>el.textContent?.trim()==='Undo');b?.click();return !!b})()"),
     'Model-backed undo control missing');
