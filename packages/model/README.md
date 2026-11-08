@@ -813,3 +813,66 @@ Run `node --experimental-strip-types --test packages/model/test/parameter-sheet-
 and `node --experimental-strip-types packages/model/examples/parameter-sheet-rebase-plate.mjs`
 for an independent-offset-edit → stale-thickness-draft → safe rebase →
 sketch/extrude/cut/rebuild → archive/undo/redo product flow.
+
+## Explicit stale parameter-sheet conflict resolution (v1)
+
+The conservative `@intuit3d/model/parameter-sheet-rebase` contract from PR #205
+must be attempted first. A changed edited row, referenced upstream parameter,
+or occupied journal event ID is **not silently merged**. The additive
+`@intuit3d/model/parameter-sheet-resolution` contract permits the author to
+*deliberately* reapply a stale spreadsheet draft on the current document.
+
+```ts
+import {rebaseParameterSheetEdit} from '@intuit3d/model/parameter-sheet-rebase';
+import {
+  PARAMETER_SHEET_RESOLUTION_FORMAT, resolveParameterSheetConflict,
+} from '@intuit3d/model/parameter-sheet-resolution';
+import {
+  commitUndoableParameterFormulaTableEdit,
+} from '@intuit3d/model/parameter-formula-table';
+
+const report = rebaseParameterSheetEdit(base, current.document, draft,
+  current.document.revision);
+// UI shows report.conflicts, obtains approval for exact (code,featureId,
+// relatedId) triples. It MUST NOT invent consent or auto-apply them.
+const recovery = resolveParameterSheetConflict(base, current.document, draft, {
+  format: PARAMETER_SHEET_RESOLUTION_FORMAT, version: 1,
+  expectedProjectId: base.projectId,
+  expectedBaseRevision: base.revision,
+  expectedCurrentRevision: current.document.revision,
+  // Only a real author-confirmed list, NEVER copied automatically
+  // from report.conflicts:
+  approvals: [],
+  eventReplacements: [], // must supply fresh explicit IDs for collisions
+});
+if (recovery.status === 'ready') {
+  // Display valueComparisons, affected-feature invalidation and ask for
+  // FINAL confirmation. Recheck that current has not advanced, then:
+  const committed = commitUndoableParameterFormulaTableEdit(
+    current, recovery.resolvedRequest!);
+}
+```
+
+Approval is **specific** to the current conflict identities and revision;
+unapproved conflicts remain blocking. Missing or reused replacement event
+IDs are refused. A formula that would resolve to a different semantic
+parameter ID remains blocked even with other approvals; the user must
+rewrite the draft explicitly. A current-preview scalar change is exposed
+in `valueComparisons` (e.g. 12 mm intended against the original document
+becoming 16 mm against a newly edited upstream reference), not accepted
+silently. The API returns a preview and revision-fenced proposal only. It
+does not mutate either project, bypass the authoritative atomic commit, or
+assert SKETCH/native B-rep/STEP precision.
+
+Execute the real solved-SKETCH → extrude/cut → parameter-conflict →
+RUNTIME → save/reopen → undo/redo example:
+
+```sh
+node --experimental-strip-types packages/model/examples/parameter-sheet-conflict-plate.mjs
+node --experimental-strip-types --test packages/model/test/parameter-sheet-resolution.test.mjs
+```
+
+WORKBENCH may consume this exported model contract through a separately
+owned UI integration. It must present both the old and proposed numerical
+results, obtain explicit author approval, and make the final commit separately.
+Cross-package admission remains under INTEGRATION.
