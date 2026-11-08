@@ -101,6 +101,34 @@ test('selected history choice commits atomically after unrelated later edit; arc
   assert.throws(()=>inspectHistoricalFeatureEdits(history.document,
     inventoryRequest(original)),ProjectRevisionError);
 });
+test('history menu admits earlier edit after a later disjoint same-feature dependency change',()=>{
+  let doc=baseline();
+  doc=commitEvent(doc,{type:'feature.edit',eventId:'edit.motor.datum.dependency',
+    featureId:'extrude.motor',
+    patch:{dependsOn:['sketch.motor','sketch.gauge']}});
+  const inventory=inspectHistoricalFeatureEdits(doc,inventoryRequest(doc));
+  const earlier=inventory.rows.find(row=>row.targetEventId==='edit.motor.thickness');
+  assert.equal(earlier?.status,'available');
+  assert.equal(earlier?.admission,'require_ready');
+  assert.deepEqual(earlier?.revertedFields,['payload']);
+  assert.deepEqual(earlier?.invalidatedBodyIds,['body.motor']);
+  const newer=inventory.rows.find(row=>row.targetEventId==='edit.motor.datum.dependency');
+  assert.equal(newer?.status,'available');
+  const initial=serializeProject(doc);
+  const preview=previewFeatureEditRevert(doc,
+    revertRequest(doc,earlier,'revert.motor.thickness.disjoint'));
+  assert.equal(find(preview.document,'extrude.motor').payload.thicknessMm,9);
+  assert.deepEqual(find(preview.document,'extrude.motor').dependsOn,
+    ['sketch.motor','sketch.gauge']);
+  assert.equal(find(preview.document,'sketch.gauge').payload.widthMm,41);
+  assert.equal(serializeProject(doc),initial);
+  const fork=commitEvent(baseline(),{
+    type:'feature.edit',eventId:'edit.motor.datum.dependency',
+    featureId:'extrude.motor',patch:{dependsOn:['sketch.motor']}});
+  assert.throws(()=>inspectHistoricalFeatureEdits(fork,
+    inventoryRequest(doc)),ProjectRevisionError);
+});
+
 test('later changes to the same feature block only its older history choices',()=>{
   let doc=baseline();
   doc=commitEvent(doc,{type:'feature.edit',eventId:'edit.gauge.latest',
