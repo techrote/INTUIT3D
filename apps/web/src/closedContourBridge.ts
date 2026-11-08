@@ -11,7 +11,7 @@ import {
   modelCurrentSketch,modelSketchIsEmpty,runtime,serializeModelSession,
   type ModelSession,
 } from './runtimeSession.ts';
-import {beginBlankContourDraft,type BlankContourDraft} from './blankContourDraft.ts';
+import {beginBlankContourDraft,type BlankContourDraft,type SketchLocalPoint} from './blankContourDraft.ts';
 
 export type BlankContourCommit =
   | Readonly<{kind:'committed';history:ModelSession;selection:SelectedProfileSelection}>
