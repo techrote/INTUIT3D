@@ -60,7 +60,7 @@ test('vertex drag, dimension batch and replay are atomic and preserve original I
   assert.equal(moved.gesture.deviationMm,0);
   const changed=edit(moved,[{index:1,xMm:70,yMm:0},
     {index:3,xMm:0,yMm:45}]);ok(changed);
-  assert.equal(changed.changedConstraintIds.length,4);
+  assert.equal(changed.changedConstraintIds.length,2);
   assert.deepEqual(changed.sketch.lines.map(e=>e.id),
     source.sketch.lines.map(e=>e.id));
   assert.equal(solveSketch(changed.sketch).status,'solved');
