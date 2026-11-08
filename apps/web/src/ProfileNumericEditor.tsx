@@ -26,6 +26,15 @@ export function ProfileNumericEditor({ handle, disabled, onCommit }: {
     }
   };
   return <form className="runtime-hole-add" onSubmit={commit}
+      onKeyDown={event=>{
+        // A number input's native Enter-to-submit behaviour varies among
+        // Chromium, Firefox and accessibility input paths. Commit explicitly
+        // once, preserving the same validated form handler.
+        if(event.key==='Enter' && !event.nativeEvent.isComposing){
+          event.preventDefault();
+          commit(event);
+        }
+      }}
       data-testid="runtime-profile-numeric-editor">
     <strong>Precise semantic edit · {handle.handleId}</strong>
     {handle.kind === 'dimension' ? <label className="runtime-scalar">
