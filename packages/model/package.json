@@ -147,6 +147,10 @@
     "./body-cut-relocate": {
       "types": "./src/body-cut-relocate.ts",
       "default": "./src/body-cut-relocate.ts"
+    },
+    "./body-cut-block-relocate": {
+      "types": "./src/body-cut-block-relocate.ts",
+      "default": "./src/body-cut-block-relocate.ts"
     }
   },
   "scripts": {
