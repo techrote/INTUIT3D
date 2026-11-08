@@ -1267,13 +1267,19 @@ async function main(){
     'historical compensation Save did not publish a browser model archive');
   const historicalArchive=await evaluate("(async()=>await window.__nativeStepBlobs.at(-1).text())()");
   const historicalSaved=JSON.parse(historicalArchive);
+  // INTENT undo/redo append compensating journal revisions; the saved
+  // state is +3 (compensate, undo, redo), not the original +1 commit.
+  const historicalSavedRevision=Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0]);
+  check(historicalSavedRevision===historySourceRevision+3,
+    'history compensation + keyboard undo/redo did not each advance one revision');
   check(historicalSaved.format==='intuit3d.model-archive' &&
-    historicalSaved.history?.document?.revision===historySourceRevision+1 &&
+    historicalSaved.history?.document?.revision===historicalSavedRevision &&
     historicalSaved.history.undoStack?.length>0,
     'downloaded compensation archive lost authoritative revision or undo frames: '+
     JSON.stringify({format:historicalSaved.format,archiveRevision:historicalSaved.revision,
       historyRevision:historicalSaved.history?.document?.revision,
-      expectedRevision:historySourceRevision+1,undoFrames:historicalSaved.history?.undoStack?.length,
+      expectedRevision:historicalSavedRevision,undoFrames:historicalSaved.history?.undoStack?.length,
       type:historicalSaved.history?.format}));
   const historicalArchivePath=resolve(artifacts,'native-browser-historical-compensation.i3d-model.json');
   writeFileSync(historicalArchivePath,historicalArchive);
@@ -1289,7 +1295,7 @@ async function main(){
   await pointerClick('runtime-import-review-confirm');
   await eventually(async()=>{
     const rev=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
-    return Number(String(rev??'').match(/[0-9]+/)?.[0])===historySourceRevision+1 &&
+    return Number(String(rev??'').match(/[0-9]+/)?.[0])===historicalSavedRevision &&
       await evaluate("!document.querySelector('[data-testid=runtime-import-review]')") &&
       await evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-120)<0.001");
   },'reopened historical compensation lost the journal revision or restored width');
