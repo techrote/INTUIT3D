@@ -39,15 +39,19 @@ const actions=(a,b)=>planBodyRebuildManifest(a.document,b.document,{
 export function runAdaptedCutRecipe(){
   let {history,candidates}=makeAssembly();
   const sourceVent=polygon('sourcevent',[[72,5],[85,5],[85,14],[72,14]]);
+  const sourceFinish=polygon('sourcefinish',[[27,7],[39,7],[39,15],[27,15]]);
   const targetRelief=polygon('targetrelief',[[12,6],[24,6],[24,14],[12,14]]);
   const targetVent=polygon('targetvent',[[75,6],[84,6],[84,15],[75,15]]);
   history=addSketch(history,'sketch.source.vent',sourceVent);
+  history=addSketch(history,'sketch.source.finish',sourceFinish);
   history=addSketch(history,'sketch.target.relief',targetRelief);
   history=addSketch(history,'sketch.target.vent',targetVent);
   history=addCut(history,'cut.guard.relief','sketch.relief',
     candidates['sketch.relief'],'extrude.guard',{kind:'blind',depthMm:3});
   history=addCut(history,'cut.guard.vent','sketch.source.vent',
     profile(sourceVent),'cut.guard.relief',{kind:'through_all'});
+  history=addCut(history,'cut.guard.finish','sketch.source.finish',
+    profile(sourceFinish),'cut.guard.vent',{kind:'blind',depthMm:1});
   const before=history;
   const selected={format:ADAPTED_RECIPE_FORMAT,version:1,
     expectedProjectId:before.document.projectId,
@@ -58,6 +62,8 @@ export function runAdaptedCutRecipe(){
     sourceCutFeatureIds:['cut.guard.relief','cut.guard.vent'],
     targetAfterBodyWriterId:'extrude.backer'};
   const inventory=inspectAdaptableCutRecipe(before,selected,services);
+  assert.deepEqual(inventory.sourceWriterOrder,[
+    'extrude.guard','cut.guard.relief','cut.guard.vent','cut.guard.finish']);
   const targetCuts=[
     {sourceCutFeatureId:'cut.guard.relief',sourceSketchId:'sketch.target.relief',
       profileCandidateId:profile(targetRelief),extent:{kind:'blind',depthMm:4}},
@@ -74,6 +80,7 @@ export function runAdaptedCutRecipe(){
     {...request,targetBodyId:'body.guard'},
     {...request,targetBodyId:'body.shim'},
     {...request,sourceCutFeatureIds:[...request.sourceCutFeatureIds].reverse()},
+    {...request,sourceCutFeatureIds:['cut.guard.relief','cut.guard.finish']},
     {...request,expectedSourceCuts:[...inventory.sourceCuts].reverse()},
     {...request,targetCuts:[...targetCuts].reverse()},
     {...request,targetCuts:[targetCuts[0],{...targetCuts[1],
@@ -94,6 +101,7 @@ export function runAdaptedCutRecipe(){
     assert.equal(model.serializeProject(before.document),saved);
   }
   const changed=applyAdaptedCutRecipe(before,request,services);
+  assert.equal(get(changed.history,'cut.guard.finish').payload.depthMm,1);
   assert.equal(changed.oneUndoFrame,true);
   assert.equal(changed.history.undoStack.length,before.undoStack.length+1);
   assert.deepEqual(changed.copiedCuts.map(x=>x.status),
@@ -133,6 +141,8 @@ export function runAdaptedCutRecipe(){
     adaptedStatuses:changed.copiedCuts.map(x=>x.status),
     oneUndoFrame:changed.oneUndoFrame,bodyActions:actions(before,changed.history),
     negativeSelectionsRefused:bad.length,archiveUndoRedo:true,
+    sourceBlockNonTerminal:true,
+    sourceTailPreserved:get(final,'cut.guard.finish')?.payload.depthMm===1,
     guardDepthMm:get(final,'extrude.guard').payload.thicknessMm,
     unaffectedShimDepthMm:get(final,'extrude.shim').payload.thicknessMm,
     exactAuthority:false,nativeSTEP:'not_executed'};

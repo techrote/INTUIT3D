@@ -1,7 +1,7 @@
 # Cut recipe copy v1 — model-backed machining reuse
 
 `@intuit3d/feature-ops/cut-recipe-copy/v1` exposes **inspectCutRecipeCopy** and
-**copyCutRecipeToBody**. Select the last 2–8 ordered machining cuts on one named
+**copyCutRecipeToBody**. Select any 2–8 **consecutive** machining cuts (including interior blocks) on one named
 body and append copies to a **different, explicitly selected** body with one
 undoable RUNTIME/INTENT transaction. This is not synthetic Boolean geometry,
 body placement or implicit assembly mating. Uses the accepted INTENT
@@ -32,11 +32,18 @@ is possible; an incompatible cut must remain pending or fail.
    atomic operation into several browser journal writes.
 
 Stale project/revision/canonical snapshot, mismatched source cut selection,
-occupied IDs, incomplete/nonterminal source sequences, same-body copy,
+occupied IDs, incomplete/discontiguous source sequences, same-body copy,
 ambiguous writer or unsupported topology-specific/cross-body source cuts,
 invalid SKETCH and ambiguous extents refuse before committing. Each append
 is previewed on a disposable staged journal using accepted INTENT authority;
 only the complete previewed batch commits to original history in one undo frame.
+
+The existing v1 inspector exposes the complete `sourceWriterOrder`, including
+any later source cuts not selected for copying. These trailing source cuts
+remain untouched, while the chosen block is reconstructed as NEW dependent
+target cuts with fresh IDs. Only cuts with portable predecessor+SKETCH
+dependencies are admitted; foreign/topology-specific dependencies and
+discontiguous selections remain rejected.
 
 ## Runnable mechanical acceptance
 
