@@ -468,10 +468,19 @@ jobs:
           probe="$(cat "$root/independent-probe.path")"
           witness=conformance/external-cad/witness-v6-direct-two-cuts-8mm-moments.txt
           test -x "$probe" && test -s "$witness"
-          case "$(git rev-parse HEAD)" in
-            'e45bd8ffd2c5b09fc84b79bb9fdde4cc5c179969'|'19fb005642bcb85fd6f7ccdec8cffc8f38480d28') ;;
-            *) echo '::error::Non-OCCT V2 witness source changed; exact candidate qualification required'; exit 1 ;;
-          esac
+          # Exact CODE+FIXTURE custody, not an obsolete whole-repository SHA:
+          # additive consumer modules (e.g. session_step.py) cannot alter this
+          # previously physically qualified witness, but need their own tests.
+          # These are Git blob IDs from immutable accepted STEP #267 source.
+          # Every original native STEP, producer receipt, worker and probe hash
+          # remains independently checked in the steps above and below.
+          witness_blob="$(git hash-object -- conformance/external-cad/witness_3d.py)"
+          fixture_blob="$(git hash-object -- conformance/external-cad/witness-v6-direct-two-cuts-8mm-moments.txt)"
+          if [[ "$witness_blob" != '77e41419d4d671473acb8e06cf9b453b1f0572bb' ||
+                "$fixture_blob" != '3d3cc79b0477cc520c8ba8986980b924822dcf2d' ]]; then
+            echo '::error::Original non-OCCT V2 witness implementation/fixture changed; requalify exact source before accepting physical evidence'
+            exit 1
+          fi
           python3 conformance/external-cad/witness_3d.py \
             --kernel-tree ../kernel-source --kernel-sha 93e984963db720cacdd8bb679a559a3b8df88ce8 \
             --worker "$worker" --worker-sha256 d888308e6ac867d6d3fb59accc3a552ce74f13a23e78d2bd003a7b5a10f2c795 \
