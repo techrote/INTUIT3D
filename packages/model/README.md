@@ -792,7 +792,7 @@ the cut/body semantics but cannot certify that the selected loop cuts material.
 expectedCurrentRevision)` from `@intuit3d/model/parameter-sheet-rebase`
 is a conservative **read-only** three-way rebase for concurrent CAD spreadsheet
 work. A stale draft can be retargeted to an append-only descendant only when
-every edited semantic row and referenced parameter remains unchanged, requested
+every edited semantic row and every direct or transitive referenced parameter remains unchanged, requested
 event IDs are still free, final-name formula references retain identical stable
 IDs, and the entire current revision's parameter/dimension admission passes.
 Otherwise it returns explicit `edited_row_changed`,

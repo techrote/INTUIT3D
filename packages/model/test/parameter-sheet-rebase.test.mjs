@@ -120,6 +120,32 @@ test('changed referenced parameter blocks a draft that would inherit new semanti
   assert.equal(row(current.document,'p.width').value,8);
 });
 
+test('transitive parameter dependency changes conflict even when the direct reference is unchanged',()=>{
+  const initial=setup();
+  const base=commitUndoableParameterFormulaTableEdit(initial,
+    edit(initial.document,[{eventId:'bind.offset.margin',featureId:'p.offset',
+      formula:'margin + 12 mm'}]));
+  const draft=edit(base.document,[{eventId:'draft.width.dependent',
+    featureId:'p.width',formula:'offset - 4 mm'}]);
+  const current=commitUndoableParameterFormulaTableEdit(base,
+    edit(base.document,[{eventId:'later.margin',featureId:'p.margin',
+      formula:'6'}]));
+  // The parameter "offset" still has the identical formula and semantic ID,
+  // but now resolves from 16 to 18. Rebasing width as though it were unchanged
+  // would silently change the drafted 12 mm result to 14 mm.
+  assert.equal(row(base.document,'p.offset').value,16);
+  assert.equal(row(current.document,'p.offset').value,18);
+  const r=rebaseParameterSheetEdit(base.document,current.document,draft,
+    current.document.revision);
+  assert.equal(r.status,'conflicted');
+  assert.deepEqual(codes(r),['referenced_parameter_changed']);
+  assert.equal(r.conflicts[0].featureId,'p.width');
+  assert.equal(r.conflicts[0].relatedId,'p.margin');
+  assert.equal(r.rebasedRequest,null);
+  assert.equal(r.preview,null);
+  assert.equal(row(current.document,'p.width').value,8);
+});
+
 test('draft IDs cannot collide with later authoritative events',()=>{
   const base=setup();
   const draft=edit(base.document,[{eventId:'shared.id',featureId:'p.width',formula:'12'}]);

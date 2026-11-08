@@ -116,6 +116,33 @@ function authoredParameterRefs(feature: Feature | undefined): string[] {
 }
 
 /**
+ * Inspect the BASE parameter dependency closure, not merely the first level.
+ * A stable authored reference can change value when one of its upstream
+ * parameters changes, even if that immediate parameter's AST is identical.
+ * Only living parameter features are traversed; cycles/oversized chains never
+ * become a reason to silently accept stale user intent.
+ */
+function transitiveParameterRefs(
+  roots: readonly string[], snapshot: ReadonlyMap<string, Feature>,
+): string[] {
+  const pending = [...roots];
+  const seen = new Set<string>();
+  let inspected = 0;
+  while (pending.length) {
+    if (++inspected > 4096) {
+      throw new ProjectFormatError('parameter sheet rebase: dependency inspection bound exceeded');
+    }
+    const id = pending.pop()!;
+    if (seen.has(id)) continue;
+    const feature = snapshot.get(id);
+    if (feature?.kind !== 'parameter') continue;
+    seen.add(id);
+    pending.push(...authoredParameterRefs(feature));
+  }
+  return [...seen];
+}
+
+/**
  * Rebase an edit produced from `base` onto `current` if AND ONLY IF:
  * - both canonical journals share an exact append-only prefix;
  * - all edited rows and every referenced parameter retain their authored state;
@@ -169,7 +196,8 @@ export function rebaseParameterSheetEdit(
   const referencePairs = new Set<string>();
   for (const row of draft.rows) {
     const originalRefs = authoredParameterRefs(before.get(row.featureId));
-    for (const refId of [...originalRefs, ...(formulaRefs.get(row.featureId) ?? [])]) {
+    const rootRefs = [...originalRefs, ...(formulaRefs.get(row.featureId) ?? [])];
+    for (const refId of transitiveParameterRefs(rootRefs, before)) {
       // A changed row in the SAME draft is covered by the candidate's atomic
       // final-name admission; only external post-base changes are conflicts.
       if (drafted.has(refId)) continue;
