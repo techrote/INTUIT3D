@@ -73,83 +73,198 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   const ghost=onCirclePick&&circleDrawing&&circleHover
     ?circleDrawingPreview(circleDrawing,circleHover):null;
 
+  // A CAD revision changes the mesh, not the camera, OrbitControls, canvas or
+  // WebGL context. These are browser presentation resources, never CAD state.
+  const previewScene = useRef<{update:(profile:PlateProfile,thickness:number)=>void}|null>(null);
+  const [previewError,setPreviewError] = useState<string|null>(null);
   useEffect(() => {
     if (sketchMode || !host.current) return;
-    const node = host.current;
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#182738');
-    const midX=(minX+maxX)/2, midY=(minY+maxY)/2, span=Math.max(width,height,thickness,1);
-    const camera = new THREE.PerspectiveCamera(40,1,.1,Math.max(span*1000,1000));
-    camera.position.set(midX+span*1.6,midY-span*1.45,thickness+span*1.55);
-    const renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
-    renderer.domElement.setAttribute('aria-label','Model-backed analytic-profile tessellation, not exact CAD geometry');
-    node.appendChild(renderer.domElement);
-    const controls = new OrbitControls(camera,renderer.domElement);
-    controls.target.set(midX,midY,thickness/2);
-    controls.enableDamping=true;
-    controls.update();
-    scene.add(new THREE.AmbientLight(0xffffff,1.6));
-    const key = new THREE.DirectionalLight(0xffffff,2);
-    key.position.set(midX-span,midY-span,span*2);
-    scene.add(key);
-    const shape = new THREE.Shape();
-    profile.outer.forEach((p,i)=>i===0?shape.moveTo(p.x,p.y):shape.lineTo(p.x,p.y));
-    shape.closePath();
-    for(const h of profile.holes){
-      const hole = new THREE.Path();
-      hole.absarc(h.x,h.y,h.radius,0,Math.PI*2,true);
-      shape.holes.push(hole);
-    }
-    const geometry = new THREE.ExtrudeGeometry(shape,{depth:thickness,bevelEnabled:false,curveSegments:36});
-    const material = new THREE.MeshStandardMaterial({color:'#5ca5b6',metalness:.28,roughness:.46,side:THREE.DoubleSide});
-    const body = new THREE.Mesh(geometry,material);
-    scene.add(body);
-    const edgeGeometry = new THREE.EdgesGeometry(geometry,20);
-    const edgeMaterial = new THREE.LineBasicMaterial({color:'#a3d9e7',transparent:true,opacity:.55});
-    scene.add(new THREE.LineSegments(edgeGeometry,edgeMaterial));
-    const resize = () => {
-      const rect = node.getBoundingClientRect();
-      if(rect.width<=0||rect.height<=0)return;
-      camera.aspect=rect.width/rect.height;
-      camera.updateProjectionMatrix();
-      renderer.setSize(rect.width,rect.height,false);
+    const node=host.current;
+    const scene=new THREE.Scene();
+    scene.background=new THREE.Color('#182738');
+    const camera=new THREE.PerspectiveCamera(40,1,.1,1000);
+    const material=new THREE.MeshStandardMaterial({color:'#5ca5b6',metalness:.28,roughness:.46,side:THREE.DoubleSide});
+    const edgeMaterial=new THREE.LineBasicMaterial({color:'#a3d9e7',transparent:true,opacity:.55});
+    const light=new THREE.DirectionalLight(0xffffff,2);
+    scene.add(new THREE.AmbientLight(0xffffff,1.6),light);
+    let renderer:THREE.WebGLRenderer|null=null;
+    let controls:OrbitControls|null=null;
+    let observer:ResizeObserver|null=null;
+    let body:THREE.Mesh|null=null;
+    let edges:THREE.LineSegments|null=null;
+    let geometry:THREE.ExtrudeGeometry|null=null;
+    let edgeGeometry:THREE.EdgesGeometry|null=null;
+    let lastProfile:PlateProfile|null=null, lastThickness:number|null=null;
+    let lastCenter:THREE.Vector3|null=null;
+    let projectedMaxX=0, projectedMidY=0, projectedThickness=0;
+    let frameId=0, disposed=false, contextLost=false;
+    const dropMesh=()=>{
+      if(body)scene.remove(body);
+      if(edges)scene.remove(edges);
+      body=null;edges=null;
+      geometry?.dispose();edgeGeometry?.dispose();
+      geometry=null;edgeGeometry=null;
     };
-    const observer=new ResizeObserver(resize);
-    observer.observe(node);resize();
-    // The handle follows camera orbit in SCREEN SPACE, but the proposed
-    // dimension is committed to the original named INTENT parameter, never
-    // inferred from the disposable mesh. Projection is frozen on pointer-down.
     const updateThicknessGrip=()=>{
       const handle=thicknessGrip.current;
       if(!handle)return;
-      const rect=node.getBoundingClientRect();
-      const project=(z:number)=>{
-        const point=new THREE.Vector3(maxX,midY,z).project(camera);
-        return {x:(point.x+1)*rect.width/2,y:(1-point.y)*rect.height/2};
-      };
+      if(contextLost||!geometry){handle.hidden=true;thicknessAxis.current=null;return;}
       try{
-        const base=project(0),raised=project(thickness);
-        const axis=projectThicknessAxis(base,raised,thickness);
+        const rect=node.getBoundingClientRect();
+        const project=(z:number)=>{
+          const p=new THREE.Vector3(projectedMaxX,projectedMidY,z).project(camera);
+          return {x:(p.x+1)*rect.width/2,y:(1-p.y)*rect.height/2};
+        };
+        const base=project(0),raised=project(projectedThickness);
+        const axis=projectThicknessAxis(base,raised,projectedThickness);
         thicknessAxis.current=axis;
         handle.hidden=false;
-        handle.style.left=raised.x+'px';
-        handle.style.top=raised.y+'px';
-        // Readable only by browser gesture tests; not an authority channel.
-        handle.dataset.axisX=String(axis.x);
-        handle.dataset.axisY=String(axis.y);
+        handle.style.left=raised.x+'px';handle.style.top=raised.y+'px';
+        handle.dataset.axisX=String(axis.x);handle.dataset.axisY=String(axis.y);
+      }catch{thicknessAxis.current=null;handle.hidden=true;}
+    };
+    // Demand-driven frames: OrbitControls emits changes during pointer drags
+    // and damping, but the GPU does not render continuously while idle.
+    const requestFrame=()=>{
+      if(disposed||contextLost||frameId!==0||!renderer)return;
+      frameId=requestAnimationFrame(()=>{
+        frameId=0;
+        if(disposed||contextLost||!renderer)return;
+        try{
+          controls?.update();
+          updateThicknessGrip();
+          renderer.render(scene,camera);
+        }catch{
+          contextLost=true;
+          thicknessAxis.current=null;
+          setPreviewError('3D preview rendering failed. Sketch and authoritative model remain editable.');
+        }
+      });
+    };
+    const update=(nextProfile:PlateProfile,nextThickness:number)=>{
+      if(disposed||(lastProfile===nextProfile&&lastThickness===nextThickness))return;
+      let nextGeometry:THREE.ExtrudeGeometry|null=null;
+      let nextEdges:THREE.EdgesGeometry|null=null;
+      try{
+        // A valid CAD model is not necessarily safe to tessellate as a browser
+        // preview. Fail closed to a visible warning instead of choking the UI.
+        if(nextProfile.outer.length<3||nextProfile.outer.length>512||
+           nextProfile.holes.length>256||!Number.isFinite(nextThickness)||
+           nextThickness<=0||nextThickness>10000)
+          throw Error('Preview mesh exceeds bounded 3D limits.');
+        const coords=[...nextProfile.outer.flatMap(p=>[p.x,p.y]),
+          ...nextProfile.holes.flatMap(h=>[h.x,h.y,h.radius])];
+        if(coords.some(v=>!Number.isFinite(v)||Math.abs(v)>10000)||
+           nextProfile.holes.some(h=>h.radius<=0))
+          throw Error('Preview profile has invalid geometry.');
+        const xs=nextProfile.outer.map(p=>p.x),ys=nextProfile.outer.map(p=>p.y);
+        const minX=Math.min(...xs),maxX=Math.max(...xs);
+        const minY=Math.min(...ys),maxY=Math.max(...ys);
+        const width=Math.max(1,maxX-minX),height=Math.max(1,maxY-minY);
+        const midX=(minX+maxX)/2,midY=(minY+maxY)/2;
+        const span=Math.max(width,height,nextThickness,1);
+        const shape=new THREE.Shape();
+        nextProfile.outer.forEach((p,i)=>i===0?shape.moveTo(p.x,p.y):shape.lineTo(p.x,p.y));
+        shape.closePath();
+        for(const hole of nextProfile.holes){
+          const path=new THREE.Path();
+          path.absarc(hole.x,hole.y,hole.radius,0,Math.PI*2,true);
+          shape.holes.push(path);
+        }
+        nextGeometry=new THREE.ExtrudeGeometry(shape,{
+          depth:nextThickness,bevelEnabled:false,curveSegments:36,
+        });
+        nextEdges=new THREE.EdgesGeometry(nextGeometry,20);
+        dropMesh();
+        geometry=nextGeometry;edgeGeometry=nextEdges;
+        body=new THREE.Mesh(geometry,material);
+        edges=new THREE.LineSegments(edgeGeometry,edgeMaterial);
+        scene.add(body,edges);
+        const center=new THREE.Vector3(midX,midY,nextThickness/2);
+        if(lastCenter){
+          // Preserve the user's orbit and zoom; translate its target with the
+          // edited model, rather than snapping back to the initial camera.
+          const delta=center.clone().sub(lastCenter);
+          camera.position.add(delta);controls?.target.add(delta);
+        }else{
+          camera.position.set(midX+span*1.6,midY-span*1.45,nextThickness+span*1.55);
+          controls?.target.copy(center);
+        }
+        lastCenter=center;
+        camera.far=Math.max(span*1000,1000);
+        camera.updateProjectionMatrix();
+        light.position.set(midX-span,midY-span,span*2);
+        projectedMaxX=maxX;projectedMidY=midY;projectedThickness=nextThickness;
+        controls?.update();
+        lastProfile=nextProfile;lastThickness=nextThickness;
+        setPreviewError(null);
+        requestFrame();
       }catch{
+        nextGeometry?.dispose();nextEdges?.dispose();
+        dropMesh();
+        lastProfile=nextProfile;lastThickness=nextThickness;
         thicknessAxis.current=null;
-        handle.hidden=true;
+        setPreviewError('3D mesh preview is unavailable for this profile. The sketch, model and native STEP authority are unaffected.');
+        requestFrame();
       }
     };
-    let frameId=0,alive=true;
-    const animate=()=>{if(!alive)return;controls.update();updateThicknessGrip();renderer.render(scene,camera);frameId=requestAnimationFrame(animate);};
-    animate();
-    return ()=>{alive=false;cancelAnimationFrame(frameId);observer.disconnect();controls.dispose();
-      edgeGeometry.dispose();edgeMaterial.dispose();geometry.dispose();material.dispose();
-      renderer.dispose();renderer.domElement.remove();};
-  },[profile,thickness,sketchMode,minX,maxX,minY,maxY,width,height]);
+    const onContextLost=(event:Event)=>{
+      event.preventDefault();
+      contextLost=true;thicknessAxis.current=null;
+      if(thicknessGrip.current)thicknessGrip.current.hidden=true;
+      setPreviewError('3D graphics context lost. The model is preserved; use Sketch view while graphics recover.');
+    };
+    const onContextRestored=()=>{
+      contextLost=false;setPreviewError(null);requestFrame();
+    };
+    try{
+      renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+      renderer.domElement.setAttribute('aria-label','Model-backed analytic-profile tessellation, not exact CAD geometry');
+      renderer.domElement.addEventListener('webglcontextlost',onContextLost);
+      renderer.domElement.addEventListener('webglcontextrestored',onContextRestored);
+      node.appendChild(renderer.domElement);
+      controls=new OrbitControls(camera,renderer.domElement);
+      controls.enableDamping=true;
+      controls.addEventListener('change',requestFrame);
+      const resize=()=>{
+        if(!renderer)return;
+        const rect=node.getBoundingClientRect();
+        if(rect.width<=0||rect.height<=0)return;
+        camera.aspect=rect.width/rect.height;
+        camera.updateProjectionMatrix();
+        renderer.setSize(rect.width,rect.height,false);
+        requestFrame();
+      };
+      observer=new ResizeObserver(resize);
+      observer.observe(node);
+      resize();
+      previewScene.current={update};
+      update(profile,thickness);
+    }catch{
+      setPreviewError('WebGL preview could not start. Sketch, history and file operations remain available.');
+    }
+    return ()=>{
+      disposed=true;previewScene.current=null;
+      if(frameId)cancelAnimationFrame(frameId);
+      observer?.disconnect();
+      controls?.dispose();
+      dropMesh();material.dispose();edgeMaterial.dispose();
+      if(renderer){
+        renderer.domElement.removeEventListener('webglcontextlost',onContextLost);
+        renderer.domElement.removeEventListener('webglcontextrestored',onContextRestored);
+        renderer.dispose();
+        // Release this single context on actual 3D→Sketch unmount. Model
+        // revisions do not create or destroy contexts.
+        renderer.forceContextLoss();
+        renderer.domElement.remove();
+      }
+      thicknessAxis.current=null;
+    };
+  },[sketchMode]);
+  useEffect(()=>{
+    if(!sketchMode)previewScene.current?.update(profile,thickness);
+  },[profile,thickness,sketchMode]);
 
   return sketchMode ? <svg data-testid="runtime-sketch" className="runtime-sketch-svg"
     viewBox={frame} aria-label="Solved SKETCH boundary and circular holes in millimetres"
@@ -388,5 +503,6 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       }}>
       <span aria-hidden="true">↕</span> {thicknessPreview??thickness} mm
     </button>}
+    {previewError&&<p role="alert" data-testid="runtime-3d-preview-error" className="runtime-3d-preview-error">{previewError}</p>}
   </div>;
 }

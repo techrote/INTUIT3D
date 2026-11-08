@@ -173,9 +173,15 @@ async function main(){
     '3D extrusion thickness grip projection');
   check(await evaluate("(() => {const h=document.querySelector('[data-testid=runtime-thickness-handle]');h.focus();return document.activeElement===h})()"),
     'thickness grip cannot receive keyboard focus');
+  // Keep the same physical GPU context and browser orbit when an authorized
+  // thickness edit, undo and direct drag replace the preview tessellation.
+  check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');if(!c)return false;window.__intuit3dTest3DCanvas=c;window.__intuit3dTest3DContext=c.getContext('webgl2');return Boolean(window.__intuit3dTest3DContext)})()"),
+    '3D editor has no actual WebGL2 context to preserve');
   await key('ArrowUp','ArrowUp',38);
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='9'"),
     '3D keyboard thickness did not edit the actual parameter');
+  check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');return c===window.__intuit3dTest3DCanvas && c?.getContext('webgl2')===window.__intuit3dTest3DContext && !document.querySelector('[data-testid=runtime-3d-preview-error]')})()"),
+    'model edit recreated GPU context or failed bounded tessellation');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     '3D edit incorrectly claimed exact native geometry');
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
@@ -196,6 +202,8 @@ async function main(){
   await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:grip.x+grip.ax*4,y:grip.y+grip.ay*4,button:'left',clickCount:1});
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12'"),
     '3D pointer drag did not commit the 8-to-12 mm authoritative edit');
+  check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');return c===window.__intuit3dTest3DCanvas && c?.getContext('webgl2')===window.__intuit3dTest3DContext && !document.querySelector('[data-testid=runtime-3d-preview-error]')})()"),
+    'direct 8-to-12 mm drag unexpectedly reset orbit canvas or WebGL context');
   await screenshot('native-00-3d-thickness-grip-12mm.png');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     '3D thickness gesture claimed exact geometry');
