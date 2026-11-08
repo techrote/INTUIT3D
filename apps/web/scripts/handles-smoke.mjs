@@ -1067,8 +1067,24 @@ async function main() {
   await mouse('mousePressed',vertexGesture.from.x,vertexGesture.from.y,1);
   await mouse('mouseMoved',vertexGesture.to.x,vertexGesture.to.y,1);
   await mouse('mouseReleased',vertexGesture.to.x,vertexGesture.to.y);
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('140,92')"),
-    'actual pointer drag of a committed drawn vertex failed');
+  try{
+    await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('140,92')"),
+      'actual pointer drag of a committed drawn vertex failed');
+  }catch(failure){
+    const detail=await evaluate(`(() => ({
+      polygon:document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points'),
+      vertexHandle:document.querySelector('[data-testid=runtime-profile-drag-handle]')?.getAttribute('cx'),
+      vertexY:document.querySelector('[data-testid=runtime-profile-drag-handle]')?.getAttribute('cy'),
+      selected:document.querySelector('[data-testid=runtime-pointer-profile-selected]')?.textContent,
+      message:document.querySelector('[data-testid=runtime-panel] [role="alert"]')?.textContent,
+      allAlerts:[...document.querySelectorAll('[role="alert"]')].map(x=>x.textContent),
+      status:[...document.querySelectorAll('.runtime-message')].map(x=>x.textContent),
+      revision:document.querySelector('[data-testid=runtime-revision]')?.textContent,
+      marker:document.querySelector('[data-testid=runtime-profile-drag-handle]')?.outerHTML?.slice(0,400)
+    }))()`);
+    await screenshot('35-drawn-vertex-pointer-failed.png');
+    throw Error(String(failure)+'; drag diagnostics='+JSON.stringify(detail));
+  }
   await screenshot('35-drawn-vertex-pointer-drag.png');
   const undoButton=()=>evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()");
   const redoButton=()=>evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()");
