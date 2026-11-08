@@ -67,6 +67,21 @@ async function click(id){
     {type:'mouseReleased',x:pos.x,y:pos.y,button:'left',clickCount:1}])
     await send('Input.dispatchMouseEvent',item);
 }
+async function clickHistoryAction(label){
+  // Ordinary pointer click on the existing ribbon button, never direct React
+  // handler invocation. A disabled or ambiguous history action is a failure.
+  const pos=await evalInPage('(()=>{const xs=[...document.querySelectorAll(".ribbon-group button")].filter(e=>e.textContent.trim()==='+
+    JSON.stringify(label)+');if(xs.length!==1||xs[0].disabled)return null;const e=xs[0];'+
+    'e.scrollIntoView({block:"center",behavior:"instant"});const r=e.getBoundingClientRect();'+
+    'return {x:r.left+r.width/2,y:r.top+r.height/2}})()');
+  requireValid(pos&&pos.x>0&&pos.x<1360&&pos.y>0&&pos.y<900,
+    'History control disabled, missing or ambiguous: '+label);
+  for(const item of [
+    {type:'mouseMoved',x:pos.x,y:pos.y},
+    {type:'mousePressed',x:pos.x,y:pos.y,button:'left',clickCount:1},
+    {type:'mouseReleased',x:pos.x,y:pos.y,button:'left',clickCount:1}])
+    await send('Input.dispatchMouseEvent',item);
+}
 async function typeThickness(mm){
   requireValid(await evalInPage('(()=>{const e=document.querySelector('+
     JSON.stringify('[data-testid=runtime-dimension-thickness]')+
@@ -198,16 +213,31 @@ async function execute(){
   await until(()=>evalInPage('!document.querySelector("[data-testid=runtime-native-build-pinned-evidence]").disabled'),'user-buildable native session');
   const earlier=await evidence('earlier-8mm');
   await typeThickness(12);
+  const revisionEdited=await evalInPage('document.querySelector("[data-testid=runtime-revision]")?.textContent');
+  requireValid(revisionEdited!==revision8,'Retrospective edit did not advance revision');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled'),'edited revision revoked prior STEP');
+  // Exercise real user Undo/Redo *against this same pinned C++ session*, not
+  // an isolated unit-test history. Both transitions must revoke prior native
+  // bytes; only the subsequent C++ build may reinstate a current receipt.
+  await clickHistoryAction('Undo');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-dimension-thickness]")?.value==="8"'),'actual browser undo restored 8 mm');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled'),'undo revoked native STEP');
+  const revisionUndo=await evalInPage('document.querySelector("[data-testid=runtime-revision]")?.textContent');
+  await screenshot('user-undo-8mm.png');
+  await clickHistoryAction('Redo');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-dimension-thickness]")?.value==="12"'),'actual browser redo restored 12 mm');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled'),'redo revoked obsolete native STEP');
   const revision12=await evalInPage('document.querySelector("[data-testid=runtime-revision]")?.textContent');
-  requireValid(revision12!==revision8,'Retrospective edit did not advance revision');
-  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled'),'stale pinned evidence revoked');
+  requireValid(revisionUndo!==revisionEdited&&revision12!==revisionUndo&&revision12!==revision8,
+    'Undo and redo did not advance canonical source history');
+  await screenshot('user-redo-12mm.png');
   const reopened=await saveReopen();
   const current=await evidence('current-12mm');
   requireValid(earlier.sha256!==current.sha256,'Earlier and current browser ZIPs identical');
   const report={status:'PINNED_OCCT8_BROWSER_TWO_REVISION_ZIPS_CAPTURED',
     provider:'actual installed Linux OCCT8 C++ worker via persistent RUNTIME/Chromium',
     nativeWorkerSha256:expected,independentCadInteroperability:false,
-    revision8,revision12,earlier,current,reopened,
+    revision8,revisionEdited,revisionUndo,revision12,earlier,current,reopened,
     caveat:'Same original downloaded STEP bytes must be independently imported and checked before #74 acceptance'};
   writeFileSync(join(output,'browser-receipt.json'),JSON.stringify(report,null,2)+'\n');
   console.log('PINNED_OCCT8_BROWSER_TWO_REVISION_ZIPS_CAPTURED '+JSON.stringify({
