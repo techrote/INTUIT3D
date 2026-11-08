@@ -358,3 +358,68 @@ exercises real file input, browser drag/drop, multi-file refusal, project-aware
 download name and cancel-before-replacement. Neither these tests nor Worker
 isolation establish that the owner's original 40 KiB Windows/Firefox model
 no longer hangs; issue #177 still requires actual private-file replay.
+
+## Stale parameter spreadsheet: explicit semantic conflict recovery
+
+This is a **model-owned** revision-fenced workflow using INTENT's accepted
+parameter-sheet rebase/resolution contracts (#205/#213), not browser-side
+arithmetic or local document authority.
+
+1. In Model-backed CAD, edit the formula in **PARAMETER FORMULA TABLE** but
+   leave it uncommitted. Use the separate named-parameter inspector or a direct
+   dimension handle to change the authoritative model.
+2. Your unsaved formula remains visible with **Draft from revision N; current
+   model revision M**. Click **Review draft against current model**.
+3. A non-conflicting INTENT rebase shows a preview. Otherwise, exact semantic
+   conflicts are listed by type and feature ID. Review/checkbox **each**
+   overridable conflict individually; if a journal event ID was taken, type
+   one explicit, unique replacement ID before **Review selected conflict
+   approvals**. A formula reference now pointing at a different semantic ID
+   cannot be overridden; revise the draft instead.
+4. Compare original-vs-current evaluated scalar values and the invalidated
+   feature list. Only **Commit parameter table** writes to INTENT. The result
+   is one undo frame. Undo, redo, save and reopen operate on the same
+   authoritative journal. **Discard drafts** abandons the local editor state.
+5. If the project was replaced, its unsaved draft is discarded. If ancestry is
+   divergent or the user edits the document again during review, INTENT refuses
+   the stale proposal; review again or discard. No pending/unsupported preview
+   becomes a native or independently exact solid.
+
+Deterministic tests:
+\`node --experimental-strip-types --test apps/web/src/parameterFormulaRecovery.test.ts\`
+and \`npm run test:browser:handles --workspace @intuit3d/web\`. The latter
+uses actual Chromium keyboard/click interactions to preserve a 16 mm draft
+while another inspector commits 13 mm, requires explicit conflict approval,
+commits and undoes both operations separately. Production STEP and Windows
+Firefox remain separate qualifications.
+
+### Private owner archive #177: Windows Firefox human replay (not yet qualified)
+
+Use a **local** current-main build and the original ~40 KiB saved model
+already supplied privately to the owner; do not upload it or copy its JSON
+into public issues, test fixtures or logs.
+
+1. Open a new Firefox window on Windows; record the Firefox version and
+   hardware acceleration/GPU information from \`about:support\` (exclude any
+   identifying file paths). Keep Browser Console open and observe that New
+   sketch-first project can open a normal replacement modal.
+2. Click **Open model archive**, select the original local revision-11 JSON
+   in the OS picker, and note whether the workbench remains responsive and
+   displays Worker **reading → validating → transferring** progress before
+   the explicit Replace confirmation. Try Cancel if an import is pending.
+3. If validation succeeds, click **Replace with model archive**. Verify
+   project ID, revision, journal/undo frame count, sketch/3D navigation, a
+   small dimension edit, Undo and Redo. Save the resulting archive to a new
+   local filename; reopen and verify authoritative identity, dimensions and
+   history. Do not treat mesh visibility or STEP alone as validation.
+4. If Firefox freezes **before** confirmation, note the last observable
+   progress stage, whether an ordinary New sketch modal responds, and whether
+   the browser UI, content process or GPU process is unresponsive. Record
+   sanitized Console errors and Graphics status, and whether \`about:crashes\`
+   has an entry. For discrimination, repeat in a clean Firefox profile or with
+   acceleration toggled *only after preserving the original report*.
+
+Mark this acceptance **unqualified** until the original private file and
+Windows/Firefox environment are actually replayed. A synthetic Chromium
+test, Worker-side read, and persistent renderer are risk reductions, not
+proof of the cause or resolution of #177.
