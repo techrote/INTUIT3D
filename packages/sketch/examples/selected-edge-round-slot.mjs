@@ -57,7 +57,7 @@ console.log(JSON.stringify({step:'rebased',lengthMm:updated.originalLengthMm,
 const denied=editSelectedEdgeRoundSlot(updated.authoring,{
   kind:'edit-selected-edge-round-slot',version:1,
   sourceSignature:updated.authoringSignature,
-  fromMm:80,toMm:100,straightDepthMm:15
+  fromMm:100,toMm:120,straightDepthMm:15
 });
 if(denied.kind!=='refused')throw new Error('unsafe slot unexpectedly accepted');
 console.log(JSON.stringify({step:'refused',reason:denied.reason}));
