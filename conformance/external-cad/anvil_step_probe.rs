@@ -487,19 +487,31 @@ fn u_bracket(args: &[String]) {
 // native mass-property receipts, or another OCCT reader. "direct" contains a
 // circular blind pocket; "authored" contains a rectangular blind pocket.
 fn sloped_profile(args: &[String]) {
-    if args.len()!=5 { fail("usage: --sloped-profile STEP direct|authored 8|12"); }
+    let progressive=args.get(1).map(String::as_str)==Some("--progressive-v6");
+    if (progressive && args.len()!=6) || (!progressive && args.len()!=5) {
+        fail("usage: --sloped-profile STEP direct|authored 8|12 OR --progressive-v6 STEP direct|authored 0|1|2 8|12");
+    }
     let kind=args[3].as_str();
     if kind!="direct" && kind!="authored" { fail("unsupported sloped profile fixture"); }
-    let t=number(&args[4]);
+    let cut_count=if progressive {
+        args[4].parse::<usize>().unwrap_or_else(|_|fail("invalid progressive cut count"))
+    } else { 2 };
+    if cut_count>2 { fail("unsupported progressive cut count"); }
+    let t=number(&args[if progressive {5} else {4}]);
     if t!=8.0 && t!=12.0 { fail("unsupported sloped profile thickness"); }
+    // Direct progresses stock -> blind R5 -> blind+through.
+    // Authored progresses stock -> through -> through+square blind.
+    let has_window=if kind=="direct" {cut_count==2} else {cut_count>=1};
+    let has_pocket=if kind=="direct" {cut_count>=1} else {cut_count==2};
     let pocket_area=if kind=="direct" { std::f64::consts::PI*25.0 } else {100.0};
     let pocket_wall=if kind=="direct" { 2.0*std::f64::consts::PI*5.0*3.0 } else {40.0*3.0};
-    // Shoelace polygon (0,0),(120,0),(120,20),(65,20),(45,80),(0,80).
-    // The 14x8 through-cut has four vertical walls. The blind pocket
-    // exchanges its top aperture for a same-area floor.
-    let wanted=(5700.0-112.0)*t-pocket_area*3.0;
-    let wanted_surface=2.0*(5700.0-112.0)
-        +(320.0+4000.0f64.sqrt()+44.0)*t+pocket_wall;
+    let removed_window=if has_window {112.0} else {0.0};
+    let added_wall=if has_window {44.0} else {0.0};
+    let wanted=(5700.0-removed_window)*t
+        -(if has_pocket {pocket_area*3.0} else {0.0});
+    let wanted_surface=2.0*(5700.0-removed_window)
+        +(320.0+4000.0f64.sqrt()+added_wall)*t
+        +(if has_pocket {pocket_wall} else {0.0});
     let source=fs::read_to_string(&args[2])
         .unwrap_or_else(|_| fail("cannot read actual sloped-profile STEP bytes"));
     let cad=import(&source)
@@ -569,17 +581,18 @@ fn sloped_profile(args: &[String]) {
         rays.push((format!("slope.{i}.inner"),edge_x-1.0,*y,Some(t)));
         rays.push((format!("slope.{i}.outer"),edge_x+1.0,*y,None));
     }
-    rays.push(("window.centre".into(),95.0,10.0,None));
+    rays.push(("window.centre".into(),95.0,10.0,if has_window {None} else {Some(t)}));
     for (side,dx,dy,half) in [
         ("east",1.0,0.0,7.0),("west",-1.0,0.0,7.0),
         ("north",0.0,1.0,4.0),("south",0.0,-1.0,4.0),
     ] {
         rays.push((format!("window.inner.{side}"),
-                   95.0+(half-0.5)*dx,10.0+(half-0.5)*dy,None));
+                   95.0+(half-0.5)*dx,10.0+(half-0.5)*dy,
+                   if has_window {None} else {Some(t)}));
         rays.push((format!("window.outer.{side}"),
                    95.0+(half+0.5)*dx,10.0+(half+0.5)*dy,Some(t)));
     }
-    let floor=Some(t-3.0);
+    let floor=if has_pocket {Some(t-3.0)} else {Some(t)};
     rays.push(("pocket.centre".into(),15.0,50.0,floor));
     for (side,dx,dy) in [
         ("east",1.0,0.0),("west",-1.0,0.0),
@@ -593,7 +606,7 @@ fn sloped_profile(args: &[String]) {
     // the point is outside the circle (r=5.657) but inside the square.
     // This is an indispensable physical shape-discrimination predicate:
     // volume and surface budgets alone cannot reliably reject a wrong cut.
-    let diagonal_top=if kind=="direct" { Some(t) } else { floor };
+    let diagonal_top=if kind=="direct" || !has_pocket { Some(t) } else { floor };
     for (side,dx,dy) in [
         ("ne",1.0,1.0),("nw",-1.0,1.0),
         ("se",1.0,-1.0),("sw",-1.0,-1.0),
@@ -617,11 +630,17 @@ fn sloped_profile(args: &[String]) {
                  zs.len(),zs.first().copied().unwrap_or(-1.0),
                  zs.last().copied().unwrap_or(-1.0));
     }
-    println!("SLOPE_ACCEPT kind={kind} thickness_mm={t:.1} solids=1 source_unit={} imported_exact=true tris={tris} open_edges=0 volume_mm3={volume:.9} expected_mm3={wanted:.9} surface_area_mm2={surface:.9} expected_surface_mm2={wanted_surface:.9} warnings=0",cad.length_unit);
+    if progressive {
+        println!("SLOPE_ACCEPT kind={kind} cuts={cut_count} thickness_mm={t:.1} solids=1 source_unit={} imported_exact=true tris={tris} open_edges=0 volume_mm3={volume:.9} expected_mm3={wanted:.9} surface_area_mm2={surface:.9} expected_surface_mm2={wanted_surface:.9} warnings=0",cad.length_unit);
+    } else {
+        println!("SLOPE_ACCEPT kind={kind} thickness_mm={t:.1} solids=1 source_unit={} imported_exact=true tris={tris} open_edges=0 volume_mm3={volume:.9} expected_mm3={wanted:.9} surface_area_mm2={surface:.9} expected_surface_mm2={wanted_surface:.9} warnings=0",cad.length_unit);
+    }
 }
 
 fn main() {
-    if env::args().nth(1).as_deref()==Some("--sloped-profile") { sloped_profile(&env::args().collect::<Vec<_>>()); return; }
+    if matches!(env::args().nth(1).as_deref(), Some("--sloped-profile" | "--progressive-v6")) {
+        sloped_profile(&env::args().collect::<Vec<_>>()); return;
+    }
     let args:Vec<String>=env::args().collect();
     if args.get(1).map(String::as_str)==Some("--u-bracket") { u_bracket(&args); return; }
     if args.get(1).map(String::as_str)==Some("--cut-chains") { cut_chains(&args); return; }

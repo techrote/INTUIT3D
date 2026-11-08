@@ -79,3 +79,34 @@ probe are genuinely executed on hosted infrastructure, the gate remains
 **unqualified**. No shared CI/workflow changes or merge may be made by this
 lane. Accepted original U-bracket evidence and unrelated product progress
 remain unaffected.
+
+## v6 zero/one/two-cut selected sloped-profile physical consumer (candidate)
+
+The same independently compiled AnvilCAD probe now accepts
+`--progressive-v6 STEP direct|authored 0|1|2 8|12` alongside the existing
+unchanged v5 mode. This is an additive physical-import **capability**, not
+an assertion that v6 STEP files have been compiled/imported yet.
+
+Direct sequence: uncut stock → circular R5 blind pocket → that pocket and
+14×8 through-window. Authored sequence: uncut stock → rectangular through
+window → window and 10×10 square blind pocket. Each state at both 8 and 12 mm
+has its own analytic material/surface oracles and **38 material/void ray
+locations**, including no-cut solid where a future cutter will be, slope
+positions, walls/floors, and circle-versus-square diagonals. The complete
+next physical gate requires **12 genuine STEP files / 456 AnvilCAD rays**.
+
+Prerequisite: Integration/Native Build must execute the two immutable KERNEL
+#195 v6 producers using a source-matched OCCT 8.0.1 C++ binary:
+
+```sh
+INTUIT3D_SOURCE_SHA=FULL_KERNEL_SHA node packages/kernel-contract/examples/pinned-occt8-progressive-profile.mjs /absolute/worker /fresh/direct-v6
+INTUIT3D_SOURCE_SHA=FULL_KERNEL_SHA node packages/kernel-contract/examples/runtime-occt8-progressive-profile-native.mjs /absolute/worker /fresh/authored-v6
+# After compiling this exact revision of anvil_step_probe.rs against pinned AnvilCAD:
+/path/to/anvil_step_probe --progressive-v6 /fresh/direct-v6/progressive-0-8.step direct 0 8
+/path/to/anvil_step_probe --progressive-v6 /fresh/authored-v6/authored-1-12.step authored 1 12
+```
+
+Verify all original STEP hashes/producer receipt source pins, all 12 imports,
+physical wrong-stage and shape-switch negatives and an exact source-to-binary
+compilation log before admitting interoperability under #74. Source-only unit
+receipts/old U fixtures do **not** qualify v6 physical correctness.

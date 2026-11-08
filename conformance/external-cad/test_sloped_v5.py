@@ -186,3 +186,59 @@ class SlopedSourceOnlyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+# Synthetic v6 receipts deliberately do not count as physical C++/AnvilCAD runs.
+class ProgressiveV6OracleTests(unittest.TestCase):
+    def v6_receipt(self, kind, count, thickness):
+        rows = []
+        for name, x, y, floor in ray_oracle(kind, thickness, count):
+            hits, low, high = ((0, -1., -1.) if floor is None else (2, 0., floor))
+            rows.append(
+                f"SLOPE_RAY {name} {x:.9f} {y:.9f} {hits} {low:.9f} {high:.9f}"
+            )
+        v = expected_volume(kind, thickness, count)
+        s = expected_surface(kind, thickness, count)
+        rows.append(
+            f"SLOPE_ACCEPT kind={kind} cuts={count} thickness_mm={thickness:.1f} "
+            "solids=1 source_unit=millimetre imported_exact=true tris=400 "
+            f"open_edges=0 volume_mm3={v:.9f} expected_mm3={v:.9f} "
+            f"surface_area_mm2={s:.9f} expected_surface_mm2={s:.9f} warnings=0"
+        )
+        return "\n".join(rows) + "\n"
+
+    def test_progressive_twelve_stage_geometry(self):
+        for kind in ("direct", "authored"):
+            for count in (0, 1, 2):
+                for t in (8, 12):
+                    with self.subTest(kind=kind, count=count, t=t):
+                        self.assertEqual(len(ray_oracle(kind, t, count)), 38)
+                        receipt = parse_receipt(self.v6_receipt(kind, count, t),
+                                                kind, t, cut_count=count)
+                        self.assertEqual(receipt["cutCount"], count)
+                        self.assertEqual(receipt["rayCount"], 38)
+                        self.assertAlmostEqual(receipt["measuredVolumeMm3"],
+                                               expected_volume(kind, t, count))
+        self.assertAlmostEqual(expected_volume("direct", 8, 0), 45600)
+        self.assertAlmostEqual(expected_volume("direct", 8, 1), 45364.38055098)
+        self.assertAlmostEqual(expected_volume("direct", 8, 2), 44468.38055098)
+        self.assertAlmostEqual(expected_volume("authored", 8, 0), 45600)
+        self.assertEqual(expected_volume("authored", 8, 1), 44704)
+        self.assertEqual(expected_volume("authored", 8, 2), 44404)
+
+    def test_progressive_wrong_stage_and_absent_cut_rejection(self):
+        for kind in ("direct", "authored"):
+            for count in (0, 1, 2):
+                good = self.v6_receipt(kind, count, 8)
+                bad_stage = good.replace(f"cuts={count}", f"cuts={(count+1)%3}")
+                with self.assertRaisesRegex(Rejected, "cut count"):
+                    parse_receipt(bad_stage, kind, 8, cut_count=count)
+                wrong = good.replace("SLOPE_RAY window.centre 95.000000000 10.000000000 2",
+                                     "SLOPE_RAY window.centre 95.000000000 10.000000000 0")
+                if count == 0 or (kind == "direct" and count == 1):
+                    with self.assertRaises(Rejected):
+                        parse_receipt(wrong, kind, 8, cut_count=count)
+                wrong_pocket = good.replace(
+                    next(row for row in good.splitlines() if row.startswith("SLOPE_RAY pocket.centre ")),
+                    "SLOPE_RAY pocket.centre 15.000000000 50.000000000 0 -1.000000000 -1.000000000")
+                with self.assertRaises(Rejected):
+                    parse_receipt(wrong_pocket, kind, 8, cut_count=count)

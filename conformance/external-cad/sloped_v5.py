@@ -39,27 +39,37 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def expected_volume(kind: str, thickness: int) -> float:
-    require(kind in KINDS and thickness in THICKNESSES, "unsupported v5 case")
+def cut_presence(kind: str, thickness: int, cut_count: int) -> tuple[bool, bool]:
+    require(kind in KINDS and thickness in THICKNESSES and
+            type(cut_count) is int and 0 <= cut_count <= 2,
+            "unsupported selected-profile progression")
+    return ((cut_count == 2, cut_count >= 1) if kind == "direct"
+            else (cut_count >= 1, cut_count == 2))
+
+
+def expected_volume(kind: str, thickness: int, cut_count: int = 2) -> float:
+    window, pocket = cut_presence(kind, thickness, cut_count)
     pocket_area = math.pi * 25 if kind == "direct" else 100
-    return (5700 - 14 * 8) * thickness - pocket_area * 3
+    return (5700 - (112 if window else 0)) * thickness - (
+        pocket_area * 3 if pocket else 0)
 
 
-def expected_surface(kind: str, thickness: int) -> float:
-    require(kind in KINDS and thickness in THICKNESSES, "unsupported v5 case")
+def expected_surface(kind: str, thickness: int, cut_count: int = 2) -> float:
+    window, pocket = cut_presence(kind, thickness, cut_count)
     wall = 2 * math.pi * 5 * 3 if kind == "direct" else 40 * 3
-    return 2 * (5700 - 112) + (320 + math.sqrt(4000) + 44) * thickness + wall
+    return 2 * (5700 - (112 if window else 0)) + (
+        320 + math.sqrt(4000) + (44 if window else 0)) * thickness + (
+        wall if pocket else 0)
 
 
-def ray_oracle(kind: str, thickness: int) -> list[tuple[str, float, float, float | None]]:
+def ray_oracle(kind: str, thickness: int, cut_count: int = 2) -> list[tuple[str, float, float, float | None]]:
     """Selected diagonal polygon, concave junction, four cut walls and floor.
 
     Defined here from the authored feature dimensions, not copied from native
     receipts or STEP text. Every expected terminal is Z=thickness or the
     top-down blind pocket's Z=thickness-3; void means zero intersections.
     """
-    require(kind in KINDS and thickness in THICKNESSES,
-            "unsupported source profile or thickness")
+    window, pocket = cut_presence(kind, thickness, cut_count)
     z = float(thickness)
     rays: list[tuple[str, float, float, float | None]] = [
         ("stock.bottom", 40., 5., z),
@@ -79,31 +89,32 @@ def ray_oracle(kind: str, thickness: int) -> list[tuple[str, float, float, float
             (f"slope.{i}.inner", boundary - 1, y, z),
             (f"slope.{i}.outer", boundary + 1, y, None),
         ])
-    rays.append(("window.centre", 95., 10., None))
+    rays.append(("window.centre", 95., 10., None if window else z))
     for side, dx, dy, half in (
         ("east", 1, 0, 7), ("west", -1, 0, 7),
         ("north", 0, 1, 4), ("south", 0, -1, 4),
     ):
         rays.extend([
             (f"window.inner.{side}", 95+(half-.5)*dx,
-             10+(half-.5)*dy, None),
+             10+(half-.5)*dy, None if window else z),
             (f"window.outer.{side}", 95+(half+.5)*dx,
              10+(half+.5)*dy, z),
         ])
-    rays.append(("pocket.centre", 15., 50., z-3))
+    floor = z-3 if pocket else z
+    rays.append(("pocket.centre", 15., 50., floor))
     for side, dx, dy in (
         ("east", 1, 0), ("west", -1, 0),
         ("north", 0, 1), ("south", 0, -1),
     ):
         rays.extend([
-            (f"pocket.inner.{side}", 15+4.5*dx, 50+4.5*dy, z-3),
+            (f"pocket.inner.{side}", 15+4.5*dx, 50+4.5*dy, floor),
             (f"pocket.outer.{side}", 15+5.5*dx, 50+5.5*dy, z),
         ])
     # The circle and square share cardinal wall occupancy. Their four
     # diagonal points (+/-4,+/-4) do not: radius sqrt(32) exceeds R5,
     # but each corner lies inside the 10x10 square. A mode swap must
     # fail even where 1% volume/surface budgets would otherwise pass.
-    diagonal = z if kind == "direct" else z-3
+    diagonal = z if kind == "direct" or not pocket else floor
     for side, dx, dy in (
         ("ne", 1, 1), ("nw", -1, 1), ("se", 1, -1), ("sw", -1, -1),
     ):
@@ -113,8 +124,11 @@ def ray_oracle(kind: str, thickness: int) -> list[tuple[str, float, float, float
     return rays
 
 
-def parse_receipt(stdout: str, kind: str, thickness: int) -> dict:
-    expected = ray_oracle(kind, thickness)
+def parse_receipt(stdout: str, kind: str, thickness: int,
+                  cut_count: int | None = None) -> dict:
+    # None means legacy two-cut v5 receipt without a cuts field.
+    count = 2 if cut_count is None else cut_count
+    expected = ray_oracle(kind, thickness, count)
     lines = stdout.splitlines()
     require(len(lines) == 39, "missing, extra or duplicate physical ray lines")
     observed = []
@@ -145,12 +159,19 @@ def parse_receipt(stdout: str, kind: str, thickness: int) -> dict:
             all(len(pair) == 2 for pair in pairs),
             "missing or malformed independent physical acceptance line")
     fields = dict(pairs)
-    require(len(fields) == len(pairs) and set(fields) == {
+    required = {
         "kind", "thickness_mm", "solids", "source_unit",
         "imported_exact", "tris", "open_edges", "volume_mm3",
         "expected_mm3", "surface_area_mm2", "expected_surface_mm2",
         "warnings",
-    }, "duplicate, missing or unexpected sloped import receipt fields")
+    }
+    if cut_count is not None:
+        required.add("cuts")
+    require(len(fields) == len(pairs) and set(fields) == required,
+            "duplicate, missing or unexpected sloped import receipt fields")
+    if cut_count is not None:
+        require(fields["cuts"] == str(count),
+                "independent progressive cut count mismatch")
     require(fields["kind"] == kind and
             fields["source_unit"] in ("millimetre", "millimeter") and
             fields["solids"] == "1" and fields["imported_exact"] == "true" and
@@ -164,8 +185,8 @@ def parse_receipt(stdout: str, kind: str, thickness: int) -> dict:
         claimed_area = float(fields["expected_surface_mm2"])
     except ValueError as exc:
         raise Rejected("invalid independent imported mass or surface") from exc
-    oracle = expected_volume(kind, thickness)
-    surface_oracle = expected_surface(kind, thickness)
+    oracle = expected_volume(kind, thickness, count)
+    surface_oracle = expected_surface(kind, thickness, count)
     require(all(map(math.isfinite, (read_t, volume, claimed, area, claimed_area)))
             and read_t == thickness and triangles >= 8 and volume > 0 and area > 0,
             "nonfinite, empty or wrong thickness independent solid")
@@ -175,7 +196,7 @@ def parse_receipt(stdout: str, kind: str, thickness: int) -> dict:
     require(abs(claimed_area-surface_oracle) < 1e-5 and
             abs(area-surface_oracle) <= surface_oracle*.01,
             "independently reconstructed selected-profile surface wrong")
-    return {"importedExactBRep": True, "rayCount": 38,
+    return {"importedExactBRep": True, "cutCount": count, "rayCount": 38,
             "rays": observed, "triangleCount": triangles,
             "measuredVolumeMm3": volume, "expectedVolumeMm3": oracle,
             "measuredSurfaceAreaMm2": area,
