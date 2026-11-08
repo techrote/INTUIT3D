@@ -161,7 +161,7 @@ test('occupied event ID requires explicit new unique unused identity and acknowl
 test('explicit reference drift consent never silently rebinds formula to a different ID',()=>{
   const base=setup();
   const draft=edit(base.document,[{eventId:'draft.width',featureId:'p.width',
-    formula:'offset - 4 mm'}]);
+    formula:'offset + 4 mm'}]);
   const current=commitUndoableParameterFormulaTableEdit(base,
     edit(base.document,[
       {eventId:'swap.offset',featureId:'p.offset',name:'margin'},
