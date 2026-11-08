@@ -71,6 +71,10 @@
     "./selected-corner-chamfer/v1": {
       "types": "./selected-corner-chamfer.d.mts",
       "default": "./src/selected-corner-chamfer.mjs"
+    },
+    "./body-profile-dimensions/v1": {
+      "types": "./body-profile-dimensions.d.mts",
+      "default": "./src/body-profile-dimensions.mjs"
     }
   },
   "peerDependencies": {
