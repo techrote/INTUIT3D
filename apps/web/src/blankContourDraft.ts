@@ -37,3 +37,18 @@ export function undoBlankContourVertex(draft:BlankContourDraft):BlankContourDraf
 export function canCloseBlankContour(draft:BlankContourDraft|null):boolean {
   return !!draft&&draft.vertices.length>=3;
 }
+
+/** Browser-only pointer quantization; does not admit or modify solver geometry.
+ * Normal clicks meet the visible 1 mm construction grid. Holding Shift
+ * uses the former 0.001 mm pointer resolution for off-grid features.
+ * Out-of-bounds raw clicks refuse rather than snapping into the workspace.
+ */
+export function placeBlankContourPointer(point:SketchLocalPoint,shiftFine=false):SketchLocalPoint|null {
+  if(!Number.isFinite(point.x)||!Number.isFinite(point.y)||
+     Math.abs(point.x)>10000||Math.abs(point.y)>10000)return null;
+  const scale=shiftFine?1000:1;
+  // Symmetric half-away-from-zero quantization avoids direction-dependent
+  // snapping for negative sketch coordinates. Do not leave a signed -0.
+  const quantize=(value:number)=>Math.sign(value)*Math.round(Math.abs(value)*scale)/scale||0;
+  return {x:quantize(point.x),y:quantize(point.y)};
+}
