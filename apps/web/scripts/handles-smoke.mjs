@@ -1008,6 +1008,18 @@ async function main() {
   await clickControl('[data-testid="runtime-undo-contour-point"]');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent?.includes('0 / 12')"),
     'Undo vertex failed after snapped pointer click');
+  // A genuinely Shift-modified CDP click must preserve off-grid coordinates.
+  // This is browser event delivery, not a synthetic React onClick invocation.
+  const fineScreen=await evaluate('(() => {const svg=document.querySelector("[data-testid=runtime-blank-sketch]");const m=svg?.getScreenCTM();if(!m)return null;const p=new DOMPoint(0.237,119.711).matrixTransform(m);return {x:p.x,y:p.y}})()');
+  check(fineScreen&&Number.isFinite(fineScreen.x),'no fine-grain screen matrix');
+  for(const [type,buttons] of [['mouseMoved',0],['mousePressed',1],['mouseReleased',0]])
+    await send('Input.dispatchMouseEvent',{type,x:fineScreen.x,y:fineScreen.y,
+      button:'left',buttons,clickCount:1,modifiers:8});
+  await eventually(()=>evaluate("(() => {const p=document.querySelector('[data-testid=runtime-draft-vertex-0]');return p&&Number(p.getAttribute('cx'))>0.22&&Number(p.getAttribute('cx'))<0.25&&Number(p.getAttribute('cy'))>0.28&&Number(p.getAttribute('cy'))<0.30})()"),
+    'Shift+pointer click did not preserve fine off-grid placement');
+  await clickControl('[data-testid="runtime-undo-contour-point"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent?.includes('0 / 12')"),
+    'Undo vertex failed after Shift fine placement');
   // A new independent gesture on the unchanged zero-entity sketch succeeds.
   for(const [x,y] of [[0,0],[120,0],[120,80],[0,80]])
     await clickBlankVertex(x,y);
@@ -1237,6 +1249,7 @@ async function main() {
     actualChromiumSelectedEdgeHoleCreateUndoRedoArchive: true,
     actualCrossingContourRefusedAndEscapePreservesEmptyHistory: true,
     realChromiumBlankGridSnapPreservesDraftAndUndo: true,
+    realChromiumShiftFineBlankPointerRemainsOffGrid: true,
     genuineEmptySketchFourPointerVerticesAuthoritativeContourUndoRedoSaveReopen: true,
     genuineDrawnContourExtrusionHoleCutUndoRedoSaveReopen: true,
     genuinelyDrawnVertexNumericAndPointerEditUndoRedoReopen: true,
