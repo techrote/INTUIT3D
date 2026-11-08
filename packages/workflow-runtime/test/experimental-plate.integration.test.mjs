@@ -56,3 +56,43 @@ test('real INTENT/SKETCH plate and holes become valid KERNEL request, not native
   assert.equal((await run()).code,'source_unavailable');
   assert.equal(calls.length,2);
 });
+
+test('native reply is refused after a different same-revision journal replaces the authoritative archive',async()=>{
+  const original=plateProject();
+  // Distinct event identities, but identical semantic features, dimensions and
+  // source project/revision. Native cannot treat an equal feature *report* as
+  // proof that the user still has the original persistent history open.
+  const divergent=runtime.commit(
+    transactions.startUndoHistory(model.newProject('runtime.native_plate_replay')),[
+      created('alternate.sketch',{id:'sketch.plate',kind:'sketch',dependsOn:[],writeTargets:[],
+        payload:{sketch:sketch.plateSketchFixture()}}),
+      created('alternate.extrude',{id:'plate',kind:'extrude',dependsOn:['sketch.plate'],
+        writeTargets:['body.plate'],payload:{sourceSketchId:'sketch.plate',thicknessMm:8}}),
+      created('alternate.cut',{id:'cut',kind:'cut',dependsOn:['plate'],
+        writeTargets:['body.plate'],
+        payload:{sourceSketchId:'sketch.plate',targetBodyId:'body.plate'}}),
+    ]);
+  assert.equal(original.document.projectId,divergent.document.projectId);
+  assert.equal(original.document.revision,divergent.document.revision);
+  assert.deepEqual(runtime.inspect(original),runtime.inspect(divergent),
+    'the publicly evaluated geometry report is unchanged');
+  assert.notEqual(runtime.save(original),runtime.save(divergent),
+    'the actual source archives have different history/event identities');
+  let current=original,dispatched=0;
+  const flow=createExperimentalPlateWorkflow({runtime,model,plateContract,
+    runExperimentalPlate:async(request,options)=>{
+      dispatched++;
+      assert.equal(options.readCurrentRevision(),request.revision);
+      current=divergent;
+      assert.notEqual(options.readCurrentRevision(),request.revision,
+        'the native progress fence must detect equal-revision journal substitution');
+      return {kind:'unresolved',code:'provider_unavailable',artifact:null};
+    }});
+  const outcome=await flow.evaluate(original,{
+    cutFeatureId:'cut',requestId:'plate.alternate.archive',
+    readCurrentHistory:()=>current,
+  });
+  assert.equal(dispatched,1);
+  assert.equal(outcome.code,'stale_revision');
+  assert.equal(outcome.artifact,null);
+});
