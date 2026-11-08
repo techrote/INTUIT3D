@@ -1,5 +1,7 @@
 import type {UndoHistory} from '@intuit3d/model/transactions';
 import type {JournalEvent} from '@intuit3d/model';
+import type {FeatureRemovalImpact,FeatureRemovalRequest} from '@intuit3d/model/feature-lifecycle';
+import type {FeatureRecoveryCommitRequest,FeatureRecoveryInspection} from '@intuit3d/model/feature-recovery-closure';
 import type {ParameterFormulaTableRequest} from '@intuit3d/model/parameter-formula-table';
 import type {ParameterSheetRebaseResult} from '@intuit3d/model/parameter-sheet-rebase';
 import type {ParameterSheetResolutionRequest,ParameterSheetResolutionResult} from '@intuit3d/model/parameter-sheet-resolution';
@@ -38,6 +40,11 @@ export interface LivePlateSessionState {
 export type LiveCadCommand = Readonly<{projectId:string;expectedRevision:number}> & (
   | Readonly<{kind:'model.events';events:readonly JournalEvent[]}>
   | Readonly<{kind:'model.undo'|'model.redo';eventIds:readonly string[]}>
+  | Readonly<{kind:'model.feature.remove';
+      request:Omit<FeatureRemovalRequest,'expectedProjectId'|'expectedRevision'> &
+        Readonly<{sourceDocumentFence:string}>}>
+  | Readonly<{kind:'model.feature.recover-closure';
+      request:Omit<FeatureRecoveryCommitRequest,'expectedProjectId'|'expectedRevision'>}>
   | Readonly<{kind:'dimensions.batch';request:Omit<DimensionBatchEditRequest,'expectedRevision'>}>
   | Readonly<{kind:'sketch.constraints';request:Omit<SketchConstraintBatchRequest,'expectedRevision'>}>
   | Readonly<{kind:'sketch.holes';request:Omit<PlateHoleBatchRequest,'expectedRevision'>}>
@@ -73,6 +80,18 @@ export interface SessionParameterDraft {
 }
 export type SessionParameterDraftReview =
   ParameterSheetRebaseResult | ParameterSheetResolutionResult;
+/** Read-only, source-fenced feature lifecycle planning from the current INTENT journal. */
+export type SessionLifecycleRefusal = Readonly<{
+  kind:'refused';code:string;reason:string;notCommitted:true;exactAuthority:false;
+}>;
+export type SessionRemovalInspection =
+  | Readonly<{kind:'ready';projectId:string;sourceRevision:number;
+      sourceDocumentFence:string;impact:FeatureRemovalImpact;exactAuthority:false}>
+  | SessionLifecycleRefusal;
+export type SessionRecoveryInspection =
+  | Readonly<{kind:'ready';projectId:string;sourceRevision:number;
+      sourceDocumentFence:string;inspection:FeatureRecoveryInspection;exactAuthority:false}>
+  | SessionLifecycleRefusal;
 export type SessionEdit = UndoHistory | SketchConstraintBatchResult | SelectedEdgeHoleRuntimeResult | SelectedProfileHoleRuntimeResult | SelectedProfileHoleLayoutRuntimeResult;
 export type SessionEditResult =
   | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
@@ -126,6 +145,14 @@ export interface LivePlateSession {
   refresh():LivePlateSessionState;
   /** Genuine synchronous INTENT/ SKETCH transaction; never a private journal. */
   applyEdit(edit:(history:UndoHistory)=>SessionEdit):SessionEditResult;
+  /** Inspect removal impact and current full-document fence; no journal mutation. */
+  inspectFeatureRemoval(request:Readonly<{
+    projectId:string;expectedRevision:number;featureId:string;
+  }>):SessionRemovalInspection;
+  /** Inspect tombstoned ancestor closure and acknowledgement obligations. */
+  inspectFeatureRecovery(request:Readonly<{
+    projectId:string;expectedRevision:number;selectedFeatureIds:readonly string[];
+  }>):SessionRecoveryInspection;
   /** Return source-fenced edge-local SKETCH controls without edits or native work. */
   inspectSelectedEdgeHoles(request:SelectedEdgeHoleRuntimeInspectionRequest):
     SelectedEdgeHoleRuntimeInspectionResult;
