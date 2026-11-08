@@ -238,5 +238,6 @@ test('connected SKETCH FEATUREOPS RUNTIME motor saddle authoring exercises the m
   assert.equal(evidence.historicalEditChoice,'available');
   assert.deepEqual(evidence.historyChoiceInvalidatedBodies,['body.motor','body.clamp']);
   assert.equal(evidence.archiveUndoRedo,true);
+  assert.equal(evidence.preservedLaterSameFeatureDatumLink,true);
   assert.equal(evidence.exactGeometryAuthority,false);
 });
