@@ -22,6 +22,7 @@ import {TOPOLOGY_REFERENCE_FORMAT} from '../src/topology.ts';
 import {
   SELECTION_REPAIR_FENCED_FORMAT, SELECTION_EVIDENCE_FENCED_FORMAT,
   previewFencedSelectionRepairBatch, commitUndoableFencedSelectionRepairBatch,
+  SELECTION_INVENTORY_FENCED_FORMAT, inspectFencedSelectionInventory,
 } from '../src/selection-repair.ts';
 
 const runtime=createWorkflowRuntime({
@@ -156,4 +157,82 @@ test('source-fenced face repair preserves independent bodies and replay while re
     model.ProjectRevisionError);
   assert.throws(()=>previewFencedSelectionRepairBatch(
     branch,repairRequest(branch),evidence),model.ProjectRevisionError);
+});
+
+function inventoryRequest(doc) {
+  return {
+    format: SELECTION_INVENTORY_FENCED_FORMAT, version: 2,
+    expectedProjectId: doc.projectId, expectedRevision: doc.revision,
+    expectedDocumentFence: model.serializeProject(doc),
+  };
+}
+
+test('fenced topology inventory keeps visible repair choices tied to exact source and provider evidence', () => {
+  let {h,reference} = assemble();
+  const ancestor = h.document;
+  const guard = feature(ancestor,'extrude.guard');
+  h = runtime.commit(h,[{
+    type:'feature.edit', eventId:'edit.guard.thickness.for.inventory',
+    featureId:'extrude.guard',
+    patch:{payload:{...guard.payload,thicknessMm:14}},
+  }],ancestor.revision);
+  const doc = h.document;
+  const baseline = model.serializeProject(doc);
+  const context = inventoryRequest(doc);
+  const evidence = report(doc,reference);
+
+  const missing = inspectFencedSelectionInventory(doc,context);
+  assert.deepEqual(missing.awaitingProvider,['cut.guard.sourceFace']);
+  assert.equal(missing.allReferencesObserved,false);
+  assert.equal(missing.exactGeometryAuthority,false);
+  const viewed = inspectFencedSelectionInventory(doc,context,evidence);
+  assert.equal(viewed.format,SELECTION_INVENTORY_FENCED_FORMAT);
+  assert.equal(viewed.version,2);
+  assert.equal(viewed.documentFence,baseline);
+  assert.deepEqual(viewed.needsUserRecovery,['cut.guard.sourceFace']);
+  assert.equal(viewed.selections[0].action,'choose_successor');
+  assert.deepEqual(JSON.parse(JSON.stringify(viewed.selections[0].recoveryCandidates)),
+    [left,right]);
+  assert.equal(viewed.selections[0].observedProvider,'deterministic_fixture');
+  assert.equal(viewed.exactGeometryAuthority,false);
+  assert.equal(model.serializeProject(doc),baseline,'inspection must not write journal');
+
+  const chosen = repairRequest(doc);
+  assert.equal(chosen.expectedDocumentFence,viewed.documentFence);
+  const repaired = commitUndoableFencedSelectionRepairBatch(h,chosen,evidence);
+  assert.equal(feature(repaired.document,'cut.guard').payload.sourceFace.anchor.roleId,
+    'face.outer.right');
+  assert.equal(feature(repaired.document,'extrude.gauge').payload.thicknessMm,3);
+  const reopened = archive.deserializeModelArchive(archive.serializeModelArchive(
+    archive.createModelArchive(repaired)));
+  const rechecked = inspectFencedSelectionInventory(
+    reopened.history.document,inventoryRequest(reopened.history.document));
+  assert.deepEqual(rechecked.awaitingProvider,['cut.guard.sourceFace']);
+  assert.equal(rechecked.exactGeometryAuthority,false);
+
+  const gauge = feature(ancestor,'extrude.gauge');
+  const branch = model.commitEvent(ancestor,{
+    type:'feature.edit', eventId:'edit.gauge.instead',
+    featureId:'extrude.gauge',
+    patch:{payload:{...gauge.payload,thicknessMm:9}},
+  });
+  assert.equal(branch.revision,doc.revision);
+  assert.notEqual(model.serializeProject(branch),baseline);
+  assert.throws(()=>inspectFencedSelectionInventory(branch,context,evidence),
+    model.ProjectRevisionError);
+  assert.throws(()=>inspectFencedSelectionInventory(
+    branch,inventoryRequest(branch),evidence),model.ProjectRevisionError);
+  assert.throws(()=>inspectFencedSelectionInventory(doc,context,[{
+    ...evidence[0],documentFence:'not-the-canonical-source',
+  }]),model.ProjectRevisionError);
+  assert.throws(()=>inspectFencedSelectionInventory(doc,context,[{
+    ...evidence[0],format:'intuit3d.selection-evidence',version:1,
+  }]),model.ProjectFormatError);
+  assert.throws(()=>inspectFencedSelectionInventory(doc,{
+    ...context,expectedRevision:doc.revision-1,
+  },evidence),model.ProjectRevisionError);
+  assert.throws(()=>inspectFencedSelectionInventory(doc,{
+    ...context,unsupported:true,
+  },evidence),model.ProjectFormatError);
+  assert.equal(model.serializeProject(doc),baseline);
 });
