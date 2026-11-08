@@ -1252,7 +1252,16 @@ async function main(){
   // Actual filesystem-archive round-trip of the history compensation, not a
   // direct JSON -> runtime helper. Use the user's Save button, Chromium's File
   // input, the isolated validation Worker and explicit Replace confirmation.
-  const historyArchiveCount=await evaluate('window.__nativeStepBlobs.length');
+  // The earlier Page.reload destroys the original in-page Blob interceptor.
+  // Reinstall it once in this fresh browser document before the Save gesture.
+  const historyArchiveCount=await evaluate(`(() => {
+    if(!window.__nativeStepBlobs){
+      window.__nativeStepBlobs=[];
+      const create=URL.createObjectURL.bind(URL);
+      URL.createObjectURL=blob=>{window.__nativeStepBlobs.push(blob);return create(blob)};
+    }
+    return window.__nativeStepBlobs.length;
+  })()`);
   await pointerClick('runtime-save-archive');
   await eventually(()=>evaluate('window.__nativeStepBlobs.length>'+historyArchiveCount),
     'historical compensation Save did not publish a browser model archive');
