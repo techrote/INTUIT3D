@@ -127,12 +127,23 @@ export function createLivePlateSession({
         invalidation.revision!==after.report.revision||
         invalidation.exactReuseAllowed!==false)
       throw new Error('live plate session: invalid model dependency fence');
-    return {kind:'candidate',before,after,next,invalidation};
+    // The successor profile is not independently selectable from a stale
+    // preview. Return only the versioned contour receipt from the committed
+    // SKETCH result, copied before the authoritative archive publication.
+    const contourReceipt=outcome?.kind==='committed' &&
+      typeof outcome.nextSketchSignature==='string' &&
+      outcome.selection && outcome.exactAuthority===false
+      ? Object.freeze({format:'intuit3d.runtime.contour-receipt',version:1,
+          projectId:after.report.projectId,revision:after.report.revision,
+          contourId:outcome.contourId,selection:structuredClone(outcome.selection),
+          nextSketchSignature:outcome.nextSketchSignature,exactAuthority:false})
+      : null;
+    return {kind:'candidate',before,after,next,invalidation,contourReceipt};
   }
   function publishCandidate(candidate) {
     publish(candidate.next,candidate.after.archive);
     return {kind:'committed',history:candidate.next,report:candidate.after.report,
-      invalidation:candidate.invalidation};
+      invalidation:candidate.invalidation,...(candidate.contourReceipt?{contourReceipt:candidate.contourReceipt}:{})};
   }
   // Execute a command against an INTENT history candidate, never against a
   // cached preview or native B-rep. Also used by atomic multi-command staging.
