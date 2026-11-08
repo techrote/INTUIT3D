@@ -70,6 +70,32 @@ test('revert a past thickness edit without losing a later independent gauge edit
     ['rebuild','rebuild','preserve_candidate']);
 });
 
+test('retargeted historical writer retires the departed body and rebuilds the restored body',()=>{
+  let doc=fixture();
+  doc=commitEvent(doc,{eventId:'edit.gauge.target',type:'feature.edit',
+    featureId:'extrude.gauge',patch:{writeTargets:['body.gauge.temporary']}});
+  assert.ok(planProject(doc).features.every(row=>row.status==='ready'));
+  const preview=previewFeatureEditRevert(doc,request(doc,{
+    targetEventId:'edit.gauge.target',eventId:'revert.gauge.target',
+  }));
+  assert.deepEqual(preview.revertedFields,['writeTargets']);
+  assert.deepEqual(preview.invalidatedBodyIds,
+    ['body.gauge.temporary','body.gauge']);
+  assert.deepEqual(find(preview.document,'extrude.gauge').writeTargets,['body.gauge']);
+  assert.equal(find(preview.document,'sketch.gauge').payload.widthMm,40);
+  const rebuildRequest={
+    format:BODY_REBUILD_MANIFEST_FORMAT,version:1,
+    expectedProjectId:doc.projectId,expectedFromRevision:doc.revision,
+    expectedToRevision:preview.document.revision,
+    bodyIds:preview.invalidatedBodyIds,
+  };
+  const manifest=planBodyRebuildManifest(doc,preview.document,rebuildRequest);
+  assert.deepEqual(manifest.bodies.map(row=>row.action),['retire','rebuild']);
+  assert.throws(()=>planBodyRebuildManifest(doc,preview.document,{
+    ...rebuildRequest,bodyIds:['body.gauge'],
+  }),ProjectFormatError);
+});
+
 test('historical selective revert is one undo frame and survives archive/reopen',()=>{
   const doc=fixture();
   let history=commitUndoableFeatureEditRevert(startUndoHistory(doc),request(doc));
