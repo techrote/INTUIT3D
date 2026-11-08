@@ -6,6 +6,7 @@
  * npm ci
  * npm run dev:local
  * npm run dev:local -- --smoke   # automated loopback startup acceptance
+ * npm run dev:local -- --pinned  # explicitly verified local OCCT8 worker
  */
 import {spawn} from 'node:child_process';
 import {existsSync} from 'node:fs';
@@ -17,22 +18,27 @@ const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const origin='http://127.0.0.1:5173';
 const args=process.argv.slice(2);
 if(args.length===1 && (args[0]==='--help'||args[0]==='-h')){
-  console.log('Usage: npm run dev:local [-- --smoke]');
-  console.log('Launch the local model-backed CAD UI plus experimental OCP companion.');
+  console.log('Usage: npm run dev:local [-- --smoke] [--pinned]');
+  console.log('Default: local model-backed CAD UI plus experimental OCP companion.');
+  console.log('--pinned: explicitly launch an independently SHA-pinned Linux OCCT8 worker from INTUIT3D_OCCT8_WORKER and INTUIT3D_OCCT8_WORKER_SHA256.');
   console.log('--smoke verifies both loopback servers and exits without requesting geometry.');
   process.exit(0);
 }
-if(args.some(arg=>arg!=='--smoke') || args.length>1){
-  console.error('Unknown arguments. Use --help or --smoke.');
+if(args.some(arg=>!['--smoke','--pinned'].includes(arg)) ||
+   new Set(args).size!==args.length){
+  console.error('Unknown/duplicate argument. Use --help, --smoke or --pinned.');
   process.exit(2);
 }
 const smoke=args.includes('--smoke');
+const pinned=args.includes('--pinned');
 const viteCandidates=[
   join(root,'node_modules','vite','bin','vite.js'),
   join(root,'apps','web','node_modules','vite','bin','vite.js'),
 ];
 const viteEntry=viteCandidates.find(existsSync);
-const hostEntry=join(root,'apps','web','scripts','local-native-host.mjs');
+const hostEntry=pinned
+  ? join(root,'tooling','local-pinned-host.mjs')
+  : join(root,'apps','web','scripts','local-native-host.mjs');
 const children=[];
 let failure=null,stopping=false,stopRequested=false;
 const hostInfo={url:null,token:null};
@@ -119,12 +125,14 @@ async function main(){
     if(smoke){
       console.log('LOCAL_CAD_SMOKE_PASS: React/Vite + isolated RUNTIME HTTP paired on loopback');
       console.log('NOT_QUALIFIED: no B-rep built, no STEP readback, no browser interaction');
+      if(pinned) console.log('PINNED_HOST_CONFIGURED_ONLY: worker digest verified, no physical geometry executed');
       return;
     }
     console.log('Open '+origin+' and enter MODEL-BACKED CAD.');
     console.log('Copy the LOCAL_PROVIDER_URL and LOCAL_PAIRING_TOKEN from the [native] output');
     console.log('into the workbench Local native STEP panel. Keep the token private.');
-    console.log('Native STEP is experimental OCP, not pinned OCCT 8.0.1 or independent CAD.');
+    if(pinned) console.log('Local provider configured as pinned OCCT8 C++ with a verified worker digest; actual geometry/STEP remains experimental until executed and independently imported.');
+    else console.log('Native STEP is experimental OCP, not pinned OCCT 8.0.1 or independent CAD.');
     console.log('Press Ctrl+C to stop both local processes.');
     while(!stopRequested && !failure)await pause(250);
     if(failure)throw failure;
