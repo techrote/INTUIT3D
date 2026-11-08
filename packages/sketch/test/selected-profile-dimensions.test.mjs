@@ -143,7 +143,7 @@ test('stale, foreign, duplicate, nonfinite, no-op and invalid radius edits refus
 test('profile-invalid dimensional changes refuse rather than merely accepting solved equations',()=>{
   const doc=createDimensionedLPlateSketch(),sel=select(doc);
   const r=editSelectedProfileDimensions(doc,sel,
-    command(doc,[{constraintId:'L:webWidth',value:140}]));
+    command(doc,[{constraintId:'L:holeLowerOffsetX',value:300}]));
   assert.equal(r.kind,'refused');
   assert.ok(['selected_contour_no_longer_admissible','selected_profile_rejected']
     .includes(r.reason),JSON.stringify(r));
