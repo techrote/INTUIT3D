@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseSolidHoleNumber} from './solidHoleQuickEdit.ts';
+import {parseSolidHoleNumber} from './solidHoleNumeric.ts';
 
 test('contextual 3D bore accepts signed millimetre centres and positive diameter',()=>{
   assert.equal(parseSolidHoleNumber('36.25','x'),36.25);

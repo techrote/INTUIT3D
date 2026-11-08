@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ModelHoleDimensions } from './runtimeSession';
-import { parseSolidHoleNumber } from './solidHoleQuickEdit';
+import { parseSolidHoleNumber } from './solidHoleNumeric';
 
 /**
  * Contextual, source-owned 3D hole edit. It never edits a mesh or derives a
