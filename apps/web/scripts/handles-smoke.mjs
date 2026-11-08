@@ -777,10 +777,15 @@ async function main() {
     await mouse('mousePressed',point.x,point.y,1);
     await mouse('mouseReleased',point.x,point.y);
   };
-  await clickControl('[data-testid="runtime-layout-select-holeB"]');
+  // Imports/new-project confirmation preserve purely local selection state.
+  // Make the exact two-source selection explicit regardless of prior tests.
+  for(const id of ['holeA','holeB']){
+    if(!await evaluate(`document.querySelector(${JSON.stringify('[data-testid="runtime-layout-select-'+id+'"]')})?.checked`))
+      await clickControl('[data-testid="runtime-layout-select-'+id+'"]');
+  }
   await eventually(()=>evaluate(
-    "document.querySelector('[data-testid=runtime-layout-select-holeB]')?.checked===true"
-  ),'physical hole B multi-selection');
+    "document.querySelector('[data-testid=runtime-layout-select-holeA]')?.checked===true && document.querySelector('[data-testid=runtime-layout-select-holeB]')?.checked===true"
+  ),'physical two-hole selection');
   const stampBeforeRevision=await evaluate(
     "document.querySelector('[data-testid=runtime-revision]')?.textContent");
   await clickControl('[data-testid="runtime-stamp-apply"]');
