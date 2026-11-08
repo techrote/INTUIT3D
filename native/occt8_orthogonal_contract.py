@@ -12,6 +12,7 @@ from occt8_cut_contract import (validate_mixed_cut_request, validate_cut_result)
 
 SCHEMA = "intuit3d/kernel/orthogonal-profile-cut-chain-v4"
 LINEAR_SCHEMA = "intuit3d/kernel/linear-profile-cut-chain-v5"
+FLEX_SCHEMA = "intuit3d/kernel/flexible-linear-profile-v6"
 MAX_VERTICES = 64
 
 
@@ -125,11 +126,11 @@ def polygon_metrics(vertices, *, linear=False):
     return twice_area / 2, perimeter
 
 
-def validate_orthogonal_request(value: object, *, linear=False) -> dict:
+def validate_orthogonal_request(value: object, *, linear=False, flexible=False) -> dict:
     if not isinstance(value, dict) or set(value) != {
         "protocol", "requestId", "featureId", "revision", "units",
         "profile", "cuts", "exportStep"
-    } or value["protocol"] != (LINEAR_SCHEMA if linear else SCHEMA):
+    } or value["protocol"] != (FLEX_SCHEMA if flexible else LINEAR_SCHEMA if linear else SCHEMA):
         raise ValueError("expected orthogonal-profile-cut-chain-v4")
     for field in ("requestId", "featureId"):
         if not isinstance(value[field], str) or not IDENTIFIER.fullmatch(value[field]):
@@ -175,21 +176,22 @@ def validate_orthogonal_request(value: object, *, linear=False) -> dict:
     area, perimeter = polygon_metrics(v, linear=linear)
     if not area > MIN_DIM_MM or not math.isfinite(area) or not math.isfinite(perimeter):
         raise ValueError("selected contour must be simple counterclockwise with positive material area")
-    if not isinstance(value["cuts"], list) or not 2 <= len(value["cuts"]) <= 16:
+    if not isinstance(value["cuts"], list) or not (0 if flexible else 2) <= len(value["cuts"]) <= 16:
         raise ValueError("expected two to sixteen ordered blind/through cuts")
     xs, ys = [a["x"] for a in v], [a["y"] for a in v]
     xmin, xmax, ymin, ymax = min(xs), max(xs), min(ys), max(ys)
     cx, cy = (xmin+xmax)/2, (ymin+ymax)/2
     transformed = [{**c, "x": c.get("x", 0)-cx, "y": c.get("y", 0)-cy}
                    for c in value["cuts"]]
-    validate_mixed_cut_request({
+    if value["cuts"]:
+        validate_mixed_cut_request({
         "protocol": "intuit3d/kernel/plate-mixed-cut-chain-v2",
         "requestId": value["requestId"], "featureId": value["featureId"],
         "revision": value["revision"], "units": value["units"],
         "plate": {"width": xmax-xmin, "depth": ymax-ymin,
                   "thickness": thickness, "holes": []},
         "cuts": transformed, "exportStep": value["exportStep"]
-    })
+        })
     for c in value["cuts"]:
         if c["featureId"] == p["profileId"]:
             raise ValueError("cut feature ID conflicts with selected sketch")
@@ -200,7 +202,7 @@ def validate_orthogonal_request(value: object, *, linear=False) -> dict:
 
 def expected_orthogonal_metrics(request: dict) -> tuple[float, float]:
     area, perimeter = polygon_metrics(request["profile"]["vertices"],
-                                      linear=request["protocol"] == LINEAR_SCHEMA)
+                                      linear=request["protocol"] in (LINEAR_SCHEMA, FLEX_SCHEMA))
     t = request["profile"]["thickness"]
     volume = area*t
     surface = 2*area + perimeter*t
@@ -220,7 +222,8 @@ def expected_orthogonal_metrics(request: dict) -> tuple[float, float]:
 
 def canonical_orthogonal_request(request: dict) -> str:
     p = request["profile"]
-    rows = ["INTUIT3D_OCCT8_LINEAR_CHAIN_V5" if request["protocol"] == LINEAR_SCHEMA
+    rows = ["INTUIT3D_OCCT8_FLEX_LINEAR_CHAIN_V6" if request["protocol"] == FLEX_SCHEMA
+            else "INTUIT3D_OCCT8_LINEAR_CHAIN_V5" if request["protocol"] == LINEAR_SCHEMA
             else "INTUIT3D_OCCT8_ORTHOGONAL_CHAIN_V4",
             f'{request["requestId"]} {request["featureId"]} {request["revision"]} {int(request["exportStep"])}',
             f'{p["profileId"]} {p["thickness"]:.17g} {len(p["vertices"])} {len(request["cuts"])}']
