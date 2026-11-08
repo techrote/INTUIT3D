@@ -457,3 +457,11 @@ covers actual Chromium editing, IndexedDB checkpointing, cancel, full page
 reload, Worker review, confirmed restore and undo/redo. The original private
 40 KiB owner archive selected in Windows Firefox still needs the separate,
 privacy-respecting human replay above.
+
+## Selected-hole copy and batch removal
+
+In the model-backed CAD workbench, choose **Sketch** and Ctrl/Cmd-click hole centres or use the **Retrospective hole layout** checkboxes. Under **Duplicate selected holes**, enter signed X/Y offsets in millimetres (initially +20, 0) and click **Duplicate selected holes**. This copies 1–32 selected admitted holes in **one undoable INTENT/SKETCH event**, assigning each copy a new durable circle/constraint ID. The original positions and diameters remain unchanged. These are independent, *non-associative* circles: editing the sources later does not move the copies. The new copies become the current selection, so they can be moved, resized or removed as a group.
+
+**Remove selected custom holes** deletes the explicitly selected user-added/copy holes in one undoable operation. The two base circles are intentionally protected because plate dimensions depend on their identities. An invalid selection, zero/NaN offset, collision, outside-plate rim, stale ID or SKETCH refusal does not publish a partial model revision. Rectangular physical plate containment is checked against the admitted solved profile, not a fabricated arbitrary-contour bounding box. Any successful operation invalidates previously built STEP receipts; the onscreen solid remains an **analytic preview**, not an independently qualified production C++ geometry result.
+
+To verify: start the local workbench, select both seed holes, stamp X=20/Y=0 and observe two independently editable new holes, then Undo/Redo. With only the two new IDs selected, remove them, Undo, save the archive, reopen and inspect the restored IDs/history. Automated checks: `npm test --workspace @intuit3d/web` and `npm run test:browser:handles --workspace @intuit3d/web`. The browser suite runs actual Chromium pointer events; Windows Firefox original private archive issue #177 remains a separate unqualified human gate.

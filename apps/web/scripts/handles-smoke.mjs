@@ -751,6 +751,86 @@ async function main() {
   check(await evaluate("!document.querySelector('[data-testid=runtime-import-review]') && window.__modelImportWorkerStarts===3 && window.__modelMainFileTextReads===0"),
     'Cancellation accepted unverified archive or main-thread read');
 
+  // Actual Chromium pointer events on the model-backed selected-hole stamp.
+  // A fresh default plate avoids accidental dependence on earlier imported
+  // fixtures and verifies the real React controls rather than helper calls.
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-new-plate]');b?.click();return Boolean(b)})()"),
+    'Cannot start fresh model-backed plate after archive import');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'new plate requested explicit replacement consent');
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-import-review-confirm]');b?.click();return Boolean(b)})()"),
+    'Cannot confirm a fresh plate for selected-hole acceptance');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-stamp-apply]') && document.querySelector('[data-testid=runtime-layout-select-holeB]') && !document.querySelector('[data-testid=runtime-import-review]'))"),
+    'fresh model-backed selected-hole stamp editor');
+  const clickControl=async selector=>{
+    const point=await evaluate(`(() => {
+      const el=document.querySelector(${JSON.stringify(selector)});
+      if(!el||el.disabled)return null;
+      el.scrollIntoView({block:'center'});
+      const r=el.getBoundingClientRect();
+      return {x:r.x+r.width/2,y:r.y+r.height/2};
+    })()`);
+    check(point&&Number.isFinite(point.x)&&Number.isFinite(point.y),
+      'Pointer target missing or disabled: '+selector);
+    await pause(120);
+    await mouse('mouseMoved',point.x,point.y);
+    await mouse('mousePressed',point.x,point.y,1);
+    await mouse('mouseReleased',point.x,point.y);
+  };
+  // Imports/new-project confirmation preserve purely local selection state.
+  // Make the exact two-source selection explicit regardless of prior tests.
+  for(const id of ['holeA','holeB']){
+    if(!await evaluate(`document.querySelector(${JSON.stringify('[data-testid="runtime-layout-select-'+id+'"]')})?.checked`))
+      await clickControl('[data-testid="runtime-layout-select-'+id+'"]');
+  }
+  await eventually(()=>evaluate(
+    "document.querySelector('[data-testid=runtime-layout-select-holeA]')?.checked===true && document.querySelector('[data-testid=runtime-layout-select-holeB]')?.checked===true"
+  ),'physical two-hole selection');
+  const stampBeforeRevision=await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  await clickControl('[data-testid="runtime-stamp-apply"]');
+  await eventually(()=>evaluate(
+    "document.querySelectorAll('[data-testid^=\"runtime-hole-editor-stamp.\"]').length===2"
+  ),'physical selected-hole batch stamp');
+  check(await evaluate(
+    "[...document.querySelectorAll('[data-testid^=\"runtime-layout-select-stamp.\"]')].filter(e=>e.checked).length===2"
+  ),'Stamped semantic IDs not selected for subsequent group operations');
+  check(await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"
+  )!==stampBeforeRevision,'Stamped holes did not advance authoritative revision');
+  await screenshot('25-model-selected-hole-stamp.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent?.trim()==='Undo');b?.click();return Boolean(b)})()"),
+    'Undo unavailable after selected-hole stamp');
+  await eventually(()=>evaluate(
+    "document.querySelectorAll('[data-testid^=\"runtime-hole-editor-stamp.\"]').length===0"
+  ),'single-step selected-hole stamp undo');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent?.trim()==='Redo');b?.click();return Boolean(b)})()"),
+    'Redo unavailable after selected-hole stamp undo');
+  await eventually(()=>evaluate(
+    "document.querySelectorAll('[data-testid^=\"runtime-hole-editor-stamp.\"]').length===2"
+  ),'selected-hole stamp redo');
+  // Selection is local UI state, not an undoable model artefact. Explicitly
+  // reselect the two stamped IDs after the authoritative journal redo.
+  const stampedCheckboxes=await evaluate(
+    "[...document.querySelectorAll('[data-testid^=\"runtime-layout-select-stamp.\"]')].map(e=>e.dataset.testid)"
+  );
+  check(stampedCheckboxes.length===2,'No stable stamped IDs after redo');
+  for(const id of stampedCheckboxes)
+    if(!await evaluate(`document.querySelector(${JSON.stringify('[data-testid="'+id+'"]')})?.checked`))
+      await clickControl('[data-testid="'+id+'"]');
+  await clickControl('[data-testid="runtime-stamp-remove-selected"]');
+  await eventually(()=>evaluate(
+    "document.querySelectorAll('[data-testid^=\"runtime-hole-editor-stamp.\"]').length===0"
+  ),'physical atomic batch deletion of two custom holes');
+  check(await evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-hole\"]').length")===2,
+    'Batch deletion removed a protected base hole');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('button')].find(x=>x.textContent?.trim()==='Undo');b?.click();return Boolean(b)})()"),
+    'Undo unavailable after selected-hole batch removal');
+  await eventually(()=>evaluate(
+    "document.querySelectorAll('[data-testid^=\"runtime-hole-editor-stamp.\"]').length===2"
+  ),'batch removal single-step undo');
+  await screenshot('26-model-batch-delete-undo.png');
+
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -767,7 +847,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -782,6 +862,7 @@ async function main() {
     archiveValidationRunsInRealChromiumWorker: true,
     malformedAndOversizedFileSelectionPreservesExistingModel: true,
     multiUndoHistoryWorkerImportRequiresConfirmation: true,
+    actualChromiumSelectedHoleStampAndBatchDeleteUndo: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
