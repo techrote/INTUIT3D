@@ -1,7 +1,7 @@
 /** Type-only browser consumer of the real public RUNTIME/INTENT package boundary. */
 import type {UndoHistory} from '@intuit3d/model/transactions';
 import type {WorkflowRuntime} from '../index.mjs';
-import {createLivePlateSession,type LivePlateSessionState} from '../live-plate-session.mjs';
+import {createLivePlateSession,type LivePlateSessionState,type LiveCadBatch} from '../live-plate-session.mjs';
 import type {VerifiedLocalStep,LocalPlateClientResult} from '../local-plate-client.mjs';
 
 declare const runtime:WorkflowRuntime;
@@ -93,3 +93,28 @@ async function solverPreviewThenNative() {
   return committed;
 }
 void solverPreviewThenNative;
+
+/** Browser consumer can stage multiple typed operations with one source fence
+ * and one durable write; each inner command has no per-operation revision. */
+const grouped:LiveCadBatch={
+  kind:'commands.batch',projectId:state.projectId,
+  expectedRevision:state.revision,commands:[
+    {kind:'model.events',events:[{eventId:'type.batch.thickness',
+      type:'feature.edit',featureId:'plate',
+      patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:12}}}]},
+    {kind:'sketch.holes',request:{
+      sketchFeatureId:'sketch.plate',eventId:'type.batch.hole',
+      operations:[{kind:'add',id:'typeHole',x:60,y:20,radius:4}],
+    }},
+  ],
+};
+const batchCommitted=session.applyCommands(grouped);
+if(batchCommitted.kind==='committed') {
+  const report:number=batchCommitted.report.revision;
+  void report;
+}
+const submitBatch=session.applyCommandsAndEvaluate(grouped,{
+  url:'http://127.0.0.1:3000',token:'0'.repeat(64),
+  requiredBackend:'OCCT-cxx-8.0.1',exportStep:true,
+});
+void submitBatch;

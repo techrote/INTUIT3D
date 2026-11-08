@@ -37,6 +37,20 @@ export type LiveCadCommand = Readonly<{projectId:string;expectedRevision:number}
   | Readonly<{kind:'sketch.holes.transform';request:Omit<RigidHoleTransformRequest,'expectedRevision'>}>
   | Readonly<{kind:'sketch.holes.resize';request:Omit<HoleLayoutResizeRequest,'expectedRevision'>}>
 );
+/** A bounded group of accepted public commands, staged without publishing
+ * intermediate revisions. Each operation omits its own project/revision fence:
+ * the runtime assigns successive authoritative revisions while staging.
+ * Undo/redo retains normal per-transaction INTENT semantics.
+ */
+export type LiveCadOperation = LiveCadCommand extends infer C
+  ? C extends LiveCadCommand ? Omit<C,'projectId'|'expectedRevision'> : never
+  : never;
+export interface LiveCadBatch {
+  readonly kind:'commands.batch';
+  readonly projectId:string;
+  readonly expectedRevision:number;
+  readonly commands:readonly LiveCadOperation[];
+}
 export type SessionEdit = UndoHistory | SketchConstraintBatchResult;
 export type SessionEditResult =
   | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
@@ -92,6 +106,16 @@ export interface LivePlateSession {
   applyEdit(edit:(history:UndoHistory)=>SessionEdit):SessionEditResult;
   /** Execute a versioned, project/revision-fenced semantic CAD command. */
   applyCommand(command:LiveCadCommand):SessionEditResult;
+  /** Atomically publish the result of 1–16 ordered model/SKETCH commands.
+   * A refused command does not commit ANY of the staged intermediate edits.
+   * A successful batch emits one durable archive write, not one undo record.
+   */
+  applyCommands(batch:LiveCadBatch):SessionEditResult;
+  /** Commit the whole admitted batch before one latest-revision native attempt. */
+  applyCommandsAndEvaluate(
+    batch:LiveCadBatch,
+    options?:Readonly<LivePlateEvaluationOptions>,
+  ):Promise<SessionEditAndEvaluateResult>;
   /** Commit only an admitted command, then evaluate through the trusted native host. */
   applyCommandAndEvaluate(
     command:LiveCadCommand,

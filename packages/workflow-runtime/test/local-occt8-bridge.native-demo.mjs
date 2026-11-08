@@ -5,7 +5,10 @@
  * No synthetic provider is installed. This script fails without the worker.
  */
 import assert from 'node:assert/strict';
-import {isAbsolute} from 'node:path';
+import {isAbsolute,join} from 'node:path';
+import {mkdtempSync,readFileSync,writeFileSync,renameSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {createHash} from 'node:crypto';
 import * as model from '@intuit3d/model';
 import * as transactions from '@intuit3d/model/transactions';
 import * as bindings from '@intuit3d/model/dimension-bindings';
@@ -19,6 +22,7 @@ import {runPinnedOcct8Plate} from '@intuit3d/kernel-contract/local-occt8-provide
 import {createWorkflowRuntime} from '../index.mjs';
 import {startLocalPinnedOcct8Bridge} from '../local-plate-bridge.mjs';
 import {createLivePlateSession} from '../live-plate-session.mjs';
+import {createPersistentHistorySource} from '../persistent-history-source.mjs';
 import {verifyCurrentLivePlateStep} from '../nonocct-step-probe.mjs';
 
 const worker=process.env.INTUIT3D_OCCT8_WORKER;
@@ -38,6 +42,10 @@ current=runtime.commit(current,[
 // Fail before opening a localhost listener when an external verification run
 // cannot possibly proceed. Do not leave a live process behind on misconfiguration.
 const independentRequired=process.argv.includes('--require-independent');
+// Preserve the existing seven-stage JSON output contract for PLATFORM's
+// source-pinned runtime_material_oracle. An opt-in additive run qualifies the
+// new atomic two-command edit + disk-backed session recovery.
+const runAtomicBatch=process.argv.includes('--atomic-batch');
 const probeExecutable=process.env.INTUIT3D_ANVIL_STEP_PROBE;
 const expectedProbeSha256=process.env.INTUIT3D_ANVIL_PROBE_SHA256;
 if(independentRequired && (!probeExecutable||!expectedProbeSha256))
@@ -45,19 +53,42 @@ if(independentRequired && (!probeExecutable||!expectedProbeSha256))
 if(Boolean(probeExecutable)!==Boolean(expectedProbeSha256))
   throw new Error('Provide both AnvilCAD probe path and pinned binary SHA-256');
 const runIndependent=Boolean(probeExecutable);
+// A real filesystem-backed, single-writer project archive. Each model edit is
+// published by a same-directory atomic rename; reopening below reads from disk,
+// not an in-memory duplicate of the INTENT document.
+const tempDir=mkdtempSync(join(tmpdir(),'intuit3d-occt8-session-'));
+const archivePath=join(tempDir,'canonical-project.json');
+const storageKey='intuit3d.real-occt8.demo';
+let archiveWrites=0;
+const diskStorage={
+  getItem(key){
+    if(key!==storageKey)throw new Error('unexpected archive key');
+    try {return readFileSync(archivePath,'utf8');}
+    catch(error){if(error?.code==='ENOENT')return null;throw error;}
+  },
+  setItem(key,value){
+    if(key!==storageKey||typeof value!=='string')
+      throw new Error('invalid native demonstration archive write');
+    const pending=join(tempDir,'project.'+(++archiveWrites)+'.tmp');
+    writeFileSync(pending,value,{flag:'wx'});
+    renameSync(pending,archivePath);
+  },
+};
+const durable=createPersistentHistorySource({
+  runtime,storage:diskStorage,key:storageKey,initialHistory:current,
+});
 const host=await startLocalPinnedOcct8Bridge({
   runtime,model,plateContract,runPinnedOcct8Plate,workerExecutable:worker,
   pythonExecutable:process.env.PYTHON||(process.platform==='win32'?'python':'python3'),
   timeoutMs:120000,
 });
-const session=createLivePlateSession({
-  runtime,readCurrentHistory:()=>current,publishHistory:h=>{current=h;},
-});
+const session=createLivePlateSession({runtime,...durable});
 const results=[];
 const options=(id)=>({
-  url:host.url,token:host.token,requestId:id,exportStep:true,deadlineMs:120000,
+  url:host.url,token:host.token,requestId:id,exportStep:true,
+  deadlineMs:120000,requiredBackend:'OCCT-cxx-8.0.1',
 });
-async function record(out,stage){
+async function record(out,stage,activeSession=session){
   assert.equal(out.kind,'experimental_plate_evaluated',JSON.stringify(out));
   assert.equal(out.result.backend,'OCCT-cxx-8.0.1');
   assert.equal(out.result.occtVersion,'8.0.1');
@@ -68,14 +99,14 @@ async function record(out,stage){
   });
   assert.equal(out.exactAuthority,false);
   assert.equal(out.independentInteroperability,false);
-  assert.equal(session.currentStep()?.sha256,out.step.sha256);
+  assert.equal(activeSession.currentStep()?.sha256,out.step.sha256);
   const target=expectedPlateMetrics(out.result.intendedPlate);
   const volume=out.result.observed.source.volumeMm3;
   assert.ok(Math.abs(target.volumeMm3-volume)<=Math.max(1e-7,Math.abs(target.volumeMm3)*1e-10));
   assert.ok(new TextDecoder().decode(out.step.bytes.subarray(0,20)).includes('ISO-10303-21'));
   const sample=runIndependent
     ? await verifyCurrentLivePlateStep({
-        session,evaluation:out,probeExecutable,expectedProbeSha256,
+        session:activeSession,evaluation:out,probeExecutable,expectedProbeSha256,
       })
     : null;
   results.push({stage,revision:out.source.revision,
@@ -149,11 +180,66 @@ try{
   assert.deepEqual(results[6].holes,results[0].holes);
   assert.ok(Math.abs(results[6].volumeMm3-results[0].volumeMm3)<1e-7);
   assert.equal(session.save(),initialArchive);
+
+  if(runAtomicBatch){
+  // Physical batch acceptance: change an EARLIER extrusion dimension AND
+  // resize two solver-authored hole constraints as one durable transaction
+  // publication, then request one genuine pinned C++ rebuild. There must be
+  // no intermediate native job or partially written project archive.
+  const source=session.refresh();
+  const writesBefore=archiveWrites;
+  const batched=await session.applyCommandsAndEvaluate({
+    kind:'commands.batch',projectId:source.projectId,
+    expectedRevision:source.revision,commands:[
+      {kind:'model.events',events:[{eventId:'pinned.real.batch.thickness.12',
+        type:'feature.edit',featureId:'plate',
+        patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:12}}}]},
+      {kind:'sketch.holes.resize',request:{
+        sketchFeatureId:'sketch.plate',eventId:'pinned.real.batch.layout',
+        admission:'require_admissible',holeIds:['holeA','holeB'],
+        pivotXmm:60,pivotYmm:40,scaleX:0.8,scaleY:1,radiusScale:0.75,
+      }},
+    ],
+  },options('pinned.real.atomic.batch'));
+  assert.equal(batched.kind,'submitted',JSON.stringify(batched));
+  assert.equal(batched.edit.report.revision,source.revision+2);
+  assert.deepEqual(batched.edit.invalidation.invalidatedFeatureIds,
+    ['sketch.plate','plate','cut']);
+  assert.equal(archiveWrites,writesBefore+1,
+    'two accepted model edits must durably publish exactly once');
+  await record(batched.evaluation,'atomic-thickness-and-hole-layout');
+  assert.deepEqual(results[7].holes,results[2].holes);
+  assert.ok(Math.abs(results[7].volumeMm3-results[2].volumeMm3)<1e-7);
+  assert.notEqual(results[7].sha256,results[0].sha256);
+  const batchArchive=session.save();
+  assert.equal(readFileSync(archivePath,'utf8'),batchArchive);
+
+  // Fresh session instance from the same ON-DISK authoritative journal.
+  // STEP is not persisted or reused: real pinned C++ must reconstruct it.
+  const reopenedSession=createLivePlateSession({
+    runtime,...createPersistentHistorySource({runtime,storage:diskStorage,key:storageKey}),
+  });
+  assert.equal(reopenedSession.save(),batchArchive);
+  assert.equal(reopenedSession.currentStep(),null);
+  await record(await reopenedSession.evaluate(options('pinned.real.disk.reopen')),
+    'disk-backed-session-reopen-rebuild',reopenedSession);
+  assert.deepEqual(results[8].holes,results[7].holes);
+  assert.ok(Math.abs(results[8].volumeMm3-results[7].volumeMm3)<1e-7);
+  assert.equal(archiveWrites,writesBefore+1,
+    'native evaluation and archive reopen must never rewrite model history');
+  reopenedSession.cancel();
+  }
   console.log(JSON.stringify({kind:runIndependent?'RUNTIME_REAL_PINNED_OCCT8_EXTERNAL_SAMPLE_EXECUTED':'RUNTIME_REAL_PINNED_OCCT8_LOCAL_BRIDGE_PASS',
     source:'actual INTENT/SKETCH and native C++ worker',
     exactAuthority:false,independentInteroperability:false,
-    externalCadProbeExecuted:runIndependent,results},null,2));
+    externalCadProbeExecuted:runIndependent,
+    ...(runAtomicBatch?{
+      persistedArchiveSha256:createHash('sha256').update(session.save()).digest('hex'),
+      persistentHistoryWrites:archiveWrites,
+    }:{}),
+    results},null,2));
 }finally{
   session.cancel();
-  await host.close();
+  try {await host.close();}
+  finally {rmSync(tempDir,{recursive:true,force:true});}
 }

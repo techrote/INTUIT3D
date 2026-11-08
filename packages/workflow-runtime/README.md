@@ -772,3 +772,110 @@ refusal. **It does not establish native geometry**. The pinned OCCT8 worker
 must be source-matched and separately physically executed; a pinned-backend
 selection restricts provider choice but does not promote `exactAuthority` or
 `independentInteroperability` to true.
+
+### Atomic ordered CAD command batches
+
+WORKBENCH can author a dependent edit burst **without publishing partial
+sketch/feature states** using `session.applyCommands(batch)`. The outer
+`projectId` / `expectedRevision` fence applies to the *entire* batch;
+each bounded operation receives the next real INTENT revision internally.
+The canonical history source is written **once**, after every accepted
+transaction and SKETCH/profile admission; any refused operation reports its
+zero-based `commandIndex` and commits nothing. Invalid arguments throw
+without publishing any intermediate edits. This is not a second preview
+model, native geometry result or a new undo-log format.
+
+```ts
+const {projectId,revision}=session.refresh();
+const outcome=await session.applyCommandsAndEvaluate({
+  kind:'commands.batch',projectId,expectedRevision:revision,
+  commands:[
+    {kind:'model.events',events:[{eventId:'edit.thickness.12',
+      type:'feature.edit',featureId:'plate',
+      patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:12}}}]},
+    {kind:'sketch.holes',request:{sketchFeatureId:'sketch.plate',
+      eventId:'edit.add.holeC',
+      operations:[{kind:'add',id:'holeC',x:60,y:20,radius:4}]}},
+  ],
+},{requiredBackend:'OCCT-cxx-8.0.1',exportStep:true});
+if(outcome.kind==='submitted') {
+  // A submitted native evaluation can still be unresolved. It is never
+  // implicitly production-exact or independently interoperable.
+  const verifiedCurrent=session.currentStep();
+}
+```
+
+This commits two ordinary undoable INTENT transactions in one **durable
+archive replacement**, not one combined undo entry. A future undo of the
+whole group must undo both transactions through the normal model contract.
+There is at most one native evaluation after admission; any changed
+revision revokes previous STEP receipts immediately. Synchronous
+single-writer storage is still required: `Storage.getItem/setItem` is
+not cross-tab compare-and-swap. Run
+`node --test packages/workflow-runtime/test/atomic-command-batch.integration.test.mjs`
+for real INTENT/SKETCH + loopback HTTP testing with a clearly synthetic
+native provider. Physical pinned OCCT8 and external STEP geometry still
+require their separate executable acceptance.
+
+
+### Source-matched disk archive + genuinely pinned C++ batch acceptance
+
+`test/atomic-command-batch.integration.test.mjs` now exercises a real
+single-file, rename-atomic archive on both hosted Node platforms. It commits
+two INTENT/SKETCH changes with **one** durable write, reopens the exact
+archive in a new session, simulates a crash after staging but before archive
+rename, and proves that a subsequent fresh session can recover and rebuild
+the uncorrupted 12 mm / three-hole project. The rebuild transport uses an
+explicitly **synthetic** native provider. It is NOT a real OCCT run.
+
+The existing native integration executable,
+`test/local-occt8-bridge.native-demo.mjs`, retains its original seven-stage
+JSON contract for PLATFORM's exact stage/material oracle. With explicit
+`--atomic-batch` it additionally tests a two-command batch through the
+**actual configured OCCT 8.0.1 C++ provider**. It
+retrospectively changes extrusion thickness and independently resizes both
+SKETCH hole constraints, verifies one file-backed model publication, tests
+analytic volume and physical STEP receipts, then reconstructs the identical
+model in a new disk-backed live session without persisting/reusing STEP bytes.
+It retains the existing native seven-state undo/reopen run and optionally
+checks every current STEP through the independently pinned external probe.
+No synthetic provider is installed in this executable.
+
+```sh
+npm ci
+npm test --workspace @intuit3d/workflow-runtime
+npm run typecheck --workspace @intuit3d/workflow-runtime
+
+# Physically run the source-matched C++ worker (fails if absent):
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+  npm run demo:occt8:bridge --workspace @intuit3d/workflow-runtime
+
+# Additional physical atomic batch + fresh disk-backed session restart:
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+  node packages/workflow-runtime/test/local-occt8-bridge.native-demo.mjs --atomic-batch
+
+# For real independent imported STEP samples, also provide both:
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+INTUIT3D_ANVIL_STEP_PROBE=/absolute/path/to/intuit_step_probe \
+INTUIT3D_ANVIL_PROBE_SHA256=<actual-64-character-binary-sha256> \
+  npm run demo:occt8:independent --workspace @intuit3d/workflow-runtime
+
+# The combined physical batch AND independent CAD importer:
+INTUIT3D_OCCT8_WORKER=/absolute/path/to/intuit3d_occt8_plate \
+INTUIT3D_ANVIL_STEP_PROBE=/absolute/path/to/intuit_step_probe \
+INTUIT3D_ANVIL_PROBE_SHA256=<actual-64-character-binary-sha256> \
+  node packages/workflow-runtime/test/local-occt8-bridge.native-demo.mjs \
+    --atomic-batch --require-independent
+```
+
+The demonstration prints SHA-256, source revision, actual provider/geometry
+and STEP outputs. The additive `--atomic-batch` mode also prints a digest
+of the canonical disk archive and its durable write count. The script deletes
+its temporary working directory on normal exit. This adds a runnable
+**acceptance path**, not evidence that the worker or external probe was
+executed on ordinary Node CI. The host still requires provisioned,
+source-matched actual native binaries (#154/#159), and #74 governs
+cross-package browser and independent product acceptance. Only Integration
+may merge and close the original #73 lifecycle gate. Both ordinary and
+native demonstrations retain `exactAuthority:false` and
+`independentInteroperability:false` at the application boundary.
