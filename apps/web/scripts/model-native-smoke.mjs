@@ -1310,6 +1310,77 @@ async function main(){
   await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-120)<0.001"),
     'reopened historical compensation could not be redone');
   await screenshot('native-14-historical-compensation-reopened.png');
+  // Real pointer + keyboard acceptance of MODEL's admitted #304 multi-feature
+  // historical transaction. Produce two distinct, current feature.edit sources
+  // through ordinary workbench fields, rather than injecting model state.
+  const originalThickness=Number(await evaluate(
+    "document.querySelector('[data-testid=runtime-dimension-thickness]')?.value"));
+  check(Number.isFinite(originalThickness)&&originalThickness>0,
+    'No editable current thickness for multi-feature historical compensation');
+  const batchThickness=originalThickness===11?13:11;
+  check(await evaluate("(() => {const el=document.querySelector('[data-testid=runtime-dimension-width]');el?.focus();el?.select();return document.activeElement===el})()"),
+    'cannot focus user sketch width for batch fixture');
+  await send('Input.insertText',{text:'142'});await key('Enter','Enter',13);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-width]')?.value==='142'"),
+    'batch fixture width edit did not reach SKETCH');
+  check(await evaluate("(() => {const el=document.querySelector('[data-testid=runtime-dimension-thickness]');el?.focus();el?.select();return document.activeElement===el})()"),
+    'cannot focus current extrusion thickness for batch fixture');
+  await send('Input.insertText',{text:String(batchThickness)});await key('Enter','Enter',13);
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-dimension-thickness]')?.value===${JSON.stringify(String(batchThickness))}`),
+    'batch fixture thickness edit did not reach INTENT');
+  const batchSourceRevision=Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0]);
+  await pointerClick('runtime-history-open');
+  const queueFeature=async(featureId)=>{
+    const rect=await eventually(()=>evaluate(`(() => {
+      const row=[...document.querySelectorAll('[data-testid=runtime-history-row]')]
+        .find(el=>el.firstElementChild?.textContent?.startsWith(${JSON.stringify(featureId+' ·')}));
+      const button=[...row?.querySelectorAll('[data-testid=runtime-history-batch-queue]')??[]]
+        .find(el=>el.dataset.historyField==='payload'&&!el.disabled);
+      if(!button)return null;
+      button.scrollIntoView({block:'center',behavior:'instant'});
+      const r=button.getBoundingClientRect();
+      return {x:r.left+r.width/2,y:r.top+r.height/2};
+    })()`),'actual history choice for '+featureId);
+    check(rect.x>0&&rect.y>0&&rect.y<900,'batch history button outside viewport');
+    await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:rect.x,y:rect.y});
+    await send('Input.dispatchMouseEvent',{type:'mousePressed',x:rect.x,y:rect.y,button:'left',clickCount:1});
+    await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:rect.x,y:rect.y,button:'left',clickCount:1});
+  };
+  await queueFeature('plate');await queueFeature('sketch.plate');
+  await eventually(()=>evaluate(
+    "document.querySelector('[data-testid=runtime-history-batch-panel]')?.textContent?.includes('2/8 selected')"),
+    'real pointer batch queue did not retain two different semantic features');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-history-batch-review]')?.disabled"),
+    'combined review must admit two distinct source features');
+  await pointerClick('runtime-history-batch-review');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-history-batch-confirmation]'))"),
+    'MODEL combined preflight not visible after actual pointer review');
+  if(await evaluate("Boolean(document.querySelector('[data-testid=runtime-history-batch-consent]'))")
+    await pointerClick('runtime-history-batch-consent');
+  await pointerClick('runtime-history-batch-apply');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-width]')?.value==='120'"),
+    'atomic history compensation failed to restore original SKETCH width');
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-dimension-thickness]')?.value===${JSON.stringify(String(originalThickness))}`),
+    'atomic history compensation failed to restore original extrusion thickness');
+  check(Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0])===batchSourceRevision+2,
+    'atomic two-feature batch did not commit exactly two journal revisions');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'atomic batch falsely reused stale native STEP');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-width]')?.value==='142'"),
+    'one undo did not restore BOTH queued historical feature edits');
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-dimension-thickness]')?.value===${JSON.stringify(String(batchThickness))}`),
+    'one undo did not restore second batch feature');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-width]')?.value==='120'"),
+    'one redo failed to restore atomic sketch compensation');
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-dimension-thickness]')?.value===${JSON.stringify(String(originalThickness))}`),
+    'one redo failed to restore atomic extrusion compensation');
+  await screenshot('native-15-atomic-historical-batch.png');
   await pointerClick('runtime-mode-solid');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
