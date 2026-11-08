@@ -138,7 +138,7 @@ test('real archived multi-body INTENT refuses partial STEP; undo restores one-bo
   assert.equal(blocked.artifact,null);
   assert.equal(calls,1,'a second authored body never produces a misleading one-body STEP');
 
-  history=runtime.undo(history,['undo.second.body']);
+  history=runtime.undo(history,['undo.second.extrude','undo.second.sketch']);
   assert.equal(model.featuresOf(history.document).filter(f=>f.kind==='extrude').length,1);
   assert.equal((await evaluate()).code,'worker_crash');
   assert.equal(calls,2,'undo removing the second body restores native eligibility');
