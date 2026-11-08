@@ -144,6 +144,7 @@ def install(archive: Path, destination: Path, expected_digest: str,
     return {
         "status": "OFFLINE_OCCT8_INSTALL_PASS",
         "archiveSha256": actual_digest,
+        "manifestSha256": sha256(destination / "manifest.json"),
         "kernelSourceCommit": expected_kernel_sha,
         "occtSourceCommit": OCCT_SHA,
         "workerSha256": manifest["workerSha256"],

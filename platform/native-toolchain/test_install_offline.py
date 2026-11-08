@@ -82,6 +82,8 @@ class InstallerTests(unittest.TestCase):
         info = target.install(self.archive, self.destination,
                               self.digest, self.kernel_sha)
         self.assertEqual(info["status"], "OFFLINE_OCCT8_INSTALL_PASS")
+        self.assertEqual(info["manifestSha256"],
+                         target.sha256(self.destination / "manifest.json"))
         self.assertEqual(info["nativeReplayCases"],
                          ["12", "8", "edited8", "restored8"])
         self.assertEqual(subprocess.check_output([info["workerPath"]]).strip(), b"42")

@@ -261,3 +261,54 @@ must not exist. These files are **same-engine C++/Part 21 evidence**, *not*
 proof of independent non-OCCT import. Integration may pass the immutable
 STEP files and hashes to the STEP conformance lane for additional independent
 checks without rerunning the costly OCCT compilation.
+
+
+## Re-attest an offline Linux installation before reopening a local RUNTIME session
+
+The archive installer returns `manifestSha256` in addition to `archiveSha256`,
+`workerSha256` and `kernelSourceCommit`. Save its JSON output **outside**
+the installed bundle; the installed directory is not its own trust anchor.
+The independent manifest digest is required on each new local session so
+changed bridge code, SONAME symlinks, verification scripts and the C++ ELF
+cannot authenticate themselves merely by rewriting a local manifest.
+
+Using an already downloaded, SHA-256-verified archive (no network, compiler,
+CMake or OCCT prefix required):
+
+```bash
+python3 platform/native-toolchain/install_offline.py \
+  --archive /path/to/offline-occt801.tar.gz \
+  --destination "$HOME/intuit3d/native/current" \
+  --expected-sha256 <independently-recorded-archive-sha256> \
+  --kernel-sha <immutable-kernel-commit> \
+  > "$HOME/intuit3d/native-install-receipt.json"
+
+# Use the pinned fields from that saved external receipt, not a newly
+# computed digest or source identity obtained from the installed directory.
+python3 platform/native-toolchain/resume_offline.py \
+  --directory "$HOME/intuit3d/native/current" \
+  --manifest-sha256 <receipt-manifestSha256> \
+  --kernel-sha <receipt-kernelSourceCommit> \
+  --worker-sha256 <receipt-workerSha256> \
+  --replay
+```
+
+Reopening verifies the independently pinned manifest, full installed file and
+SONAME inventory **before executing bundled verification code**, the actual
+host loader/ELF ABI, and (with `--replay`) four freshly executed C++/STEP
+edit/restoration cases. Without `--replay`, the operation is a less expensive
+file/source/ABI preflight, **not proof of freshly run native geometry**.
+`--worker-path-only` prints the checked executable path for export as
+`INTUIT3D_OCCT8_WORKER`; this command does **not** launch or qualify the
+separate RUNTIME session. Installation paths may have any directory name.
+Windows-native/MSVC and independent CAD interoperability remain unqualified
+by this Linux-only operational path.
+
+```bash
+python3 -m unittest discover -s platform/native-toolchain -p 'test_*.py' -v
+```
+
+The restart regression compiles a genuine small C/ELF fixture to exercise
+SONAME resolution, standalone re-attestation and fail-closed tamper cases;
+it is **not** itself OCCT8 qualification. Physical archived OCCT8 geometry
+must be tested separately against the source-matched hosted bundle.
