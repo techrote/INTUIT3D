@@ -13,7 +13,7 @@ import type { JournalEvent, ProjectDocument } from './index.ts';
 import { planIncrementalEvaluation } from './incremental.ts';
 import type { IncrementalEvaluationPlan } from './incremental.ts';
 import { previewSemanticSelectionEdit, SEMANTIC_SELECTION_EDIT_FORMAT } from './semantic-selection.ts';
-import { inspectSelectionInventory } from './selection-inventory.ts';
+import { inspectSelectionInventory, SELECTION_EVIDENCE_FORMAT } from './selection-inventory.ts';
 import type { SelectionEvidenceReceipt } from './selection-inventory.ts';
 import {
   TOPOLOGY_REFERENCE_FORMAT, resolveSemanticTopologyReference,
@@ -291,7 +291,7 @@ export function previewFencedSelectionRepairBatch(
     // The v1 inventory still validates the entire topology trace, source
     // reference, provider type and project/revision/field identity.
     return {
-      format: 'intuit3d.selection-evidence', version: 1,
+      format: SELECTION_EVIDENCE_FORMAT, version: 1 as const,
       projectId: receipt.projectId, revision: receipt.revision,
       featureId: receipt.featureId, field: receipt.field,
       reference: receipt.reference, provider: receipt.provider,
