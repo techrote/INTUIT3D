@@ -44,7 +44,9 @@
     "demo:native": "node test/experimental-plate.native-demo.mjs",
     "demo:bridge": "node test/local-plate-bridge.native-demo.mjs",
     "demo:occt8:bridge": "node test/local-occt8-bridge.native-demo.mjs",
-    "demo:occt8:independent": "node test/local-occt8-bridge.native-demo.mjs --require-independent"
+    "demo:occt8:independent": "node test/local-occt8-bridge.native-demo.mjs --require-independent",
+    "demo:occt8:from-empty": "node test/local-occt8-bridge.native-demo.mjs --from-empty",
+    "demo:occt8:from-empty:independent": "node test/local-occt8-bridge.native-demo.mjs --from-empty --require-independent"
   },
   "engines": {
     "node": ">=22.6.0"
