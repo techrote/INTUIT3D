@@ -87,6 +87,10 @@
     "./compound-pocket-reconfigure/v1": {
       "types": "./compound-pocket-reconfigure.d.mts",
       "default": "./src/compound-pocket-reconfigure.mjs"
+    },
+    "./cut-block-placement/v1": {
+      "types": "./cut-block-placement.d.mts",
+      "default": "./src/cut-block-placement.mjs"
     }
   },
   "peerDependencies": {
