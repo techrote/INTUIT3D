@@ -79,6 +79,20 @@ test('explicit radius handles retain semantic ID and reject nonpositive radius',
   assert.equal(valid.sketch.constraints.find(c=>c.id==='L:holeLowerRadius').value,6);
   assert.ok(valid.handles.some(x=>x.handleId===h.handle.handleId));
 });
+test('overconstrained signed edit returns genuine conflict witness and leaves source unchanged',()=>{
+  const doc=base(),latched=createSketch({...doc,constraints:[
+    ...doc.constraints,{id:'L:lengthLatch',kind:'distanceX',
+      a:'L:a',b:'L:b',value:120}
+  ]});
+  assert.equal(solveSketch(latched).status,'solved');
+  const s=select(latched),prior=stamp(latched);
+  const bad=drag(latched,s,'dimension:L:length',{x:150,y:0});
+  assert.equal(bad.kind,'refused',JSON.stringify(bad));
+  assert.equal(bad.sourceStatus,'conflicted');
+  assert.ok(bad.diagnostics.some(d=>d.code==='contradictory_constraints'));
+  assert.ok(bad.conflict,'existing certified conflict explanation must survive pointer adapter');
+  assert.equal(stamp(latched),prior);
+});
 test('pointer/radius budgets, missing IDs, stale and malformed commands refuse',()=>{
   const doc=base(),s=select(doc),signature=stamp(doc);
   for(const invalid of [
