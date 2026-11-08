@@ -61,6 +61,15 @@ export interface LivePlateSessionState {
   revision:number;
   inFlight:boolean;
   hasVerifiedStep:boolean;
+  /** The latest provider attempt, separate from still-current last-good bytes. */
+  providerState:'idle'|'pending'|'evaluated'|'provider_failed';
+  /** Source-valid STEP custody; last_good means a newer attempt is pending/failed.
+   * unavailable includes revisions whose previous STEP was revoked by editing.
+   * Even 'current' remains experimental, never independent STEP acceptance. */
+  stepAvailability:'unavailable'|'current'|'last_good';
+  /** Latest terminal refusal for this exact archive, never stale across edits. */
+  lastResultCode:string|null;
+  lastResultReason:string|null;
   /** A solver-backed pointer pose is pending commit/cancellation. */
   hasActivePreview:boolean;
   lastResultKind:LocalPlateClientResult['kind']|null;
