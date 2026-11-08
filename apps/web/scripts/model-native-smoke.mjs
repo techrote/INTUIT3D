@@ -1187,8 +1187,22 @@ async function main(){
     button:'left',buttons:1});
   await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:dragStart.x+dragStart.dx,y:dragStart.y,
     button:'left',clickCount:1});
-  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)===130"),
-    'Pointer-released semantic profile handle failed to commit width 120 -> 130');
+  try {
+    await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)===130"),
+      'Pointer-released semantic profile handle failed to commit width 120 -> 130');
+  }catch(error){
+    const observed=await evaluate(`(() => JSON.stringify({
+      width:document.querySelector('[data-testid=runtime-dimension-width]')?.value,
+      revision:document.querySelector('[data-testid=runtime-revision]')?.textContent,
+      handle:document.querySelector('[data-testid=runtime-profile-drag-handle]')?.outerHTML?.slice(0,500),
+      selected:document.querySelector('[data-testid=runtime-pointer-profile-selected]')?.textContent,
+      message:document.querySelector('.runtime-message')?.textContent,
+      status:[...document.querySelectorAll('[role=status]')].map(x=>x.textContent?.slice(0,250)),
+    }))()`);
+    await screenshot('native-12-semantic-drag-failure.png').catch(()=>{});
+    throw Error('Pointer width drag refused: '+String(error)+' observed='+observed+
+      ' dragStart='+JSON.stringify(dragStart));
+  }
   check(Number((await evaluate(
     "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0])===contourRevision+1,
     'Semantic pointer drag did not create exactly one model revision');
