@@ -107,7 +107,7 @@ function intersectsLinear(a,b,c,d){
   const x=cross(a,b,c),y=cross(a,b,d),z=cross(c,d,a),w=cross(c,d,b);
   return (x===0&&onSegment(a,b,c))||(y===0&&onSegment(a,b,d))||
     (z===0&&onSegment(c,d,a))||(w===0&&onSegment(c,d,b))||
-    ((x>0)!==(y>0)&&(z>0)!==(w>0));
+    (x*y<0&&z*w<0);
 }
 function linearGeometry(vertices){
   if(!Array.isArray(vertices)||vertices.length<3||vertices.length>64)
