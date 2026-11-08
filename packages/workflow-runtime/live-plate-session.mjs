@@ -144,7 +144,7 @@ export function createLivePlateSession({
           ![
             'model.events','model.undo','model.redo',
             'model.feature.remove','model.feature.recover-closure','dimensions.batch',
-            'sketch.constraints','sketch.holes','sketch.holes.rectangular',
+            'sketch.constraints','sketch.contour/v1','sketch.holes','sketch.holes.rectangular',
             'sketch.holes.circular','sketch.holes.transform',
             'sketch.holes.resize','sketch.holes.selected-edge',
              'sketch.holes.selected-profile','sketch.holes.selected-profile-layout',
@@ -246,6 +246,7 @@ export function createLivePlateSession({
           }
           case 'dimensions.batch': return runtime.editDimensions(history,request);
           case 'sketch.constraints': return runtime.editSketchConstraints(history,request);
+          case 'sketch.contour/v1': return runtime.commitClosedContour(history,{...request,expectedProjectId:command.projectId});
           case 'sketch.holes': return runtime.editPlateHoles(history,request);
           case 'sketch.holes.rectangular': return runtime.patternPlateHoles(history,request);
           case 'sketch.holes.circular': return runtime.patternCircularHoles(history,request);
