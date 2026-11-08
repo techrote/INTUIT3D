@@ -26,6 +26,7 @@ import { buildPinnedStepEvidenceZip, pinnedStepEvidenceFilename } from './stepEv
 import { MAX_MODEL_ARCHIVE_BYTES, validateModelFileInWorker, type ModelImportStage } from './modelArchiveImport';
 import { checkedModelArchiveSize, modelArchiveDownloadName, modelArchiveSummary } from './modelFileLifecycle';
 import { deleteLocalRecovery, listLocalRecoveries, readLocalRecovery, storeLocalRecovery, type LocalRecoverySummary } from './modelRecovery';
+import { appendImportTrace, serializeImportTrace, type ImportTraceEntry, type ImportTraceStage } from './importTrace';
 
 const LABEL: Record<ModelDimension,string> = {
   width:'Plate width', depth:'Plate depth', holeDiameter:'Hole diameter',
@@ -156,6 +157,26 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const importAbort=useRef<AbortController|null>(null);
   const [loadingFile,setLoadingFile]=useState<string|null>(null);
   const [importStage,setImportStage]=useState<ModelImportStage>('reading');
+  // The trace never retains filenames, model text, IDs or journal payloads.
+  const [importTrace,setImportTrace]=useState<readonly ImportTraceEntry[]>([]);
+  const importStarted=useRef<number|null>(null);
+  const noteImportStage=(stage:ImportTraceStage)=>{
+    if(importStarted.current===null)return;
+    const elapsed=Math.max(0,Math.round(performance.now()-importStarted.current));
+    setImportTrace(previous=>appendImportTrace(previous,stage,elapsed));
+    console.info('INTUIT3D_IMPORT_STAGE '+stage+' +'+elapsed+'ms');
+  };
+  const downloadImportTrace=()=>{
+    try{
+      const data=serializeImportTrace(importTrace);
+      const url=URL.createObjectURL(new Blob([data],{type:'application/json'}));
+      const anchor=document.createElement('a');
+      anchor.href=url;anchor.download='intuit3d-import-stage-trace.json';
+      try{document.body.appendChild(anchor);anchor.click();}
+      finally{anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+      setMessage('Privacy-safe import trace download requested. It contains stage labels and elapsed times only, never the selected archive. Verify the download before sharing.');
+    }catch(e){setMessage('Import trace unavailable: '+String(e));}
+  };
   const cancelActiveImport=()=>{
     ++loadTicket.current;
     importAbort.current?.abort();
@@ -659,8 +680,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     importAbort.current=abort;
     // Never apply an archive until the user explicitly confirms replacement.
     setPendingImport(null);
+    importStarted.current=performance.now();
+    setImportTrace([{stage:'file_selected',elapsedMs:0}]);
+    console.info('INTUIT3D_IMPORT_STAGE file_selected +0ms');
     setLoadingFile(file.name);
     setImportStage('reading');
+    noteImportStage('worker_reading');
     setMessage(null);
     try{
       if(file.size>MAX_MODEL_ARCHIVE_BYTES)throw Error('Archive exceeds 4 MiB');
@@ -670,14 +695,21 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       const incoming=await validateModelFileInWorker(file,{
         signal:abort.signal,
         onProgress:stage=>{
-          if(ticket===loadTicket.current&&!abort.signal.aborted)setImportStage(stage);
+          if(ticket===loadTicket.current&&!abort.signal.aborted){
+            setImportStage(stage);
+            noteImportStage(stage==='reading'?'worker_reading':
+              stage==='validating'?'worker_validating':'worker_transferring');
+          }
         },
       });
       if(ticket!==loadTicket.current||abort.signal.aborted)return;
       setPendingImport({file:file.name,history:incoming,origin});
+      noteImportStage('confirmation_ready');
     }catch(e){
-      if(ticket===loadTicket.current&&!abort.signal.aborted)
+      if(ticket===loadTicket.current&&!abort.signal.aborted){
+        noteImportStage('rejected');
         setMessage('Open rejected (current model retained): '+String(e));
+      }
     }finally{
       if(ticket===loadTicket.current){
         importAbort.current=null;
@@ -717,6 +749,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     if(!pendingImport)return;
     cancelActiveImport();
     acceptHistory(pendingImport.history);
+    if(pendingImport.origin!=='new')noteImportStage('replacement_confirmed');
     // Imported archives already exist on disk; newly created projects do not.
     setNeedsArchiveExport(pendingImport.origin!=='file');
     const plateRows=modelFeatureTimeline(pendingImport.history).filter(row=>row.featureId==='plate');
@@ -885,6 +918,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           onClick={prepareNewSketch}>New sketch-first project</button>
         <button className="ribbon-button" data-testid="runtime-save-archive" title="Save authoritative model archive (Ctrl+S)" onClick={save}>Save model archive</button>
         <button className="ribbon-button" title="Open authoritative model archive (Ctrl+O), or drop one JSON archive on the workbench" onClick={()=>fileInput.current?.click()}>Open model archive</button>
+        <button type="button" className="ribbon-button" data-testid="runtime-import-trace-download"
+          disabled={!importTrace.length} onClick={downloadImportTrace}
+          title="Local, privacy-safe stage trace for the last file-selection attempt; no archive contents">
+          Download import stage trace</button>
         <button className="ribbon-button" onClick={()=>{
           if(window.confirm('Leave the model-backed editor? Export your model archive first; the model session will close.'))onClose();
         }}>Preview sandbox</button>
@@ -1464,8 +1501,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         you can cancel without authoring a new revision.</p>
       <div className="recovery-actions">
         <button type="button" data-testid="runtime-import-processing-cancel"
-          onClick={()=>{cancelActiveImport();setMessage('Archive import cancelled; current model retained.');}}>
+          onClick={()=>{noteImportStage('cancelled');cancelActiveImport();setMessage('Archive import cancelled; current model retained.');}}>
           Cancel import</button>
+          <button type="button" data-testid="runtime-import-trace-processing"
+            onClick={downloadImportTrace}>Download privacy-safe stage trace</button>
       </div>
     </section></div>}
     {pendingImport&&<div className="recovery-backdrop"><section className="recovery-dialog" role="dialog"
@@ -1476,8 +1515,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       {needsArchiveExport&&<p data-testid="runtime-import-unexported"><strong>Current model has changes not exported since the last download request.</strong> Cancel and save its archive first to retain them.</p>}
       <p>Replace discards the current in-memory undo/redo journal. The incoming archive was validated in an isolated worker; no cached B-rep, STEP or exact-solid authority is imported.</p>
       <div className="recovery-actions">
-        <button data-testid="runtime-import-review-cancel" onClick={()=>{cancelActiveImport();setPendingImport(null);}}>Cancel</button>
+        <button data-testid="runtime-import-review-cancel" onClick={()=>{if(pendingImport.origin!=='new')noteImportStage('cancelled');cancelActiveImport();setPendingImport(null);}}>Cancel</button>
         <button data-testid="runtime-import-review-confirm" onClick={useIncoming}>Replace with model archive</button>
+        {pendingImport.origin!=='new'&&<button type="button" data-testid="runtime-import-trace-review"
+          onClick={downloadImportTrace}>Download privacy-safe stage trace</button>}
       </div>
     </section></div>}
   </div>;
