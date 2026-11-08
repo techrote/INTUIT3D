@@ -29,6 +29,10 @@ SUCCESS = re.compile(
     r"rays=(\d+) triangles=(\d+) volume_mm3=([0-9.]+) area_mm2=([0-9.]+)\Z")
 
 
+RAY_RECEIPT = re.compile(
+    r"WITNESS_RAY ([A-Za-z0-9._-]{1,56}) (material|void) intersections=(\d+)\Z")
+
+
 class Rejected(ValueError):
     pass
 
@@ -110,6 +114,13 @@ def witness_count(raw: bytes) -> int:
     return counts["RAY"]
 
 
+def authored_rays(raw: bytes) -> tuple[tuple[str, str], ...]:
+    """Expected identities/occupancy in authored witness order, not ray count alone."""
+    return tuple((parts[1], parts[8])
+                 for line in raw.decode("ascii").splitlines()[1:]
+                 if (parts := line.split()) and parts[0] == "RAY")
+
+
 def verify_originals(args: argparse.Namespace) -> dict:
     for value, expression in (
         (args.kernel_sha, HEX40), (args.worker_sha256, HEX64),
@@ -153,9 +164,10 @@ def verify_originals(args: argparse.Namespace) -> dict:
             0 <= args.negative_index < 6 and
             args.positive_index != args.negative_index,
             "distinct source-bound positive/negative stages required")
-    for i, path, expected in (
-        (args.positive_index, args.positive, args.positive_sha256),
-        (args.negative_index, args.negative, args.negative_sha256),
+    native_stages = {}
+    for role, i, path, expected in (
+        ("positive", args.positive_index, args.positive, args.positive_sha256),
+        ("negative", args.negative_index, args.negative, args.negative_sha256),
     ):
         item = items[i]
         original = bound_bytes(path, 50_000_000)
@@ -166,10 +178,25 @@ def verify_originals(args: argparse.Namespace) -> dict:
                 item.get("thickness") == (8 if i % 2 == 0 else 12) and
                 item.get("bodyId") == "body.sloped.bracket",
                 "STEP bytes not bound to their specific physical C++ stage")
+        revision = item.get("revision")
+        request_id = item.get("requestId")
+        require(type(revision) is int and revision >= 0 and
+                isinstance(request_id, str) and 0 < len(request_id) <= 128,
+                "native source stage revision/request identity missing")
+        native_stages[role] = {
+            "revision": revision, "requestId": request_id,
+            "bodyId": item["bodyId"], "cutCount": item["cutCount"],
+            "thicknessMm": item["thickness"], "stepSha256": expected,
+        }
+    expected_revision = getattr(args, "expected_native_revision", None)
+    if expected_revision is not None:
+        require(native_stages["positive"]["revision"] == expected_revision,
+                "positive STEP not from expected native source revision")
     require(args.positive_sha256 != args.negative_sha256,
             "negative must be a distinct genuine C++ STEP export")
     return {"cppSha256": cpp_sha, "rays": total_rays,
-            "witnessVersion": witness_version(witness_raw)}
+            "witnessVersion": witness_version(witness_raw),
+            "nativeStages": native_stages}
 
 
 def run_probe(probe: Path, step: Path, witness: Path, timeout: int,
@@ -194,11 +221,22 @@ def run_probe(probe: Path, step: Path, witness: Path, timeout: int,
     require(completed.returncode == 0 and not completed.stderr.strip(),
             "independent physical STEP import failed or warned")
     output = completed.stdout.strip().splitlines()
-    require(len(output) == count + (2 if version == 2 else 1) and
-            all(re.fullmatch(
-                r"WITNESS_RAY [A-Za-z0-9._-]{1,56} (material|void) intersections=\d+",
-                line) for line in output[:count]),
+    expected_rays = authored_rays(bound_bytes(witness, 100_000))
+    require(len(expected_rays) == count and
+            len(output) == count + (2 if version == 2 else 1),
             "physical witness ray receipts incomplete/malformed")
+    ray_receipts = []
+    for line, (expected_id, expected_occupancy) in zip(output[:count], expected_rays):
+        matched = RAY_RECEIPT.fullmatch(line)
+        require(matched is not None and
+                (matched.group(1), matched.group(2)) ==
+                (expected_id, expected_occupancy),
+                "physical ray receipt not bound to authored witness identity/order")
+        crossings = int(matched.group(3))
+        require(crossings % 2 == (1 if expected_occupancy == "material" else 0),
+                "physical ray intersection parity contradicts authored occupancy")
+        ray_receipts.append({"name": expected_id, "occupancy": expected_occupancy,
+                             "intersections": crossings})
     moments = None
     if version == 2:
         matched = MOMENTS.fullmatch(output[count])
@@ -210,7 +248,10 @@ def run_probe(probe: Path, step: Path, witness: Path, timeout: int,
             "independent exact-body physical acceptance missing")
     result = {"rayCount": count, "triangleCount": int(accepted.group(2)),
               "volumeMm3": float(accepted.group(3)),
-              "surfaceMm2": float(accepted.group(4))}
+              "surfaceMm2": float(accepted.group(4)),
+              "importedTopology": {"solids": 1, "exactBrep": True,
+                                   "warningCount": 0, "closedMesh": True},
+              "rayReceipts": ray_receipts}
     if moments is not None:
         result["independentMassMoments"] = moments
     return result
@@ -229,6 +270,8 @@ def execute(args: argparse.Namespace) -> int:
         "anvilSourceSha": args.anvil_source_sha,
         "witnessVersion": verified["witnessVersion"],
         "producerReceiptSha256": args.receipt_sha256,
+        "nativeStageIdentities": verified["nativeStages"],
+        "currentBrowserRevisionProven": False,
         "sourceToBinaryCompilationBinding": "separate exact-head hosted build-log review required",
         "physicalCases": [],
     }
@@ -271,10 +314,15 @@ def main() -> int:
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--positive-index", type=int, required=True)
     parser.add_argument("--negative-index", type=int, required=True)
+    parser.add_argument("--expected-native-revision", type=int,
+                        help="optional native stage revision fence, not browser authority")
     parser.add_argument("--timeout", type=int, default=60)
     args = parser.parse_args()
     try:
         require(1 <= args.timeout <= 120, "unbounded physical importer timeout")
+        require(args.expected_native_revision is None or
+                0 <= args.expected_native_revision < 2**53,
+                "invalid expected native source revision")
         return execute(args)
     except (Rejected, OSError, ValueError, TypeError, KeyError,
             subprocess.SubprocessError, UnicodeError, json.JSONDecodeError) as exc:
