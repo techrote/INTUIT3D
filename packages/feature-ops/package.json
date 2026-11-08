@@ -55,6 +55,10 @@
     "./rectangular-grid-placement/v1": {
       "types": "./rectangular-grid-placement.d.mts",
       "default": "./src/rectangular-grid-placement.mjs"
+    },
+    "./circular-bolt-orientation/v1": {
+      "types": "./circular-bolt-transform.d.mts",
+      "default": "./src/circular-bolt-transform.mjs"
     }
   },
   "peerDependencies": {
