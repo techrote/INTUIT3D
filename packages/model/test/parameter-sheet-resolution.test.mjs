@@ -217,6 +217,72 @@ test('second writer revision race and false ancestry fail closed after preview',
     divergent.document,draft,consent(base,divergent)),ProjectRevisionError);
 });
 
+test('two-row draft with one external row conflict commits atomically and preserves concurrent third row',()=>{
+  const base=setup();
+  const draft=edit(base.document,[
+    {eventId:'draft.width',featureId:'p.width',formula:'12'},
+    {eventId:'draft.offset',featureId:'p.offset',formula:'20'},
+  ]);
+  const external=commitUndoableParameterFormulaTableEdit(base,
+    edit(base.document,[
+      {eventId:'later.width',featureId:'p.width',formula:'10'},
+      {eventId:'later.margin',featureId:'p.margin',formula:'5'},
+    ]));
+  const report=rebaseParameterSheetEdit(base.document,external.document,draft,
+    external.document.revision);
+  assert.deepEqual(report.conflicts.map(c=>c.code),['edited_row_changed']);
+  const approved=resolveParameterSheetConflict(base.document,external.document,
+    draft,consent(base,external,[{
+      code:'edited_row_changed',featureId:'p.width',relatedId:null,
+    }]));
+  assert.equal(approved.status,'ready');
+  assert.equal(approved.preview.events.length,2);
+  assert.deepEqual(approved.valueComparisons.map(c=>c.currentDraftValue),[12,20]);
+  const applied=commitUndoableParameterFormulaTableEdit(external,
+    approved.resolvedRequest);
+  assert.equal(row(applied.document,'p.width').value,12);
+  assert.equal(row(applied.document,'p.offset').value,20);
+  assert.equal(row(applied.document,'p.margin').value,5);
+  assert.equal(applied.undoStack.length,3);
+  const undone=undoTransaction(applied,['undo.width','undo.offset']);
+  assert.equal(row(undone.document,'p.width').value,10);
+  assert.equal(row(undone.document,'p.offset').value,16);
+  assert.equal(row(undone.document,'p.margin').value,5);
+});
+
+test('transitive dependency conflict requires acknowledging the actual changed ancestor',()=>{
+  const original=setup();
+  const base=commitUndoableParameterFormulaTableEdit(original,
+    edit(original.document,[{
+      eventId:'bind.offset.margin',featureId:'p.offset',
+      formula:'margin + 12 mm',
+    }]));
+  const draft=edit(base.document,[{
+    eventId:'draft.width',featureId:'p.width',formula:'offset - 4 mm',
+  }]);
+  const current=commitUndoableParameterFormulaTableEdit(base,
+    edit(base.document,[{
+      eventId:'later.margin',featureId:'p.margin',formula:'6',
+    }]));
+  const before=rebaseParameterSheetEdit(base.document,current.document,draft,
+    current.document.revision);
+  assert.deepEqual(before.conflicts.map(c=>[c.code,c.relatedId]),[
+    ['referenced_parameter_changed','p.margin'],
+  ]);
+  const approved=resolveParameterSheetConflict(base.document,current.document,
+    draft,consent(base,current,[{
+      code:'referenced_parameter_changed',featureId:'p.width',
+      relatedId:'p.margin',
+    }]));
+  assert.equal(approved.status,'ready');
+  assert.equal(approved.valueComparisons[0].baseDraftValue,12);
+  assert.equal(approved.valueComparisons[0].currentDraftValue,14);
+  const applied=commitUndoableParameterFormulaTableEdit(current,
+    approved.resolvedRequest);
+  assert.equal(row(applied.document,'p.width').value,14);
+  assert.equal(row(applied.document,'p.offset').value,18);
+});
+
 test('the actual solved SKETCH / extrude / cut RUNTIME example confirms reviewed value drift and archive',()=>{
   const report=runParameterSheetConflictPlate();
   assert.equal(report.draftThicknessAtBaseMm,12);
