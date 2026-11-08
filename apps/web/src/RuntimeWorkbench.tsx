@@ -7,6 +7,7 @@ import {
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
+import { HistoricalEditInspector } from './HistoricalEditInspector';
 import { SelectedEdgeHoleEditor } from './SelectedEdgeHoleEditor';
 import { selectModelProfileAtPointer, inspectModelPointerProfile, dragModelPointerProfileHandle } from './pointerProfileBridge';
 import type {SelectedProfileSelection} from '@intuit3d/sketch/selected-profile/v1';
@@ -1116,6 +1117,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               onClick={restoreSelectedFeature}>Restore selected feature</button>
           </div>):<p className="microcopy">Select the extrusion or cut in the feature browser to remove or restore it. Sketch constraints and parameter sources remain protected in this workbench.</p>}
         </div>
+        <HistoricalEditInspector key={history.document.projectId+':'+history.document.revision}
+          history={history} disabled={!!pendingImport||!!loadingFile}
+          onCommit={(next,source)=>{
+            if(liveHistory.current!==source)return false;
+            acceptHistory(next);return true;
+          }} onMessage={setMessage}/>
         <div className="inspector-section">
           <div className="section-head">EDIT RETROSPECTIVE DIMENSIONS</div>
           {(['width','depth','holeDiameter','holePitch'] as const).map(field=><ScalarInput
