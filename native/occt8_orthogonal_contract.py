@@ -11,6 +11,7 @@ from protocol import IDENTIFIER, MIN_DIM_MM, MAX_DIM_MM
 from occt8_cut_contract import (validate_mixed_cut_request, validate_cut_result)
 
 SCHEMA = "intuit3d/kernel/orthogonal-profile-cut-chain-v4"
+LINEAR_SCHEMA = "intuit3d/kernel/linear-profile-cut-chain-v5"
 MAX_VERTICES = 64
 
 
@@ -63,23 +64,72 @@ def _cut_clear_of_boundary(vertices, cut):
     return True
 
 
-def polygon_metrics(vertices):
+
+def _cross(a, b, c):
+    return ((b["x"]-a["x"])*(c["y"]-a["y"]) -
+            (b["y"]-a["y"])*(c["x"]-a["x"]))
+
+
+def _on_segment(a, b, p):
+    return (_cross(a, b, p) == 0 and
+            min(a["x"], b["x"]) <= p["x"] <= max(a["x"], b["x"]) and
+            min(a["y"], b["y"]) <= p["y"] <= max(a["y"], b["y"]))
+
+
+def _linear_intersect(a, b, c, d):
+    x, y, z, w = _cross(a, b, c), _cross(a, b, d), _cross(c, d, a), _cross(c, d, b)
+    return (((x == 0 and _on_segment(a, b, c)) or
+             (y == 0 and _on_segment(a, b, d)) or
+             (z == 0 and _on_segment(c, d, a)) or
+             (w == 0 and _on_segment(c, d, b))) or (x*y < 0 and z*w < 0))
+
+
+def _linear_cut_clear(vertices, cut):
+    x, y = cut["x"], cut["y"]
+    if not _point_inside(vertices, x, y):
+        return False
+    circle = cut["kind"] == "circle"
+    rx = cut["radius"] if circle else cut["width"]/2
+    ry = cut["radius"] if circle else cut["depth"]/2
+    corners = [{"x": x-rx, "y": y-ry}, {"x": x+rx, "y": y-ry},
+               {"x": x+rx, "y": y+ry}, {"x": x-rx, "y": y+ry}]
+    for i, a in enumerate(vertices):
+        b = vertices[(i+1)%len(vertices)]
+        if circle:
+            dx, dy = b["x"]-a["x"], b["y"]-a["y"]
+            t = max(0.0, min(1.0, ((x-a["x"])*dx+(y-a["y"])*dy)/
+                             (dx*dx+dy*dy)))
+            if math.hypot(x-a["x"]-t*dx, y-a["y"]-t*dy) <= rx:
+                return False
+        else:
+            def in_rect(p):
+                return x-rx <= p["x"] <= x+rx and y-ry <= p["y"] <= y+ry
+            if in_rect(a) or in_rect(b):
+                return False
+            for j in range(4):
+                if _linear_intersect(a, b, corners[j], corners[(j+1)%4]):
+                    return False
+    return True
+
+def polygon_metrics(vertices, *, linear=False):
     twice_area = math.fsum(
         a["x"] * vertices[(i + 1) % len(vertices)]["y"] -
         vertices[(i + 1) % len(vertices)]["x"] * a["y"]
         for i, a in enumerate(vertices))
     perimeter = math.fsum(
-        abs(a["x"] - vertices[(i + 1) % len(vertices)]["x"]) +
-        abs(a["y"] - vertices[(i + 1) % len(vertices)]["y"])
+        (math.hypot(a["x"]-vertices[(i + 1) % len(vertices)]["x"],
+                    a["y"]-vertices[(i + 1) % len(vertices)]["y"]) if linear else
+         abs(a["x"]-vertices[(i + 1) % len(vertices)]["x"]) +
+         abs(a["y"]-vertices[(i + 1) % len(vertices)]["y"]))
         for i, a in enumerate(vertices))
     return twice_area / 2, perimeter
 
 
-def validate_orthogonal_request(value: object) -> dict:
+def validate_orthogonal_request(value: object, *, linear=False) -> dict:
     if not isinstance(value, dict) or set(value) != {
         "protocol", "requestId", "featureId", "revision", "units",
         "profile", "cuts", "exportStep"
-    } or value["protocol"] != SCHEMA:
+    } or value["protocol"] != (LINEAR_SCHEMA if linear else SCHEMA):
         raise ValueError("expected orthogonal-profile-cut-chain-v4")
     for field in ("requestId", "featureId"):
         if not isinstance(value[field], str) or not IDENTIFIER.fullmatch(value[field]):
@@ -97,7 +147,7 @@ def validate_orthogonal_request(value: object) -> dict:
     if type(thickness) not in (int, float) or not math.isfinite(thickness) or not MIN_DIM_MM <= thickness <= MAX_DIM_MM:
         raise ValueError("invalid extrusion thickness")
     v = p["vertices"]
-    if not isinstance(v, list) or not 6 <= len(v) <= MAX_VERTICES:
+    if not isinstance(v, list) or not (3 if linear else 6) <= len(v) <= MAX_VERTICES:
         raise ValueError("expected six to 64 rectilinear contour vertices")
     for i, a in enumerate(v):
         if not isinstance(a, dict) or set(a) != {"x", "y"} or any(
@@ -107,20 +157,22 @@ def validate_orthogonal_request(value: object) -> dict:
         if not isinstance(b, dict) or set(b) != {"x", "y"}:
             raise ValueError("invalid next contour vertex")
         dx, dy = abs(b["x"] - a["x"]), abs(b["y"] - a["y"])
-        if not ((dx >= MIN_DIM_MM and dy == 0) or (dy >= MIN_DIM_MM and dx == 0)):
-            raise ValueError("non-orthogonal or degenerate contour edge")
+        if (math.hypot(dx, dy) < MIN_DIM_MM if linear else
+            not ((dx >= MIN_DIM_MM and dy == 0) or (dy >= MIN_DIM_MM and dx == 0))):
+            raise ValueError("invalid or degenerate selected contour edge")
     for i in range(len(v)):
         a, b = v[i], v[(i + 1) % len(v)]
         c = v[(i + 1) % len(v)]
         d = v[(i + 2) % len(v)]
-        if (a["x"] == b["x"]) == (c["x"] == d["x"]):
+        if (_cross(a,b,d) == 0 if linear else
+            (a["x"] == b["x"]) == (c["x"] == d["x"])):
             raise ValueError("consecutive collinear contour edges not admitted")
         for j in range(i + 1, len(v)):
             if j == i + 1 or (i == 0 and j == len(v)-1):
                 continue
-            if _intersect(a, b, v[j], v[(j + 1) % len(v)]):
+            if (_linear_intersect if linear else _intersect)(a, b, v[j], v[(j + 1) % len(v)]):
                 raise ValueError("self-intersecting or touching selected profile")
-    area, perimeter = polygon_metrics(v)
+    area, perimeter = polygon_metrics(v, linear=linear)
     if not area > MIN_DIM_MM or not math.isfinite(area) or not math.isfinite(perimeter):
         raise ValueError("selected contour must be simple counterclockwise with positive material area")
     if not isinstance(value["cuts"], list) or not 2 <= len(value["cuts"]) <= 16:
@@ -141,13 +193,14 @@ def validate_orthogonal_request(value: object) -> dict:
     for c in value["cuts"]:
         if c["featureId"] == p["profileId"]:
             raise ValueError("cut feature ID conflicts with selected sketch")
-        if not _cut_clear_of_boundary(v, c):
+        if not (_linear_cut_clear if linear else _cut_clear_of_boundary)(v, c):
             raise ValueError("cut touches selected profile boundary or empty material")
     return value
 
 
 def expected_orthogonal_metrics(request: dict) -> tuple[float, float]:
-    area, perimeter = polygon_metrics(request["profile"]["vertices"])
+    area, perimeter = polygon_metrics(request["profile"]["vertices"],
+                                      linear=request["protocol"] == LINEAR_SCHEMA)
     t = request["profile"]["thickness"]
     volume = area*t
     surface = 2*area + perimeter*t
@@ -167,7 +220,8 @@ def expected_orthogonal_metrics(request: dict) -> tuple[float, float]:
 
 def canonical_orthogonal_request(request: dict) -> str:
     p = request["profile"]
-    rows = ["INTUIT3D_OCCT8_ORTHOGONAL_CHAIN_V4",
+    rows = ["INTUIT3D_OCCT8_LINEAR_CHAIN_V5" if request["protocol"] == LINEAR_SCHEMA
+            else "INTUIT3D_OCCT8_ORTHOGONAL_CHAIN_V4",
             f'{request["requestId"]} {request["featureId"]} {request["revision"]} {int(request["exportStep"])}',
             f'{p["profileId"]} {p["thickness"]:.17g} {len(p["vertices"])} {len(request["cuts"])}']
     rows += [f'{v["x"]:.17g} {v["y"]:.17g}' for v in p["vertices"]]
