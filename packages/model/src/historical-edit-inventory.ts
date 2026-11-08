@@ -285,19 +285,22 @@ function scalarChoicesFor(
 ): readonly HistoricalScalarRevertChoice[] {
   const payload = transitions.find((entry) => entry.field === 'payload');
   if (!payload || !plain(payload.before) || !plain(payload.authored)) return [];
-  const keys = Object.keys(payload.authored)
+  // Narrow the semantic union to JSON records before indexing named scalars.
+  const oldPayload = payload.before;
+  const authoredPayload = payload.authored;
+  const currentPayload = plain(payload.current) ? payload.current : null;
+  const keys = Object.keys(authoredPayload)
     .filter((field) =>
       DIMENSION_SCALAR.test(field) &&
-      typeof payload.before[field] === 'number' &&
-      typeof payload.authored[field] === 'number' &&
-      payload.before[field] !== payload.authored[field])
+      typeof oldPayload[field] === 'number' &&
+      typeof authoredPayload[field] === 'number' &&
+      oldPayload[field] !== authoredPayload[field])
     .slice(0, 16);
   return keys.map((field) => {
-    const before = payload.before[field] as number;
-    const authored = payload.authored[field] as number;
-    const current = plain(payload.current) &&
-      typeof payload.current[field] === 'number'
-      ? payload.current[field] as number : null;
+    const before = oldPayload[field] as number;
+    const authored = authoredPayload[field] as number;
+    const current = currentPayload && typeof currentPayload[field] === 'number'
+      ? currentPayload[field] as number : null;
     const request: FeaturePayloadScalarRevertRequest = {
       format: FEATURE_PAYLOAD_SCALAR_REVERT_FORMAT, version: 1,
       expectedProjectId: base.expectedProjectId,
