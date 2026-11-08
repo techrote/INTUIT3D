@@ -1,36 +1,36 @@
 # Selected tangent round-ended edge slot — v1
 
-Public import: \`@intuit3d/sketch/selected-edge-round-slot/v1\`.
+Public import: `@intuit3d/sketch/selected-edge-round-slot/v1`.
 
 This produces a **genuine semicircular-cap, tangent-wall notch opening into a chosen
 straight edge of an explicitly selected, fully solved polygon profile**. It is
 not the standalone closed obround loop, a faceted approximation or a native
 boolean/STEP result. A slot between along-edge distances 45 and 65 mm, with
 8 mm of straight wall, has radius 10 mm and an additional 10 mm of round
-termination. Slot material removal is \`width * straightDepth + πr²/2\`.
+termination. Slot material removal is `width * straightDepth + πr²/2`.
 
 ## Authoring contract
 
-1. Obtain a real \`SelectedProfileSelection\` token from
-   \`discoverPlateProfiles\`. Inspect eligible edges using
-   \`inspectSelectedEdgeHolePlacement\`: horizontal/vertical constrained
+1. Obtain a real `SelectedProfileSelection` token from
+   `discoverPlateProfiles`. Inspect eligible edges using
+   `inspectSelectedEdgeHolePlacement`: horizontal/vertical constrained
    edges only, inward direction determined by actual winding.
-2. \`createSelectedEdgeRoundSlot(sourceSketch, selection, command)\` with
-   \`{kind:'create-selected-edge-round-slot',version:1,sourceSignature,
-   id,edgeId,fromMm,toMm,straightDepthMm}\` returns an immutable \`authoring\`
-   envelope, fully solved \`arcSketch\`, admitted \`profile\`, and three
+2. `createSelectedEdgeRoundSlot(sourceSketch, selection, command)` with
+   `{kind:'create-selected-edge-round-slot',version:1,sourceSignature,
+   id,edgeId,fromMm,toMm,straightDepthMm}` returns an immutable `authoring`
+   envelope, fully solved `arcSketch`, admitted `profile`, and three
    semantic handles. The initial source is left untouched.
-3. Persist \`serializeSelectedEdgeRoundSlot(authoring)\` verbatim with the
-   authored CAD session. After reopening, call \`parseSelectedEdgeRoundSlot\`
-   and \`inspectSelectedEdgeRoundSlot\` to re-solve and re-admit the analytic
+3. Persist `serializeSelectedEdgeRoundSlot(authoring)` verbatim with the
+   authored CAD session. After reopening, call `parseSelectedEdgeRoundSlot`
+   and `inspectSelectedEdgeRoundSlot` to re-solve and re-admit the analytic
    profile. No cached B-rep, samples or guessed entity IDs are persisted.
-4. \`editSelectedEdgeRoundSlot(authoring,{kind:'edit-selected-edge-round-slot',
+4. `editSelectedEdgeRoundSlot(authoring,{kind:'edit-selected-edge-round-slot',
    version:1,sourceSignature:authoringSignature,fromMm,toMm,
-   straightDepthMm})\` atomically reauthors three dimensions; no implicit
-   weakening. \`dragSelectedEdgeRoundSlotHandle\` projects a pointer to
-   \`from\`, \`to\` or \`cap-tip\` while reporting projection deviation.
-5. \`rebaseSelectedEdgeRoundSlot(authoring,newSource,newSelection,
-   {kind:'rebase-selected-edge-round-slot',version:1,sourceSignature})\`
+   straightDepthMm})` atomically reauthors three dimensions; no implicit
+   weakening. `dragSelectedEdgeRoundSlotHandle` projects a pointer to
+   `from`, `to` or `cap-tip` while reporting projection deviation.
+5. `rebaseSelectedEdgeRoundSlot(authoring,newSource,newSelection,
+   {kind:'rebase-selected-edge-round-slot',version:1,sourceSignature})`
    recompiles after an explicit retrospective source edit. Original edge ID
    and hole membership must persist. No automatic rebinding.
 6. Commit the **whole** returned authoring envelope as one revision-fenced
@@ -41,11 +41,11 @@ termination. Slot material removal is \`width * straightDepth + πr²/2\`.
 
 ## Geometry and correctness
 
-The authoritative source \`SketchDocument\` is retained in full, including
+The authoritative source `SketchDocument` is retained in full, including
 every original linear radius/equal-radius equation. The derived nonlinear
-\`ArcSketch\` encodes circle radii as constant analytic circles, and fully
+`ArcSketch` encodes circle radii as constant analytic circles, and fully
 constrains five new vertices relative to the original start reference;
-\`arcRadius\` and two real \`tangent\` equations bind the semicircular cap
+`arcRadius` and two real `tangent` equations bind the semicircular cap
 to the sidewalls. The original edge ID is retained and shortened; an explicit
 tail-axis constraint preserves the far endpoint's freedom count. Selection
 is used only for the stated contour. Unselected source points are checked
@@ -65,9 +65,9 @@ separate downstream gates.
 
 ## Executable consumer
 
-\`\`\`sh
+```sh
 node packages/sketch/examples/selected-edge-round-slot.mjs
 node --test packages/sketch/test/selected-edge-round-slot.test.mjs
 npm run typecheck --workspace=@intuit3d/sketch
 npm test --workspace=@intuit3d/sketch
-\`\`\`
+```
