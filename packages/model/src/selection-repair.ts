@@ -291,7 +291,7 @@ export function previewFencedSelectionRepairBatch(
     // The runtime structural guard above narrows keys to unknown values.
     // Recover the declared v2 type only after exact-key/format/fence checks;
     // the v1 inventory still validates every value and entire topology trace.
-    const verified = receipt as FencedSelectionEvidenceReceipt;
+    const verified = receipt as unknown as FencedSelectionEvidenceReceipt;
     return {
       format: SELECTION_EVIDENCE_FORMAT, version: 1 as const,
       projectId: verified.projectId, revision: verified.revision,
@@ -314,7 +314,7 @@ export function previewFencedSelectionRepairBatch(
         throw new ProjectRevisionError(
           'selection repair: replacement observed on another document');
       }
-      const checked = observed as FencedReplacementObservation;
+      const checked = observed as unknown as FencedReplacementObservation;
       replacementObservation = {
         provider: checked.provider, snapshot: checked.snapshot,
       };
