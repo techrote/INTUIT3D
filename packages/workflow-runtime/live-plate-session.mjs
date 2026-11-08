@@ -7,6 +7,9 @@
  * current. Cancelling and superseding also fences non-cooperative old providers.
  */
 import {evaluateLocalPlate} from './local-plate-client.mjs';
+import {rebaseParameterSheetEdit} from '@intuit3d/model/parameter-sheet-rebase';
+import {resolveParameterSheetConflict} from '@intuit3d/model/parameter-sheet-resolution';
+import {commitUndoableParameterFormulaTableEdit} from '@intuit3d/model/parameter-formula-table';
 
 export const LIVE_PLATE_SESSION_FORMAT='intuit3d.live-plate-session';
 export const LIVE_PLATE_SESSION_VERSION=1;
@@ -257,6 +260,63 @@ export function createLivePlateSession({
       if(edit.kind==='refused') return {kind:'refused',edit,evaluation:null};
       const evaluation=await session.evaluate(options);
       return {kind:'submitted',edit,evaluation};
+    },
+    /**
+     * Inspect an unsaved parameter-sheet draft against the CURRENT canonical
+     * INTENT journal. The base is a saved authoritative archive, not a mutable
+     * browser-side guess of the model revision. A conflicting draft is never
+     * silently committed or silently discarded.
+     */
+    inspectParameterDraft({baseArchive,draft,resolution}={}) {
+      if(typeof baseArchive!=='string')
+        throw new TypeError('live plate session: parameter draft requires its original model archive');
+      const current=synchronize();
+      const base=runtime.reopen(baseArchive);
+      if(runtime.save(base)!==baseArchive)
+        throw new TypeError('live plate session: parameter draft base must be a canonical archive');
+      return resolution
+        ? resolveParameterSheetConflict(base.document,current.history.document,draft,resolution)
+        : rebaseParameterSheetEdit(base.document,current.history.document,
+            draft,current.report.revision);
+    },
+    /**
+     * Accept a conflict-free draft, or a user-reviewed EXACT set of conflict
+     * acknowledgements, as one undoable parameter-table transaction. The
+     * accepted INTENT contract verifies journal ancestry, formula bindings,
+     * event-ID collisions and scalar admission. This method rechecks all of
+     * those inside the synchronous commit fence, then publishes ONE archive.
+     * A refusal retains the caller's draft and any still-current STEP receipt.
+     */
+    applyParameterDraft({baseArchive,draft,resolution}={}) {
+      if(typeof baseArchive!=='string')
+        throw new TypeError('live plate session: parameter draft requires its original model archive');
+      let review=null;
+      const edit=session.applyEdit(history=>{
+        const base=runtime.reopen(baseArchive);
+        if(runtime.save(base)!==baseArchive)
+          throw new TypeError('live plate session: parameter draft base must be a canonical archive');
+        // An approval of an older conflict report cannot be carried to a
+        // different document, even if the proposed formula text is unchanged.
+        if(resolution &&
+            (resolution.expectedProjectId!==history.document.projectId ||
+             resolution.expectedCurrentRevision!==history.document.revision))
+          return {kind:'refused',code:'stale_parameter_resolution',notCommitted:true,
+            reason:'parameter conflict approval is not for the current authoritative revision',
+            sourceRevision:history.document.revision};
+        review=resolution
+          ? resolveParameterSheetConflict(base.document,history.document,draft,resolution)
+          : rebaseParameterSheetEdit(base.document,history.document,
+              draft,history.document.revision);
+        if(review.status!=='ready')
+          return {kind:'refused',code:'parameter_sheet_conflict',notCommitted:true,
+            reason:'draft requires explicit per-conflict review before publication',
+            review,conflicts:review.conflicts};
+        const request=review.resolvedRequest??review.rebasedRequest;
+        if(!request)
+          throw new Error('live plate session: ready parameter draft has no accepted request');
+        return commitUndoableParameterFormulaTableEdit(history,request);
+      });
+      return edit.kind==='committed'?{...edit,parameterReview:review}:edit;
     },
     /**
      * Solver-backed drag/edit preview without changing the authoritative
