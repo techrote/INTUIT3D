@@ -246,6 +246,37 @@ fn cut_chains(args: &[String]) {
 }
 
 
+// Analytic material distribution of the authored U-bracket, not native OCCT
+// mass-property metadata. Six central second volume moments (covariance mm²).
+fn u_bracket_covariance_expected(thickness: f64, centre: [f64;3], volume: f64) -> [f64;6] {
+    let t=thickness;
+    // sign, occupied/removed volume, local centre, intrinsic variances.
+    // A uniform circular cylinder has lateral variance r²/4 per axis.
+    let components=[
+        (1.0,120.0*80.0*t,[0.0,0.0,t/2.0],
+            [120.0f64.powi(2)/12.0,80.0f64.powi(2)/12.0,t*t/12.0]),
+        (-1.0,70.0*50.0*t,[0.0,15.0,t/2.0],
+            [70.0f64.powi(2)/12.0,50.0f64.powi(2)/12.0,t*t/12.0]),
+        (-1.0,10.0*12.0*t,[47.0,10.0,t/2.0],
+            [10.0f64.powi(2)/12.0,12.0f64.powi(2)/12.0,t*t/12.0]),
+        (-1.0,std::f64::consts::PI*25.0*3.0,[-47.0,10.0,t-1.5],
+            [25.0/4.0,25.0/4.0,9.0/12.0]),
+    ];
+    let axes=[(0,0),(1,1),(2,2),(0,1),(0,2),(1,2)];
+    let mut second=[0.0f64;6];
+    for (sign,part_volume,covcentre,variance) in components {
+        for (k,(i,j)) in axes.iter().enumerate() {
+            second[k]+=sign*part_volume*(covcentre[*i]*covcentre[*j]+
+                        if i==j {variance[*i]} else {0.0});
+        }
+    }
+    for (k,(i,j)) in axes.iter().enumerate() {
+        second[k]=second[k]/volume-centre[*i]*centre[*j];
+    }
+    second
+}
+
+
 // Genuine selected eight-edge U-bracket with one circular BLIND and one
 // rectangular THROUGH cut. All predicates run on separately imported
 // non-OCCT CAD mesh vertices, never on the producer's STEP metadata.
@@ -275,6 +306,8 @@ fn u_bracket(args: &[String]) {
     // Tetrahedra between imported mesh and origin give volume and first
     // moments without trusting the native producer's mass-properties receipt.
     let mut first_moment=[0.0f64;3];
+    let mut second_moment=[0.0f64;6];
+    let moment_axes=[(0,0),(1,1),(2,2),(0,1),(0,2),(1,2)];
     let mut tris=0usize;
     for tri in mesh.faces.iter().flat_map(|face| &face.triangles) {
         let a=point(mesh,tri[0]); let b=point(mesh,tri[1]); let c=point(mesh,tri[2]);
@@ -284,6 +317,13 @@ fn u_bracket(args: &[String]) {
         signed_volume+=tetra;
         for axis in 0..3 {
             first_moment[axis]+=tetra*(a[axis]+b[axis]+c[axis])/4.0;
+        }
+        // Exact signed tetrahedral integration of the mesh second moments.
+        for (k,(i,j)) in moment_axes.iter().enumerate() {
+            let si=a[*i]+b[*i]+c[*i];
+            let sj=a[*j]+b[*j]+c[*j];
+            let diagonal=a[*i]*a[*j]+b[*i]*b[*j]+c[*i]*c[*j];
+            second_moment[k]+=tetra*(si*sj+diagonal)/20.0;
         }
         for i in 0..3 { *oriented.entry((tri[i],tri[(i+1)%3])).or_default()+=1; }
     }
@@ -318,6 +358,20 @@ fn u_bracket(args: &[String]) {
            (measured_centroid[axis]-expected_centroid[axis]).abs()>0.15 {
             fail(&format!("independent U-bracket material centroid axis {axis} wrong: {:.6} vs {:.6} mm",
                           measured_centroid[axis],expected_centroid[axis]));
+        }
+    }
+    let expected_covariance=u_bracket_covariance_expected(thickness,expected_centroid,expected);
+    let mut measured_covariance=[0.0f64;6];
+    for (k,(i,j)) in moment_axes.iter().enumerate() {
+        measured_covariance[k]=second_moment[k]/signed_volume-
+            measured_centroid[*i]*measured_centroid[*j];
+        let reference=expected_covariance[k];
+        let tolerance=if k<3 { (reference.abs()*0.01).max(0.1) }
+                      else { (reference.abs()*0.05).max(0.25) };
+        if !measured_covariance[k].is_finite() ||
+           (measured_covariance[k]-reference).abs()>tolerance {
+            fail(&format!("independent U-bracket material covariance {k} wrong: {:.6} vs {:.6} mm²",
+                          measured_covariance[k],reference));
         }
     }
     // Fixed world XY anchors from the source fixture's independently specified
@@ -388,8 +442,10 @@ fn u_bracket(args: &[String]) {
                  zs.len(),zs.first().copied().unwrap_or(-1.0),
                  zs.last().copied().unwrap_or(-1.0));
     }
-    println!("U_ACCEPT solids=1 source_unit={} imported_exact=true tris={} open_edges=0 volume_mm3={measured:.9} expected_mm3={expected:.9} centroid_x_mm={:.9} centroid_y_mm={:.9} centroid_z_mm={:.9} warnings=0",
-             cad.length_unit,tris,measured_centroid[0],measured_centroid[1],measured_centroid[2]);
+    println!("U_ACCEPT solids=1 source_unit={} imported_exact=true tris={} open_edges=0 volume_mm3={measured:.9} expected_mm3={expected:.9} centroid_x_mm={:.9} centroid_y_mm={:.9} centroid_z_mm={:.9} cov_xx_mm2={:.9} cov_yy_mm2={:.9} cov_zz_mm2={:.9} cov_xy_mm2={:.9} cov_xz_mm2={:.9} cov_yz_mm2={:.9} warnings=0",
+             cad.length_unit,tris,measured_centroid[0],measured_centroid[1],measured_centroid[2],
+             measured_covariance[0],measured_covariance[1],measured_covariance[2],
+             measured_covariance[3],measured_covariance[4],measured_covariance[5]);
 }
 
 fn main() {
