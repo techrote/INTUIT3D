@@ -226,7 +226,18 @@ async function drawnFromEmptyPhysical(expected){
   requireValid(await evalInPage(
     'document.querySelector("[data-testid=runtime-thickness-handle]")?.getAttribute("aria-valuenow")==="8"'),
     'Drawn cut has no actual 8 mm solid thickness handle');
-  await click('runtime-thickness-handle');
+  // Accessible keyboard navigation: focus the preceding real camera FIT
+  // button, then press Tab to enter the following native thickness slider.
+  // A pointer-down on the grip currently prevents default focus to support
+  // drag capture; do not pretend an unfocused ArrowUp will edit the model.
+  await click('runtime-camera-fit');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',
+    code:'Tab',windowsVirtualKeyCode:9});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',
+    code:'Tab',windowsVirtualKeyCode:9});
+  requireValid(await evalInPage(
+    'document.activeElement?.getAttribute("data-testid")==="runtime-thickness-handle"'),
+    'Real keyboard Tab did not focus the accessible 3D thickness slider');
   for(let step=9;step<=12;step++){
     await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowUp',
       code:'ArrowUp',windowsVirtualKeyCode:38});
