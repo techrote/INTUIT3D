@@ -248,10 +248,19 @@ class ProgressiveV6OracleTests(unittest.TestCase):
                         label = "pocket.radial.1.inner"
                         row = next(r for r in good.splitlines()
                                    if r.startswith(f"SLOPE_RAY {label} "))
-                        with self.assertRaises(Rejected):
+                        with self.assertRaisesRegex(Rejected, "label/order"):
                             parse_receipt(good.replace(row, row.replace(
                                 "SLOPE_RAY "+label, "SLOPE_RAY pocket.radial.bad")),
                                 kind, thickness, cut_count=count)
+                        # An incorrect physical occupancy at a newly sampled
+                        # wall direction is rejected, even with correct
+                        # volume, surface and mass moment receipt fields.
+                        missing_material = row.replace(
+                            " 2 0.000000000 ", " 0 -1.000000000 ", 1)
+                        self.assertNotEqual(row, missing_material)
+                        with self.assertRaisesRegex(Rejected, "floor"):
+                            parse_receipt(good.replace(row, missing_material),
+                                          kind, thickness, cut_count=count)
 
     def test_progressive_twelve_stage_geometry(self):
         for kind in ("direct", "authored"):
