@@ -1048,7 +1048,7 @@ async function main(){
     'bolt circle did not commit exactly one model revision');
   check(await evaluate("document.querySelector('[data-testid=\"runtime-status-sketch.plate\"]')?.textContent==='analytic_profile_only'"),
     'bolt-circle solver did not admit the sketch');
-  await screenshot('native-10-circular-bolt-array.png','native-11-local-recovery-after-reload.png');
+  await screenshot('native-10-circular-bolt-array.png','native-11-local-recovery-after-reload.png','native-12-selected-profile-direct-drag.png');
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===0"),
@@ -1141,13 +1141,75 @@ async function main(){
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
   await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)===${beforeNudge}`),
     'keyboard nudge undo failed to restore the authored centre');
+  // Real Chromium contour selection and semantic-handle drag. Pointer location
+  // derives from the actual SVG screen CTM, never a direct React/RUNTIME call.
+  await pointerClick('runtime-profile-select-mode');
+  const contourPick=await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=runtime-sketch]');
+    if(!svg)return null;
+    const matrix=svg.getScreenCTM();
+    if(!matrix)return null;
+    // Sketch Y is inverted in the renderer: model (60,65) -> SVG (60,15).
+    const p=new DOMPoint(60,15).matrixTransform(matrix);
+    return {x:p.x,y:p.y};
+  })()`);
+  check(contourPick&&contourPick.x>0&&contourPick.y>0&&contourPick.x<1360&&contourPick.y<900,
+    'Real selected-contour pointer is offscreen');
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:contourPick.x,y:contourPick.y});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:contourPick.x,y:contourPick.y,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:contourPick.x,y:contourPick.y,button:'left',clickCount:1});
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-pointer-profile-selected]')?.textContent?.includes('profile'))"),
+    'Real browser click failed to select solver-admitted semantic contour');
+  const widthHandleIndex=await evaluate(`(() => {
+    const options=[...document.querySelector('[data-testid=runtime-pointer-profile-handle]')?.options||[]];
+    return options.findIndex(option=>option.textContent.includes('distanceX'));
+  })()`);
+  check(widthHandleIndex>0,'Accepted SKETCH exposed no X dimension semantic handle');
+  check(await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-pointer-profile-handle]');s.focus();return document.activeElement===s})()"),
+    'Profile handle selector cannot take keyboard focus');
+  for(let i=0;i<widthHandleIndex;i++)await key('ArrowDown','ArrowDown',40);
+  await key('Tab','Tab',9);
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-profile-drag-handle]'))"),
+    'Explicit keyboard choice did not expose an authentic solver handle');
+  const dragStart=await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=runtime-sketch]');
+    const handle=document.querySelector('[data-testid=runtime-profile-drag-handle]');
+    if(!svg||!handle)return null;
+    const rect=handle.getBoundingClientRect(),matrix=svg.getScreenCTM();
+    return matrix?{x:rect.x+rect.width/2,y:rect.y+rect.height/2,dx:10*matrix.a}:null;
+  })()`);
+  check(dragStart&&dragStart.dx>0,'Cannot project semantic X handle in browser');
+  const contourRevision=Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0]);
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:dragStart.x,y:dragStart.y});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:dragStart.x,y:dragStart.y,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:dragStart.x+dragStart.dx,y:dragStart.y,
+    button:'left',buttons:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:dragStart.x+dragStart.dx,y:dragStart.y,
+    button:'left',clickCount:1});
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)===130"),
+    'Pointer-released semantic profile handle failed to commit width 120 -> 130');
+  check(Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0])===contourRevision+1,
+    'Semantic pointer drag did not create exactly one model revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'Semantic pointer edit did not fence stale native STEP');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)===120"),
+    'Semantic pointer drag lost model-backed undo');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)===130"),
+    'Semantic pointer drag lost model-backed redo');
+  await screenshot('native-12-selected-profile-direct-drag.png');
   await pointerClick('runtime-mode-solid');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder with schema-compatible OCP identity, NOT OCP/native/STEP interoperability',
     downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,oneClickPinnedOcpRefusal:true,realPhysicalGeometry:false,
-    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,keyboardHoleNudge:true,keyboardNudgeUndo:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,localRecoveryIndexedDbReload:true,recoveryWorkerReviewCancel:true,recoveryUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
+    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,keyboardHoleNudge:true,keyboardNudgeUndo:true,selectedContourPointerDrag:true,selectedContourRevisionFenced:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,localRecoveryIndexedDbReload:true,recoveryWorkerReviewCancel:true,recoveryUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
       'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-08b-pinned-custody-refusal.png','native-09-model-first-new-sketch-shortcut.png','native-10a-selected-rigid-rotation.png','native-10-circular-bolt-array.png','native-11-local-recovery-after-reload.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
