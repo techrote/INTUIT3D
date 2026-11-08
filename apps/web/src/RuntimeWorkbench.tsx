@@ -450,7 +450,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       setLayoutSelected([...outcome.copiedHoleIds]);
       setActiveHole(outcome.copiedHoleIds[0]??null);
       setSketchMode(true);
-      setMessage(`Revision ${outcome.result.history.document.revision}: stamped ${outcome.copiedHoleIds.length} selected solved holes into independently editable cuts in ONE undoable SKETCH transaction. Original IDs retained; native STEP invalidated.`);
+      setMessage(`Revision ${outcome.result.history.document.revision}: stamped ${outcome.copiedHoleIds.length} solved holes into independent authored sketch circles in ONE undoable SKETCH transaction. Through-cuts require an authored cut feature; old STEP invalidated.`);
     }catch(e){setMessage('Selected-hole stamp refused: '+(e instanceof Error?e.message:String(e)));}
   };
   const removeSelection=()=>{
