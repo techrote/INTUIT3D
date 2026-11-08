@@ -502,8 +502,8 @@ test('native state preserves actionable refusal and source-valid last-good STEP 
         exactAuthority:false,independentInteroperability:false,
         source:{projectId:history.document.projectId,revision:history.document.revision},
         result:{requestId:opts.requestId,cutFeatureId:opts.cutFeatureId},
-        step:{filename:'plate.step',bytes:Uint8Array.of(1,2,3),
-          sha256:'synthetic-unqualified-step'}};
+        step:opts.exportStep?{filename:'plate.step',bytes:Uint8Array.of(1,2,3),
+          sha256:'synthetic-unqualified-step'}:undefined};
     }});
   assert.deepEqual({
     provider:session.refresh().providerState,step:session.refresh().stepAvailability,
@@ -548,6 +548,12 @@ test('native state preserves actionable refusal and source-valid last-good STEP 
   assert.equal((await session.evaluate({requestId:'diagnostic.revised'})).kind,
     'experimental_plate_evaluated');
   assert.equal(session.refresh().stepAvailability,'current');
+  assert.equal((await session.evaluate({
+    requestId:'diagnostic.noexport',exportStep:false,
+  })).kind,'experimental_plate_evaluated');
+  assert.equal(session.refresh().providerState,'evaluated');
+  assert.equal(session.refresh().stepAvailability,'last_good',
+    'a successful new operation without STEP cannot claim to have regenerated retained bytes');
   history=runtime.undo(history,['diagnostic.undo']);
   assert.equal(session.refresh().stepAvailability,'unavailable',
     'undo of a source revision immediately revokes native bytes');
