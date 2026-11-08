@@ -268,6 +268,10 @@ ROOT="$(cd -- "$(dirname -- "$0")" && pwd -P)"
 # The executable and each bundled OCCT toolkit carry origin-only DT_RPATH.
 # Remove ambient linker overrides instead of masking a broken relocated ELF.
 unset LD_LIBRARY_PATH LD_PRELOAD LD_AUDIT LD_DEBUG
+# -B only covers this interpreter. The pinned KERNEL bridge launches the
+# Part 21 reader with sys.executable; propagate the bytecode restriction to
+# that child and any subsequent Python subprocesses as well.
+export PYTHONDONTWRITEBYTECODE=1
 exec python3 -B "$ROOT/native/occt8_bridge.py" --worker "$ROOT/bin/intuit3d_occt8_plate" "$@"
 ''', encoding="utf-8")
     script.chmod(0o755)
