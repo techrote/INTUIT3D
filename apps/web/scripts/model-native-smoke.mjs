@@ -1311,8 +1311,16 @@ async function main(){
     'reopened historical compensation could not be redone');
   await screenshot('native-14-historical-compensation-reopened.png');
   // Real pointer + keyboard acceptance of MODEL's admitted #304 multi-feature
-  // historical transaction. Produce two distinct, current feature.edit sources
-  // through ordinary workbench fields, rather than injecting model state.
+  // historical transaction. The preceding Ctrl+N regression leaves a genuine
+  // sketch-only journal without an extrusion. Begin a fresh two-feature plate
+  // through the user's New plate -> explicit Replace workflow, not test-model
+  // injection, before authoring the two independent edits.
+  await pointerClick('runtime-new-plate');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'fresh plate did not request explicit replacement');
+  await pointerClick('runtime-import-review-confirm');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-dimension-thickness]')) && !document.querySelector('[data-testid=runtime-import-review]')"),
+    'fresh plate has no editable extrusion feature');
   const originalThickness=Number(await evaluate(
     "document.querySelector('[data-testid=runtime-dimension-thickness]')?.value"));
   check(Number.isFinite(originalThickness)&&originalThickness>0,
@@ -1361,8 +1369,11 @@ async function main(){
   await pointerClick('runtime-history-batch-apply');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-width]')?.value==='120'"),
     'atomic history compensation failed to restore original SKETCH width');
-  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-dimension-thickness]')?.value===${JSON.stringify(String(originalThickness))}`),
-    'atomic history compensation failed to restore original extrusion thickness');
+  // MODEL reverts the historically authored extrusion payload (8mm on this
+  // parameter-linked fixture), not its later-derived effective source (10mm).
+  // Before-value validated independently in historicalBatchWorkbench.test.ts.
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-dimension-thickness]')?.value===${JSON.stringify('8')}`),
+    'atomic history compensation failed to restore authored extrusion payload');
   check(Number((await evaluate(
     "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0])===batchSourceRevision+2,
     'atomic two-feature batch did not commit exactly two journal revisions');
@@ -1378,7 +1389,7 @@ async function main(){
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-width]')?.value==='120'"),
     'one redo failed to restore atomic sketch compensation');
-  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-dimension-thickness]')?.value===${JSON.stringify(String(originalThickness))}`),
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-dimension-thickness]')?.value===${JSON.stringify('8')}`),
     'one redo failed to restore atomic extrusion compensation');
   await screenshot('native-15-atomic-historical-batch.png');
   await pointerClick('runtime-mode-solid');
