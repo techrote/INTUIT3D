@@ -236,6 +236,14 @@ export function setSelectedEdgeHoles(source,selection,command){
   const oldSolution=solveSketch(doc);
   const beforePoints=new Map(oldSolution.geometry.points.map(p=>[p.id,p]));
   const afterPoints=new Map(solved.geometry.points.map(p=>[p.id,p]));
+  const selectedLines=new Set(view.profile.lineIds);
+  const unselectedPoints=new Set(doc.lines.filter(e=>!selectedLines.has(e.id))
+    .flatMap(e=>[e.start,e.end]));
+  for(const id of unselectedPoints){
+    const p=beforePoints.get(id),q=afterPoints.get(id);
+    if(!p||!q||!near(p.x,q.x)||!near(p.y,q.y))
+      return refuse(stamp,'unselected_boundary_would_change',id,solved.status);
+  }
   for(const circle of doc.circles){
     if(view.profile.holeIds.includes(circle.id))continue;
     const p=beforePoints.get(circle.center),q=afterPoints.get(circle.center);
