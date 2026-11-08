@@ -800,25 +800,6 @@ async function main(){
     'fresh plate was not restored to two authored hole IDs');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-evidence]'))"),
     'fresh plate was not automatically rebuilt by the persistent native session');
-  // Real Chromium pointer-selection and keyboard input, not a synthetic React call.
-  await pointerClick('runtime-mode-sketch');
-  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch-outline-hole-holeA]'))"),
-    'fresh admitted plate sketch not visible');
-  await pointerClick('runtime-sketch-outline-hole-holeA');
-  const beforeNudge=Number(await evaluate("document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value"));
-  const beforeNudgeRevision=Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
-  await key('ArrowRight','ArrowRight',39);
-  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)===${beforeNudge+1}`),
-    'arrow-key nudge did not move selected hole through the authoritative model');
-  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===beforeNudgeRevision+1,
-    'arrow-key nudge did not commit precisely one journal revision');
-  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
-    'arrow-key nudge retained a stale native STEP receipt');
-  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
-  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
-  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)===${beforeNudge}`),
-    'keyboard nudge undo failed to restore the authored centre');
-  await pointerClick('runtime-mode-solid');
   const beforeLayout=await evaluate(`(() => {
     const val=id=>Number(document.querySelector('[data-testid="runtime-hole-'+id+'"]')?.value);
     return {a:val('holeA-x'),b:val('holeB-x'),
@@ -1004,6 +985,25 @@ async function main(){
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===2"),
     'reopened recovery failed redo of authored circular holes');
+  // Real Chromium pointer-selection and keyboard input, not a synthetic React call.
+  await pointerClick('runtime-mode-sketch');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-sketch-outline-hole-holeA]'))"),
+    'fresh admitted plate sketch not visible');
+  await pointerClick('runtime-sketch-outline-hole-holeA');
+  const beforeNudge=Number(await evaluate("document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value"));
+  const beforeNudgeRevision=Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
+  await key('ArrowRight','ArrowRight',39);
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)===${beforeNudge+1}`),
+    'arrow-key nudge did not move selected hole through the authoritative model');
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===beforeNudgeRevision+1,
+    'arrow-key nudge did not commit precisely one journal revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'arrow-key nudge retained a stale native STEP receipt');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)===${beforeNudge}`),
+    'keyboard nudge undo failed to restore the authored centre');
+  await pointerClick('runtime-mode-solid');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
