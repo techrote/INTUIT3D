@@ -193,6 +193,7 @@ test('quantized off-grid pointer clicks build an exact, undoable solver-owned re
     {x:0.21,y:-0.2},{x:119.78,y:0.31},
     {x:120.2,y:79.75},{x:-0.23,y:80.24},
   ];
+  const initialRevision=current.document.revision;
   let draft=startModelBlankContour(current);
   for(const click of raw){
     const point=placeBlankContourPointer(click);
@@ -203,7 +204,7 @@ test('quantized off-grid pointer clicks build an exact, undoable solver-owned re
     draft=next.draft;
   }
   assert.deepEqual(draft.vertices,rectangle);
-  assert.equal(current.document.revision,0,'pointer drafting cannot commit a revision');
+  assert.equal(current.document.revision,initialRevision,'pointer drafting cannot commit a revision');
   const committed=commitModelBlankContour(current,session,draft);
   assert.equal(committed.kind,'committed',JSON.stringify(committed));
   if(committed.kind!=='committed')return;
