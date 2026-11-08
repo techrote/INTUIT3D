@@ -91,7 +91,7 @@ export function inspectModelClosedContour(
   const source=modelCurrentSketch(h),signature=sketch.serializeSketch(source);
   if(signature!==selection.sourceSignature)return null;
   const candidates=new Set(source.lines.flatMap(line=>{
-    const match=/^([A-Za-z][\\w:.-]{0,80}):edge:0$/.exec(line.id);
+    const match=/^([A-Za-z][A-Za-z0-9_.:-]{0,80}):edge:0$/.exec(line.id);
     return match?[match[1]]:[];
   }));
   const admitted=[...candidates].map(id=>inspectClosedContour(source,selection,id))
