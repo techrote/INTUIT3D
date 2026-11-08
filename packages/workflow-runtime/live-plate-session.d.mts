@@ -62,7 +62,7 @@ export interface LivePlateSessionState {
   inFlight:boolean;
   hasVerifiedStep:boolean;
   /** The latest provider attempt, separate from still-current last-good bytes. */
-  providerState:'idle'|'pending'|'evaluated'|'provider_failed';
+  providerState:'idle'|'pending'|'evaluated'|'blocked'|'provider_failed'|'cancelled';
   /** Source-valid STEP custody; last_good means a newer attempt is pending/failed.
    * unavailable includes revisions whose previous STEP was revoked by editing.
    * Even 'current' remains experimental, never independent STEP acceptance. */
