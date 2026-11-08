@@ -138,3 +138,40 @@ and six-stage receipt, update the witness SHA argument, require all
 both actual original geometry and a changed-position (not merely
 changed-volume) negative. A candidate is **physically unqualified** until
 that exact new executable and both physical cases have been run.
+
+
+## Source-bound executable ray receipt (transaction-consumer handoff)
+
+The generic V2 replay emits a **machine-readable ray inventory** for every
+successful original STEP import. Every `WITNESS_RAY` line must have the
+**exact identity, material/void role and source-file order** in the immutable
+independently authored witness, with material = odd crossing count and void =
+even crossing count. A transcript with the right number of rays but replaced,
+duplicated, reordered or contradictory ray identities fails closed. The
+`qualification.json` positive case now retains:
+
+- `importedTopology` — one exact, warning-free closed imported solid,
+  plus independently measured mesh triangle count;
+- `volumeMm3`, `surfaceMm2`, `independentMassMoments` (V2 only);
+- `rayReceipts` — every authored ray's ID, occupancy and imported crossing
+  count, not merely aggregate number of rays;
+- `nativeStageIdentities` — genuine native request ID, stage revision,
+  body ID, cut count, thickness and original STEP SHA-256 for both the
+  positive and geometry-negative source outputs.
+
+For an explicit native fixture revision, append
+`--expected-native-revision 24` to the replay invocation. This guards
+against using the wrong producer stage, independently of STEP file names.
+It **does not** identify an authoritative React/RUNTIME document revision.
+The report explicitly sets `currentBrowserRevisionProven: false`; it never
+silently elevates these bounded original C++ examples to browser-authoritative
+user CAD. The upcoming #74 product gate must supply and independently verify
+a **current** `{projectId, revision, archiveSha256, stepSha256}` binding from
+RUNTIME/WORKBENCH and the matching source-bound C++ worker receipt; the
+existing v6 producer's example-stage revision alone is insufficient.
+
+This is a source/receipt-level verification improvement, not a new physical
+shape, new AnvilCAD executable or new STEP import claim. Qualification still
+requires source-matched hosted execution of this exact wrapper with the
+original compiled non-OCCT executable and original native STEP files. Do not
+replace that with the mock subprocess regressions.
