@@ -121,6 +121,85 @@ class OfflineBundleTests(unittest.TestCase):
                              staged.resolve(strict=True))
             self.assertNotIn(str(prefix), resolution)
 
+    def test_pinned_extra_toolkit_dependency_closure_executes_after_relocation(self):
+        """Reject the real TKDESTEP -> TKXCAF -> TKLCAF missing-library failure."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            prefix = root / "vendor"
+            lib = prefix / "lib"
+            lib.mkdir(parents=True)
+            portable = root / "portable"
+            (portable / "bin").mkdir(parents=True)
+            # The selected CMake build list is not its entire DT_NEEDED graph.
+            # Include one worker-direct library and one unused installed toolkit.
+            ordered = ("TKLCAF", "TKXCAF", "TKDirect", *bundle.TOOLKITS, "TKUnused")
+            for name in ordered:
+                if name == "TKLCAF":
+                    code = "int lcaf(void) {return 40;}\\n"
+                    dependency = None
+                elif name == "TKXCAF":
+                    code = "extern int lcaf(void); int xcaf(void) {return lcaf()+1;}\\n"
+                    dependency = "TKLCAF"
+                elif name == "TKDESTEP":
+                    code = "extern int xcaf(void); int destep(void) {return xcaf()+1;}\\n"
+                    dependency = "TKXCAF"
+                elif name == "TKDirect":
+                    code = "int direct(void) {return 0;}\\n"
+                    dependency = None
+                else:
+                    code = "int otherwise_unused(void) {return 0;}\\n"
+                    dependency = None
+                cfile = root / f"{name}.c"
+                cfile.write_text(code)
+                command = ["cc", "-shared", "-fPIC", str(cfile),
+                           "-Wl,--disable-new-dtags", "-Wl,-rpath,$ORIGIN",
+                           "-Wl,-soname,lib" + name + ".so.8.0",
+                           "-o", str(lib / ("lib" + name + ".so.8.0"))]
+                if dependency:
+                    command += ["-L" + str(lib), "-l:lib" + dependency + ".so.8.0"]
+                subprocess.run(command, check=True, capture_output=True)
+                (lib / ("lib" + name + ".so")).symlink_to(
+                    "lib" + name + ".so.8.0")
+            worker_source = root / "worker.c"
+            worker_source.write_text(
+                '#include <stdio.h>\\n'
+                'extern int destep(void); extern int direct(void);\\n'
+                'int main(void) {printf("%d\\\\n", destep()+direct()); return 0;}\\n')
+            worker = portable / "bin" / "worker"
+            subprocess.run(
+                ["cc", str(worker_source), "-o", str(worker),
+                 "-L" + str(lib), "-l:libTKDESTEP.so.8.0",
+                 "-l:libTKDirect.so.8.0",
+                 "-Wl,--disable-new-dtags", "-Wl,-rpath,$ORIGIN/../lib",
+                 "-Wl,-rpath-link," + str(lib)],
+                check=True, capture_output=True)
+            target = portable / "lib"
+            bundle.copy_toolkits(prefix, target, worker)
+            for needed in ("TKDESTEP", "TKXCAF", "TKLCAF", "TKDirect"):
+                self.assertTrue((target / f"lib{needed}.so.8.0").is_file(),
+                                f"missing real DT_NEEDED closure library: {needed}")
+            self.assertFalse((target / "libTKUnused.so.8.0").exists())
+            self.assertIn("libTKLCAF.so.8.0",
+                          subprocess.check_output(
+                              ["readelf", "-d", str(target / "libTKXCAF.so.8.0")],
+                              text=True))
+            shutil.rmtree(prefix)
+            self.assertEqual(subprocess.check_output([str(worker)]).strip(), b"42")
+            # A missing transitive toolkit must fail during packaging rather
+            # than allowing host OCCT to fulfil the dependency at execution.
+            (lib).mkdir(parents=True)
+            # Rebuild the dependency chain from staged genuine ELF bytes but
+            # deliberately exclude TKLCAF's SONAME and physical copy.
+            for staged in target.iterdir():
+                if not staged.name.startswith("libTKLCAF"):
+                    if staged.is_symlink():
+                        (lib / staged.name).symlink_to(os.readlink(staged))
+                    else:
+                        shutil.copy2(staged, lib / staged.name)
+            with self.assertRaisesRegex(bundle.BundleError,
+                                        "missing transitive pinned OCCT toolkit: libTKLCAF"):
+                bundle.copy_toolkits(prefix, root / "missing-transitive", worker)
+
     def test_standalone_hash_verifier_refuses_mutation(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
