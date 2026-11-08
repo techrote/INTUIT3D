@@ -480,3 +480,82 @@ test('rejected latest pose and pointercancel never publish a previous drag sampl
   assert.equal(session.commitPreview(final).code,'invalid_preview');
   assert.notEqual(session.save(),before);
 });
+
+
+test('native state preserves actionable refusal and source-valid last-good STEP without stale availability',async()=>{
+  let history=initialProject();
+  let release;
+  const blocked=new Promise(resolve=>{release=resolve;});
+  let calls=0;
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>history,publishHistory:next=>{history=next;},
+    evaluateImpl:async opts=>{
+      calls++;
+      if(calls===2) {
+        await blocked;
+        return {kind:'unresolved',code:'unsupported_feature',
+          reason:'additional authored body.plate.2 omitted by plate-v1',
+          artifact:null,exactAuthority:false,independentInteroperability:false};
+      }
+      if(calls===3) return new Promise(()=>{}); // non-cooperative hung provider
+      return {kind:'experimental_plate_evaluated',
+        exactAuthority:false,independentInteroperability:false,
+        source:{projectId:history.document.projectId,revision:history.document.revision},
+        result:{requestId:opts.requestId,cutFeatureId:opts.cutFeatureId},
+        step:{filename:'plate.step',bytes:Uint8Array.of(1,2,3),
+          sha256:'synthetic-unqualified-step'}};
+    }});
+  assert.deepEqual({
+    provider:session.refresh().providerState,step:session.refresh().stepAvailability,
+    code:session.refresh().lastResultCode,
+  },{provider:'idle',step:'unavailable',code:null});
+  const first=await session.evaluate({requestId:'diagnostic.first'});
+  assert.equal(first.kind,'experimental_plate_evaluated');
+  assert.equal(session.refresh().providerState,'evaluated');
+  assert.equal(session.refresh().stepAvailability,'current');
+  assert.equal(session.refresh().lastResultReason,null);
+  const awaiting=session.evaluate({requestId:'diagnostic.blocked'});
+  assert.equal(session.refresh().providerState,'pending');
+  assert.equal(session.refresh().stepAvailability,'last_good');
+  assert.equal(session.refresh().hasVerifiedStep,true);
+  release();
+  assert.equal((await awaiting).code,'unsupported_feature');
+  const failed=session.refresh();
+  assert.equal(failed.providerState,'provider_failed');
+  assert.equal(failed.stepAvailability,'last_good');
+  assert.equal(failed.lastResultKind,'unresolved');
+  assert.equal(failed.lastResultCode,'unsupported_feature');
+  assert.match(failed.lastResultReason,/additional authored body/);
+  assert.deepEqual([...session.currentStep().bytes],[1,2,3],
+    'same canonical archive retains previously verified bytes after refusal');
+  const timedOut=await session.evaluate({requestId:'diagnostic.timeout',deadlineMs:75});
+  assert.equal(timedOut.code,'timeout');
+  assert.equal(session.refresh().lastResultCode,'timeout');
+  assert.equal(session.refresh().stepAvailability,'last_good');
+  session.applyEdit(h=>runtime.commit(h,[{
+    eventId:'diagnostic.edit',type:'feature.edit',featureId:'plate',
+    patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:12}},
+  }]));
+  const revised=session.refresh();
+  assert.equal(revised.providerState,'idle');
+  assert.equal(revised.stepAvailability,'unavailable');
+  assert.equal(revised.hasVerifiedStep,false);
+  assert.equal(revised.lastResultCode,null);
+  assert.equal(revised.lastResultReason,null);
+  assert.equal(session.currentStep(),null);
+});
+
+test('malformed native reply is a terminal visible provider failure',async()=>{
+  let history=initialProject();
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>history,publishHistory:next=>{history=next;},
+    evaluateImpl:async()=>({kind:'experimental_plate_evaluated',
+      exactAuthority:true,independentInteroperability:true})});
+  const result=await session.evaluate({requestId:'diagnostic.malformed'});
+  assert.equal(result.code,'invalid_provider_result');
+  const state=session.refresh();
+  assert.equal(state.providerState,'provider_failed');
+  assert.equal(state.stepAvailability,'unavailable');
+  assert.equal(state.lastResultCode,'invalid_provider_result');
+  assert.match(state.lastResultReason,/qualified experimental contract/);
+});
