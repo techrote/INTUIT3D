@@ -414,3 +414,100 @@ test('previous unresolved permission is not carried into a recovered batch',()=>
     item.feature.id==='sketch.pending').status,'pending');
   assert.equal(find(compensated.document,'extrude.gauge').payload.thicknessMm,8);
 });
+
+
+test('already-pending historical choice requires consent without a ready regression',()=>{
+  let doc=fixture();
+  // An unsolved machining guide stays pending because its reference datum
+  // does not exist. Reverting its authored width is meaningful model intent,
+  // but cannot be silently represented as a fully admitted CAD edit.
+  doc=commitEvent(doc,{type:'feature.create',eventId:'create.sketch.pending.guide',
+    feature:{id:'sketch.pending.guide',kind:'sketch',
+      dependsOn:['sketch.missing.datum'],
+      writeTargets:['sketch.pending.guide'],payload:{widthMm:12}}});
+  doc=commitEvent(doc,{type:'feature.edit',eventId:'edit.pending.guide.width',
+    featureId:'sketch.pending.guide',patch:{payload:{widthMm:27}}});
+  const selections=[
+    request(doc).selections[0],
+    {kind:'fields',targetEventId:'edit.pending.guide.width',
+      eventId:'compensate.pending.guide.width',selectedFields:['payload']},
+  ];
+  const strict=request(doc,{selections});
+  const permissive={...strict,admission:'permit_unresolved'};
+  const before=serializeProject(doc);
+  const history=startUndoHistory(doc);
+  const initial=serializeUndoHistory(history);
+
+  assert.equal(planProject(doc).features.find((row)=>
+    row.feature.id==='sketch.pending.guide').status,'pending');
+  assert.throws(()=>previewFeatureHistoryBatch(doc,strict),ProjectFormatError);
+  // Previously this was admitted without consent because *no ready feature
+  // regressed*. A pending selected feature itself needs review.
+  assert.throws(()=>previewFeatureHistoryBatch(doc,permissive),
+    /explicit confirmation required/);
+  assert.throws(()=>commitUndoableFeatureHistoryBatch(history,permissive),
+    ProjectFormatError);
+  assert.equal(serializeUndoHistory(history),initial);
+  assert.equal(serializeProject(doc),before);
+
+  const approved={...permissive,confirmUnresolved:true};
+  const preview=previewFeatureHistoryBatch(doc,approved);
+  assert.deepEqual(preview.regressedReadyFeatureIds,[]);
+  assert.deepEqual(preview.unresolvedSelectedFeatureIds,
+    ['sketch.pending.guide']);
+  assert.equal(preview.requiresUnresolvedConsent,true);
+  assert.ok(preview.invalidatedBodyIds.includes('body.base'));
+  assert.ok(preview.unaffectedReadyFeatureIds.includes('extrude.gauge'));
+  let committed=commitUndoableFeatureHistoryBatch(history,approved);
+  assert.equal(committed.undoStack.length,1);
+  assert.equal(committed.undoStack[0].length,2);
+  assert.equal(find(committed.document,'sketch.pending.guide').payload.widthMm,12);
+  assert.equal(planProject(committed.document).features.find((row)=>
+    row.feature.id==='sketch.pending.guide').status,'pending');
+  assert.equal(find(committed.document,'extrude.gauge').payload.thicknessMm,5);
+  committed=deserializeModelArchive(
+    serializeModelArchive(createModelArchive(committed))).history;
+  committed=undoTransaction(committed,['undo.pending.guide','undo.base.guide']);
+  assert.equal(find(committed.document,'sketch.pending.guide').payload.widthMm,27);
+  committed=redoTransaction(committed,['redo.base.guide','redo.pending.guide']);
+  assert.equal(find(committed.document,'sketch.pending.guide').payload.widthMm,12);
+});
+
+test('pending selection recovery never transfers consent after unrelated authoring',()=>{
+  let doc=fixture();
+  doc=commitEvent(doc,{type:'feature.create',eventId:'create.sketch.pending.fixture',
+    feature:{id:'sketch.pending.fixture',kind:'sketch',
+      dependsOn:['sketch.nonexistent.fixture'],
+      writeTargets:['sketch.pending.fixture'],payload:{widthMm:15}}});
+  doc=commitEvent(doc,{type:'feature.edit',eventId:'edit.pending.fixture.width',
+    featureId:'sketch.pending.fixture',patch:{payload:{widthMm:20}}});
+  const selected=request(doc,{selections:[
+    request(doc).selections[0],
+    {kind:'fields',targetEventId:'edit.pending.fixture.width',
+      eventId:'compensate.pending.fixture.width',selectedFields:['payload']},
+  ],admission:'permit_unresolved',confirmUnresolved:true});
+  const latest=commitEvent(doc,{type:'feature.edit',
+    eventId:'edit.gauge.after.pending.review',featureId:'extrude.gauge',
+    patch:{payload:{thicknessMm:8}}});
+  const priorFence=serializeProject(latest);
+  const result=recoverFeatureHistoryBatchSelection(latest,selected);
+  assert.equal(result.status,'requires_unresolved_review');
+  assert.equal(result.preview.requiresUnresolvedConsent,true);
+  assert.deepEqual(result.preview.unresolvedSelectedFeatureIds,
+    ['sketch.pending.fixture']);
+  assert.deepEqual(result.preview.regressedReadyFeatureIds,[]);
+  assert.equal(result.candidateRequest.admission,'require_ready');
+  assert.equal(result.candidateRequest.confirmUnresolved,false);
+  assert.throws(()=>commitUndoableFeatureHistoryBatch(startUndoHistory(latest),
+    result.candidateRequest),ProjectFormatError);
+  assert.throws(()=>commitUndoableFeatureHistoryBatch(startUndoHistory(latest),{
+    ...result.candidateRequest,admission:'permit_unresolved',
+  }),ProjectFormatError);
+  const accepted=commitUndoableFeatureHistoryBatch(startUndoHistory(latest),{
+    ...result.candidateRequest,admission:'permit_unresolved',
+    confirmUnresolved:true,
+  });
+  assert.equal(find(accepted.document,'sketch.pending.fixture').payload.widthMm,15);
+  assert.equal(find(accepted.document,'extrude.gauge').payload.thicknessMm,8);
+  assert.equal(serializeProject(latest),priorFence);
+});
