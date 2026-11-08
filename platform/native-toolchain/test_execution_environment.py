@@ -107,8 +107,8 @@ class HermeticEnvironmentTests(unittest.TestCase):
             user_site = Path(details["path"])
             user_site.mkdir(parents=True, exist_ok=True)
             (user_site / "usercustomize.py").write_text(
-                "from pathlib import Path\\n"
-                + f"Path({str(marker)!r}).write_text('injected')\\n")
+                "from pathlib import Path\n"
+                + f"Path({str(marker)!r}).write_text('injected')\n")
             command = [python, "-c", "print('GENUINE_PYTHON')"]
             compromised = subprocess.run(command, env=ambient,
                                          capture_output=True, text=True,
@@ -134,14 +134,14 @@ class HermeticEnvironmentTests(unittest.TestCase):
             (root / "native").mkdir()
             (root / "bin").mkdir()
             (root / "native/occt8_bridge.py").write_text(
-                "import json; print(json.dumps({'source': 'bundle'}))\\n")
+                "import json; print(json.dumps({'source': 'bundle'}))\n")
             foreign = root / "foreign"
             foreign.mkdir()
             marker = root / "foreign-module-executed"
             (foreign / "json.py").write_text(
-                "from pathlib import Path\\n"
-                + f"Path({str(marker)!r}).write_text('imported')\\n"
-                + "raise RuntimeError('host module shadowed bundled code')\\n")
+                "from pathlib import Path\n"
+                + f"Path({str(marker)!r}).write_text('imported')\n"
+                + "raise RuntimeError('host module shadowed bundled code')\n")
             launcher(root)
             hostile = dict(os.environ, PYTHONPATH=str(foreign))
             result = subprocess.run([str(root / "run.sh")], env=hostile,
