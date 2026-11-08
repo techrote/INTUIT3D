@@ -287,6 +287,17 @@ async function main(){
     'explicit conflict review did not produce scalar comparison');
   check(await evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='13'"),
     'conflict approval implicitly changed model before final commit');
+  // Explicit consent may be withdrawn before final commit. No stale ready
+  // proposal may remain executable once its exact approval is revoked.
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-formula-approve-0]');e?.click();return e?.checked===false})()"),
+    'cannot revoke individual conflict consent');
+  check(await evaluate("document.querySelector('[data-testid=runtime-formula-commit]')?.disabled"),
+    'revoked conflict consent left stale commit enabled');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-formula-approve-0]');e?.click();return e?.checked===true})()"),
+    'cannot reapprove exact conflict');
+  await pointerClick('runtime-formula-resolve');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-formula-value-comparison]')) && !document.querySelector('[data-testid=runtime-formula-commit]')?.disabled"),
+    'reapproved conflict did not require another INTENT review');
   await pointerClick('runtime-formula-commit');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='16'"),
     'reviewed stale formula was not committed');
