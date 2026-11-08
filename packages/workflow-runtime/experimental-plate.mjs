@@ -106,6 +106,19 @@ export function createExperimentalPlateWorkflow({
     if (candidates.length!==1)
       return unresolved('unsupported_feature','cut requires one explicitly dependent plate extrude',context);
     const extrude=candidates[0], bodyId=extrude.writeTargets[0], sketchId=extrude.payload?.sourceSketchId;
+    // The plate-v1 provider emits ONE body, never an assembly STEP. Other
+    // active authored body writers must not vanish silently from an archive-
+    // bound browser download. This includes independent bodies and unknown
+    // future modelling operations, not just competing writers of this body.
+    // A sketch/parameter with no body write target is non-geometric metadata
+    // and remains compatible with the single-body native path.
+    const omittedBodyWriters=features.filter(f=>
+      f.id!==extrude.id && f.id!==cut.id && f.writeTargets?.length>0);
+    if(omittedBodyWriters.length)
+      return unresolved('unsupported_feature',
+        'plate-v1 native STEP cannot represent additional authored body operations: '+
+        omittedBodyWriters.map(f=>f.id).join(', '),
+        {...context,unsupportedFeatureIds:omittedBodyWriters.map(f=>f.id)});
     if (state.get(extrude.id)?.status!=='preview_only' ||
         cut.payload?.sourceSketchId!==sketchId ||
         !Array.isArray(cut.writeTargets) || cut.writeTargets.length!==1 || cut.writeTargets[0]!==bodyId ||
