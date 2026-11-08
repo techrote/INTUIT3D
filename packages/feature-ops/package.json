@@ -100,6 +100,10 @@
       "types": "./adapted-cut-recipe.d.mts",
       "default": "./src/adapted-cut-recipe.mjs"
     },
+    "./machined-family-base/v1": {
+      "types": "./machined-family-base.d.mts",
+      "default": "./src/machined-family-base.mjs"
+    },
     "./machined-body-variant/v1": {
       "types": "./machined-body-variant.d.mts",
       "default": "./src/machined-body-variant.mjs"
