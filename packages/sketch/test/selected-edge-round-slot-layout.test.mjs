@@ -157,6 +157,7 @@ test('explicit edge relocation and retrospective rebase preserve references; inv
   assert.equal(rebased.kind,'accepted',JSON.stringify(rebased));
   assert.deepEqual(rebased.slots,out.slots);
   assert.deepEqual(rebased.bindings.map(x=>x.edgeId),out.bindings.map(x=>x.edgeId));
-  assert.notEqual(rebased.sourceSignature,sig);
+  assert.equal(rebased.sourceSignature,sig);
+  assert.notEqual(rebased.nextSourceSignature,sig);
   assert.equal(serializeSketch(rebased.authoring.source),serializeSketch(wider));
 });
