@@ -1067,8 +1067,18 @@ async function main() {
   await mouse('mousePressed',vertexGesture.from.x,vertexGesture.from.y,1);
   await mouse('mouseMoved',vertexGesture.to.x,vertexGesture.to.y,1);
   await mouse('mouseReleased',vertexGesture.to.x,vertexGesture.to.y);
+  // SVG screen-to-sketch inversion can have low-order floating-point noise.
+  // Assert the real solved millimetre position, not a string representation
+  // of a binary number such as 139.99999717325736.
+  const drawnVertexAt=(x,y)=>evaluate(`(() => {
+    const text=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
+    return text.trim().split(/\\s+/).some(item=>{
+      const [px,py]=item.split(',').map(Number);
+      return Number.isFinite(px)&&Number.isFinite(py)&&Math.hypot(px-${x},py-${y})<0.01;
+    });
+  })()`);
   try{
-    await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('140,92')"),
+    await eventually(()=>drawnVertexAt(140,92),
       'actual pointer drag of a committed drawn vertex failed');
   }catch(failure){
     const detail=await evaluate(`(() => ({
@@ -1096,7 +1106,7 @@ async function main() {
     'second undo failed to restore original solver-authoritative vertex');
   check(await redoButton(),'redo unavailable after numeric vertex undo');
   check(await redoButton(),'redo unavailable after direct vertex undo');
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('140,92')"),
+  await eventually(()=>drawnVertexAt(140,92),
     'redo failed to recover the fully edited drawn vertex');
   await screenshot('36-drawn-vertex-undo-redo.png');
   const editedSavedCount=await evaluate('window.__modelArchiveBlobs.length');
@@ -1108,7 +1118,7 @@ async function main() {
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
     'edited contour archive did not reach Worker validation');
   await clickControl('[data-testid="runtime-import-review-confirm"]');
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')?.includes('140,92')"),
+  await eventually(()=>drawnVertexAt(140,92),
     'reopened authored contour lost the moved vertex');
   await screenshot('37-drawn-vertex-edit-reopened.png');
 
