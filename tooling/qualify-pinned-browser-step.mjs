@@ -138,6 +138,111 @@ async function saveReopen(){
   await screenshot('user-save-and-reopen.png');
   return {file:'edited-user-reopened.i3d-model.json',sha256:hash(archive)};
 }
+
+/** One browser-operated, genuinely drawn from-zero profile with original C++
+ * evidence before and after a structural SKETCH hole edit. The source model,
+ * cut target and project persist; this does not borrow the seeded plate.
+ */
+async function drawnFromEmptyPhysical(expected){
+  const fill=async(id,value)=>{
+    const ok=await evalInPage('(()=>{const e=document.querySelector('+JSON.stringify('[data-testid='+id+']')+');if(!e||e.disabled)return false;e.focus();e.select();return document.activeElement===e})()');
+    requireValid(ok,'Required keyboard input unavailable: '+id);
+    await send('Input.insertText',{text:String(value)});
+    await until(()=>evalInPage('document.querySelector('+JSON.stringify('[data-testid='+id+']')+')?.value==='+JSON.stringify(String(value))),
+      'actual React input '+id+'='+value);
+  };
+  const pointer=async(x,y)=>{
+    const p=await evalInPage('(()=>{const s=document.querySelector("[data-testid=runtime-blank-sketch]");const m=s?.getScreenCTM();if(!m)return null;const p=new DOMPoint('+x+','+(120-y)+').matrixTransform(m);return {x:p.x,y:p.y}})()');
+    requireValid(p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.x>0&&p.x<1360&&p.y>0&&p.y<900,'No real SVG pointer projection '+x+','+y);
+    for(const event of [
+      {type:'mouseMoved',x:p.x,y:p.y},
+      {type:'mousePressed',x:p.x,y:p.y,button:'left',clickCount:1},
+      {type:'mouseReleased',x:p.x,y:p.y,button:'left',clickCount:1}
+    ])await send('Input.dispatchMouseEvent',event);
+  };
+  await click('runtime-new-empty-sketch');
+  await until(()=>evalInPage('Boolean(document.querySelector("[data-testid=runtime-import-review]"))'),'empty project replacement consent');
+  await click('runtime-import-review-confirm');
+  await until(()=>evalInPage('Boolean(document.querySelector("[data-testid=runtime-blank-sketch]"))'),'zero-entity canvas');
+  const blank=await evalInPage('document.querySelector("[data-testid=runtime-revision]")?.textContent');
+  requireValid(await evalInPage('!document.querySelector("[data-testid=runtime-sketch]")'),'unexpected preauthored contour');
+  await click('runtime-outline-tool');
+  for(const [x,y] of [[0,0],[120,0],[120,80],[0,80]])await pointer(x,y);
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-contour-vertex-count]")?.textContent?.includes("4 / 12")'),'four pointer-authored vertices');
+  requireValid((await evalInPage('document.querySelector("[data-testid=runtime-revision]")?.textContent'))===blank,
+    'Unclosed draft changed canonical source');
+  await click('runtime-close-contour');
+  await until(()=>evalInPage('Boolean(document.querySelector("[data-testid=runtime-sketch]"))'),'solver and versioned RUNTIME contour admission');
+  requireValid((await evalInPage('document.querySelector("[data-testid=runtime-revision]")?.textContent'))!==blank,
+    'Four-vertex Close did not journal');
+  await screenshot('drawn-01-authoritative-outline.png');
+  await click('runtime-create-extrusion');
+  await until(()=>evalInPage('Boolean(document.querySelector("[data-testid=runtime-feature-plate]"))'),'user extrusion creation');
+  for(const [k,v] of [['x',35],['y',40],['diameter',12]])await fill('runtime-new-hole-'+k,v);
+  await click('runtime-add-hole');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-hole-inspector] .section-head")?.textContent?.includes("1")'),'one user-authored circular bore');
+  await click('runtime-create-cut');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-feature-cut]")?.textContent?.includes("pending_exact_provider")'),'explicit body-bound cut');
+  await screenshot('drawn-02-one-bore-cut.png');
+  // Pair the same genuine source-pinned Linux native provider through the UI,
+  // and only then click the UI evidence control.
+  const paired=await evalInPage('(()=>{const update=(id,value)=>{const e=document.querySelector("[data-testid="+id+"]");if(!e)return false;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(e,value);e.dispatchEvent(new Event("input",{bubbles:true}));return true};return update("runtime-native-url",'+JSON.stringify(identity.url)+')&&update("runtime-native-token",'+JSON.stringify(identity.token)+')})()');
+  requireValid(paired,'Cannot pair pinned host using user-facing inputs');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-native-build-pinned-evidence]")?.disabled===false'),'genuine native build allowed');
+  const earlierRevision=await evalInPage('document.querySelector("[data-testid=runtime-revision]")?.textContent');
+  const earlier=await evidence('earlier-one-bore');
+  // This edit mutates the *earlier sketch feature* while the cut remains
+  // explicitly targeted. Affected branches must rebuild, old STEP revoked.
+  for(const [k,v] of [['x',85],['y',40],['diameter',12]])await fill('runtime-new-hole-'+k,v);
+  await click('runtime-add-hole');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-hole-inspector] .section-head")?.textContent?.includes("2")'),'second user-authored bore');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled===true'),'old native STEP invalidated by earlier-feature edit');
+  const editedRevision=await evalInPage('document.querySelector("[data-testid=runtime-revision]")?.textContent');
+  requireValid(editedRevision!==earlierRevision,'Earlier-feature edit did not advance source revision');
+  await screenshot('drawn-03-old-step-revoked.png');
+  await clickHistoryAction('Undo');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-hole-inspector] .section-head")?.textContent?.includes("1")'),'real browser undo one bore');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled===true'),'undo still revokes stale STEP');
+  await screenshot('drawn-04-undo.png');
+  await clickHistoryAction('Redo');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-hole-inspector] .section-head")?.textContent?.includes("2")'),'real browser redo second bore');
+  await until(()=>evalInPage('document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled===true'),'redo still revokes stale STEP');
+  await screenshot('drawn-05-redo.png');
+  const currentRevision=await evalInPage('document.querySelector("[data-testid=runtime-revision]")?.textContent');
+  const before=await evalInPage('window.__capturedPinned.length');
+  await click('runtime-save-archive');
+  await until(()=>evalInPage('window.__capturedPinned.length>'+before),'user Save drawn project');
+  const saved=await lastBlob();
+  requireValid(saved.length>100&&saved.length<32000000,'Invalid saved drawn project');
+  const filename=join(output,'drawn-user-reopened.i3d-model.json');
+  writeFileSync(filename,saved);
+  const dom=await send('DOM.getDocument',{depth:1});
+  const input=await send('DOM.querySelector',{nodeId:dom.root.nodeId,selector:'input[aria-label="Open INTUIT model archive"]'});
+  requireValid(input.nodeId>0,'Original file input absent');
+  await send('DOM.setFileInputFiles',{nodeId:input.nodeId,files:[filename]});
+  await until(()=>evalInPage('Boolean(document.querySelector("[data-testid=runtime-import-review]"))'),'isolated Worker validates drawn archive');
+  await click('runtime-import-review-confirm');
+  await until(()=>evalInPage('!document.querySelector("[data-testid=runtime-import-review]")&&document.querySelector("[data-testid=runtime-hole-inspector] .section-head")?.textContent?.includes("2")'),'confirmation/reopen preserves drawn cut and two bores');
+  requireValid(await evalInPage('document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled===true'),'reopen retained stale native STEP');
+  await screenshot('drawn-06-file-picker-worker-reopen.png');
+  const current=await evidence('current-two-bores');
+  requireValid(earlier.sha256!==current.sha256,'One- and two-bore original ZIPs identical');
+  const report={status:'PINNED_OCCT8_BROWSER_DRAWN_FROM_EMPTY_TWO_REVISIONS_CAPTURED',
+    provider:'actual installed Linux OCCT8 C++ worker via browser and persistent RUNTIME',
+    nativeWorkerSha256:expected,independentCadInteroperability:false,
+    journey:'drawn-from-empty',revisionEarlier:earlierRevision,revisionEdited:editedRevision,
+    revisionCurrent:currentRevision,earlier,current,
+    reopened:{file:'drawn-user-reopened.i3d-model.json',sha256:hash(saved)},
+    authoredFeatures:{sketchSource:'four_real_pointer_clicks_from_zero_entities',
+      pointerDrawnClosedProfile:true,extrusion:'actual_browser_control',
+      cut:'actual_browser_control',earlierFeatureEdit:'second_solver_admitted_bore',
+      undoRedo:'real_browser_controls',sourceRevocation:true},
+    caveat:'Current original STEP must pass the separately compiled non-OCCT AnvilCAD volume, material and wrong-one-bore witness'};
+  writeFileSync(join(output,'browser-receipt.json'),JSON.stringify(report,null,2)+'\n');
+  console.log('PINNED_OCCT8_BROWSER_DRAWN_FROM_EMPTY_TWO_REVISIONS_CAPTURED '+JSON.stringify({
+    worker:expected,earlier:earlier.sha256,current:current.sha256}));
+}
+
 async function execute(){
   mkdirSync(output,{recursive:true});
   requireValid(process.platform==='linux','Genuine OCCT8 Linux worker required');
@@ -202,6 +307,10 @@ async function execute(){
     'CAD not in authoritative model mode');
   await evalInPage('(()=>{window.__capturedPinned=[];const old=URL.createObjectURL.bind(URL);'+
     'URL.createObjectURL=blob=>{window.__capturedPinned.push(blob);return old(blob)};return true})()');
+  if(process.env.INTUIT3D_BROWSER_DRAWN_FROM_EMPTY==='1'){
+    await drawnFromEmptyPhysical(expected);
+    return;
+  }
   // Separate source-qualified journey. The starter supplies a solved rectangle
   // and two circles; the user authors the actual extrusion and cut by clicking
   // the ordinary React controls. It is NOT user-drawn polygon acceptance.
