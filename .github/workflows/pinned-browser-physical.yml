@@ -89,7 +89,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import hashlib,json,pathlib,sys,zipfile
+          import hashlib,json,math,pathlib,sys,zipfile
           root=pathlib.Path('pinned-browser-evidence')
           report=json.loads((root/'browser-receipt.json').read_text())
           is_drawn=report['journey']=='drawn-from-empty'
@@ -165,32 +165,88 @@ jobs:
           'RAY exterior.below 0 0 -3 0 0 -1 void',
           ]
           if is_drawn:
-              # Independent oracle authored from the fixed *requested user gestures*:
-              # 120x80x8 mm rectangle, through-bores x=35/85,y=40,r=6.
-              # Native output is not consulted to construct these bounds.
-              # Analytic volume = (120*80-2*pi*6**2)*8 = 74990.4426 mm3.
-              # Two bores have centre X=-25,+25 in centred STEP coordinates.
+              # The *actual* pointer-admitted coordinates, not the requested
+              # ideal 120x80 cursor positions, are authoritative. SVG screen
+              # projection rounds to 0.001 mm and can shift the rectangle by
+              # <1 mm depending on Chromium viewport/DPR. Do NOT weaken the
+              # AnvilCAD geometry check to a loose, static fixture witness.
+              # Calculate an independent analytic prism-minus-bores oracle
+              # from the immutable received canonical model archive (never
+              # from STEP, native producer metrics or independent readback).
+              data=json.loads((root/'current.archive.json').read_text())
+              journal=data['history']['document']['journal']
+              source=next((event['patch']['payload']['sketch']
+                  for event in reversed(journal)
+                  if event.get('featureId')=='sketch.plate'
+                  and 'sketch' in event.get('patch',{}).get('payload',{})),None)
+              assert source is not None,'no authored SKETCH source in current archive'
+              contour={int(p['id'].rsplit(':vertex:',1)[1]):p for p in source['points']
+                       if ':vertex:' in p['id']}
+              assert set(contour)==set(range(4)),contour
+              p0,p1,p2,p3=(contour[i] for i in range(4))
+              x0,y0=p0['x'],p0['y']
+              x1,y1=p2['x'],p2['y']
+              width,height=x1-x0,y1-y0
+              assert 119<width<121 and 79<height<81,(width,height)
+              assert abs(p1['x']-x1)<0.0001 and abs(p1['y']-y0)<0.0001
+              assert abs(p3['x']-x0)<0.0001 and abs(p3['y']-y1)<0.0001
+              centers={p['id']:(p['x'],p['y']) for p in source['points']}
+              circles=sorted([(centers[c['center']][0],centers[c['center']][1],c['radius'])
+                              for c in source['circles']],key=lambda v:v[0])
+              assert len(circles)==2,circles
+              assert all(abs(actual[0]-x)<0.001 and abs(actual[1]-40)<0.001
+                         and abs(actual[2]-6)<0.001
+                         for actual,x in zip(circles,[35,85])),circles
+              extrusions=[event['feature'] for event in journal
+                          if event['type']=='feature.create'
+                          and event['feature']['id']=='plate']
+              assert len(extrusions)==1,extrusions
+              thickness=extrusions[0]['payload']['thicknessMm']
+              assert thickness==8,thickness
+              area_stock=width*height
+              cx,cy=(x0+x1)/2,(y0+y1)/2
+              holes=[(x-cx,y-cy,r,math.pi*r*r) for x,y,r in circles]
+              net_area=area_stock-sum(v[3] for v in holes)
+              assert net_area>0
+              volume=net_area*thickness
+              surface=2*net_area+2*(width+height)*thickness+sum(2*math.pi*r*thickness for x,y,r,ma in holes)
+              mx=-sum(x*ma for x,y,r,ma in holes)/net_area
+              my=-sum(y*ma for x,y,r,ma in holes)/net_area
+              vx=(area_stock*width**2/12-sum(ma*(x*x+r*r/4) for x,y,r,ma in holes))/net_area-mx*mx
+              vy=(area_stock*height**2/12-sum(ma*(y*y+r*r/4) for x,y,r,ma in holes))/net_area-my*my
+              vz=thickness**2/12
+              vxy=-sum(ma*x*y for x,y,r,ma in holes)/net_area-mx*my
+              def window(v,rel=0.003):
+                  return f'{v-abs(v)*rel:.7f} {v+abs(v)*rel:.7f}'
+              def close(v,delta=0.12):
+                  return f'{v-delta:.7f} {v+delta:.7f}'
               lines=[
-              'INTUIT3D_3D_WITNESS_V2',
-              'VOLUME 74830 75160',
-              'AREA 22490 22620',
-              'CENTROID -0.15 0.15 -0.15 0.15 3.85 4.15',
-              'COVARIANCE 1211 1217 543 549 5.25 5.42 -0.10 0.10 -0.10 0.10 -0.10 0.10',
-              'RAY center.material 0 20 4 0 0 1 material',
-              'RAY southwest.material -50 -30 4 0 0 1 material',
-              'RAY northeast.material 50 30 4 0 0 1 material',
-              'RAY south.material 0 -20 4 0 0 1 material',
-              'RAY northwest.material -45 20 2 0 0 1 material',
-              'RAY southeast.material 45 -20 6 0 0 1 material',
-              'RAY left.bore -25 0 4 0 0 1 void',
-              'RAY right.bore 25 0 4 0 0 1 void',
-              'RAY left.bore.high -25 0 7 0 0 1 void',
-              'RAY right.bore.high 25 0 7 0 0 1 void',
-              'RAY exterior.right 70 0 4 1 0 0 void',
-              'RAY exterior.north 0 45 4 0 1 0 void',
-              'RAY exterior.above 0 0 12 0 0 1 void',
-              'RAY exterior.below 0 0 -3 0 0 -1 void',
+                'INTUIT3D_3D_WITNESS_V2',
+                'VOLUME '+window(volume),
+                'AREA '+window(surface),
+                'CENTROID '+close(mx)+' '+close(my)+' '+close(thickness/2),
+                'COVARIANCE '+window(vx,0.005)+' '+window(vy,0.005)+' '+window(vz,0.005)+' '+close(vxy,0.05)+' '+close(0,0.05)+' '+close(0,0.05),
+                'RAY center.material 0 20 4 0 0 1 material',
+                'RAY southwest.material -50 -30 4 0 0 1 material',
+                'RAY northeast.material 50 30 4 0 0 1 material',
+                'RAY south.material 0 -20 4 0 0 1 material',
+                'RAY northwest.material -45 20 2 0 0 1 material',
+                'RAY southeast.material 45 -20 6 0 0 1 material',
+                'RAY left.bore -25 0 4 0 0 1 void',
+                'RAY right.bore 25 0 4 0 0 1 void',
+                'RAY left.bore.high -25 0 7 0 0 1 void',
+                'RAY right.bore.high 25 0 7 0 0 1 void',
+                'RAY exterior.right 70 0 4 1 0 0 void',
+                'RAY exterior.north 0 45 4 0 1 0 void',
+                'RAY exterior.above 0 0 12 0 0 1 void',
+                'RAY exterior.below 0 0 -3 0 0 -1 void',
               ]
+              print('SOURCE_DERIVED_INDEPENDENT_ANALYTIC_ORACLE',
+                    json.dumps({'actualPointerWidthMm':width,
+                                'actualPointerHeightMm':height,
+                                'sourceVolumeMm3':volume,'sourceSurfaceMm2':surface,
+                                'sourceCentroid':[mx,my,thickness/2],
+                                'sourceCovariance':[vx,vy,vz,vxy]}))
           (root/'independent-plate-12mm-witness.v2.txt').write_text('\n'.join(lines)+'\n')
           print('BROWSER_CURRENT_AND_EARLIER_SOURCE_CUSTODY_PASS',
                 json.dumps({k:{'revision':v['source']['revision'],
