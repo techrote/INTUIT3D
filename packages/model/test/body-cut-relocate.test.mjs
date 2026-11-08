@@ -19,7 +19,8 @@ import { BODY_REBUILD_MANIFEST_FORMAT, planBodyRebuildManifest }
   from '../src/body-rebuild-manifest.ts';
 import {
   BODY_CUT_RELOCATE_FORMAT, previewBodyCutRelocate,
-  commitUndoableBodyCutRelocate,
+  commitUndoableBodyCutRelocate, BODY_CUT_DESTINATIONS_FORMAT,
+  inspectBodyCutRelocateDestinations,
 } from '../src/body-cut-relocate.ts';
 
 const create=(id,kind,dependsOn,writeTargets,payload={})=>({
@@ -282,4 +283,136 @@ test('actual SKETCH + FEATUREOPS + RUNTIME hydraulic manifold demo is executable
   assert.equal(output.archiveUndoRedo,true);
   assert.equal(output.exactGeometryAuthority,false);
   assert.equal(output.nativeSTEP,'not_executed');
+});
+
+const inventoryRequest=(doc,patch={})=>({
+  format:BODY_CUT_DESTINATIONS_FORMAT,version:1,
+  expectedProjectId:doc.projectId,expectedRevision:doc.revision,
+  targetBodyId:'body.manifold',cutFeatureId:'cut.axial',
+  offset:0,limit:16,...patch,
+});
+
+test('destination inventory uses dependency order and distinguishes current, legal and blocked',()=>{
+  const doc=manifold(),before=serializeProject(doc);
+  const inventory=inspectBodyCutRelocateDestinations(doc,inventoryRequest(doc));
+  assert.equal(inventory.format,BODY_CUT_DESTINATIONS_FORMAT);
+  assert.equal(inventory.revision,doc.revision);
+  assert.deepEqual(inventory.writerOrderBefore,
+    ['extrude.manifold','cut.axial','cut.gallery','cut.pocket','cut.exit']);
+  assert.equal(inventory.totalDestinations,4);
+  assert.equal(inventory.nextOffset,null);
+  assert.deepEqual(inventory.destinations.map(x=>[x.afterBodyWriterId,x.eligibility,
+    x.requiredEventIds]),[
+    ['extrude.manifold','current',0],
+    ['cut.gallery','available',3],
+    ['cut.pocket','available',3],
+    ['cut.exit','available',2],
+  ]);
+  const pocket=inventory.destinations[2];
+  assert.deepEqual(pocket.proposedWriterOrder,
+    ['extrude.manifold','cut.gallery','cut.pocket','cut.axial','cut.exit']);
+  assert.deepEqual(pocket.invalidatedBodyIds,['body.manifold','body.clamp']);
+  assert.deepEqual(pocket.rewiredWriterIds,
+    ['cut.gallery','cut.axial','cut.exit']);
+  assert.equal(inventory.exactGeometryAuthority,false);
+  assert.equal(inventory.requiresNativeRebuildForAvailableMoves,true);
+  assert.equal(serializeProject(doc),before);
+});
+
+test('paged destination discovery is deterministic and revision-fenced',()=>{
+  const doc=manifold();
+  const first=inspectBodyCutRelocateDestinations(doc,inventoryRequest(doc,{limit:2}));
+  assert.equal(first.offset,0);
+  assert.equal(first.nextOffset,2);
+  const second=inspectBodyCutRelocateDestinations(doc,
+    inventoryRequest(doc,{offset:first.nextOffset,limit:2}));
+  assert.equal(second.nextOffset,null);
+  const whole=inspectBodyCutRelocateDestinations(doc,inventoryRequest(doc));
+  assert.deepEqual([...first.destinations,...second.destinations],whole.destinations);
+  const changed=commitEvent(doc,{
+    eventId:'change.manifold.sketch',type:'feature.edit',featureId:'sketch.block',
+    patch:{payload:{widthMm:150,depthMm:70}},
+  });
+  assert.throws(()=>inspectBodyCutRelocateDestinations(changed,
+    inventoryRequest(doc,{offset:2,limit:2})),ProjectRevisionError);
+  assert.throws(()=>previewBodyCutRelocate(changed,request(doc,{
+    afterBodyWriterId:'cut.pocket',
+  })),ProjectRevisionError);
+});
+
+test('destination list surfaces actual nested topology and selected-edge blockers',()=>{
+  const base=manifold();
+  const pocket=featuresOf(base).find(f=>f.id==='cut.pocket');
+  const doc=commitEvent(base,{
+    eventId:'pocket.depends.on.axial.edge',type:'feature.edit',
+    featureId:'cut.pocket',
+    patch:{payload:{...pocket.payload,selector:{
+      origin:{format:'intuit3d.semantic-topology-reference',version:1,
+        projectId:base.projectId,atRevision:base.revision,
+        anchor:{kind:'edge',featureId:'cut.axial',roleId:'edge.source.axial'}}},
+    }},
+  });
+  const choices=inspectBodyCutRelocateDestinations(doc,inventoryRequest(doc));
+  assert.deepEqual(choices.destinations.map(x=>x.eligibility),
+    ['current','available','blocked','blocked']);
+  assert.match(choices.destinations[2].diagnostic,
+    /requires earlier source writer cut.axial/);
+  assert.equal(choices.destinations[2].requiredEventIds,0);
+  assert.deepEqual(choices.destinations[2].invalidatedBodyIds,[]);
+  assert.equal(serializeProject(doc),serializeProject(doc));
+
+  const second=commitEvent(base,{
+    eventId:'pocket.selected.edge.writer',type:'feature.edit',
+    featureId:'cut.pocket',
+    patch:{payload:{...pocket.payload,edgeSourceBodyId:'body.manifold',
+      edgeSourceWriterId:'cut.axial'}},
+  });
+  const selected=inspectBodyCutRelocateDestinations(second,inventoryRequest(second));
+  assert.equal(selected.destinations[2].eligibility,'blocked');
+  assert.match(selected.destinations[2].diagnostic,/requires earlier source writer/);
+});
+
+test('destination selection commits exactly the previewed three rewires in one undo frame',()=>{
+  const doc=manifold();
+  const inventory=inspectBodyCutRelocateDestinations(doc,inventoryRequest(doc));
+  const chosen=inventory.destinations.find(x=>x.afterBodyWriterId==='cut.pocket');
+  assert.equal(chosen.eligibility,'available');
+  const move=request(doc,{
+    afterBodyWriterId:chosen.afterBodyWriterId,
+    eventIds:Array.from({length:chosen.requiredEventIds},(_,i)=>'chosen.move.'+i),
+  });
+  const preview=previewBodyCutRelocate(doc,move);
+  assert.deepEqual(preview.writerOrderAfter,chosen.proposedWriterOrder);
+  assert.deepEqual(preview.invalidatedBodyIds,chosen.invalidatedBodyIds);
+  let history=commitUndoableBodyCutRelocate(startUndoHistory(doc),move);
+  assert.equal(history.undoStack.length,1);
+  assert.deepEqual(chain(history.document).bodyWriterIds.length,5);
+  history=deserializeModelArchive(
+    serializeModelArchive(createModelArchive(history))).history;
+  assert.deepEqual(featuresOf(history.document).map(f=>f.dependsOn),
+    featuresOf(preview.document).map(f=>f.dependsOn));
+});
+
+test('inventory rejects invalid fences, unsupported bodies and pagination',()=>{
+  const doc=manifold(),original=serializeProject(doc);
+  for(const change of [
+    {expectedProjectId:'project.wrong'},
+    {expectedRevision:doc.revision+1},
+    {cutFeatureId:'cut.missing'},
+    {cutFeatureId:'extrude.manifold'},
+    {targetBodyId:'body.gauge'},
+    {offset:-1},{offset:4},{offset:1.5},{limit:0},{limit:17},
+    {limit:1.5},{extra:true},
+  ]) {
+    assert.throws(()=>inspectBodyCutRelocateDestinations(doc,
+      inventoryRequest(doc,change)),
+      change.expectedProjectId || change.expectedRevision!==undefined
+        ? ProjectRevisionError : ProjectFormatError);
+  }
+  const branched=commitEvent(doc,create('cut.unordered','cut',
+    ['extrude.manifold','sketch.axial'],['body.manifold'],
+    {targetBodyId:'body.manifold',throughAll:true}));
+  assert.throws(()=>inspectBodyCutRelocateDestinations(branched,
+    inventoryRequest(branched)),ProjectFormatError);
+  assert.equal(serializeProject(doc),original);
 });
