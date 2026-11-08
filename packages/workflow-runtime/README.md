@@ -1071,3 +1071,37 @@ provider unit cases. Run
 `node --test packages/workflow-runtime/test/experimental-plate.unit.test.mjs packages/workflow-runtime/test/experimental-plate.integration.test.mjs`.
 This remains source/dispatch qualification, **not** physical OCCT8 C++
 execution, native STEP readback or independent non-OCCT acceptance.
+
+## Source-current native provider diagnostics for WORKBENCH
+
+After starting a native evaluation, call `session.refresh()` to read the
+**current canonical archive's** provider status. This is derived from the
+existing session, cancellation and verified STEP receipt, not a second model
+or independent geometry authority:
+
+- `providerState`: `idle`, `pending`, `evaluated`, `blocked`,
+  `provider_failed`, or `cancelled`. Unsupported CAD operations are `blocked`,
+  not incorrectly labelled as an OCCT crash. An evaluated provider is
+  experimental evidence, never an exactness claim.
+- `stepAvailability`: `unavailable`, `current` or `last_good`.
+  Last-good bytes are **still bound to the unchanged canonical source**,
+  but a newer provider request is pending, failed, or completed without
+  generating STEP. Do not label those bytes as a newly generated STEP. The only download authority remains
+  `captureCurrentStepEvidence()` (or `currentStepReceipt()` for other
+  explicitly labelled use cases).
+- `lastResultCode` and `lastResultReason`: the current revision's native
+  refusal, for example `unsupported_feature`, `timeout`, or
+  `invalid_provider_result`. They remain readable after the asynchronous
+  result is consumed and are cleared when a new attempt begins or the
+  authoritative archive changes.
+
+A WORKBENCH result panel can show `providerState` and the refusal
+`lastResultReason` beside a separately labelled available current/last-good
+download. Any edit, undo, redo, externally replaced archive or reopened
+different project invalidates both the previous diagnostics and STEP bytes.
+Tests use real INTENT/SKETCH journal mutations with a synthetic native
+adapter and a non-cooperative timeout; **no physical OCCT execution or
+independent STEP import is implied**.
+
+Run `node --test packages/workflow-runtime/test/live-plate-session.integration.test.mjs`
+and `npm run typecheck --workspace @intuit3d/workflow-runtime`.
