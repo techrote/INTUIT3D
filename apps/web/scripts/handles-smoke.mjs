@@ -497,6 +497,12 @@ async function main() {
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),'model archive import review');
   check(await evaluate("document.querySelector('[data-testid=runtime-import-incoming]')?.textContent?.includes('undo /')"),
     'model import review did not show incoming durable history');
+  // The real browser offers a trace for the selected File. Its downloaded
+  // contents must contain only stage/timing evidence, not the private source.
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-import-trace-review]');b?.click();return !!b})()"),
+    'Privacy-safe import trace control absent at real browser confirmation');
+  check(await evaluate("(async()=>{const blob=window.__modelArchiveBlobs.pop();if(!blob)return false;const text=await blob.text();const trace=JSON.parse(text);return trace.format==='intuit3d.browser-import-stage-trace'&&trace.stages.some(x=>x.stage==='file_selected')&&trace.stages.some(x=>x.stage==='confirmation_ready')&&!text.includes('plate.i3d-model.json')&&!text.includes('undoStack')&&!text.includes('projectId')})()"),
+    'Real browser stage trace lacked source fence or exposed private archive data');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-import-review] button')].find(e=>e.textContent==='Replace with model archive');b?.click();return !!b})()"),
     'Model archive replacement confirmation missing');
   await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-import-review]')"),'model archive reopened');
