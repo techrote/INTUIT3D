@@ -1,7 +1,7 @@
 /** Type-only browser consumer of the real public RUNTIME/INTENT package boundary. */
 import type {UndoHistory} from '@intuit3d/model/transactions';
 import type {WorkflowRuntime} from '../index.mjs';
-import {createLivePlateSession,type LivePlateSessionState,type LiveCadBatch,type SourceBoundStepReceipt} from '../live-plate-session.mjs';
+import {createLivePlateSession,type LivePlateSessionState,type LiveCadBatch,type SourceBoundStepReceipt,type CurrentStepEvidenceCapture} from '../live-plate-session.mjs';
 import type {VerifiedLocalStep,LocalPlateClientResult} from '../local-plate-client.mjs';
 
 declare const runtime:WorkflowRuntime;
@@ -65,6 +65,15 @@ async function browserDownload() {
     const requestId:string=receipt.producer.requestId;
     const unqualified:false=receipt.exactAuthority;
     void [project,revision,archiveSha,stepSha,bytes,requestId,unqualified];
+  }
+  const capture:CurrentStepEvidenceCapture|null=session.captureCurrentStepEvidence();
+  if(capture) {
+    const canonicalArchive:string=capture.archive;
+    const independentlyWritableStep:Uint8Array=capture.stepBytes;
+    const serializableReceipt:string=JSON.stringify(capture.receipt);
+    const producer:'OCCT-cxx-8.0.1'|'OCP-python-prototype'=capture.receipt.producer.backend;
+    const unqualified:false=capture.exactAuthority;
+    void [canonicalArchive,independentlyWritableStep,serializableReceipt,producer,unqualified];
   }
   if(result.kind==='experimental_plate_evaluated'&&step) {
     const bytes:Uint8Array=step.bytes;
