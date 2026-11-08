@@ -65,6 +65,8 @@ class SessionSourceGateTests(unittest.TestCase):
                 lambda v: v['producer'].update(backend='OCP-python-prototype'),
                 lambda v: v.update(exactAuthority=True),
                 lambda v: v['source'].update(revision=8),
+                lambda v: v.update(version=True),
+                lambda v: v['source'].update(revision=7.0),
                 lambda v: v['producer'].update(requestId=''),
             ):
                 value = json.loads(json.dumps(original))
