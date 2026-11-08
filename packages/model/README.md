@@ -840,8 +840,9 @@ const recovery = resolveParameterSheetConflict(base, current.document, draft, {
   expectedProjectId: base.projectId,
   expectedBaseRevision: base.revision,
   expectedCurrentRevision: current.document.revision,
-  approvals: report.conflicts.map(({code,featureId,relatedId}) =>
-    ({code,featureId,relatedId})),
+  // Only a real author-confirmed list, NEVER copied automatically
+  // from report.conflicts:
+  approvals: [],
   eventReplacements: [], // must supply fresh explicit IDs for collisions
 });
 if (recovery.status === 'ready') {
