@@ -164,8 +164,8 @@ of 1% of the corresponding analytic reference or 0.1 mm²; mixed covariance
 within the larger of 5% or 0.25 mm². No physical threshold was enlarged
 on the earlier U-bracket gate.
 
-The source-only adversaries deliberately add 10 mm to individual centroid
-or covariance receipt fields, or inject nonfinite values, across all
+The source-only adversaries deliberately displace centroid readings by 10 mm,
+or covariance readings by 100 mm², or inject nonfinite values, across all
 progressions. These verify only the parser's fail-closed contract. The
 Rust implementation measures actual mesh tetrahedra, and **the physical
 adversarial property is unqualified until a real sloped native STEP
