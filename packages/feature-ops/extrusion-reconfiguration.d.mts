@@ -29,7 +29,13 @@ export type ExtrusionReconfigurationRequest=Readonly<{
 export declare function reconfigureProfileExtrusion(
   history:UndoHistory,
   request:ExtrusionReconfigurationRequest,
-  services:FeatureOpsServices
+  services:FeatureOpsServices & Readonly<{
+    /** Mandatory when the selected body has two or more ordered cuts. */
+    cutChain?:{inspectBodyCutChain(document:UndoHistory['document'],bodyId:string):{
+      status:string;projectId:string;revision:number;bodyWriterIds:readonly string[];
+      eligibleAfterWriterId:string|null;
+    }}
+  }>
 ):Readonly<{
   kind:'committed';
   history:UndoHistory;
@@ -45,6 +51,15 @@ export declare function reconfigureProfileExtrusion(
   /** Cut retained its own source sketch; dependency rewired if needed. */
   reboundCutId:string|null;
   cutDependencies:readonly string[]|null;
+  /** Dependency execution order, distinct from journal creation chronology. */
+  orderedCutFeatureIds:readonly string[];
+  /** Every cut whose SKETCH dependency was rebound; zero for a depth-only edit. */
+  reboundCutIds:readonly string[];
+  cutDependencyChanges:readonly Readonly<{
+    cutFeatureId:string;
+    previousDependencies:readonly string[];
+    nextDependencies:readonly string[];
+  }>[];
   status:'preview_only';
   nativeHandoff:null;
   exactAuthority:false;
