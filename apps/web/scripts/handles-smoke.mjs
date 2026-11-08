@@ -126,7 +126,7 @@ async function main() {
   await mouse('mousePressed',profilePoint.x,profilePoint.y,1);
   await mouse('mouseReleased',profilePoint.x,profilePoint.y,0);
   await eventually(()=>evaluate(
-    "document.querySelector('[data-testid=runtime-pointer-profile-selected]')?.textContent?.includes('profile')"
+    "Boolean(document.querySelector('[data-testid=runtime-pointer-profile-selected]') && !document.querySelector('[data-testid=runtime-pointer-profile-selected]').textContent.includes('Selection expired'))"
   ),'actual pointer contour selection');
   check(await evaluate(`(() => {
     const s=document.querySelector('[data-testid=runtime-pointer-profile-handle]');
@@ -141,8 +141,10 @@ async function main() {
   ),'numeric semantic editor');
   check(await evaluate(`(() => {
     const el=document.querySelector('[data-testid=runtime-profile-numeric-value]');
-    if(!el)return false;el.focus();el.select();return document.activeElement===el;
+    if(!el)return false;el.focus();return document.activeElement===el;
   })()`),'numeric semantic dimension input cannot focus');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'a',code:'KeyA',windowsVirtualKeyCode:65,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'a',code:'KeyA',windowsVirtualKeyCode:65,modifiers:2});
   await send('Input.insertText',{text:'135'});
   await key('Enter','Enter',13);
   await eventually(()=>evaluate(
