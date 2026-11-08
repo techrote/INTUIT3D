@@ -215,6 +215,14 @@ async function drawnFromEmptyPhysical(expected){
   // edits. Undo and Redo must revoke the previous original C++ STEP bytes.
   const beforeThicknessRevision=await evalInPage(
     'document.querySelector("[data-testid=runtime-revision]")?.textContent');
+  // Adding/editing a sketch hole deliberately leaves the workbench in XY
+  // sketch mode. The 3D extrusion grip is not rendered there. Use the real
+  // Solid ribbon button, not direct React state manipulation, to return to
+  // the physical 3D edit surface before exercising the grip.
+  await click('runtime-mode-solid');
+  await until(()=>evalInPage(
+    'Boolean(document.querySelector("[data-testid=runtime-thickness-handle]"))'),
+    'actual 3D thickness grip after real Solid ribbon navigation');
   requireValid(await evalInPage(
     'document.querySelector("[data-testid=runtime-thickness-handle]")?.getAttribute("aria-valuenow")==="8"'),
     'Drawn cut has no actual 8 mm solid thickness handle');
