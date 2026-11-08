@@ -1217,6 +1217,38 @@ async function main(){
   await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-130)<0.001"),
     'Semantic pointer drag lost model-backed redo');
   await screenshot('native-12-selected-profile-direct-drag.png');
+  // Real user-operated INTENT history review. An explicit pointer click chooses
+  // the newest model-authored sketch payload edit. No synthetic React or
+  // history handler invocation and no native STEP authority is assumed.
+  await pointerClick('runtime-history-open');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-history-review]:not([disabled])'))"),
+    'Historical edit inspector did not expose an INTENT-admitted field');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-history-review]');return e?.dataset.historyField==='payload'&&Boolean(e.dataset.historyEvent)})()"),
+    'Newest historical choice is not an actual authored SKETCH payload');
+  const historySourceRevision=Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0]);
+  await pointerClick('runtime-history-review');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-history-confirmation]'))"),
+    'Pointer history selection did not expose explicit compensation review');
+  if(await evaluate("Boolean(document.querySelector('[data-testid=runtime-history-consent]'))"))
+    await pointerClick('runtime-history-consent');
+  await pointerClick('runtime-history-apply');
+  await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-120)<0.001"),
+    'Pointer-reviewed historical compensation did not restore the prior sketch dimension');
+  check(Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0])===historySourceRevision+1,
+    'Historical one-field compensation did not commit exactly one model revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'Historical field compensation reused a stale native STEP receipt');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-130)<0.001"),
+    'Historical compensating edit could not be undone');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-120)<0.001"),
+    'Historical compensating edit could not be redone');
+  await screenshot('native-13-historical-field-compensation.png');
   await pointerClick('runtime-mode-solid');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
