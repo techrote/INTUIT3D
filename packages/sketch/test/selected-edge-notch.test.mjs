@@ -147,3 +147,7 @@ function selectOrStale(doc){
   return {candidateId:'cycle:L:edge0|L:edge1|L:edge2|L:edge3|L:edge4|L:edge5',
     sourceSignature:serializeSketch(doc)};
 }
+
+test('public edge-notch authoring example executes against actual public imports',async()=>{
+  await import('../examples/selected-edge-notch.mjs');
+});
