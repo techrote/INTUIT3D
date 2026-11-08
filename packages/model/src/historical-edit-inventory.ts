@@ -1,0 +1,209 @@
+/**
+ * @intuit3d/model/historical-edit-inventory/v1
+ *
+ * User-facing, revision-fenced history menu for selective feature.edit
+ * compensation. Unlike chronological undo, this inventory never rewrites or
+ * executes the journal. Each row is checked against the actual v1 selective
+ * reversion preview, so a disabled choice is not a guessed UI heuristic.
+ *
+ * WORKBENCH: display rows newest first, require a fresh user-selected eventId
+ * and explicit consent for regressed ready features before calling the
+ * existing feature-edit-revert command. A provider cache is never authoritative
+ * here; RUNTIME must independently fence and rebuild affected bodies.
+ */
+import {
+  parseProject, serializeProject, ProjectFormatError, ProjectRevisionError,
+} from './index.ts';
+import type { FeatureStatus, ProjectDocument, FeaturePatch } from './index.ts';
+import {
+  FEATURE_EDIT_REVERT_FORMAT, previewFeatureEditRevert,
+} from './feature-edit-revert.ts';
+import type {
+  FeatureEditRevertRequest, FeatureEditRevertPreview,
+} from './feature-edit-revert.ts';
+
+export const HISTORICAL_EDIT_INVENTORY_FORMAT =
+  'intuit3d.historical-edit-inventory' as const;
+export const HISTORICAL_EDIT_INVENTORY_VERSION = 1 as const;
+
+export interface HistoricalEditInventoryRequest {
+  readonly format: typeof HISTORICAL_EDIT_INVENTORY_FORMAT;
+  readonly version: typeof HISTORICAL_EDIT_INVENTORY_VERSION;
+  readonly expectedProjectId: string;
+  readonly expectedRevision: number;
+  /** Canonical fence detects divergent histories even with equal revisions. */
+  readonly expectedDocumentFence: string;
+  /** A valid, unused event ID for non-mutating test previews, not committed. */
+  readonly probeEventId: string;
+  /** Exclusive upper journal index; null starts at newest event. */
+  readonly cursor: number | null;
+  readonly limit: number;
+}
+
+export type HistoricalEditChoiceStatus =
+  'available' | 'requires_confirmation' | 'requires_unresolved_admission' | 'blocked';
+
+export interface HistoricalEditChoice {
+  readonly targetEventId: string;
+  readonly featureId: string;
+  /** One-based event revision, distinct from the current document revision. */
+  readonly sourceRevision: number;
+  readonly originallyEditedFields: readonly (keyof FeaturePatch)[];
+  readonly status: HistoricalEditChoiceStatus;
+  /** Actual model refusal, not provider-geometry speculation. */
+  readonly reason: string | null;
+  readonly revertedFields: readonly (keyof FeaturePatch)[];
+  readonly regressedReadyFeatureIds: readonly string[];
+  readonly invalidatedBodyIds: readonly string[];
+  readonly resultingTargetStatus: FeatureStatus | null;
+  /** Pass these into feature-edit-revert with a NEW eventId on user action. */
+  readonly admission: FeatureEditRevertRequest['admission'] | null;
+  readonly confirmUnresolved: boolean;
+}
+
+export interface HistoricalEditInventory {
+  readonly format: typeof HISTORICAL_EDIT_INVENTORY_FORMAT;
+  readonly version: typeof HISTORICAL_EDIT_INVENTORY_VERSION;
+  readonly projectId: string;
+  readonly revision: number;
+  readonly documentFence: string;
+  readonly rows: readonly HistoricalEditChoice[];
+  readonly nextCursor: number | null;
+  readonly requiresNativeRebuildForAcceptedChoice: true;
+  readonly exactGeometryAuthority: false;
+}
+
+const ID = /^[A-Za-z][A-Za-z0-9._:-]{0,127}$/;
+const KEYS = [
+  'format', 'version', 'expectedProjectId', 'expectedRevision',
+  'expectedDocumentFence', 'probeEventId', 'cursor', 'limit',
+] as const;
+function fail(message: string): never {
+  throw new ProjectFormatError('historical edit inventory: ' + message);
+}
+function plain(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+function validate(value: unknown): asserts value is HistoricalEditInventoryRequest {
+  if (!plain(value) || Object.keys(value).length !== KEYS.length ||
+      !KEYS.every((key) => Object.hasOwn(value, key)) ||
+      value.format !== HISTORICAL_EDIT_INVENTORY_FORMAT ||
+      value.version !== HISTORICAL_EDIT_INVENTORY_VERSION ||
+      typeof value.expectedProjectId !== 'string' || !ID.test(value.expectedProjectId) ||
+      !Number.isSafeInteger(value.expectedRevision) ||
+      (value.expectedRevision as number) < 0 ||
+      typeof value.expectedDocumentFence !== 'string' ||
+      typeof value.probeEventId !== 'string' || !ID.test(value.probeEventId) ||
+      !(value.cursor === null || (Number.isSafeInteger(value.cursor) &&
+        (value.cursor as number) >= 0)) ||
+      !Number.isSafeInteger(value.limit) || (value.limit as number) < 1 ||
+      (value.limit as number) > 16) {
+    fail('invalid versioned request, pagination or source fence');
+  }
+}
+function diagnostic(error: unknown): string {
+  if (error instanceof ProjectFormatError ||
+      error instanceof ProjectRevisionError) return error.message;
+  throw error;
+}
+function summarize(
+  preview: FeatureEditRevertPreview,
+  source: { eventId: string; featureId: string; ordinal: number;
+    changedFields: readonly (keyof FeaturePatch)[] },
+  status: Exclude<HistoricalEditChoiceStatus, 'blocked'>,
+): HistoricalEditChoice {
+  const admission = status === 'available' ? 'require_ready' : 'permit_unresolved';
+  return {
+    targetEventId: source.eventId, featureId: source.featureId,
+    sourceRevision: source.ordinal + 1,
+    originallyEditedFields: source.changedFields, status, reason: null,
+    revertedFields: preview.revertedFields,
+    regressedReadyFeatureIds: preview.regressedReadyFeatureIds,
+    invalidatedBodyIds: preview.invalidatedBodyIds,
+    resultingTargetStatus: preview.plan.features.find(
+      (row) => row.feature.id === source.featureId)?.status ?? null,
+    admission,
+    confirmUnresolved: preview.regressedReadyFeatureIds.length > 0,
+  };
+}
+
+/**
+ * Evaluate bounded, paginated authored edit choices in reverse journal order.
+ * ALL feature.edit events are returned, including definitively blocked ones.
+ * Strict acceptance is tested first, then explicit unresolved admission.
+ * There is no automatic compensation, consent or geometry repair.
+ */
+export function inspectHistoricalFeatureEdits(
+  source: ProjectDocument, request: HistoricalEditInventoryRequest,
+): HistoricalEditInventory {
+  validate(request);
+  const document = parseProject(source);
+  const fence = serializeProject(document);
+  if (document.projectId !== request.expectedProjectId ||
+      document.revision !== request.expectedRevision ||
+      fence !== request.expectedDocumentFence) {
+    throw new ProjectRevisionError('historical edit inventory: stale or divergent journal');
+  }
+  if (document.journal.some((event) => event.eventId === request.probeEventId)) {
+    fail('probe event identity already exists in the journal');
+  }
+  if (request.cursor !== null && request.cursor > document.journal.length) {
+    fail('cursor exceeds this document journal');
+  }
+  let scan = request.cursor ?? document.journal.length;
+  const rows: HistoricalEditChoice[] = [];
+  while (scan > 0 && rows.length < request.limit) {
+    const ordinal = --scan;
+    const event = document.journal[ordinal]!;
+    if (event.type !== 'feature.edit') continue;
+    const sourceEdit = {
+      eventId: event.eventId, featureId: event.featureId,
+      ordinal, changedFields: Object.keys(event.patch) as (keyof FeaturePatch)[],
+    };
+    const base: FeatureEditRevertRequest = {
+      format: FEATURE_EDIT_REVERT_FORMAT, version: 1,
+      expectedProjectId: request.expectedProjectId,
+      expectedRevision: request.expectedRevision,
+      expectedDocumentFence: fence,
+      targetEventId: event.eventId, eventId: request.probeEventId,
+      admission: 'require_ready', confirmUnresolved: false,
+    };
+    try {
+      rows.push(summarize(previewFeatureEditRevert(document, base),
+        sourceEdit, 'available'));
+      continue;
+    } catch (error) {
+      diagnostic(error);
+    }
+    try {
+      const preview = previewFeatureEditRevert(document, {
+        ...base, admission: 'permit_unresolved', confirmUnresolved: true,
+      });
+      rows.push(summarize(preview, sourceEdit,
+        preview.regressedReadyFeatureIds.length
+          ? 'requires_confirmation' : 'requires_unresolved_admission'));
+    } catch (error) {
+      rows.push({
+        targetEventId: event.eventId, featureId: event.featureId,
+        sourceRevision: ordinal + 1,
+        originallyEditedFields: sourceEdit.changedFields,
+        status: 'blocked', reason: diagnostic(error),
+        revertedFields: [], regressedReadyFeatureIds: [],
+        invalidatedBodyIds: [], resultingTargetStatus: null,
+        admission: null, confirmUnresolved: false,
+      });
+    }
+  }
+  const nextCursor = document.journal.slice(0, scan)
+    .some((event) => event.type === 'feature.edit') ? scan : null;
+  return {
+    format: HISTORICAL_EDIT_INVENTORY_FORMAT,
+    version: HISTORICAL_EDIT_INVENTORY_VERSION,
+    projectId: document.projectId, revision: document.revision,
+    documentFence: fence, rows, nextCursor,
+    requiresNativeRebuildForAcceptedChoice: true,
+    exactGeometryAuthority: false,
+  };
+}
