@@ -951,6 +951,23 @@ async function main(){
   check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
     'bad-digest refresh incorrectly discarded earlier verified same-revision STEP');
   mockReplyMode='valid';
+  // One actual user pointer click must traverse the native request and the
+  // pinned custody fence. This is an OCP-shaped synthetic responder, so no
+  // pinned C++ archive/receipt/STEP ZIP may be offered or downloaded.
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-native-build-pinned-evidence]').disabled"),
+    'one-click pinned evidence action is not available for an authored cut');
+  const beforePinnedAttempt=await evaluate('window.__nativeStepBlobs.length');
+  const beforePinnedRevision=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  await pointerClick('runtime-native-build-pinned-evidence');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('Pinned STEP custody unavailable')"),
+    'synthetic OCP was not explicitly refused for one-click pinned STEP custody');
+  check(await evaluate('window.__nativeStepBlobs.length')===beforePinnedAttempt,
+    'OCP or synthetic provider caused a pinned-evidence ZIP to be published');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===beforePinnedRevision,
+    'one-click STEP evaluation edited the authoritative CAD journal');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-evidence-zip]')?.disabled"),
+    'one-click OCP evaluation incorrectly enabled a pinned receipt');
+  await screenshot('native-08b-pinned-custody-refusal.png');
   // Actual Chromium Ctrl+N creates a sketch-only project, with an Escape-safe
   // replacement gate. The existing model must survive cancellation.
   const projectBeforeNew=await evaluate("document.querySelector('.browser-project')?.textContent");
@@ -1129,9 +1146,9 @@ async function main(){
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder with schema-compatible OCP identity, NOT OCP/native/STEP interoperability',
-    downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,realPhysicalGeometry:false,
+    downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,oneClickPinnedOcpRefusal:true,realPhysicalGeometry:false,
     retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,keyboardHoleNudge:true,keyboardNudgeUndo:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,localRecoveryIndexedDbReload:true,recoveryWorkerReviewCancel:true,recoveryUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png','native-10a-selected-rigid-rotation.png','native-10-circular-bolt-array.png','native-11-local-recovery-after-reload.png'
+      'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-08b-pinned-custody-refusal.png','native-09-model-first-new-sketch-shortcut.png','native-10a-selected-rigid-rotation.png','native-10-circular-bolt-array.png','native-11-local-recovery-after-reload.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
