@@ -20,9 +20,9 @@ const exact=(v,keys)=>!!v&&typeof v==='object'&&!Array.isArray(v)&&
 const point=v=>exact(v,['x','y'])&&finite(v.x)&&finite(v.y);
 const preview={previewOnly:true,nativeExact:false,exactBrepAvailable:false,
   independentStepQualified:false};
-const refuse=(signature,reason,detail=null,sourceStatus=null,diagnostics=[])=>
+const refuse=(signature,reason,detail=null,sourceStatus=null,diagnostics=[],conflict=null)=>
   ({kind:'refused',version:1,sourceSignature:signature,reason,detail,
-    sourceStatus,diagnostics,...preview});
+    sourceStatus,diagnostics,conflict,...preview});
 
 /**
  * Expose all existing *solver-authored* dimension and two-axis centre
@@ -41,7 +41,7 @@ export function inspectPointerEditableHandles(source,selection){
     const diagnostics=unsolved?solveSketch(doc).diagnostics:
       (dimensions.diagnostics??[]);
     return refuse(stamp,dimensions.reason,dimensions.detail??null,
-      status,diagnostics);
+      status,diagnostics,dimensions.conflict??null);
   }
   const centers=inspectSelectedProfileHandles(doc,selection);
   if(centers.kind!=='selected_profile_handles')
@@ -138,7 +138,7 @@ export function dragProfileHandleAtPointer(source,selection,command){
     });
   if(result.kind!=='accepted')
     return refuse(stamp,result.reason,result.detail??null,
-      result.sourceStatus??null,result.diagnostics??[]);
+      result.sourceStatus??null,result.diagnostics??[],result.conflict??null);
   // Do not silently switch semantic profiles or return stale gesture handles.
   if(result.profile.semanticProfileId!==view.semanticProfileId ||
      result.nextSourceSignature!==serializeSketch(result.sketch) ||
