@@ -10,6 +10,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import * as model from '@intuit3d/model';
 import * as transactions from '@intuit3d/model/transactions';
 import * as bindings from '@intuit3d/model/dimension-bindings';
@@ -304,4 +306,11 @@ test('physical native fixture starts at zero sketch entities, then produces two 
   assert.equal(source.session.currentStep(),null);
   assert.equal(source.session.save(),saved);
   source.session.cancel();
+});
+
+test('optional genuine C++ from-empty runner is syntactically valid even when no worker is installed',()=>{
+  // The full physical command is intentionally NOT run in ordinary CI.
+  execFileSync(process.execPath,['--check',fileURLToPath(
+    new URL('./local-occt8-bridge.native-demo.mjs',import.meta.url))],
+  {timeout:15000,stdio:'pipe'});
 });
