@@ -27,6 +27,9 @@ import {
   previewTransaction, commitUndoableTransaction, parseUndoHistory,
 } from './transactions.ts';
 import type { UndoHistory } from './transactions.ts';
+import {
+  DIMENSION_BINDINGS_FORMAT, DIMENSION_BINDINGS_VERSION,
+} from './dimension-bindings.ts';
 import { planIncrementalEvaluation } from './incremental.ts';
 import type { IncrementalEvaluationPlan } from './incremental.ts';
 
@@ -106,13 +109,31 @@ function validate(x: unknown): asserts x is FeaturePayloadScalarRevertRequest {
   }
 }
 function bound(payload: JsonRecord, field: string): boolean {
-  const entries = payload.dimensionBindings;
-  if (entries === undefined) return false;
-  // Unknown binding manifests are not evidence that a scalar is freely
-  // authored. A formula-bound effective value needs parameter editing.
-  if (!plain(entries) || !Array.isArray(entries.entries)) return true;
-  return entries.entries.some((item: unknown) =>
-    !plain(item) || item.field === field);
+  if (!Object.hasOwn(payload, 'dimensionBindings')) return false;
+  const manifest = payload.dimensionBindings;
+  // A malformed or future-version manifest does NOT prove that any cached
+  // numeric fallback is independently authored. Otherwise an unsupported
+  // manifest with entries:[] would bypass the parameter-owned edit path.
+  if (!plain(manifest) || Object.keys(manifest).length !== 3 ||
+      !['format', 'version', 'entries'].every((key) =>
+        Object.hasOwn(manifest, key)) ||
+      manifest.format !== DIMENSION_BINDINGS_FORMAT ||
+      manifest.version !== DIMENSION_BINDINGS_VERSION ||
+      !Array.isArray(manifest.entries)) return true;
+  const seen = new Set<string>();
+  for (const entry of manifest.entries) {
+    if (!plain(entry) || Object.keys(entry).length !== 3 ||
+        !['field', 'unit', 'expression'].every((key) =>
+          Object.hasOwn(entry, key)) ||
+        typeof entry.field !== 'string' ||
+        !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(entry.field) ||
+        !['mm', 'deg', 'unitless'].includes(entry.unit as string) ||
+        !plain(entry.expression) || seen.has(entry.field)) return true;
+    seen.add(entry.field);
+  }
+  // A fully recognized binding for a DIFFERENT dimension is not ownership
+  // of this selected scalar; the selected key remains independently editable.
+  return seen.has(field);
 }
 /**
  * Reconstruct historical source values using the accepted whole-payload
