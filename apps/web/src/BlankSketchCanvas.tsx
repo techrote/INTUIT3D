@@ -33,9 +33,6 @@ export function BlankSketchCanvas({
       {!draft?<button type="button" className="ribbon-button" data-testid="runtime-begin-blank-contour"
         disabled={disabled} onClick={onBegin}>Draw outline · click vertices</button>:<>
         <span data-testid="runtime-contour-vertex-count">{points.length} / 12 vertices</span>
-        {hover&&<span data-testid="runtime-contour-pointer-coordinate" aria-live="off">
-          Next: X {hover.x.toFixed(3)} · Y {hover.y.toFixed(3)} mm
-        </span>}
         <button type="button" className="ribbon-button" data-testid="runtime-undo-contour-point"
           disabled={disabled||!points.length} onClick={onUndoPoint}>Undo vertex</button>
         <button type="button" className="ribbon-button" data-testid="runtime-close-contour"
@@ -75,6 +72,11 @@ export function BlankSketchCanvas({
         </>}
       </g>
       <text x="-16" y="-12" fill="#93b6c8" fontSize="4">SKETCH XY · MILLIMETRES · ANALYTIC ONLY</text>
+      <text x="-16" y="-6" fill="#abd6df" fontSize="3.5"
+        data-testid="runtime-contour-pointer-coordinate" aria-live="off">
+        {draft&&hover?`NEXT X ${hover.x.toFixed(3)} · Y ${hover.y.toFixed(3)} mm`:
+          '1 MM SNAP · SHIFT: 0.001 MM'}
+      </text>
     </svg>
     <p data-testid="runtime-blank-contour-guidance" className="microcopy">
       {draft?'Click 3–12 vertices. The 10 mm grid is visual; pointer clicks snap to 1 mm. Hold Shift for fine 0.001 mm off-grid placement. Close commits only after SKETCH/RUNTIME admission. Escape cancels.':
