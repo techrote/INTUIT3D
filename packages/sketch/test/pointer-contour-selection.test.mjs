@@ -202,6 +202,14 @@ test('pointer selects editable independent islands inside a concave contour AABB
   const controls=inspectSelectedProfileHandles(doc,l.selection);
   assert.equal(controls.kind,'selected_profile_handles');
   const length=controls.controls.find(h=>h.constraintId==='L:length');
+  const web=controls.controls.find(h=>h.constraintId==='L:webWidth');
+  assert.ok(web);
+  const refused=editSelectedProfileHandle(doc,l.selection,{
+    kind:'set-dimension',sourceSignature:before,handleId:web.id,valueMm:70
+  });
+  assert.equal(refused.kind,'refused',JSON.stringify(refused));
+  assert.equal(refused.reason,'profile_rejected_after_edit');
+  assert.equal(stamp(doc),before); // rejected interference leaves original source intact
   const edit=editSelectedProfileHandle(doc,l.selection,{
     kind:'set-dimension',sourceSignature:before,handleId:length.id,valueMm:150
   });
