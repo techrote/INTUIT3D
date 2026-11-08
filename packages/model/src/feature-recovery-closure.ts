@@ -6,7 +6,7 @@
  * This is an inspection + acknowledged atomic transaction, not auto-repair.
  */
 import {
-  featureTimelineOf, parseProject, planProject, ProjectFormatError,
+  featureTimelineOf, parseProject, planProject, serializeProject, ProjectFormatError,
   ProjectRevisionError,
 } from './index.ts';
 import type { Feature, FeatureStatus, ProjectDocument } from './index.ts';
@@ -25,6 +25,8 @@ export interface FeatureRecoveryInspectionRequest {
   readonly version: typeof FEATURE_RECOVERY_CLOSURE_VERSION;
   readonly expectedProjectId: string;
   readonly expectedRevision: number;
+  /** Canonical journal snapshot: refuses equal-revision divergent branches. */
+  readonly expectedDocumentFence: string;
   /** User-selected tombstones; active features cannot be recovered. */
   readonly selectedFeatureIds: readonly string[];
 }
@@ -79,7 +81,8 @@ function fields(value: Record<string, unknown>, names: readonly string[]): boole
     names.every((name) => Object.hasOwn(value, name));
 }
 const INSPECTION_KEYS = [
-  'format','version','expectedProjectId','expectedRevision','selectedFeatureIds',
+  'format','version','expectedProjectId','expectedRevision',
+  'expectedDocumentFence','selectedFeatureIds',
 ] as const;
 const COMMIT_KEYS = [...INSPECTION_KEYS,
   'eventIds','admission','confirmAncestorRestore','confirmUnresolved'] as const;
@@ -90,6 +93,7 @@ function validateInspection(value: unknown, isCommit: boolean): asserts value is
       value.version !== FEATURE_RECOVERY_CLOSURE_VERSION ||
       typeof value.expectedProjectId !== 'string' || !ID.test(value.expectedProjectId) ||
       !Number.isSafeInteger(value.expectedRevision) ||
+      typeof value.expectedDocumentFence !== 'string' ||
       !Array.isArray(value.selectedFeatureIds) ||
       value.selectedFeatureIds.length < 1 ||
       value.selectedFeatureIds.length > MAX_TRANSACTION_EVENTS ||
@@ -149,7 +153,8 @@ export function inspectFeatureRecoveryClosure(
   validateInspection(request, false);
   const doc = parseProject(source);
   if (request.expectedProjectId !== doc.projectId ||
-      request.expectedRevision !== doc.revision) {
+      request.expectedRevision !== doc.revision ||
+      request.expectedDocumentFence !== serializeProject(doc)) {
     throw new ProjectRevisionError('feature recovery closure: stale project/revision');
   }
   const timeline = featureTimelineOf(doc);
