@@ -12,7 +12,7 @@ export type RectangularGridCreate=RectangularGridIdentity&Readonly<{
 export type RectangularGridResize=RectangularGridIdentity&Readonly<{
   scaleX:number;scaleY:number;radiusScale:number;
 }>;
-export type RectangularGridRequest<T extends RectangularGridCreate|RectangularGridResize>=Readonly<{
+export type RectangularGridRequest<T extends RectangularGridCreate|RectangularGridResize|RectangularGridReshape>=Readonly<{
   format:typeof RECTANGULAR_HOLE_GRID_FORMAT;
   version:typeof RECTANGULAR_HOLE_GRID_VERSION;
   eventId:string;expectedProjectId:string;expectedRevision:number;
@@ -21,7 +21,7 @@ export type RectangularGridRequest<T extends RectangularGridCreate|RectangularGr
   targetBodyId:string;grid:T;
 }>;
 export type RectangularGridServices=Readonly<{
-  runtime:Pick<WorkflowRuntime,'inspect'|'patternPlateHoles'|'resizePlateHoleLayout'>;
+  runtime:Pick<WorkflowRuntime,'inspect'|'patternPlateHoles'|'resizePlateHoleLayout'|'editPlateHoles'>;
   model:{featuresOf(document:UndoHistory['document']):readonly {
     id:string;kind:string;dependsOn:readonly string[];
     writeTargets:readonly string[];payload:Record<string,unknown>;
@@ -53,3 +53,30 @@ export declare function resizeRectangularHoleGrid(
   history:UndoHistory,request:RectangularGridRequest<RectangularGridResize>,
   services:RectangularGridServices&{sketch:NonNullable<RectangularGridServices['sketch']>}
 ):RectangularGridResult;
+
+/** Existing regular grid extent, fixed signed pitches, and desired cell count.
+ * Current solved coordinates must still match this explicitly supplied grid.
+ * Non-associative semantic edit; no physical STEP/Boolean is implied. */
+export type RectangularGridReshape=RectangularGridCreate&Readonly<{
+  nextColumns:number;nextRows:number;
+}>;
+export type RectangularGridReshapeResult=
+ |Readonly<{kind:'refused';code:string;notCommitted:true;sourceRevision:number;
+    changes:{added:readonly string[];removed:readonly string[];retained:readonly string[]};
+    gridHoleIds:readonly string[];exactAuthority:false;independentInteroperability:false}>
+ |Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
+    invalidation:WorkflowInvalidation;
+    changes:{added:readonly string[];removed:readonly string[];retained:readonly string[]};
+    gridHoleIds:readonly string[];
+    semanticIds:{sketchId:string;extrudeId:string;cutId:string;bodyId:string};
+    status:'pending_exact_provider';
+    nativeHandoff:{kind:'runtime_evaluation_required';cutFeatureId:string;
+      bodyId:string;sourceRevision:number;
+      compatibility:'not_claimed_ask_RUNTIME_provider';
+      exactAuthority:false;independentInteroperability:false};
+    exactAuthority:false;independentInteroperability:false}>;
+/** Change grid row and column counts in one undoable admitted SKETCH edit. */
+export declare function reshapeRectangularHoleGrid(
+  history:UndoHistory,request:RectangularGridRequest<RectangularGridReshape>,
+  services:RectangularGridServices&{sketch:NonNullable<RectangularGridServices['sketch']>}
+):RectangularGridReshapeResult;
