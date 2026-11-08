@@ -18,7 +18,7 @@ termination. Slot material removal is `width * straightDepth + πr²/2`.
 2. `createSelectedEdgeRoundSlot(sourceSketch, selection, command)` with
    `{kind:'create-selected-edge-round-slot',version:1,sourceSignature,
    id,edgeId,fromMm,toMm,straightDepthMm}` returns an immutable `authoring`
-   envelope, fully solved `arcSketch`, admitted `profile`, and three
+   envelope, fully solved `arcSketch`, admitted `profile`, and four
    semantic handles. The initial source is left untouched.
 3. Persist `serializeSelectedEdgeRoundSlot(authoring)` verbatim with the
    authored CAD session. After reopening, call `parseSelectedEdgeRoundSlot`
@@ -28,15 +28,22 @@ termination. Slot material removal is `width * straightDepth + πr²/2`.
    version:1,sourceSignature:authoringSignature,fromMm,toMm,
    straightDepthMm})` atomically reauthors three dimensions; no implicit
    weakening. `dragSelectedEdgeRoundSlotHandle` projects a pointer to
-   `from`, `to` or `cap-tip` while reporting projection deviation.
-5. `rebaseSelectedEdgeRoundSlot(authoring,newSource,newSelection,
+   `from`, `to`, `cap-tip` or rigid `slide` while reporting projection
+   deviation. Sliding preserves span, radius and straight wall depth.
+5. `relocateSelectedEdgeRoundSlot(authoring,{kind:'relocate-selected-edge-round-slot',
+   version:1,sourceSignature:authoringSignature,edgeId,fromMm,toMm,
+   straightDepthMm})` explicitly rebinds the SAME semantic slot ID to another
+   eligible boundary edge, with full solver, contour and hole-clearance checks.
+   Unsafe relocation refuses atomically; it never heuristically changes
+   reference bindings or the original constraints.
+6. `rebaseSelectedEdgeRoundSlot(authoring,newSource,newSelection,
    {kind:'rebase-selected-edge-round-slot',version:1,sourceSignature})`
    recompiles after an explicit retrospective source edit. Original edge ID
    and hole membership must persist. No automatic rebinding.
-6. Commit the **whole** returned authoring envelope as one revision-fenced
+7. Commit the **whole** returned authoring envelope as one revision-fenced
    RUNTIME history event, and pass the derived analytic arc sketch/profile
    through a version-pinned consumer. WORKBENCH may expose the three handles
-   with selection and collision refusal messages; it must not feed the
+   with selection, rigid slide, explicit edge relocation and collision refusal messages; it must not feed the
    compiled arc sketch back to the ordinary linear-selected-profile API.
 
 ## Geometry and correctness

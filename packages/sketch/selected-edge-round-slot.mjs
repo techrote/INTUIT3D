@@ -199,7 +199,8 @@ function compile(source,selection,slot){
     originalLengthMm:edge.lengthMm,
     axis:{...t},inward:{...v},boundaryIds,holeIds:[...view.profile.holeIds],
     handles:[grip(slot.id,'from',points[0]),grip(slot.id,'to',points[3]),
-      grip(slot.id,'cap-tip',capTip)],
+      grip(slot.id,'cap-tip',capTip),
+      grip(slot.id,'slide',offset(a,t,v,mid,depth/2))],
     arcSketch:validated,solution:solved,profile,
     previewOnly:true,nativeExact:false,exactBrepAvailable:false,
     independentStepQualified:false};
@@ -268,6 +269,37 @@ export function editSelectedEdgeRoundSlot(authoring,command){
     nextSourceSignature:serializeSelectedEdgeRoundSlot(next),
     authoring:next,authoringSignature:serializeSelectedEdgeRoundSlot(next)};
 }
+/**
+ * Deliberately move an existing semantic slot to a different explicitly
+ * selected boundary edge. Only this command (never retrospective rebase)
+ * may change the bound edge; the original constraint source is untouched.
+ */
+export function relocateSelectedEdgeRoundSlot(authoring,command){
+  const view=inspect(authoring);
+  if(view.kind!=='selected_edge_round_slot')return view;
+  const stamp=view.authoringSignature;
+  if(!exact(command,['kind','version','sourceSignature',
+      'edgeId','fromMm','toMm','straightDepthMm'])||
+     command.kind!=='relocate-selected-edge-round-slot'||command.version!==1)
+    return refusal(stamp,'invalid_command');
+  if(command.sourceSignature!==stamp)return refusal(stamp,'stale_source');
+  if(typeof command.edgeId!=='string')
+    return refusal(stamp,'invalid_edge_reference');
+  const slot={...view.slot,edgeId:command.edgeId,
+    fromMm:command.fromMm,toMm:command.toMm,
+    straightDepthMm:command.straightDepthMm};
+  if(slot.edgeId===view.slot.edgeId&&
+     near(slot.fromMm,view.slot.fromMm)&&near(slot.toMm,view.slot.toMm)&&
+     near(slot.straightDepthMm,view.slot.straightDepthMm))
+    return refusal(stamp,'no_change');
+  const result=compile(view.authoring.source,view.authoring.selection,slot);
+  if(result.kind!=='selected_edge_round_slot')return result;
+  const next={...view.authoring,slot};
+  const nextSignature=serializeSelectedEdgeRoundSlot(next);
+  return {...result,kind:'accepted',sourceSignature:stamp,
+    nextSourceSignature:nextSignature,authoring:next,
+    authoringSignature:nextSignature};
+}
 export function dragSelectedEdgeRoundSlotHandle(authoring,gesture){
   const view=inspect(authoring);
   if(view.kind!=='selected_edge_round_slot')return view;
@@ -282,8 +314,14 @@ export function dragSelectedEdgeRoundSlotHandle(authoring,gesture){
   const a=view.solution.geometry.points.find(p=>
     p.id===view.originalStartPointId);
   const delta=sub(gesture.target,a);
-  const from=h.kind==='from'?dot(delta,view.axis):view.slot.fromMm;
-  const to=h.kind==='to'?dot(delta,view.axis):view.slot.toMm;
+  // The slide grip translates the complete U-slot along its referenced
+  // edge. Width, cap radius and straight wall depth are invariant.
+  const center=h.kind==='slide'?dot(delta,view.axis):null;
+  const halfWidth=(view.slot.toMm-view.slot.fromMm)/2;
+  const from=h.kind==='slide'?center-halfWidth:
+    h.kind==='from'?dot(delta,view.axis):view.slot.fromMm;
+  const to=h.kind==='slide'?center+halfWidth:
+    h.kind==='to'?dot(delta,view.axis):view.slot.toMm;
   const depth=h.kind==='cap-tip'?
     dot(delta,view.inward)-(to-from)/2:view.slot.straightDepthMm;
   const result=editSelectedEdgeRoundSlot(view.authoring,{

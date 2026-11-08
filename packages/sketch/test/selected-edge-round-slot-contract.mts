@@ -3,11 +3,13 @@ import {serializeSketch} from '../index.mjs';
 import {SELECTED_EDGE_ROUND_SLOT_VERSION,createSelectedEdgeRoundSlot,
   inspectSelectedEdgeRoundSlot,editSelectedEdgeRoundSlot,
   dragSelectedEdgeRoundSlotHandle,rebaseSelectedEdgeRoundSlot,
+  relocateSelectedEdgeRoundSlot,
   serializeSelectedEdgeRoundSlot,parseSelectedEdgeRoundSlot}
   from '../selected-edge-round-slot.mjs';
 import type {EdgeRoundSlotAuthoring,EdgeRoundSlotAccepted,
   CreateEdgeRoundSlotCommand,EditEdgeRoundSlotCommand,
-  DragEdgeRoundSlotGesture,RebaseEdgeRoundSlotCommand}
+  DragEdgeRoundSlotGesture,RebaseEdgeRoundSlotCommand,
+  RelocateEdgeRoundSlotCommand}
   from '../selected-edge-round-slot.mjs';
 const doc=createDimensionedLPlateSketch(),stamp=serializeSketch(doc);
 const selection={candidateId:'example',sourceSignature:stamp};
@@ -26,6 +28,10 @@ const edit:EditEdgeRoundSlotCommand={
 const drag:DragEdgeRoundSlotGesture={version:1,
   sourceSignature:serializeSelectedEdgeRoundSlot(authoring),
   handleId:'uSlot:handle-cap-tip',target:{x:55,y:20}};
+const relocate:RelocateEdgeRoundSlotCommand={
+  kind:'relocate-selected-edge-round-slot',version:1,
+  sourceSignature:serializeSelectedEdgeRoundSlot(authoring),
+  edgeId:'L:edge1',fromMm:5,toMm:25,straightDepthMm:10};
 const rebase:RebaseEdgeRoundSlotCommand={
   kind:'rebase-selected-edge-round-slot',version:1,
   sourceSignature:serializeSelectedEdgeRoundSlot(authoring)};
@@ -40,5 +46,6 @@ if(inspected.kind==='selected_edge_round_slot'){
 }
 void [SELECTED_EDGE_ROUND_SLOT_VERSION,
   editSelectedEdgeRoundSlot(authoring,edit),
+  relocateSelectedEdgeRoundSlot(authoring,relocate),
   dragSelectedEdgeRoundSlotHandle(authoring,drag),
   rebaseSelectedEdgeRoundSlot(authoring,doc,selection,rebase)];

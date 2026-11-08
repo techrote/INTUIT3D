@@ -4,7 +4,7 @@ import {serializeSketch,editConstraint} from '../index.mjs';
 import {createSelectedEdgeRoundSlot,editSelectedEdgeRoundSlot,
   dragSelectedEdgeRoundSlotHandle,inspectSelectedEdgeRoundSlot,
   serializeSelectedEdgeRoundSlot,parseSelectedEdgeRoundSlot,
-  rebaseSelectedEdgeRoundSlot} from '../selected-edge-round-slot.mjs';
+  rebaseSelectedEdgeRoundSlot,relocateSelectedEdgeRoundSlot} from '../selected-edge-round-slot.mjs';
 const doc=createDimensionedLPlateSketch();
 const chosen=discoverPlateProfiles(doc).candidates.find(c=>
   c.lineIds.includes('L:edge0'));
@@ -41,15 +41,24 @@ const dragged=dragSelectedEdgeRoundSlotHandle(reopened,{
 if(dragged.kind!=='accepted')throw new Error('drag: '+JSON.stringify(dragged));
 console.log(JSON.stringify({step:'dragged',depthMm:dragged.slot.straightDepthMm,
   projectionDeviationMm:dragged.gesture.projectionDeviationMm}));
-const wider=editConstraint(dragged.authoring.source,'L:length',{value:140});
+const slide=dragged.handles.find(h=>h.kind==='slide');
+const moved=dragSelectedEdgeRoundSlotHandle(dragged.authoring,{
+  version:1,sourceSignature:dragged.authoringSignature,
+  handleId:slide.id,target:{x:slide.position.x+5,y:slide.position.y+4}
+});
+if(moved.kind!=='accepted')throw new Error('slide: '+JSON.stringify(moved));
+console.log(JSON.stringify({step:'slid',fromMm:moved.slot.fromMm,
+  toMm:moved.slot.toMm,depthMm:moved.slot.straightDepthMm,
+  deviationMm:moved.gesture.projectionDeviationMm}));
+const wider=editConstraint(moved.authoring.source,'L:length',{value:140});
 const selW=discoverPlateProfiles(wider).candidates.find(c=>
   c.lineIds.includes('L:edge0'));
 if(!selW)throw new Error('lost L contour');
-const updated=rebaseSelectedEdgeRoundSlot(dragged.authoring,wider,{
+const updated=rebaseSelectedEdgeRoundSlot(moved.authoring,wider,{
   candidateId:selW.id,sourceSignature:serializeSketch(wider)
 },{
   kind:'rebase-selected-edge-round-slot',version:1,
-  sourceSignature:dragged.authoringSignature
+  sourceSignature:moved.authoringSignature
 });
 if(updated.kind!=='accepted')throw new Error('rebase: '+JSON.stringify(updated));
 console.log(JSON.stringify({step:'rebased',lengthMm:updated.originalLengthMm,
@@ -61,3 +70,13 @@ const denied=editSelectedEdgeRoundSlot(updated.authoring,{
 });
 if(denied.kind!=='refused')throw new Error('unsafe slot unexpectedly accepted');
 console.log(JSON.stringify({step:'refused',reason:denied.reason}));
+const relocated=relocateSelectedEdgeRoundSlot(updated.authoring,{
+  kind:'relocate-selected-edge-round-slot',version:1,
+  sourceSignature:updated.authoringSignature,
+  edgeId:'L:edge1',fromMm:5,toMm:25,straightDepthMm:10
+});
+if(relocated.kind!=='accepted')
+  throw new Error('relocate: '+JSON.stringify(relocated));
+console.log(JSON.stringify({step:'relocated',selectedEdgeId:relocated.originalEdgeId,
+  slotId:relocated.slot.id,radiusMm:
+  relocated.profile.boundary.find(e=>e.id==='uSlot:cap').radiusMm}));

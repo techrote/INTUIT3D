@@ -12,7 +12,7 @@ export type EdgeRoundSlotAuthoring={
   source:SketchDocument;selection:SelectedProfileSelection;slot:EdgeRoundSlotSpec;
 };
 export type EdgeRoundSlotHandle={
-  id:string;kind:'from'|'to'|'cap-tip';position:{x:number;y:number};
+  id:string;kind:'from'|'to'|'cap-tip'|'slide';position:{x:number;y:number};
 };
 export type EdgeRoundSlotRefusal={
   kind:'refused';format:'intuit3d.selected-edge-round-slot';version:1;
@@ -49,6 +49,10 @@ export type EditEdgeRoundSlotCommand={
   kind:'edit-selected-edge-round-slot';version:1;sourceSignature:string;
   fromMm:number;toMm:number;straightDepthMm:number;
 };
+export type RelocateEdgeRoundSlotCommand={
+  kind:'relocate-selected-edge-round-slot';version:1;sourceSignature:string;
+  edgeId:string;fromMm:number;toMm:number;straightDepthMm:number;
+};
 export type RebaseEdgeRoundSlotCommand={
   kind:'rebase-selected-edge-round-slot';version:1;sourceSignature:string;
 };
@@ -65,6 +69,8 @@ export function inspectSelectedEdgeRoundSlot(authoring:EdgeRoundSlotAuthoring):
   EdgeRoundSlotInspection|EdgeRoundSlotRefusal;
 export function editSelectedEdgeRoundSlot(authoring:EdgeRoundSlotAuthoring,
   command:EditEdgeRoundSlotCommand):EdgeRoundSlotAccepted|EdgeRoundSlotRefusal;
+export function relocateSelectedEdgeRoundSlot(authoring:EdgeRoundSlotAuthoring,
+  command:RelocateEdgeRoundSlotCommand):EdgeRoundSlotAccepted|EdgeRoundSlotRefusal;
 export function dragSelectedEdgeRoundSlotHandle(authoring:EdgeRoundSlotAuthoring,
   gesture:DragEdgeRoundSlotGesture):EdgeRoundSlotAccepted|EdgeRoundSlotRefusal;
 export function rebaseSelectedEdgeRoundSlot(authoring:EdgeRoundSlotAuthoring,

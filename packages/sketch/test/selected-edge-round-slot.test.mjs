@@ -7,7 +7,8 @@ import {serializeArcSketch,solveArcSketch} from '../arc-constraints.mjs';
 import {SELECTED_EDGE_ROUND_SLOT_VERSION,SELECTED_EDGE_ROUND_SLOT_FORMAT,
   createSelectedEdgeRoundSlot,inspectSelectedEdgeRoundSlot,
   editSelectedEdgeRoundSlot,dragSelectedEdgeRoundSlotHandle,
-  rebaseSelectedEdgeRoundSlot,serializeSelectedEdgeRoundSlot,
+  rebaseSelectedEdgeRoundSlot,relocateSelectedEdgeRoundSlot,
+  serializeSelectedEdgeRoundSlot,
   parseSelectedEdgeRoundSlot} from '../selected-edge-round-slot.mjs';
 
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-6,String(a)+' != '+String(b));
@@ -50,7 +51,7 @@ test('true tangent semicircle trims chosen L contour and retains source constrai
   assert.equal(r.profile.providerSubmissionReady,true);
   assert.equal(r.profile.exactBrepAvailable,false);
   assert.equal(r.nativeExact,false);
-  assert.deepEqual(r.handles.map(h=>h.kind),['from','to','cap-tip']);
+  assert.deepEqual(r.handles.map(h=>h.kind),['from','to','cap-tip','slide']);
   near(r.handles[2].position.y,18);
   assert.equal(serializeSketch(r.authoring.source),serializeSketch(doc));
   assert.deepEqual(r.authoring.source.constraints,doc.constraints);
@@ -89,6 +90,74 @@ test('atomic dimension edit, cap handle drag and save/reopen preserve semantic I
   assert.equal(serializeSelectedEdgeRoundSlot(r.authoring),original);
 });
 
+test('semantic slide grip rigidly translates the entire slot, not its width or tangent radius',()=>{
+  const {doc,result:r}=make(),original=serializeSketch(doc);
+  const grip=r.handles.find(h=>h.kind==='slide');
+  near(grip.position.x,55);
+  near(grip.position.y,4);
+  const moved=dragSelectedEdgeRoundSlotHandle(r.authoring,{
+    version:1,sourceSignature:r.authoringSignature,handleId:grip.id,
+    target:{x:grip.position.x+5,y:grip.position.y+7}
+  });
+  assert.equal(moved.kind,'accepted',JSON.stringify(moved));
+  near(moved.slot.fromMm,50);
+  near(moved.slot.toMm,70);
+  near(moved.slot.straightDepthMm,8);
+  near(moved.gesture.projectionDeviationMm,7);
+  near(moved.profile.boundary.find(x=>x.id==='uSlot:cap').radiusMm,10);
+  assert.deepEqual(actualIds(moved.arcSketch),actualIds(r.arcSketch));
+  assert.equal(serializeSketch(moved.authoring.source),original);
+  const replay=inspectSelectedEdgeRoundSlot(
+    parseSelectedEdgeRoundSlot(serializeSelectedEdgeRoundSlot(moved.authoring)));
+  assert.equal(replay.kind,'selected_edge_round_slot');
+  assert.deepEqual(replay.handles,moved.handles);
+  const rejected=dragSelectedEdgeRoundSlotHandle(r.authoring,{
+    version:1,sourceSignature:r.authoringSignature,handleId:grip.id,
+    target:{x:2,y:grip.position.y}
+  });
+  assert.equal(rejected.kind,'refused');
+  assert.equal(serializeSketch(doc),original);
+});
+test('explicit selected-edge relocation rebinds one semantic slot atomically and refuses unsafe targets',()=>{
+  const {doc,result:r}=make(),stamp=r.authoringSignature;
+  const relocate=(changes={})=>relocateSelectedEdgeRoundSlot(r.authoring,{
+    kind:'relocate-selected-edge-round-slot',version:1,sourceSignature:stamp,
+    edgeId:'L:edge1',fromMm:5,toMm:25,straightDepthMm:10,...changes
+  });
+  const relocated=relocate();
+  assert.equal(relocated.kind,'accepted',JSON.stringify(relocated));
+  assert.equal(relocated.originalEdgeId,'L:edge1');
+  assert.equal(relocated.slot.id,'uSlot');
+  assert.equal(relocated.authoring.slot.edgeId,'L:edge1');
+  assert.deepEqual(actualIds(relocated.arcSketch),actualIds(r.arcSketch));
+  assert.equal(relocated.solution.degreesOfFreedom,0);
+  near(relocated.profile.boundary.find(x=>x.id==='uSlot:cap').radiusMm,10);
+  assert.equal(serializeSketch(relocated.authoring.source),serializeSketch(doc));
+  assert.deepEqual(relocated.holeIds,r.holeIds);
+  const archive=serializeSelectedEdgeRoundSlot(relocated.authoring);
+  const reopened=inspectSelectedEdgeRoundSlot(parseSelectedEdgeRoundSlot(archive));
+  assert.equal(reopened.kind,'selected_edge_round_slot');
+  assert.equal(reopened.originalEdgeId,'L:edge1');
+  const widened=editConstraint(doc,'L:length',{value:140});
+  const rebased=rebaseSelectedEdgeRoundSlot(relocated.authoring,widened,
+    selection(widened),{kind:'rebase-selected-edge-round-slot',version:1,
+      sourceSignature:relocated.authoringSignature});
+  assert.equal(rebased.kind,'accepted',JSON.stringify(rebased));
+  assert.equal(rebased.originalEdgeId,'L:edge1');
+  for(const invalid of [
+    {sourceSignature:'stale'},
+    {edgeId:'L:edge999'},
+    {fromMm:-1},
+    {edgeId:'L:edge0',fromMm:80,toMm:100,straightDepthMm:10},
+    {edgeId:'L:edge0',fromMm:45,toMm:65,straightDepthMm:8}
+  ]){
+    const denied=relocate(invalid);
+    assert.equal(denied.kind,'refused',JSON.stringify({invalid,denied}));
+  }
+  assert.equal(relocate({edgeId:'L:edge0',fromMm:45,
+    toMm:65,straightDepthMm:8}).reason,'no_change');
+  assert.equal(serializeSelectedEdgeRoundSlot(r.authoring),stamp);
+});
 test('retrospective edited main dimensions recompile arc geometry without losing bindings',()=>{
   const {result:r}=make();
   const resized=editConstraint(r.authoring.source,'L:length',{value:140});
