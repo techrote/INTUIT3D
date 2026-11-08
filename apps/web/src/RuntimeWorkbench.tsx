@@ -10,6 +10,7 @@ import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
 import { ParameterFormulaTable } from './ParameterFormulaTable';
 import type { SketchDimensionHandle } from './runtimeSketchHandles';
 import { nextCircleDrawing, type CircleDrawingState } from './circleDrawing';
+import { patternModelCircularHoles } from './circularHolePattern';
 import { createLivePlateSession } from '@intuit3d/workflow-runtime/live-plate-session';
 import { experimentalStepFilename } from './localNativeStep';
 import { MAX_MODEL_ARCHIVE_BYTES, validateModelFileInWorker, type ModelImportStage } from './modelArchiveImport';
@@ -84,6 +85,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [circleDrawing,setCircleDrawing]=useState<CircleDrawingState>({phase:'idle'});
   const [holeDraft,setHoleDraft]=useState({x:'60',y:'20',diameter:'10'});
   const [arrayDraft,setArrayDraft]=useState({sourceHoleId:'holeA',rows:'2',columns:'2',pitchXmm:'20',pitchYmm:'20'});
+  const [orbitDraft,setOrbitDraft]=useState({sourceHoleId:'holeA',instances:'3',pivotXmm:'60',pivotYmm:'40',sweepDegrees:'360'});
   const [extrudeDraft,setExtrudeDraft]=useState('8');
   // Presentation-only E combo: the actual feature is committed by RUNTIME/INTENT.
   const [featureCombo,setFeatureCombo]=useState<'extrude'|'cut'|null>(null);
@@ -324,6 +326,30 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       acceptHistory(result.history);setSketchMode(true);
       setMessage(`Array committed at revision ${result.history.document.revision}: ${Number(rows)*Number(columns)-1} independently editable circular cuts copied from solved ${sourceHoleId}; ${result.invalidation.invalidatedFeatureIds.join(' → ')} invalidated. Rebuild STEP.`);
     }catch(e){setMessage('Array refused: '+String(e));}
+  };
+  const patternCircular=()=>{
+    try{
+      if(Object.values(orbitDraft).some(value=>!value.trim()))
+        throw Error('Enter a source hole, instance count, pivot and signed sweep.');
+      const previous=liveHistory.current;
+      const result=patternModelCircularHoles(previous,{
+        sourceHoleId:orbitDraft.sourceHoleId,
+        instances:Number(orbitDraft.instances),
+        pivotXmm:Number(orbitDraft.pivotXmm),
+        pivotYmm:Number(orbitDraft.pivotYmm),
+        sweepDegrees:Number(orbitDraft.sweepDegrees),
+      });
+      if(result.kind==='refused'){
+        setMessage('Bolt circle refused by SKETCH: '+
+          (result.candidateFeature.diagnostics.join('; ')||result.reason));
+        return;
+      }
+      acceptHistory(result.history);setSketchMode(true);
+      setMessage('Bolt circle committed at revision '+result.history.document.revision+
+        ': '+(Number(orbitDraft.instances)-1)+' new independently editable circles, one undo frame. '+
+        'Invalidated '+(result.invalidation.invalidatedFeatureIds.join(' → ')||'none')+
+        '. Preview only; STEP must rebuild.');
+    }catch(e){setMessage('Bolt circle refused: '+(e instanceof Error?e.message:String(e)));}
   };
   const applyLayoutResize=()=>{
     try {
@@ -875,6 +901,36 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               data-testid="runtime-pattern-holes" disabled={!!pendingImport}
               onClick={patternHoles}>Create one-shot hole array</button>
             <p className="microcopy">Copies the currently solved source hole, including its radius. Each new circle is an independent SKETCH constraint, not an associative pattern; undo removes the entire array in one step. Invalid overlaps and outside cuts are refused.</p>
+          </div>
+          <div className="runtime-hole-add" data-testid="runtime-hole-orbit">
+            <strong>Bolt circle · selected source · one-shot</strong>
+            <p className="microcopy">Copy a real solved circular hole around an explicit pivot. A full 360° sweep places instances evenly without duplicating the source; a partial signed sweep includes both endpoints. Overlapping or outside holes are refused atomically. The copies are independent SKETCH circles, not an associative feature.</p>
+            <label className="runtime-scalar"><span>Source hole</span>
+              <span className="runtime-scalar-control">
+                <select data-testid="runtime-orbit-source" aria-label="Bolt circle source hole"
+                  value={orbitDraft.sourceHoleId} onChange={e=>setOrbitDraft(prev=>({...prev,sourceHoleId:e.target.value}))}>
+                  {!Object.hasOwn(holes,orbitDraft.sourceHoleId)&&<option value={orbitDraft.sourceHoleId}>Unavailable: {orbitDraft.sourceHoleId}</option>}
+                  {Object.keys(holes).map(id=><option key={id} value={id}>{id}</option>)}
+                </select>
+              </span>
+            </label>
+            {(['instances','pivotXmm','pivotYmm','sweepDegrees'] as const).map(field=><label className="runtime-scalar" key={field}>
+              <span>{field==='instances'?'Total holes incl. source':field==='pivotXmm'?'Pivot X':field==='pivotYmm'?'Pivot Y':'Signed sweep'}</span>
+              <span className="runtime-scalar-control">
+                <input data-testid={'runtime-orbit-'+field} type="number"
+                  aria-label={field==='instances'?'Bolt circle total instances':field==='pivotXmm'?'Bolt circle pivot X':field==='pivotYmm'?'Bolt circle pivot Y':'Bolt circle sweep degrees'}
+                  step={field==='instances'?1:'any'}
+                  min={field==='instances'?2:field==='sweepDegrees'?-360:undefined}
+                  max={field==='instances'?32:field==='sweepDegrees'?360:undefined}
+                  value={orbitDraft[field]}
+                  onChange={e=>setOrbitDraft(prev=>({...prev,[field]:e.target.value}))}/>
+                {field==='instances'?null:<small>{field==='sweepDegrees'?'°':'mm'}</small>}
+              </span>
+            </label>)}
+            <button type="button" className="ribbon-button runtime-native-export"
+              data-testid="runtime-orbit-commit"
+              disabled={!!pendingImport||!Object.keys(holes).length}
+              onClick={patternCircular}>Create bolt circle</button>
           </div>
           <div className="runtime-hole-add" data-testid="runtime-hole-layout">
             <strong>Retrospective hole layout · one transaction</strong>

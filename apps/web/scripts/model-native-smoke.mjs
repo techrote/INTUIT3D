@@ -866,13 +866,34 @@ async function main(){
   check(await evaluate("document.querySelector('.project-title')?.textContent?.includes('Sketch project')"),
     'Sketch-only project incorrectly titled as completed plate');
   await screenshot('native-09-model-first-new-sketch-shortcut.png');
+  // Real Chromium pointer and keyboard: create an admitted bolt-circle from
+  // the sketch-first project, Undo all new holes, then Redo identical IDs.
+  const orbitRevision=Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
+  check(Number.isSafeInteger(orbitRevision),'invalid bolt-circle starting revision');
+  await pointerClick('runtime-orbit-commit');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===2"),
+    'bolt-circle click did not commit two SKETCH circles');
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===orbitRevision+1,
+    'bolt circle did not commit exactly one model revision');
+  check(await evaluate("document.querySelector('[data-testid=\"runtime-status-sketch.plate\"]')?.textContent==='analytic_profile_only'"),
+    'bolt-circle solver did not admit the sketch');
+  await screenshot('native-10-circular-bolt-array.png');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===0"),
+    'bolt-circle Undo did not remove the entire array');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===2"),
+    'bolt-circle Redo did not recover the same hole IDs');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder with schema-compatible OCP identity, NOT OCP/native/STEP interoperability',
     downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,realPhysicalGeometry:false,
-    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png'
+    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
+      'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png','native-10-circular-bolt-array.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
