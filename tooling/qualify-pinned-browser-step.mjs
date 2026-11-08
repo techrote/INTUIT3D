@@ -202,6 +202,41 @@ async function execute(){
     'CAD not in authoritative model mode');
   await evalInPage('(()=>{window.__capturedPinned=[];const old=URL.createObjectURL.bind(URL);'+
     'URL.createObjectURL=blob=>{window.__capturedPinned.push(blob);return old(blob)};return true})()');
+  // Separate source-qualified journey. The starter supplies a solved rectangle
+  // and two circles; the user authors the actual extrusion and cut by clicking
+  // the ordinary React controls. It is NOT user-drawn polygon acceptance.
+  const journey=process.env.INTUIT3D_BROWSER_SKETCH_FIRST==='1'
+    ?'sketch-first-template':'preauthored-plate';
+  let authoredFeatures=null;
+  if(journey==='sketch-first-template'){
+    await click('runtime-new-sketch');
+    await until(()=>evalInPage(
+      'Boolean(document.querySelector("[data-testid=runtime-import-review]"))'),
+      'new sketch-first project replacement review');
+    await click('runtime-import-review-confirm');
+    await until(()=>evalInPage(
+      'Boolean(document.querySelector("[data-testid^=runtime-feature-sketch]"))'+
+      '&&!document.querySelector("[data-testid=runtime-feature-plate]")'+
+      '&&!document.querySelector("[data-testid=runtime-feature-cut]")'),
+      'new project has a solved sketch but no authored solids');
+    await click('runtime-create-extrusion');
+    await until(()=>evalInPage(
+      'Boolean(document.querySelector("[data-testid=runtime-feature-plate]"))'+
+      '&&!document.querySelector("[data-testid=runtime-create-cut]").disabled'),
+      'user clicked real model-backed extrusion');
+    await click('runtime-create-cut');
+    await until(()=>evalInPage(
+      'Boolean(document.querySelector("[data-testid=runtime-feature-cut]"))'),
+      'user clicked real target-bound cut');
+    await screenshot('user-sketch-first-extrude-cut.png');
+    authoredFeatures={
+      sketchSource:'solved_start_template_not_pointer_drawn',
+      extrusion:'actual_browser_control',cut:'actual_browser_control',
+      revisionAfterCut:await evalInPage(
+        'document.querySelector("[data-testid=runtime-revision]")?.textContent'),
+      pointerDrawnClosedProfile:false,
+    };
+  }
   await typeThickness(8);
   const revision8=await evalInPage('document.querySelector("[data-testid=runtime-revision]")?.textContent');
   // Input through React's real event path; never call RUNTIME directly.
@@ -238,6 +273,7 @@ async function execute(){
     provider:'actual installed Linux OCCT8 C++ worker via persistent RUNTIME/Chromium',
     nativeWorkerSha256:expected,independentCadInteroperability:false,
     revision8,revisionEdited,revisionUndo,revision12,earlier,current,reopened,
+    journey,authoredFeatures,
     caveat:'Same original downloaded STEP bytes must be independently imported and checked before #74 acceptance'};
   writeFileSync(join(output,'browser-receipt.json'),JSON.stringify(report,null,2)+'\n');
   console.log('PINNED_OCCT8_BROWSER_TWO_REVISION_ZIPS_CAPTURED '+JSON.stringify({
