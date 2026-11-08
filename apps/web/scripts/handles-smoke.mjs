@@ -1040,14 +1040,22 @@ async function main() {
     x:farPan.endX,y:farPan.y,button:'middle',buttons:0,clickCount:1});
   await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox').split(' ')[0])>0`),
     'large middle pan did not move original SVG-space readout off-screen');
+  // Clicking Draw outline may scroll its toolbar into view and alter the
+  // flex layout. Resolve the SVG screen transform AFTER the real button click,
+  // never reuse a pre-scroll pointer position for a sketch-local vertex.
+  await clickControl('[data-testid="runtime-outline-tool"]');
   const farPoint=await evaluate(`(() => {
     const s=document.querySelector('[data-testid=runtime-blank-sketch]');
-    const p=new DOMPoint(500,20).matrixTransform(s.getScreenCTM());
-    const b=s.getBoundingClientRect();
-    return {x:p.x,y:p.y,inside:p.x>=b.left&&p.x<=b.right&&p.y>=b.top&&p.y<=b.bottom};
+    const m=s?.getScreenCTM();
+    if(!m)return null;
+    const p=new DOMPoint(500,20).matrixTransform(m);
+    const b=s.getBoundingClientRect(),target=document.elementFromPoint(p.x,p.y);
+    return {x:p.x,y:p.y,
+      inside:p.x>=b.left&&p.x<=b.right&&p.y>=b.top&&p.y<=b.bottom,
+      hittable:Boolean(target&&s.contains(target))};
   })()`);
-  check(farPoint?.inside,'far geometry is not visible inside the navigated blank canvas');
-  await clickControl('[data-testid="runtime-outline-tool"]');
+  check(farPoint?.inside&&farPoint.hittable,
+    'off-origin vertex lies outside the live sketch pointer target after tool activation');
   await mouse('mouseMoved',farPoint.x,farPoint.y);
   await mouse('mousePressed',farPoint.x,farPoint.y,1);
   await mouse('mouseReleased',farPoint.x,farPoint.y);
