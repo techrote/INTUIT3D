@@ -111,6 +111,10 @@
     "./multi-target-cut-recipe/v1": {
       "types": "./multi-target-cut-recipe.d.mts",
       "default": "./src/multi-target-cut-recipe.mjs"
+    },
+    "./interior-recipe-insert/v1": {
+      "types": "./interior-recipe-insert.d.mts",
+      "default": "./src/interior-recipe-insert.mjs"
     }
   },
   "peerDependencies": {
