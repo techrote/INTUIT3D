@@ -100,6 +100,50 @@ test('two history selections across linked bodies form one source-fenced atomic 
   assert.equal(serializeProject(original),fence);
 });
 
+test('retargeted writer retirement is included alongside other batch body rebuilds',()=>{
+  // A historical write-target edit is compensated together with a separate
+  // thickness edit. A provider must retire the departed body as well as
+  // rebuild the restored target; overlooking either leaves stale solids.
+  let doc=fixture();
+  doc=commitEvent(doc,{type:'feature.edit',eventId:'edit.cover.retarget',
+    featureId:'extrude.cover',patch:{writeTargets:['body.cover.new']}});
+  const selected=[
+    request(doc).selections[0],
+    {kind:'fields',targetEventId:'edit.cover.retarget',
+      eventId:'compensate.cover.target',selectedFields:['writeTargets']},
+  ];
+  const req=request(doc,{selections:selected});
+  const preview=previewFeatureHistoryBatch(doc,req);
+  assert.deepEqual(find(preview.document,'extrude.cover').writeTargets,
+    ['body.cover']);
+  assert.deepEqual([...preview.invalidatedBodyIds].sort(),
+    ['body.base','body.cover','body.cover.new'].sort());
+  const manifest=planBodyRebuildManifest(doc,preview.document,{
+    format:BODY_REBUILD_MANIFEST_FORMAT,version:1,
+    expectedProjectId:doc.projectId,
+    expectedFromRevision:doc.revision,
+    expectedToRevision:preview.document.revision,
+    bodyIds:['body.base','body.cover','body.cover.new','body.gauge'],
+  });
+  assert.deepEqual(Object.fromEntries(manifest.bodies.map((row)=>
+    [row.bodyId,row.action])),{
+      'body.base':'rebuild',
+      'body.cover':'rebuild',
+      'body.cover.new':'retire',
+      'body.gauge':'preserve_candidate',
+    });
+  let history=commitUndoableFeatureHistoryBatch(startUndoHistory(doc),req);
+  assert.equal(history.undoStack.length,1);
+  assert.equal(history.undoStack[0].length,2);
+  history=undoTransaction(history,['undo.cover.target','undo.base.scalar']);
+  assert.deepEqual(find(history.document,'extrude.cover').writeTargets,
+    ['body.cover.new']);
+  history=redoTransaction(history,['redo.base.scalar','redo.cover.target']);
+  assert.deepEqual(find(history.document,'extrude.cover').writeTargets,
+    ['body.cover']);
+  assert.equal(find(history.document,'extrude.gauge').payload.thicknessMm,5);
+});
+
 test('one durable undo frame persists through archive, undo and redo both features',()=>{
   const doc=fixture();
   let history=commitUndoableFeatureHistoryBatch(startUndoHistory(doc),request(doc));
