@@ -25,7 +25,7 @@ export type ClosedContourEdgeOffsetRequest={
 };
 export type ClosedContourEdgeDragRequest={
   version:1;sourceSignature:string;contourId:string;
-  edgeId:string;target:SketchLocalPoint;
+  edgeId:string;start:SketchLocalPoint;target:SketchLocalPoint;
 };
 export type ContourEdgeOffsetPlan={
   kind:'planned_edge_offset';version:1;
@@ -42,7 +42,8 @@ export type ContourEdgeOffsetPlan={
 };
 export type ContourEdgeDragPlan=ContourEdgeOffsetPlan&{
   gesture:{
-    edgeId:string;requested:SketchLocalPoint;projected:SketchLocalPoint;
+    edgeId:string;start:SketchLocalPoint;requested:SketchLocalPoint;
+    projected:SketchLocalPoint;
     applied:SketchLocalPoint;tangentialDeviationMm:number;
     appliedDeviationMm:number;
   };

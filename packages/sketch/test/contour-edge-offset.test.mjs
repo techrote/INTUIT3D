@@ -5,6 +5,7 @@ import {createSketch,parseSketch,serializeSketch,solveSketch}
 import {createClosedContour,editClosedContourVertices,inspectClosedContour}
   from '../closed-contour-authoring.mjs';
 import {editSelectedProfileHole} from '../selected-profile-hole-authoring.mjs';
+import {pickContourEdgeAtPointer} from '../pointer-contour-selection.mjs';
 import {inspectClosedContourEdges,planClosedContourEdgeOffset,
   dragClosedContourEdge,CONTOUR_EDGE_OFFSET_VERSION}
   from '../contour-edge-offset.mjs';
@@ -96,13 +97,38 @@ test('pointer drag is normal-projected with reported tangential error',()=>{
   const a=make();
   const p=dragClosedContourEdge(a.sketch,a.selection,{
     version:1,sourceSignature:a.nextSourceSignature,
-    contourId:'panel',edgeId:'panel:edge:1',target:{x:140,y:45}});
+    contourId:'panel',edgeId:'panel:edge:1',
+    start:{x:120,y:40},target:{x:140,y:45}});
   accept(p);
   assert.equal(p.offsetMm,20);
   assert.equal(p.gesture.tangentialDeviationMm,5);
   assert.deepEqual(p.gesture.projected,{x:140,y:40});
   assert.deepEqual(p.gesture.applied,{x:140,y:40});
   assert.equal(p.gesture.appliedDeviationMm,5);
+});
+
+test('real pointer-selected edge moves by displacement without off-edge grab jump',()=>{
+  const a=make(),stamp=a.nextSourceSignature;
+  const picked=pickContourEdgeAtPointer(a.sketch,{
+    kind:'pick-contour-edge-at-pointer',version:1,sourceSignature:stamp,
+    point:{x:123,y:45},maxDistanceMm:5});
+  assert.equal(picked.kind,'selected_edge',JSON.stringify(picked));
+  assert.equal(picked.edgeId,'panel:edge:1');
+  const moved=dragClosedContourEdge(a.sketch,picked.selection,{
+    version:1,sourceSignature:stamp,contourId:'panel',edgeId:picked.edgeId,
+    start:{x:123,y:45},target:{x:143,y:55}});
+  accept(moved);
+  assert.equal(moved.offsetMm,20,'20 mm displacement, not 23 mm from edge centre');
+  assert.deepEqual(moved.gesture.start,{x:123,y:45});
+  assert.deepEqual(moved.gesture.projected,{x:143,y:45});
+  assert.deepEqual(moved.gesture.applied,{x:143,y:45});
+  assert.equal(moved.gesture.tangentialDeviationMm,10);
+  assert.equal(moved.gesture.appliedDeviationMm,10);
+  assert.deepEqual(pointPositions(moved.acceptance),[
+    {x:0,y:0},{x:140,y:0},{x:140,y:80},{x:0,y:80}]);
+  assert.deepEqual(editClosedContourVertices(a.sketch,picked.selection,
+    moved.editCommand),moved.acceptance,'RUNTIME replay admission stays unchanged');
+  assert.equal(serializeSketch(a.sketch),stamp);
 });
 
 test('associated hole follows selected edge endpoint and preserves its dimensions',()=>{
@@ -153,8 +179,16 @@ test('stale, forged, invalid, degenerate, and unsolved offsets refuse without mu
   assert.equal(fake.reason,'invalid_offset_command');
   const badDrag=dragClosedContourEdge(a.sketch,a.selection,{
     version:1,sourceSignature:before,contourId:'panel',
-    edgeId:'panel:edge:1',target:{x:NaN,y:20}});
+    edgeId:'panel:edge:1',start:{x:120,y:20},target:{x:NaN,y:20}});
   assert.equal(badDrag.reason,'invalid_edge_gesture');
+  const badStart=dragClosedContourEdge(a.sketch,a.selection,{
+    version:1,sourceSignature:before,contourId:'panel',
+    edgeId:'panel:edge:1',start:{x:NaN,y:20},target:{x:140,y:20}});
+  assert.equal(badStart.reason,'invalid_edge_gesture');
+  const missingStart=dragClosedContourEdge(a.sketch,a.selection,{
+    version:1,sourceSignature:before,contourId:'panel',
+    edgeId:'panel:edge:1',target:{x:140,y:20}});
+  assert.equal(missingStart.reason,'invalid_edge_gesture');
   const unsolved=blank();
   unsolved.points.push({id:'loose',x:4,y:9});
   const failed=inspectClosedContourEdges(createSketch(unsolved),a.selection,'panel');

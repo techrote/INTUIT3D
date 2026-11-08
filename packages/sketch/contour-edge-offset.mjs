@@ -137,22 +137,24 @@ export function planClosedContourEdgeOffset(source,selection,request){
 }
 
 /**
- * Convert a sketch-local pointer location to a signed outward edge offset.
- * The pointer is projected on the edge normal at its midpoint; any tangential
- * error is reported for presentation, never silently changed in the source.
+ * Project the sketch-local displacement between initial pointer-down and
+ * current pointer-move along the semantic outward edge normal. This preserves
+ * the initial near-edge grab offset from the picker's explicit hit radius;
+ * a raw pointer absolute coordinate must not cause a first-frame jump.
  */
 export function dragClosedContourEdge(source,selection,gesture){
   const view=inspectClosedContourEdges(source,selection,gesture?.contourId);
   if(view.kind!=='contour_edges')return view;
   const stamp=view.sourceSignature;
-  if(!exact(gesture,['version','sourceSignature','contourId','edgeId','target'])||
+  if(!exact(gesture,['version','sourceSignature','contourId','edgeId','start','target'])||
       gesture.version!==1||gesture.contourId!==view.contourId||
-      typeof gesture.edgeId!=='string'||!validPoint(gesture.target))
+      typeof gesture.edgeId!=='string'||!validPoint(gesture.start)||
+      !validPoint(gesture.target))
     return refuse(stamp,'invalid_edge_gesture');
   if(gesture.sourceSignature!==stamp)return refuse(stamp,'stale_source');
   const edge=view.edges.find(e=>e.edgeId===gesture.edgeId);
   if(!edge)return refuse(stamp,'edge_not_in_selected_contour',gesture.edgeId);
-  const pointerDelta=sub(gesture.target,edge.midpoint);
+  const pointerDelta=sub(gesture.target,gesture.start);
   const offsetMm=dot(pointerDelta,edge.normal);
   if(!finite(offsetMm))return refuse(stamp,'unrepresentable_offset',edge.edgeId);
   const planned=planClosedContourEdgeOffset(source,selection,{
@@ -160,13 +162,16 @@ export function dragClosedContourEdge(source,selection,gesture){
     contourId:view.contourId,edgeId:edge.edgeId,offsetMm
   });
   if(planned.kind!=='planned_edge_offset')return planned;
-  const projection=add(edge.midpoint,scale(edge.normal,offsetMm));
+  const projection=add(gesture.start,scale(edge.normal,offsetMm));
+  const applied=add(gesture.start,scale(edge.normal,planned.appliedOffsetMm));
+  if(!validPoint(projection)||!validPoint(applied))
+    return refuse(stamp,'unrepresentable_pointer_projection',edge.edgeId);
   return {...planned,gesture:{
-    edgeId:edge.edgeId,requested:{...gesture.target},
-    projected:projection,applied:{...planned.to.midpoint},
+    edgeId:edge.edgeId,start:{...gesture.start},
+    requested:{...gesture.target},projected:projection,applied,
     tangentialDeviationMm:Math.hypot(gesture.target.x-projection.x,
       gesture.target.y-projection.y),
-    appliedDeviationMm:Math.hypot(gesture.target.x-planned.to.midpoint.x,
-      gesture.target.y-planned.to.midpoint.y)
+    appliedDeviationMm:Math.hypot(gesture.target.x-applied.x,
+      gesture.target.y-applied.y)
   }};
 }

@@ -24,7 +24,7 @@ if(inspection.kind==='contour_edges'){
   }
   const gesture=dragClosedContourEdge(source,selected,{
     version:1,sourceSignature:stamp,contourId:'panel',
-    edgeId:first.edgeId,target:{x:150,y:20}});
+    edgeId:first.edgeId,start:{x:120,y:20},target:{x:150,y:20}});
   if(gesture.kind==='planned_edge_offset'){
     const typedDrag:ContourEdgeDragPlan=gesture;
     void typedDrag.gesture.tangentialDeviationMm;

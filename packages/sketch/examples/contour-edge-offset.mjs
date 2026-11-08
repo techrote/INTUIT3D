@@ -22,7 +22,8 @@ const edge=viewed.edges.find(e=>e.edgeId==='housing:edge:1');
 assert.deepEqual(edge.midpoint,{x:120,y:40});
 const gesture=dragClosedContourEdge(drawn.sketch,drawn.selection,{
   version:1,sourceSignature:drawn.nextSourceSignature,
-  contourId:'housing',edgeId:edge.edgeId,target:{x:140,y:40}});
+  contourId:'housing',edgeId:edge.edgeId,
+  start:{x:120,y:40},target:{x:140,y:40}});
 assert.equal(gesture.kind,'planned_edge_offset',JSON.stringify(gesture));
 assert.equal(gesture.acceptance.profile.profile.areaMm2,11200);
 assert.equal(solveSketch(gesture.acceptance.sketch).status,'solved');
