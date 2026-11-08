@@ -167,11 +167,17 @@ export function previewFeatureEditRevert(
   if (regressed.length && !request.confirmUnresolved) {
     fail('explicit confirmation required for unresolved downstream intent');
   }
+  // A historical edit may have retargeted an extrude/cut to a different body.
+  // Include BOTH sides of the revert: the departing body must be retired just
+  // as the restored body must be rebuilt. Returning only current writers would
+  // leave a stale provider solid on the previous write target.
   const bodyIds = new Set<string>();
-  for (const feature of featuresOf(staged.document)) {
-    if (!affected.has(feature.id) ||
-        (feature.kind !== 'cut' && feature.kind !== 'extrude')) continue;
-    for (const bodyId of feature.writeTargets) bodyIds.add(bodyId);
+  for (const document of [original, staged.document]) {
+    for (const feature of featuresOf(document)) {
+      if (!affected.has(feature.id) ||
+          (feature.kind !== 'cut' && feature.kind !== 'extrude')) continue;
+      for (const bodyId of feature.writeTargets) bodyIds.add(bodyId);
+    }
   }
   return {
     format: 'intuit3d.feature-edit-revert-preview', version: 1,
