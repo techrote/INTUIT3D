@@ -1,0 +1,187 @@
+# Integration-only product acceptance. Uses sealed previously compiled C++ and
+# independently compiled AnvilCAD; DOES NOT compile OCCT or mock the browser.
+name: Browser pinned OCCT8 to independently imported STEP
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/pinned-browser-physical.yml'
+      - 'tooling/qualify-pinned-browser-step.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: intuit3d-browser-original-pinned-step
+  cancel-in-progress: false
+
+jobs:
+  physical:
+    name: Ubuntu / actual Chromium to C++ STEP to non-OCCT CAD
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact candidate Integration and accepted consumer source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install system ELF checks and Node
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends binutils patchelf
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Exact-source dependency install and React production build
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check:workspace
+          npm run build --workspace @intuit3d/web
+      # This artifact is from a previously *executed* OCCT8 C++ build, not a
+      # reusable synthetic response or unverified binary downloaded by URL.
+      - name: Retrieve source-verified existing Linux OCCT8 C++ bundle
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 42469504601
+          name: occt801-cxx-and-step-evidence
+          path: ${{ runner.temp }}/pinned-native-evidence
+          github-token: ${{ github.token }}
+      - name: Source-pinned install with four real C++ STEP replays
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$(find "$RUNNER_TEMP/pinned-native-evidence" -name offline-occt801.tar.gz -type f -print -quit)"
+          test -n "$archive" && test -s "$archive"
+          expected='7b792374dc75e0a3db8a947f8289630caf3fad1cb52aaaa4020298cc3a67e986'
+          test "$(sha256sum "$archive" | cut -d' ' -f1)" = "$expected"
+          python3 platform/native-toolchain/install_offline.py \
+            --archive "$archive" --expected-sha256 "$expected" \
+            --kernel-sha 93e984963db720cacdd8bb679a559a3b8df88ce8 \
+            --destination "$RUNNER_TEMP/installed-occt801" \
+            | tee "$RUNNER_TEMP/pinned-install-receipt.json"
+          worker="$RUNNER_TEMP/installed-occt801/bin/intuit3d_occt8_plate"
+          test -x "$worker"
+          test "$(sha256sum "$worker" | cut -d' ' -f1)" = 'a346489f79e49c1eb81a1bebe5987d31fbd6e92814c2f5a7028c1ecf4d3dbbc1'
+      - name: Real user-clicked Chromium two-revision C++ STEP evidence
+        env:
+          INTUIT3D_OCCT8_WORKER: ${{ runner.temp }}/installed-occt801/bin/intuit3d_occt8_plate
+          INTUIT3D_OCCT8_WORKER_SHA256: a346489f79e49c1eb81a1bebe5987d31fbd6e92814c2f5a7028c1ecf4d3dbbc1
+          INTUIT3D_PINNED_BROWSER_ARTIFACTS: pinned-browser-evidence
+        run: node tooling/qualify-pinned-browser-step.mjs
+      # Separate source-pinned non-OCCT Rust STEP importer already executed in
+      # CI; no additional Rust build or OCCT build needed in this workflow.
+      - name: Retrieve independently compiled non-OCCT AnvilCAD importer
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 42481202540
+          name: brlcad-7440-independent-step-evidence
+          path: ${{ runner.temp }}/independent-anvil-evidence
+          github-token: ${{ github.token }}
+      - name: Check source-bound original archive and STEP identities, independently author physical witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,pathlib,sys,zipfile
+          root=pathlib.Path('pinned-browser-evidence')
+          report=json.loads((root/'browser-receipt.json').read_text())
+          assert report['status']=='PINNED_OCCT8_BROWSER_TWO_REVISION_ZIPS_CAPTURED',report
+          assert report['nativeWorkerSha256']=='a346489f79e49c1eb81a1bebe5987d31fbd6e92814c2f5a7028c1ecf4d3dbbc1'
+          assert report['revision8']!=report['revision12']
+          sys.path.insert(0,'conformance/external-cad')
+          from session_step import verify_capture
+          identities={}
+          for stage,prefix in (('earlier','earlier-8mm'),('current','current-12mm')):
+              original=root/(prefix+'.zip')
+              assert hashlib.sha256(original.read_bytes()).hexdigest()==report[stage]['sha256']
+              with zipfile.ZipFile(original) as z:
+                  names=z.namelist()
+                  assert names==['current.archive.json','current.receipt.json','current.step'],names
+                  assert sum(v.file_size for v in z.infolist())<50_000_000
+                  for item in z.infolist():
+                      assert item.compress_type==zipfile.ZIP_STORED and item.file_size>0
+                      name=item.filename.replace('current.',stage+'.',1)
+                      (root/name).write_bytes(z.read(item))
+              identities[stage]=verify_capture(root/(stage+'.receipt.json'),
+                                               root/(stage+'.archive.json'),
+                                               root/(stage+'.step'))
+          early,current=identities['earlier'],identities['current']
+          assert early['source']['projectId']==current['source']['projectId']
+          assert early['source']['revision']<current['source']['revision']
+          assert early['producer']['cutFeatureId']==current['producer']['cutFeatureId']
+          assert early['producer']['requestId']!=current['producer']['requestId']
+          assert early['stepSha256']!=current['stepSha256']
+          assert current['source']['revision']==int(''.join(c for c in report['revision12'] if c.isdigit()))
+          assert early['source']['revision']==int(''.join(c for c in report['revision8'] if c.isdigit()))
+          # Independently authored *physical* plate witness, not derived from
+          # imported STEP: SKETCH 120 x 80 with bores at local x=-25/+25,
+          # radius 6, retrospective 8 -> 12 mm extrusion. Expected mass
+          # moments from analytic rectangular stock minus two cylindrical voids.
+          lines=[
+          'INTUIT3D_3D_WITNESS_V2',
+          'VOLUME 112250 112720',
+          'AREA 24380 24520',
+          'CENTROID -0.15 0.15 -0.15 0.15 5.85 6.15',
+          'COVARIANCE 1211 1216 544 548 11.8 12.2 -0.10 0.10 -0.10 0.10 -0.10 0.10',
+          'RAY center.material 0 20 6 0 0 1 material',
+          'RAY southwest.material -50 -30 6 0 0 1 material',
+          'RAY northeast.material 50 30 6 0 0 1 material',
+          'RAY south.material 0 -20 6 0 0 1 material',
+          'RAY northwest.material -45 20 3 0 0 1 material',
+          'RAY southeast.material 45 -20 9 0 0 1 material',
+          'RAY left.bore -25 0 6 0 0 1 void',
+          'RAY right.bore 25 0 6 0 0 1 void',
+          'RAY left.bore.high -25 0 10 0 0 1 void',
+          'RAY right.bore.high 25 0 10 0 0 1 void',
+          'RAY exterior.right 70 0 6 1 0 0 void',
+          'RAY exterior.north 0 45 6 0 1 0 void',
+          'RAY exterior.above 0 0 15 0 0 1 void',
+          'RAY exterior.below 0 0 -3 0 0 -1 void',
+          ]
+          (root/'independent-plate-12mm-witness.v2.txt').write_text('\n'.join(lines)+'\n')
+          print('BROWSER_CURRENT_AND_EARLIER_SOURCE_CUSTODY_PASS',
+                json.dumps({k:{'revision':v['source']['revision'],
+                  'stepSha256':v['stepSha256']} for k,v in identities.items()}))
+          PY
+      - name: Execute actual independent AnvilCAD geometry on original browser STEP bytes and earlier wrong-solid negative
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='b4a63911ab96e21e42dc3b68255553891685561dadaf604f34af5b536ed73cd3'
+          probe=''
+          while IFS= read -r -d '' f; do
+            if [[ "$(sha256sum "$f" | cut -d' ' -f1)" == "$expected" ]]; then probe="$f"; break; fi
+          done < <(find "$RUNNER_TEMP/independent-anvil-evidence" -type f -name intuit_step_probe -print0)
+          test -n "$probe" && test -x "$probe"
+          root='pinned-browser-evidence'
+          python3 conformance/external-cad/session_step.py \
+            --current-archive "$root/current.archive.json" \
+            --current-receipt "$root/current.receipt.json" \
+            --current-step "$root/current.step" \
+            --negative-archive "$root/earlier.archive.json" \
+            --negative-receipt "$root/earlier.receipt.json" \
+            --negative-step "$root/earlier.step" \
+            --witness "$root/independent-plate-12mm-witness.v2.txt" \
+            --witness-sha256 "$(sha256sum "$root/independent-plate-12mm-witness.v2.txt" | cut -d' ' -f1)" \
+            --probe "$probe" --probe-sha256 "$expected" \
+            --anvil-source-sha 50c053840933c92d598976e837e63ccd7626c312 \
+            --output-dir "$root/independent-physical"
+          python3 - <<'PY'
+          import json,pathlib
+          p=pathlib.Path('pinned-browser-evidence/independent-physical/qualification.json')
+          result=json.loads(p.read_text())
+          assert result['status']=='NON_OCCT_SESSION_STEP_PHYSICAL_PASS',result
+          assert result['independentCadInteroperability'] is True,result
+          assert result['browserUserClickProven'] is False or result.get('browserUserClickProven') is None
+          print('CONNECTED_PINNED_CHROMIUM_CXX_STEP_INDEPENDENT_ANVIL_PHYSICAL_PASS')
+          PY
+      - name: Preserve original clicked ZIPs, screenshots, physical receipts and refusal logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-browser-pinned-cxx-independent-step
+          path: |
+            pinned-browser-evidence/
+          if-no-files-found: warn
+          retention-days: 14
