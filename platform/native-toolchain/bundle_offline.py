@@ -7,6 +7,7 @@ Never substitutes OCP or synthetic geometry for compiled C++ execution.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -72,22 +73,67 @@ def copy_toolkits(prefix: Path, target: Path) -> None:
                 for name in TOOLKITS), "incomplete toolkit SONAME chain")
 
 
+def _imported_kernel_contracts(path: Path) -> set[str]:
+    """Collect explicit local OCCT contract imports without executing KERNEL code.
+
+    The bridge evolves alongside KERNEL-002. A fixed list of first-foundation
+    modules silently omits its profile/orthogonal contract dependencies and
+    makes an otherwise correct compiled archive fail on fresh replay.
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (UnicodeError, SyntaxError, OSError) as exc:
+        raise BundleError(f"cannot inspect source-matched KERNEL imports: {path}") from exc
+    dependencies: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.level == 0:
+            names = [node.module] if node.module else []
+        elif isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        else:
+            continue
+        for name in names:
+            if name and re.fullmatch(r"occt8_[a-z0-9_]+_contract", name):
+                dependencies.add(name)
+    return dependencies
+
+
 def copy_bridge(kernel: Path, target: Path) -> None:
+    """Copy the exact checked-out KERNEL bridge plus transitive contracts.
+
+    No floating package install or independent bridge implementation. Only
+    imported occt8_*_contract.py modules from the immutable KERNEL checkout are
+    admitted, recursively; missing/escaping dependencies fail before release.
+    """
+    native = kernel / "native"
+    require(native.is_dir(), f"missing pinned KERNEL native source: {native}")
     target.mkdir()
     for name in BRIDGE_FILES:
-        source = kernel / "native" / name
-        require(source.is_file(), f"missing Kernel bridge dependency: {source}")
+        source = native / name
+        require(source.is_file() and not source.is_symlink(),
+                f"missing/unsafe Kernel bridge dependency: {source}")
         shutil.copy2(source, target / name)
-    # The bounded #158 first-foundation source predates the generalized
-    # occt8_cut_contract module. Newer #67 imports it for mixed-cut requests.
-    # Bundle it only when the exact checked-out bridge actually requires it.
-    cut_contract = kernel / "native/occt8_cut_contract.py"
-    bridge_source = (kernel / "native/occt8_bridge.py").read_text()
-    if "from occt8_cut_contract import" in bridge_source:
-        require(cut_contract.is_file(), "missing required newer Kernel cut contract")
-        shutil.copy2(cut_contract, target / cut_contract.name)
-    oracle = kernel / "native/occt8/part21_oracle.py"
-    require(oracle.is_file(), "missing Kernel Part 21 plate-subset reader")
+
+    remaining = list(sorted(_imported_kernel_contracts(native / "occt8_bridge.py")))
+    visited: set[str] = set()
+    while remaining:
+        module = remaining.pop(0)
+        if module in visited:
+            continue
+        source = native / f"{module}.py"
+        require(source.is_file() and not source.is_symlink()
+                and source.resolve().is_relative_to(native.resolve()),
+                f"missing/unsafe source-matched Kernel contract: {source}")
+        for dependent in sorted(_imported_kernel_contracts(source) - visited):
+            if dependent not in remaining:
+                remaining.append(dependent)
+        shutil.copy2(source, target / source.name)
+        visited.add(module)
+
+    oracle = native / "occt8" / "part21_oracle.py"
+    require(oracle.is_file() and not oracle.is_symlink()
+            and oracle.resolve().is_relative_to(native.resolve()),
+            "missing/unsafe Kernel Part 21 plate-subset reader")
     (target / "occt8").mkdir()
     shutil.copy2(oracle, target / "occt8/part21_oracle.py")
 
