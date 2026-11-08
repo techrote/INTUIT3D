@@ -42,8 +42,32 @@ export function transformSelectedModelHoles(
     admission:'require_admissible',
     holeIds,pivotXmm,pivotYmm,translateXmm,translateYmm,rotateDegrees,
   });
-  if(result.kind==='committed' &&
-      !previewModelSketchProfile(runtime.inspect(result.history)))
-    throw Error('Rigid transform invalidated the plate profile; model unchanged.');
+  if(result.kind==='committed'){
+    const profile=previewModelSketchProfile(runtime.inspect(result.history));
+    if(!profile)throw Error('Rigid transform invalidated the plate profile; model unchanged.');
+    // Runtime checks constraint solvability. The current workbench authors an
+    // orthogonal mounting plate, whose physical hole rims must also remain
+    // strictly inside its actual admitted outer rectangle. The SKETCH profile
+    // status alone does not presently guarantee this for translated circles.
+    // Fail closed on other contour types rather than silently promoting a
+    // bounding-box approximation to arbitrary CAD profile containment.
+    const xs=profile.outer.map(p=>p.x),ys=profile.outer.map(p=>p.y);
+    const minX=Math.min(...xs),maxX=Math.max(...xs);
+    const minY=Math.min(...ys),maxY=Math.max(...ys);
+    const rectangular=profile.outer.length===4&&
+      profile.outer.every(p=>(p.x===minX||p.x===maxX)&&(p.y===minY||p.y===maxY))&&
+      maxX>minX&&maxY>minY;
+    if(!rectangular)
+      throw Error('Rigid transform needs the workbench orthogonal plate profile; model unchanged.');
+    const moved=modelHoleValues(result.history);
+    for(const id of holeIds){
+      const rim=profile.holes.find(hole=>hole.id===id);
+      const p=moved[id];
+      if(!rim||!p||!Number.isFinite(rim.radius)||
+          p.x-rim.radius<=minX||p.x+rim.radius>=maxX||
+          p.y-rim.radius<=minY||p.y+rim.radius>=maxY)
+        throw Error('Rigid transform would place a hole rim outside the plate; model unchanged.');
+    }
+  }
   return result;
 }
