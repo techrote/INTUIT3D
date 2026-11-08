@@ -14,6 +14,7 @@ import {
 } from './blankContourDraft.ts';
 import {
   commitModelBlankContour,startModelBlankContour,structuralContourRuntimeAvailable,
+  inspectModelClosedContour,dragModelClosedContourVertex,
 } from './closedContourBridge.ts';
 
 const rectangle=[{x:0,y:0},{x:120,y:0},{x:120,y:80},{x:0,y:80}];
@@ -114,4 +115,60 @@ test('equal revision divergent canonical source cannot reuse reviewed clicks',()
   assert.equal(refusal.kind,'refused');
   if(refusal.kind==='refused')assert.equal(refusal.code,'stale_source');
   assert.equal(modelSketchIsEmpty(divergent),true);
+});
+
+test('drawn vertex moves by selected semantic handle with one journal event, undo and archive reinspection',()=>{
+  let current=newModelEmptySketchSession('workbench.blank.vertex');
+  const session=createLivePlateSession({runtime,readCurrentHistory:()=>current,
+    publishHistory:next=>{current=next;}});
+  const initial=commitModelBlankContour(current,session,draw(current));
+  assert.equal(initial.kind,'committed');
+  if(initial.kind!=='committed')return;
+  const inspected=inspectModelClosedContour(current,initial.selection);
+  assert.equal(inspected?.kind,'closed_contour');
+  assert.equal(inspected?.handles.length,4);
+  const chosen=inspected!.handles[2];
+  assert.deepEqual(chosen.position,{x:120,y:80});
+  const sourceArchive=serializeModelSession(current);
+  const oldRevision=current.document.revision;
+  const moved=dragModelClosedContourVertex(current,session,initial.selection,
+    chosen.handleId,{x:135,y:90},sourceArchive);
+  assert.equal(moved.kind,'committed',JSON.stringify(moved));
+  if(moved.kind!=='committed')return;
+  assert.equal(current.document.revision,oldRevision+1);
+  const after=inspectModelClosedContour(current,moved.selection);
+  assert.deepEqual(after?.handles[2].position,{x:135,y:90});
+  assert.deepEqual(after?.handles.map(h=>h.pointId),inspected?.handles.map(h=>h.pointId));
+  assert.equal(serializeModelSession(reopenModelSession(serializeModelSession(current))),
+    serializeModelSession(current));
+  const undone=undoModelSession(current);
+  assert.equal(modelCurrentSketch(undone).lines.length,4);
+  const redone=redoModelSession(undone);
+  const selectionAfterUndoRedo={
+    ...moved.selection,sourceSignature:sketch.serializeSketch(modelCurrentSketch(redone)),
+  };
+  // Candidate identity is recomputed from the authoritative successor, never
+  // from the stale pre-undo selection.
+  assert.equal(modelCurrentSketch(redone).lines.length,4);
+  assert.equal(modelCurrentSketch(redone).points.find(p=>p.id===chosen.pointId)?.x,135);
+  assert.equal(selectionAfterUndoRedo.sourceSignature,sketch.serializeSketch(modelCurrentSketch(redone)));
+  const stale=dragModelClosedContourVertex(current,session,moved.selection,
+    chosen.handleId,{x:140,y:90},sourceArchive);
+  assert.equal(stale.kind,'refused');
+  if(stale.kind==='refused')assert.equal(stale.code,'stale_source');
+});
+test('self-crossing drawn vertex movement refuses with unchanged authoritative archive',()=>{
+  let current=newModelEmptySketchSession('workbench.blank.cross.vertex');
+  const session=createLivePlateSession({runtime,readCurrentHistory:()=>current,
+    publishHistory:next=>{current=next;}});
+  const first=commitModelBlankContour(current,session,draw(current));
+  assert.equal(first.kind,'committed');
+  if(first.kind!=='committed')return;
+  const inspected=inspectModelClosedContour(current,first.selection)!;
+  const sourceArchive=serializeModelSession(current);
+  const outcome=dragModelClosedContourVertex(current,session,first.selection,
+    inspected.handles[2].handleId,{x:60,y:-20},sourceArchive);
+  assert.equal(outcome.kind,'refused',JSON.stringify(outcome));
+  assert.equal(serializeModelSession(current),sourceArchive);
+  assert.equal(serializeModelSession(reopenModelSession(sourceArchive)),sourceArchive);
 });
