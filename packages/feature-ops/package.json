@@ -75,6 +75,10 @@
     "./body-profile-dimensions/v1": {
       "types": "./body-profile-dimensions.d.mts",
       "default": "./src/body-profile-dimensions.mjs"
+    },
+    "./ordered-cut-move/v1": {
+      "types": "./ordered-cut-move.d.mts",
+      "default": "./src/ordered-cut-move.mjs"
     }
   },
   "peerDependencies": {
