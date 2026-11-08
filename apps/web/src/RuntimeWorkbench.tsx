@@ -743,8 +743,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       if(command&&!e.altKey&&letter==='s'){e.preventDefault();save();return;}
       if(command&&!e.altKey&&letter==='o'){e.preventDefault();fileInput.current?.click();return;}
       if(command&&!e.altKey&&letter==='n'){e.preventDefault();prepareNewSketch();return;}
-      if(target?.closest('input,textarea,select,[contenteditable=true],[role=slider]'))return;
-      if(!command&&!e.altKey && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key) &&
+      // Global Undo/Redo must still work with focused thickness/diameter sliders.
+      // Only arrow nudges defer to their own local keyboard handlers.
+      if(target?.closest('input,textarea,select,[contenteditable=true]'))return;
+      if(!command&&!e.altKey&&!target?.closest('[role=slider]') &&
+          ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key) &&
           nudgeActiveHoles(e.key,e.shiftKey)){
         e.preventDefault();return;
       }
