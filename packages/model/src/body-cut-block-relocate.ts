@@ -236,6 +236,16 @@ function propose(
     if (!writer.dependsOn.includes(from) || writer.dependsOn.includes(to)) {
       fail('ambiguous body writer dependencies on ' + writer.id);
     }
+    const anchoredToOldPredecessor = (value: unknown): boolean => {
+      if (Array.isArray(value)) return value.some(anchoredToOldPredecessor);
+      if (!record(value)) return false;
+      if (value.format === TOPOLOGY_REFERENCE_FORMAT &&
+          record(value.anchor) && value.anchor.featureId === from) return true;
+      return Object.values(value).some(anchoredToOldPredecessor);
+    };
+    if (anchoredToOldPredecessor(writer.payload)) {
+      fail('authored topology still anchors ' + writer.id + ' to ' + from);
+    }
     rewires.push({ feature: writer, from, to });
   }
   if (rewires.length < 2 || rewires.length > 3) {
