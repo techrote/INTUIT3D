@@ -288,14 +288,16 @@ export function previewFencedSelectionRepairBatch(
       throw new ProjectRevisionError(
         'selection repair: provider receipt belongs to another document');
     }
-    // The v1 inventory still validates the entire topology trace, source
-    // reference, provider type and project/revision/field identity.
+    // The runtime structural guard above narrows keys to unknown values.
+    // Recover the declared v2 type only after exact-key/format/fence checks;
+    // the v1 inventory still validates every value and entire topology trace.
+    const verified = receipt as FencedSelectionEvidenceReceipt;
     return {
       format: SELECTION_EVIDENCE_FORMAT, version: 1 as const,
-      projectId: receipt.projectId, revision: receipt.revision,
-      featureId: receipt.featureId, field: receipt.field,
-      reference: receipt.reference, provider: receipt.provider,
-      snapshot: receipt.snapshot, steps: receipt.steps,
+      projectId: verified.projectId, revision: verified.revision,
+      featureId: verified.featureId, field: verified.field,
+      reference: verified.reference, provider: verified.provider,
+      snapshot: verified.snapshot, steps: verified.steps,
     };
   });
   const legacyRepairs: SelectionRepairAction[] = request.repairs.map((action) => {
@@ -312,8 +314,9 @@ export function previewFencedSelectionRepairBatch(
         throw new ProjectRevisionError(
           'selection repair: replacement observed on another document');
       }
+      const checked = observed as FencedReplacementObservation;
       replacementObservation = {
-        provider: observed.provider, snapshot: observed.snapshot,
+        provider: checked.provider, snapshot: checked.snapshot,
       };
     }
     return {
