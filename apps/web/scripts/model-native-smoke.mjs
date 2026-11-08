@@ -204,6 +204,8 @@ async function main(){
   await pointerClick('runtime-camera-fit');
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,'FIT authored model revision');
   await screenshot('native-00-camera-views.png');
+  check(await evaluate("(() => {const h=document.querySelector('[data-testid=runtime-thickness-handle]');h?.focus();return document.activeElement===h})()"),
+    '3D camera controls did not return keyboard focus to thickness grip');
   await key('ArrowUp','ArrowUp',38);
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='9'"),
     '3D keyboard thickness did not edit the actual parameter');
