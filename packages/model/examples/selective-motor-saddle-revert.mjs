@@ -97,6 +97,16 @@ export function runSelectiveMotorSaddleRevert(){
       sketch:sketchFor({...spec.gauge,widthMm:50}),
     }},
   }],beforeGaugeEdit.revision);
+  // An engineer subsequently adds a cross-body datum dependency to the
+  // SAME motor-sketch feature. It must survive reverting the earlier width
+  // payload; otherwise history editing loses genuinely later authored intent.
+  const beforeDatumLink=history.document;
+  history=runtime.commit(history,[{
+    type:'feature.edit',eventId:'edit.motor.datum.link',
+    featureId:'sketch.motor',patch:{dependsOn:['sketch.gauge']},
+  }],beforeDatumLink.revision);
+  assert.deepEqual(find(history.document,'sketch.motor').dependsOn,
+    ['sketch.gauge']);
   const prior=history.document;
   const req={
     format:FEATURE_EDIT_REVERT_FORMAT,version:1,
@@ -121,6 +131,7 @@ export function runSelectiveMotorSaddleRevert(){
   const preview=previewFeatureEditRevert(prior,req);
   assert.deepEqual(preview.invalidatedBodyIds,['body.motor','body.clamp']);
   history=commitUndoableFeatureEditRevert(history,req);
+  assert.deepEqual(find(history.document,'sketch.motor').dependsOn,['sketch.gauge']);
   assert.deepEqual(semanticJson(find(history.document,'sketch.motor').payload),
     semanticJson(originalMotor));
   const manifest=planBodyRebuildManifest(prior,history.document,{
@@ -138,11 +149,13 @@ export function runSelectiveMotorSaddleRevert(){
     semanticJson(sketchFor(expanded)));
   history=runtime.redo(history,['redo.motor.width.revert']);
   assert.deepEqual(find(history.document,'sketch.motor').payload,originalMotor);
+  assert.deepEqual(find(history.document,'sketch.motor').dependsOn,['sketch.gauge']);
   assert.deepEqual(semanticJson(find(history.document,'sketch.gauge').payload.sketch),
     semanticJson(sketchFor({...spec.gauge,widthMm:50})));
   return {
     format:'intuit3d.feature-edit-revert-demo',bodyActions:actions,
     revertedFeatureId:'sketch.motor',preservedIndependentEdit:true,
+    preservedLaterSameFeatureDatumLink:true,
     historicalEditChoice:choice.status,
     historyChoiceInvalidatedBodies:choice.invalidatedBodyIds,
     archiveUndoRedo:true,requiresNativeRebuild:true,
