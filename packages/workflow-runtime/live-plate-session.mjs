@@ -125,7 +125,7 @@ export function createLivePlateSession({
             'model.events','model.undo','model.redo','dimensions.batch',
             'sketch.constraints','sketch.holes','sketch.holes.rectangular',
             'sketch.holes.circular','sketch.holes.transform',
-            'sketch.holes.resize',
+            'sketch.holes.resize','sketch.holes.selected-edge',
           ].includes(command.kind))
         throw new TypeError('live plate session: unsupported or unversioned CAD command');
       const commandRefused=(source)=>({
@@ -167,6 +167,7 @@ export function createLivePlateSession({
           case 'sketch.holes.circular': return runtime.patternCircularHoles(history,request);
           case 'sketch.holes.transform': return runtime.transformPlateHoles(history,request);
           case 'sketch.holes.resize': return runtime.resizePlateHoleLayout(history,request);
+          case 'sketch.holes.selected-edge': return runtime.editSelectedEdgeHoles(history,request);
           default: throw new TypeError('live plate session: unsupported CAD command');
         }
   }

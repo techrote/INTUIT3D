@@ -96,6 +96,16 @@ void solverPreviewThenNative;
 
 /** Browser consumer can stage multiple typed operations with one source fence
  * and one durable write; each inner command has no per-operation revision. */
+const edgeCommand=session.applyCommand({
+  kind:'sketch.holes.selected-edge',projectId:state.projectId,
+  expectedRevision:state.revision,request:{
+    sketchFeatureId:'sketch.plate',eventId:'type.session.edge',
+    selection:{candidateId:'contour',sourceSignature:'snapshot'},
+    command:{kind:'set-edge-holes',sourceSignature:'snapshot',
+      edits:[{holeId:'new-hole',edgeId:'edge0',alongMm:10,insetMm:5,radiusMm:2}]},
+  },
+});
+void edgeCommand;
 const grouped:LiveCadBatch={
   kind:'commands.batch',projectId:state.projectId,
   expectedRevision:state.revision,commands:[

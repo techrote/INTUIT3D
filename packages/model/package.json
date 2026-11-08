@@ -132,6 +132,10 @@
       "types": "./src/selected-edge-cut.ts",
       "default": "./src/selected-edge-cut.ts"
     },
+    "./body-rebuild-manifest": {
+      "types": "./src/body-rebuild-manifest.ts",
+      "default": "./src/body-rebuild-manifest.ts"
+    },
     "./selected-edge-batch-rebind": {
       "types": "./src/selected-edge-batch-rebind.ts",
       "default": "./src/selected-edge-batch-rebind.ts"

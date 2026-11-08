@@ -63,6 +63,14 @@
     "./coordinated-body-cuts/v1": {
       "types": "./coordinated-body-cuts.d.mts",
       "default": "./src/coordinated-body-cuts.mjs"
+    },
+    "./selected-contour-notch/v1": {
+      "types": "./selected-contour-notch.d.mts",
+      "default": "./src/selected-contour-notch.mjs"
+    },
+    "./selected-corner-chamfer/v1": {
+      "types": "./selected-corner-chamfer.d.mts",
+      "default": "./src/selected-corner-chamfer.mjs"
     }
   },
   "peerDependencies": {
