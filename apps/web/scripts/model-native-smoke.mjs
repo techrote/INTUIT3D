@@ -1356,7 +1356,7 @@ async function main(){
   await pointerClick('runtime-history-batch-review');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-history-batch-confirmation]'))"),
     'MODEL combined preflight not visible after actual pointer review');
-  if(await evaluate("Boolean(document.querySelector('[data-testid=runtime-history-batch-consent]'))")
+  if(await evaluate("Boolean(document.querySelector('[data-testid=runtime-history-batch-consent]'))"))
     await pointerClick('runtime-history-batch-consent');
   await pointerClick('runtime-history-batch-apply');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-width]')?.value==='120'"),
