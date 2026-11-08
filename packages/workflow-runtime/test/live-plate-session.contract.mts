@@ -106,6 +106,16 @@ const edgeCommand=session.applyCommand({
   },
 });
 void edgeCommand;
+const profileHoleCommand=session.applyCommand({
+  kind:'sketch.holes.selected-profile',projectId:state.projectId,
+  expectedRevision:state.revision,request:{
+    sketchFeatureId:'sketch.plate',eventId:'type.session.profile.hole',
+    selection:{candidateId:'contour',sourceSignature:'snapshot'},
+    command:{kind:'add-hole',sourceSignature:'snapshot',
+      holeId:'mount:profile',anchorPointId:'corner-a',xMm:60,yMm:20,radiusMm:3},
+  },
+});
+void profileHoleCommand;
 const grouped:LiveCadBatch={
   kind:'commands.batch',projectId:state.projectId,
   expectedRevision:state.revision,commands:[
@@ -128,3 +138,18 @@ const submitBatch=session.applyCommandsAndEvaluate(grouped,{
   requiredBackend:'OCCT-cxx-8.0.1',exportStep:true,
 });
 void submitBatch;
+
+const selectedProfileControls=session.inspectSelectedProfileHoles({
+  projectId:state.projectId,expectedRevision:state.revision,
+  sketchFeatureId:'sketch.plate'
+});
+if(selectedProfileControls.kind==='ready') {
+  const noPhysical:false=selectedProfileControls.exactAuthority;
+  const selected:string=selectedProfileControls.inspection.selection.candidateId;
+  const source:string=selectedProfileControls.inspection.selection.sourceSignature;
+  const anchor:string|undefined=selectedProfileControls.inspection.anchors[0]?.pointId;
+  void [noPhysical,selected,source,anchor];
+}else{
+  const stale:boolean=selectedProfileControls.notCommitted;
+  void stale;
+}
