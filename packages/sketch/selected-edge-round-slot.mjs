@@ -88,15 +88,15 @@ function compile(source,selection,slot){
     return refusal(stamp,'semantic_id_collision',slot.id);
   if(doc.constraints.some(c=>c.kind==='midpoint'))
     return refusal(stamp,'unsupported_source_midpoint_constraint');
+  const solvedRadii=new Map(linear.geometry.circles.map(c=>[c.id,c.radius]));
   for(const c of doc.constraints){
     if(c.kind==='radius'){
-      const circle=doc.circles.find(x=>x.id===c.circle);
-      if(!circle||!near(circle.radius,c.value))
+      const radius=solvedRadii.get(c.circle);
+      if(radius===undefined||!near(radius,c.value))
         return refusal(stamp,'source_circle_radius_not_preserved',c.id);
     }else if(c.kind==='equalRadius'){
-      const x=doc.circles.find(x=>x.id===c.a);
-      const y=doc.circles.find(x=>x.id===c.b);
-      if(!x||!y||!near(x.radius,y.radius))
+      const x=solvedRadii.get(c.a),y=solvedRadii.get(c.b);
+      if(x===undefined||y===undefined||!near(x,y))
         return refusal(stamp,'source_equal_radius_not_preserved',c.id);
     }
   }
@@ -106,7 +106,7 @@ function compile(source,selection,slot){
     points:[...doc.points.map(p=>({...solvedPoints.get(p.id)})),
       ...[n.p1,n.p2,n.p3,n.p4,n.center].map((id,i)=>({id,...points[i]}))],
     lines:structuredClone(doc.lines),arcs:[],
-    circles:doc.circles.map(c=>({id:c.id,center:c.center,radiusMm:c.radius})),
+    circles:doc.circles.map(c=>({id:c.id,center:c.center,radiusMm:solvedRadii.get(c.id)})),
     constraints:doc.constraints.filter(c=>!['radius','equalRadius'].includes(c.kind))
       .map(c=>structuredClone(c))
   };
