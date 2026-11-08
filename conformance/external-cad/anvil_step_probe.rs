@@ -748,7 +748,161 @@ fn sloped_profile(args: &[String]) {
     }
 }
 
+
+// Data-driven, genuinely three-dimensional non-OCCT material witness.
+// Unlike fixture-specific Z rays, rays may point in ANY direction. Witness
+// expectations are independently authored, never extracted from STEP text.
+fn witness_dot(a:[f64;3],b:[f64;3])->f64 {
+    a[0]*b[0]+a[1]*b[1]+a[2]*b[2]
+}
+fn witness_sub(a:[f64;3],b:[f64;3])->[f64;3] {
+    [a[0]-b[0],a[1]-b[1],a[2]-b[2]]
+}
+fn witness_cross(a:[f64;3],b:[f64;3])->[f64;3] {
+    [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]
+}
+fn witness_hits(mesh:&Mesh,origin:[f64;3],direction:[f64;3])->Vec<f64> {
+    let mut hits=Vec::new();
+    for tri in mesh.faces.iter().flat_map(|face|&face.triangles) {
+        let a=point(mesh,tri[0]); let b=point(mesh,tri[1]); let c=point(mesh,tri[2]);
+        let edge1=witness_sub(b,a); let edge2=witness_sub(c,a);
+        let p=witness_cross(direction,edge2);
+        let det=witness_dot(edge1,p);
+        if det.abs()<1e-12 {continue;}
+        let inv=1.0/det;
+        let offset=witness_sub(origin,a);
+        let u=witness_dot(offset,p)*inv;
+        if u < -1e-10 || u > 1.0+1e-10 {continue;}
+        let q=witness_cross(offset,edge1);
+        let v=witness_dot(direction,q)*inv;
+        if v < -1e-10 || u+v > 1.0+1e-10 {continue;}
+        let t=witness_dot(edge2,q)*inv;
+        if !t.is_finite(){fail("nonfinite witness ray hit");}
+        if t.abs()<=1e-7 {fail("witness sample on ambiguous material boundary");}
+        if t>0.0 {hits.push(t);}
+    }
+    hits.sort_by(f64::total_cmp);
+    hits.dedup_by(|a,b|(*a-*b).abs()<1e-5);
+    hits
+}
+fn witness_3d(args:&[String]) {
+    if args.len()!=4 {fail("usage: --witness-3d ORIGINAL.step INDEPENDENT_WITNESS.txt");}
+    if fs::metadata(&args[2]).map(|m|m.len()).unwrap_or(u64::MAX)>50_000_000 {
+        fail("missing/oversized physical STEP witness input");
+    }
+    let specification=fs::read_to_string(&args[3])
+        .unwrap_or_else(|_|fail("cannot read independent witness"));
+    if specification.len()>100_000 {fail("oversized physical witness");}
+    let mut volume_interval:Option<(f64,f64)>=None;
+    let mut area_interval:Option<(f64,f64)>=None;
+    let mut rays:Vec<(String,[f64;3],[f64;3],bool)>=Vec::new();
+    let mut unique=std::collections::HashSet::new();
+    let mut header=false;
+    for (line_number,line) in specification.lines().enumerate() {
+        if line.is_empty(){continue;}
+        if line.len()>256 {fail("oversized witness record");}
+        let fields:Vec<&str>=line.split_whitespace().collect();
+        if !header {
+            if fields != ["INTUIT3D_3D_WITNESS_V1"] {
+                fail("wrong independent 3D witness version");
+            }
+            header=true;
+            continue;
+        }
+        match fields.first().copied().unwrap_or("") {
+            "VOLUME" | "AREA" if fields.len()==3 => {
+                let lower=number(fields[1]); let upper=number(fields[2]);
+                if lower<=0.0 || upper<=lower || (upper-lower)/lower>0.02 {
+                    fail("independent witness mass/area interval invalid or too broad");
+                }
+                if fields[0]=="VOLUME" {
+                    if volume_interval.replace((lower,upper)).is_some() {
+                        fail("duplicate witness volume");
+                    }
+                }else if area_interval.replace((lower,upper)).is_some(){
+                    fail("duplicate witness area");
+                }
+            }
+            "RAY" if fields.len()==9 => {
+                let name=fields[1];
+                if name.is_empty()||name.len()>56 ||
+                    !name.bytes().all(|c|c.is_ascii_alphanumeric()||c==b'.'||c==b'_'||c==b'-')||
+                    !unique.insert(name.to_string()) {fail("duplicate/invalid witness ray ID");}
+                let origin=[number(fields[2]),number(fields[3]),number(fields[4])];
+                let mut direction=[number(fields[5]),number(fields[6]),number(fields[7])];
+                let norm=witness_dot(direction,direction).sqrt();
+                if !norm.is_finite()||norm<1e-8 {fail("invalid witness direction");}
+                for component in &mut direction {*component/=norm;}
+                let solid=match fields[8] {
+                    "material"=>true,"void"=>false,_=>fail("unknown witness occupancy"),
+                };
+                rays.push((name.to_string(),origin,direction,solid));
+                if rays.len()>256 {fail("too many independent witness rays");}
+            }
+            _ => fail(&format!("invalid witness command at line {}",line_number+1)),
+        }
+    }
+    let (vol_min,vol_max)=volume_interval.unwrap_or_else(||fail("missing witness volume"));
+    let (area_min,area_max)=area_interval.unwrap_or_else(||fail("missing witness area"));
+    if rays.len()<8 {fail("at least eight independently defined 3D rays required");}
+    if !rays.iter().any(|a| rays.iter().any(|b|
+        witness_dot(a.2,b.2).abs()<0.9)) {
+        fail("witness directions lack independent 3D orientation");
+    }
+    let source=fs::read_to_string(&args[2])
+        .unwrap_or_else(|_|fail("cannot read original physical STEP"));
+    let cad=import(&source).unwrap_or_else(|e|fail(&format!("independent witness import failed: {e}")));
+    if cad.length_unit!="millimetre" && cad.length_unit!="millimeter" {
+        fail("independently imported witness STEP is not millimetres");
+    }
+    if cad.bodies.len()!=1 || !cad.bodies[0].solid ||
+        cad.bodies[0].exact.is_none() || !cad.warnings.is_empty(){
+        fail("witness import requires precisely one exact warning-free B-rep solid");
+    }
+    let mesh=&cad.bodies[0].mesh;
+    if mesh.vertices.len()<4 || mesh.faces.is_empty(){fail("empty witness solid");}
+    let mut edges:HashMap<(u32,u32),usize>=HashMap::new();
+    let (mut volume,mut surface,mut triangle_count)=(0.0f64,0.0f64,0usize);
+    for tri in mesh.faces.iter().flat_map(|face|&face.triangles) {
+        let a=point(mesh,tri[0]);let b=point(mesh,tri[1]);let c=point(mesh,tri[2]);
+        let cross=witness_cross(witness_sub(b,a),witness_sub(c,a));
+        let twice_area=witness_dot(cross,cross).sqrt();
+        if !twice_area.is_finite()||twice_area<1e-12 {fail("degenerate imported witness triangle");}
+        surface+=twice_area/2.0;
+        volume+=witness_dot(a,witness_cross(b,c))/6.0;
+        triangle_count+=1;
+        for i in 0..3{*edges.entry((tri[i],tri[(i+1)%3])).or_default()+=1;}
+    }
+    if triangle_count<8 ||
+        edges.iter().any(|(&(a,b),&n)|n!=1||edges.get(&(b,a))!=Some(&1)) {
+        fail("independent witness mesh is not closed/oriented");
+    }
+    volume=volume.abs();
+    if !volume.is_finite() || !surface.is_finite() ||
+       !(vol_min<=volume && volume<=vol_max) {
+        fail(&format!("WITNESS_GEOMETRY: imported volume {volume} outside [{vol_min},{vol_max}]"));
+    }
+    if !(area_min<=surface && surface<=area_max) {
+        fail(&format!("WITNESS_GEOMETRY: imported area {surface} outside [{area_min},{area_max}]"));
+    }
+    for (name,origin,direction,expected) in &rays {
+        let hits=witness_hits(mesh,*origin,*direction);
+        let material=hits.len()%2==1;
+        if material!=*expected {
+            fail(&format!("WITNESS_GEOMETRY: ray {name} expected {} but imported {} (hits={})",
+                 if *expected{"material"}else{"void"},
+                 if material{"material"}else{"void"},hits.len()));
+        }
+        println!("WITNESS_RAY {name} {} intersections={}",if material{"material"}else{"void"},hits.len());
+    }
+    println!("WITNESS_ACCEPT solids=1 imported_exact=true warnings=0 rays={} triangles={} volume_mm3={:.9} area_mm2={:.9}",
+        rays.len(),triangle_count,volume,surface);
+}
+
 fn main() {
+    if env::args().nth(1).as_deref()==Some("--witness-3d") {
+        witness_3d(&env::args().collect::<Vec<_>>()); return;
+    }
     if matches!(env::args().nth(1).as_deref(), Some("--sloped-profile" | "--progressive-v6")) {
         sloped_profile(&env::args().collect::<Vec<_>>()); return;
     }
