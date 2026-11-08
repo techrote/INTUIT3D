@@ -40,6 +40,17 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
 .runtime-blank-toolbar { display: flex; align-items: center; gap: 10px; padding: 0 12px 10px; min-height: 48px; border-bottom: 1px solid #334c5e; }
 .runtime-blank-toolbar span { font: 12px ui-monospace, monospace; color: #a7dce7; }
 .runtime-blank-canvas { width: 100%; flex: 1; min-height: 170px; display: block; touch-action: none; }
+/* Live pointer coordinates must remain readable after zoom/pan has moved the
+   original SVG-space text location outside the viewBox. Display only. */
+.runtime-blank-readout {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 3px 12px; padding: 5px 12px;
+  background: #172b39; border-top: 1px solid #334c5e;
+  color: #93b6c8; font: 11px ui-monospace, Consolas, monospace;
+}
+.runtime-blank-readout [data-testid="runtime-contour-pointer-coordinate"] {
+  color: #abd6df;
+}
 .runtime-blank-stage .microcopy { margin: 6px 12px 10px; }
 .stage-chip { background: #463625; border: 1px solid #735330; color: #e8b779; border-radius: 3px; font-size: 10px; letter-spacing: .7px; padding: 6px 9px; white-space: nowrap; }
 .avatar { border: 1px solid #547c92; background: #28495a; color: #c6e5ee; height: 29px; width: 29px; border-radius: 50%; font-size: 10px; display: grid; place-items: center; font-weight: bold; }
