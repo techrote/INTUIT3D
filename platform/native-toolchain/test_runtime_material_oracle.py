@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import math
 import unittest
+from pathlib import Path
+import shutil
+import tempfile
 
-from runtime_material_oracle import EXPECTED, MaterialOracleError, check_stage
+from runtime_material_oracle import EXPECTED, MaterialOracleError, check_stage, verify_runtime_sketch_fixture
 
 
 class MaterialOracleTests(unittest.TestCase):
@@ -55,6 +58,43 @@ class MaterialOracleTests(unittest.TestCase):
         holes[0]["radius"] = float("nan")
         with self.assertRaisesRegex(MaterialOracleError, "non-finite"):
             check_stage("plate-8mm-two-bores", holes, volume)
+
+    @unittest.skipUnless(shutil.which("node"), "requires executable Node for source-bound fixture")
+    def test_source_bound_sketch_bores_and_drift_rejection(self):
+        # Synthetic module exercises the real subprocess/import boundary.
+        # The physical CI independently loads the immutable accepted SKETCH.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            module = root / "packages/sketch/index.mjs"
+            module.parent.mkdir(parents=True)
+            source = """export function plateSketchFixture() {
+              return {units:'mm',
+                points:[
+                  {id:'p0',x:0,y:0},{id:'p1',x:120,y:0},
+                  {id:'p2',x:120,y:80},{id:'p3',x:0,y:80},
+                  {id:'holeA:center',x:35,y:40},{id:'holeB:center',x:85,y:40}],
+                lines:[
+                  {start:'p0',end:'p1'},{start:'p1',end:'p2'},
+                  {start:'p2',end:'p3'},{start:'p3',end:'p0'}],
+                circles:[
+                  {center:'holeA:center',radius:6},
+                  {center:'holeB:center',radius:6}]};
+            }"""
+            module.write_text(source)
+            matched = verify_runtime_sketch_fixture(root)
+            self.assertEqual(matched["authoredBoresLocalMm"],
+                             [{"x": -25.0, "y": 0.0, "radius": 6.0},
+                              {"x": 25.0, "y": 0.0, "radius": 6.0}])
+            # The old mistaken 30/90 fixture must not be silently accepted.
+            module.write_text(source.replace("x:35,y:40", "x:30,y:40"))
+            with self.assertRaisesRegex(MaterialOracleError, "differs"):
+                verify_runtime_sketch_fixture(root)
+            # Even if bore centers remain unchanged, edited plate stock is
+            # not the 120x80 analytic fixture and must be rejected.
+            module.write_text(source.replace("x:120,y:0", "x:121,y:0")
+                                    .replace("x:120,y:80", "x:121,y:80"))
+            with self.assertRaisesRegex(MaterialOracleError, "width"):
+                verify_runtime_sketch_fixture(root)
 
     def test_unknown_stage(self):
         holes, volume = self.case("plate-8mm-two-bores")
