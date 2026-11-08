@@ -27,7 +27,7 @@ const refused=(stamp,reason,detail=null,status=null,diagnostics=[])=>({
 });
 const acceptedProfile=(sketch,old,extra)=>{
   const d=discoverPlateProfiles(sketch);
-  const target=[...old.lineIds,extra].sort().join('|');
+  const target=[...new Set([...old.lineIds,extra])].sort().join('|');
   const candidate=d.candidates.find(c=>[...c.lineIds].sort().join('|')===target);
   if(!candidate)return {reason:'selected_contour_no_longer_admissible',
     detail:JSON.stringify({status:d.status,rejected:d.rejected})};

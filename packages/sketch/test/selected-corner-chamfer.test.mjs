@@ -103,7 +103,7 @@ test('invalid and stale transactions refuse without changing source',()=>{
 });
 test('hole boundary contacts, conflicted and underconstrained sketches remain refused',()=>{
   const d=createDimensionedLPlateSketch(),before=serializeSketch(d);
-  const contact=create(d,{incomingMm:35,outgoingMm:26});
+  const contact=create(d,{incomingMm:100,outgoingMm:25});
   assert.equal(contact.kind,'refused',JSON.stringify(contact));
   assert.equal(serializeSketch(d),before);
   const under=createSketch({...d,constraints:d.constraints.filter(c=>c.id!=='L:length')});
