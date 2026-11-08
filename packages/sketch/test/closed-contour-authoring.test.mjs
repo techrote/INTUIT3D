@@ -231,7 +231,8 @@ test('dimensioned circular holes follow selected polygon vertex changes through 
     [{x:33,y:25},{x:51,y:30}]);
   assert.deepEqual([...moved.profile.holeIds].sort(),
     ['machining:holeA','machining:holeB']);
-  assert.equal(moved.profile.profile.areaMm2<created.profile.profile.areaMm2,true);
+  assert.ok(moved.profile.profile.areaMm2>created.profile.profile.areaMm2,
+    'edited polygon expands while preserving both cutouts');
   assert.equal(solveSketch(moved.sketch).status,'solved');
   assert.equal(stamp(second.sketch),before,'original source was not changed');
   const reopened=inspectClosedContour(parseSketch(stamp(moved.sketch)),
