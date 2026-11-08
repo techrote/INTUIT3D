@@ -225,6 +225,37 @@ async function main(){
     '3D hole selection accidentally authored a CAD revision');
   check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');return c===window.__intuit3dTest3DCanvas&&c?.getContext('webgl2')===window.__intuit3dTest3DContext})()"),
     '3D hole selection recreated the GPU context');
+  // Genuine 3D canvas picking now opens a contextual, source-owned bore editor.
+  // Use actual Chromium keyboard entry and pointer apply/undo, not a helper call.
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-solid-quickedit]')?.textContent?.includes('holeA')"),
+    '3D-picked hole has no contextual precision editor');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-solid-quickedit-x]');e.focus();e.select();return document.activeElement===e})()"),
+    'selected-hole X editor is not focusable');
+  await send('Input.insertText',{text:'36'});
+  await pointerClick('runtime-solid-quickedit-move');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value==='36'"),
+    '3D-picked bore centre did not commit through SKETCH');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")!==cameraRev,
+    'selected-hole 3D movement did not advance the authoritative revision');
+  check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');return c===window.__intuit3dTest3DCanvas&&c?.getContext('webgl2')===window.__intuit3dTest3DContext})()"),
+    '3D precision edit recreated the GPU context');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value==='35'"),
+    '3D contextual centre edit was not undoable');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-solid-quickedit-diameter]');e.focus();e.select();return document.activeElement===e})()"),
+    'selected-hole bore editor is not focusable after undo');
+  await send('Input.insertText',{text:'13'});
+  await pointerClick('runtime-solid-quickedit-resize');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-diameter]')?.value==='13'"),
+    '3D-picked diameter did not commit through SKETCH');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-diameter]')?.value==='12'"),
+    '3D contextual diameter edit was not undoable');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,
+    '3D contextual undo did not restore the source revision');
+  await screenshot('native-00b-3d-selected-hole-edit.png');
   await pointerClick('runtime-camera-isometric');
   await pointerClick('runtime-camera-fit');
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,'FIT authored model revision');
