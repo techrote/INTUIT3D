@@ -315,6 +315,10 @@ Request read_request(const std::filesystem::path& path) {
     if(!(file>>c.id) || ((q.mixed_chain||q.l_profile_chain||q.orthogonal_chain||q.linear_chain||q.flex_chain) && !(file>>kind)) ||
        !(file>>c.x>>c.y>>c.width>>c.depth>>c.cut_depth))
       throw std::runtime_error("truncated ordered cut");
+    // The target body is also a feature identity. The Python/Node contract
+    // refuses this collision; raw canonical IPC must refuse it independently.
+    if(c.id==q.feature_id)
+      throw std::runtime_error("cut feature identity conflicts with target body");
     if(kind!="R" && kind!="C")
       throw std::runtime_error("unsupported cut profile kind");
     c.circular=(kind=="C");
