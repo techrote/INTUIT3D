@@ -1,5 +1,9 @@
 # INTUIT3D — live integration status
 
+## 8 November 2026 — user-operated semantic hole selection admitted to the 3D WebGL viewport
+
+**Further guarded accepted-main merge:** [WORKBENCH #268](https://github.com/techrote/INTUIT3D/pull/268) exact source `b1460eb105e6f7951b20cfe71837f892dc5fdf4c` → merge [`1bec4077bc42c7aa9c5795182c564aa3c02dca6e`](https://github.com/techrote/INTUIT3D/commit/1bec4077bc42c7aa9c5795182c564aa3c02dca6e). Existing Three.js solid viewport now permits an actual user pointer click on a solver-authored hole opening to select its stable semantic sketch ID, with Ctrl/Cmd multi-selection, refusal on drags and unsupported viewing directions, unchanged model revision and existing WebGL context. [Exact-head Ubuntu/Windows workspace CI #42473816538](https://github.com/techrote/INTUIT3D/actions/runs/42473816538) and [generated-lock plus real Chromium click UI #42473816556](https://github.com/techrote/INTUIT3D/actions/runs/42473816556) all **PASS**. This is real browser selection, not user-bound pinned STEP. Main checkpoint after #268: `1bec4077bc42c7aa9c5795182c564aa3c02dca6e`. #74 remains OPEN after correcting its inadvertent closure; see [Integration reopening evidence](https://github.com/techrote/INTUIT3D/issues/74#issuecomment-6720685855). #177 original private Windows Firefox archive remains unverified.
+
 ## 8 November 2026 — independently imported source-bound native STEP receipts admitted
 
 **Accepted main before this status update:** [`c728394d9fff0b2993e5f32e5198d6d9647d16fe`](https://github.com/techrote/INTUIT3D/commit/c728394d9fff0b2993e5f32e5198d6d9647d16fe). Two additional exact-head guarded merges complete the source-custody extension, without a second OCCT compilation:
