@@ -714,22 +714,20 @@ export function createLivePlateSession({
           return refuse('stale_revision','a newer edit or request superseded native evaluation');
         if(abort.signal.aborted) return refuse('cancelled','native evaluation cancelled');
         if(!result||!['unresolved','experimental_plate_evaluated'].includes(result.kind)||
-            result.exactAuthority!==false||result.independentInteroperability!==false)
-          {
-            const failure=refuse('invalid_provider_result','native response is not a qualified experimental contract');
-            recordOutcome(failure);
-            return failure;
-          }
+            result.exactAuthority!==false||result.independentInteroperability!==false) {
+          const failure=refuse('invalid_provider_result','native response is not a qualified experimental contract');
+          recordOutcome(failure);
+          return failure;
+        }
         if(result.kind==='experimental_plate_evaluated' &&
             (result.source?.projectId!==before.report.projectId||
              result.source.revision!==before.report.revision||
              result.result?.requestId!==id||result.result?.cutFeatureId!==cutFeatureId||
-             (exportStep&&!result.step)||(!exportStep&&result.step)))
-          {
-            const failure=refuse('invalid_provider_result','native result does not match current authored request');
-            recordOutcome(failure);
-            return failure;
-          }
+             (exportStep&&!result.step)||(!exportStep&&result.step))) {
+          const failure=refuse('invalid_provider_result','native result does not match current authored request');
+          recordOutcome(failure);
+          return failure;
+        }
         // A failed same-revision refresh must not erase verified current bytes.
         recordOutcome(result);
         if(result.kind==='experimental_plate_evaluated' && result.step ||
