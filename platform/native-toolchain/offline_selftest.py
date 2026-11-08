@@ -16,6 +16,9 @@ import subprocess
 import sys
 import tempfile
 
+# The bundle is content-addressed: importing local modules must not create
+# unmanifested __pycache__ files before or during its mandatory verification.
+sys.dont_write_bytecode = True
 from replay_evidence import EvidenceError, publish_replay_steps
 
 

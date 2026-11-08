@@ -268,7 +268,7 @@ ROOT="$(cd -- "$(dirname -- "$0")" && pwd -P)"
 # The executable and each bundled OCCT toolkit carry origin-only DT_RPATH.
 # Remove ambient linker overrides instead of masking a broken relocated ELF.
 unset LD_LIBRARY_PATH LD_PRELOAD LD_AUDIT LD_DEBUG
-exec python3 "$ROOT/native/occt8_bridge.py" --worker "$ROOT/bin/intuit3d_occt8_plate" "$@"
+exec python3 -B "$ROOT/native/occt8_bridge.py" --worker "$ROOT/bin/intuit3d_occt8_plate" "$@"
 ''', encoding="utf-8")
     script.chmod(0o755)
 
@@ -311,6 +311,10 @@ def inventory(root: Path) -> tuple[dict, dict]:
         relative = p.relative_to(root).as_posix()
         if relative == "manifest.json":
             continue
+        # Python's import cache is runtime-derived and changes when canonical
+        # tar extraction resets source mtimes. Never inventory it as payload.
+        require("__pycache__" not in p.parts and p.suffix not in (".pyc", ".pyo"),
+                f"runtime Python bytecode must not enter offline bundle: {relative}")
         if p.is_symlink():
             require(p.resolve().is_relative_to(root.resolve()),
                     f"bundle link escapes directory: {relative}")

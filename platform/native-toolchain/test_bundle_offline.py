@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -16,6 +17,74 @@ import bundle_offline as bundle
 @unittest.skipUnless(sys.platform == "linux" and shutil.which("cc"),
                      "Linux native ELF toolchain unavailable")
 class OfflineBundleTests(unittest.TestCase):
+
+    def test_archive_relocation_and_python_execution_do_not_mutate_manifest(self):
+        """Real extracted Python entrypoints must not write timestamped pyc files."""
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp)
+            root = base / "source"
+            (root / "native").mkdir(parents=True)
+            (root / "bin").mkdir()
+            (root / "native/occt8_bridge.py").write_text(
+                "import local_helper\\nprint(local_helper.answer)\\n")
+            (root / "native/local_helper.py").write_text("answer = 42\\n")
+            (root / "bin/intuit3d_occt8_plate").write_bytes(b"test-only worker fixture")
+            for source, target in (
+                ("verify_offline_bundle.py", "verify.py"),
+                ("offline_selftest.py", "selftest.py"),
+                ("replay_evidence.py", "replay_evidence.py"),
+            ):
+                shutil.copy2(Path(__file__).with_name(source), root / target)
+            bundle.launcher(root)
+            files, links = bundle.inventory(root)
+            manifest = {
+                "schema": "intuit3d/pinned-occt801-offline-linux-bundle-v1",
+                "occtSourceCommit": bundle.COMMIT,
+                "kernelSourceCommit": "a" * 40,
+                "workerSha256": bundle.sha256(root / "bin/intuit3d_occt8_plate"),
+                "files": files,
+                "links": links,
+            }
+            (root / "manifest.json").write_text(json.dumps(manifest))
+            archive = base / "reproducible.tar.gz"
+            bundle.write_archive(root, archive)
+            relocated = base / "relocated"
+            relocated.mkdir()
+            with tarfile.open(archive, "r:gz") as package:
+                package.extractall(relocated, filter="data")
+            extracted = relocated / bundle.ARCHIVE_ROOT_NAME
+
+            def verify():
+                completed = subprocess.run(
+                    [sys.executable, str(extracted / "verify.py")],
+                    cwd=extracted, capture_output=True, text=True, check=False)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+
+            verify()
+            launched = subprocess.run(
+                [str(extracted / "run.sh")], cwd=extracted,
+                capture_output=True, text=True, check=False)
+            self.assertEqual(launched.returncode, 0, launched.stderr)
+            self.assertEqual(launched.stdout.strip(), "42")
+            # --help imports the bundled local replay module without needing
+            # an OCCT installation; the physical replay remains a separate gate.
+            help_run = subprocess.run(
+                [sys.executable, str(extracted / "selftest.py"), "--help"],
+                cwd=extracted, capture_output=True, text=True, check=False)
+            self.assertEqual(help_run.returncode, 0, help_run.stderr)
+            verify()
+            self.assertFalse(list(extracted.rglob("__pycache__")))
+            self.assertFalse(list(extracted.rglob("*.pyc")))
+            self.assertEqual(bundle.inventory(extracted), (files, links))
+
+    def test_inventory_rejects_generated_python_bytecode(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "__pycache__").mkdir()
+            (root / "__pycache__/bridge.cpython-311.pyc").write_bytes(b"not stable")
+            with self.assertRaisesRegex(bundle.BundleError, "runtime Python bytecode"):
+                bundle.inventory(root)
+
     def test_real_compiled_transitive_elf_relocation(self):
         """Genuinely compiled DT_NEEDED transitive libs load after prefix removal."""
         with tempfile.TemporaryDirectory() as temp:
