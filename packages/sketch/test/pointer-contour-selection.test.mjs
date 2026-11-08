@@ -185,3 +185,56 @@ test('invalid/stale pointer commands refuse deterministically and never mutate s
 test('published source-fenced pointer consumer example executes',async()=>{
   await import('../examples/pointer-contour-selection.mjs');
 });
+
+
+test('pointer selects editable independent islands inside a concave contour AABB',()=>{
+  let doc=addRectangle(createDimensionedLPlateSketch(),'island',62,42,20,18);
+  const before=stamp(doc);
+  const list=inspectPointerSelectableContours(doc);
+  assert.equal(list.kind,'pointer_selectable_contours',JSON.stringify(list));
+  assert.equal(list.candidates.length,2);
+  assert.deepEqual(list.blocked,[]);
+  const l=pick(doc,{x:10,y:40}),island=pick(doc,{x:72,y:50});
+  assert.equal(l.kind,'selected',JSON.stringify(l));
+  assert.equal(island.kind,'selected',JSON.stringify(island));
+  assert.notEqual(l.selection.candidateId,island.selection.candidateId);
+  assert.equal(edge(doc,{x:72,y:42.5}).kind,'selected_edge');
+  const controls=inspectSelectedProfileHandles(doc,l.selection);
+  assert.equal(controls.kind,'selected_profile_handles');
+  const length=controls.controls.find(h=>h.constraintId==='L:length');
+  const web=controls.controls.find(h=>h.constraintId==='L:webWidth');
+  assert.ok(web);
+  const refused=editSelectedProfileHandle(doc,l.selection,{
+    kind:'set-dimension',sourceSignature:before,handleId:web.id,valueMm:70
+  });
+  assert.equal(refused.kind,'refused',JSON.stringify(refused));
+  assert.equal(refused.reason,'profile_rejected_after_edit');
+  assert.equal(stamp(doc),before); // rejected interference leaves original source intact
+  const edit=editSelectedProfileHandle(doc,l.selection,{
+    kind:'set-dimension',sourceSignature:before,handleId:length.id,valueMm:150
+  });
+  assert.equal(edit.kind,'accepted',JSON.stringify(edit));
+  doc=parseSketch(stamp(edit.sketch));
+  assert.equal(pick(doc,{x:72,y:50}).selection.candidateId,island.selection.candidateId);
+  assert.equal(pick(doc,{x:140,y:15}).selection.candidateId,l.selection.candidateId);
+  assert.equal(pick(doc,{x:72,y:34}).reason,'outside_contours');
+  assert.equal(pick(doc,{x:120,y:15}).reason,'hole_void'); // hole follows edited width
+  assert.equal(selectContourAtPointer(doc,{
+    kind:'select-contour-at-pointer',version:1,sourceSignature:before,
+    point:{x:72,y:50},boundaryClearanceMm:0
+  }).reason,'stale_source');
+});
+
+test('ambiguous nested and crossing candidates remain blocked even with concave AABB admission',()=>{
+  for(const [x,y,w,h] of [
+    [10,10,10,10],[35,25,15,30],[120,0,30,20]
+  ]){
+    const doc=addRectangle(createDimensionedLPlateSketch(),'foreign',x,y,w,h);
+    const list=inspectPointerSelectableContours(doc);
+    assert.equal(list.kind,'refused',JSON.stringify([x,y,w,h]));
+    assert.equal(list.reason,'no_admissible_contour');
+  }
+});
+test('published concave multi-profile pointer consumer executes',async()=>{
+  await import('../examples/concave-contour-pointer.mjs');
+});

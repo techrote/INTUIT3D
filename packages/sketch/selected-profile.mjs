@@ -1,5 +1,6 @@
 import {createSketch, serializeSketch, solveSketch} from './index.mjs';
 import {discoverPlateProfiles} from './profile-discovery.mjs';
+import {assessSeparatedPolygonBoundaries} from './boundary-guard.mjs';
 
 /**
  * Explicit, source-replayed profile selection for sketches with multiple
@@ -49,12 +50,25 @@ export function proposeSelectedPlateProfile(source,selection) {
   const outerBox=boundingBox(candidate.profile.outer);
   const chosen=new Set(candidate.lineIds);
   const unselectedLineIds=[],overlappingLineIds=[];
+  const otherContours=discovery.candidates.filter(c=>c.id!==candidate.id);
+  const otherContourLineIds=new Set(otherContours.flatMap(c=>c.lineIds));
   for (const edge of doc.lines) {
     if (chosen.has(edge.id)) continue;
     unselectedLineIds.push(edge.id);
+    if (otherContourLineIds.has(edge.id)) continue;
+    // An open/rejected component has no certified polygon interior.
+    // Retain the existing conservative AABB exclusion for such linework.
     const p1=points.get(edge.start),p2=points.get(edge.end);
     if (!p1 || !p2 || !separated(outerBox,boundingBox([p1,p2])))
       overlappingLineIds.push(edge.id);
+  }
+  for (const other of otherContours) {
+    // Other independently solved CLOSED contours may have intersecting
+    // bounds without touching material (e.g. a rectangle in an L cutaway).
+    // Use exact finite-coordinate edge intersection AND two-way nesting tests.
+    const report=assessSeparatedPolygonBoundaries(
+      candidate.profile.outer,other.profile.outer);
+    if (report.status!=='separated') overlappingLineIds.push(...other.lineIds);
   }
   unselectedLineIds.sort();
   overlappingLineIds.sort();

@@ -96,3 +96,57 @@ export function requireSimplePolygonBoundary(vertices) {
     throw new TypeError('sketch boundary guard: ' + report.reason + (report.reason === 'nonadjacent_intersection' ? ' (self-intersecting polygon)' : ''));
   return report;
 }
+
+
+/**
+ * Exact dyadic classification of TWO independently validated closed polygon
+ * contours. AABB overlap is only a broad-phase test, never proof of material
+ * overlap. This permits disjoint concave sketch loops whose bounds intersect,
+ * while rejecting crossings, touches, or either direction of nesting.
+ *
+ * No tolerance or inferred edge welding; finite encoded JS coordinates are
+ * the precise subject of this analytic check, not OCCT/STEP authority.
+ */
+export function assessSeparatedPolygonBoundaries(first, second) {
+  const aReport=assessPolygonBoundary(first);
+  const bReport=assessPolygonBoundary(second);
+  if (aReport.status!=='verified'||bReport.status!=='verified') {
+    return {version:1,status:'refused',reason:'invalid_boundary'};
+  }
+  const bounds=points=>({
+    minX:Math.min(...points.map(p=>p.x)),maxX:Math.max(...points.map(p=>p.x)),
+    minY:Math.min(...points.map(p=>p.y)),maxY:Math.max(...points.map(p=>p.y))
+  });
+  const aBox=bounds(first),bBox=bounds(second);
+  if(aBox.maxX<bBox.minX||bBox.maxX<aBox.minX||
+     aBox.maxY<bBox.minY||bBox.maxY<aBox.minY)
+    return {version:1,status:'separated',reason:null};
+  // Scale ALL coordinates together to the same exact integer lattice.
+  const raw=[...first,...second].map(p=>({x:dyadic(p.x),y:dyadic(p.y)}));
+  let exponent=0;
+  for(const p of raw)exponent=Math.min(exponent,p.x.exponent,p.y.exponent);
+  const scaled=raw.map(p=>({
+    x:p.x.mantissa<<BigInt(p.x.exponent-exponent),
+    y:p.y.mantissa<<BigInt(p.y.exponent-exponent)
+  }));
+  const a=scaled.slice(0,first.length),b=scaled.slice(first.length);
+  for(let i=0;i<a.length;i++)for(let j=0;j<b.length;j++){
+    if(intersects(a[i],a[(i+1)%a.length],b[j],b[(j+1)%b.length]))
+      return {version:1,status:'refused',reason:'boundary_contact'};
+  }
+  const locate=(polygon,p)=>{
+    let inside=false;
+    for(let i=0;i<polygon.length;i++){
+      const start=polygon[i],end=polygon[(i+1)%polygon.length];
+      const o=orient(start,end,p);
+      if(o===0n&&onSegment(start,end,p))return 'boundary';
+      if((start.y>p.y)!==(end.y>p.y)){
+        if(end.y>start.y?o>0n:o<0n)inside=!inside;
+      }
+    }
+    return inside?'inside':'outside';
+  };
+  if(locate(a,b[0])!=='outside'||locate(b,a[0])!=='outside')
+    return {version:1,status:'refused',reason:'nested_contour'};
+  return {version:1,status:'separated',reason:null};
+}
