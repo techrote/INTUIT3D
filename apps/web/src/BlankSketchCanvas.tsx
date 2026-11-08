@@ -123,8 +123,10 @@ export function BlankSketchCanvas({
       <defs><pattern id="blank-grid-10mm" width="10" height="10" patternUnits="userSpaceOnUse">
         <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#49616e" strokeWidth=".15"/>
       </pattern></defs>
-      <rect x="-20" y="-20" width="240" height="160" fill="#162535" pointerEvents="all"/>
-      <rect x="-20" y="-20" width="240" height="160" fill="url(#blank-grid-10mm)" pointerEvents="none"/>
+      <rect x={view.x} y={view.y} width={view.width} height={view.height}
+        fill="#162535" pointerEvents="all"/>
+      <rect x={view.x} y={view.y} width={view.width} height={view.height}
+        fill="url(#blank-grid-10mm)" pointerEvents="none"/>
       <g transform="translate(0 120) scale(1 -1)" pointerEvents="none">
         <path d="M -20 0 H 220 M 0 -20 V 140" stroke="#7797a7" strokeWidth=".35" fill="none"/>
         {points.length>0&&<polyline data-testid="runtime-contour-preview"
