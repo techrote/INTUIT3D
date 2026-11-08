@@ -1,5 +1,8 @@
 import type {UndoHistory} from '@intuit3d/model/transactions';
 import type {JournalEvent} from '@intuit3d/model';
+import type {ParameterFormulaTableRequest} from '@intuit3d/model/parameter-formula-table';
+import type {ParameterSheetRebaseResult} from '@intuit3d/model/parameter-sheet-rebase';
+import type {ParameterSheetResolutionRequest,ParameterSheetResolutionResult} from '@intuit3d/model/parameter-sheet-resolution';
 import type {DimensionBatchEditRequest} from '@intuit3d/model/dimension-batch-edit';
 import type {WorkflowRuntime,WorkflowInvalidation,RuntimeReport,SketchConstraintBatchResult,
   SketchConstraintBatchRequest,PlateHoleBatchRequest,RectangularHoleArrayRequest,
@@ -51,6 +54,16 @@ export interface LiveCadBatch {
   readonly expectedRevision:number;
   readonly commands:readonly LiveCadOperation[];
 }
+/** The browser retains the editable draft until review and publication succeed.
+ * The base is the EXACT canonical model archive at the time editing began. */
+export interface SessionParameterDraft {
+  readonly baseArchive:string;
+  readonly draft:ParameterFormulaTableRequest;
+  /** Explicit ID-scoped human acknowledgement of the CURRENT conflict report. */
+  readonly resolution?:ParameterSheetResolutionRequest;
+}
+export type SessionParameterDraftReview =
+  ParameterSheetRebaseResult | ParameterSheetResolutionResult;
 export type SessionEdit = UndoHistory | SketchConstraintBatchResult;
 export type SessionEditResult =
   | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
@@ -121,6 +134,16 @@ export interface LivePlateSession {
     command:LiveCadCommand,
     options?:Readonly<LivePlateEvaluationOptions>,
   ):Promise<SessionEditAndEvaluateResult>;
+  /** Read-only three-way draft review; does not affect undo, model or STEP. */
+  inspectParameterDraft(draft:SessionParameterDraft):SessionParameterDraftReview;
+  /** One journal transaction + ONE durable publication after conflict review.
+   * No automatic overwrite of edited rows, silent formula rebinding, or
+   * acknowledgement reuse across revisions. A conflicted result carries
+   * the untouched draft's review details to the consumer. */
+  applyParameterDraft(draft:SessionParameterDraft):
+    | Extract<SessionEditResult,{kind:'refused'}>
+    | (Extract<SessionEditResult,{kind:'committed'}> &
+        Readonly<{parameterReview:SessionParameterDraftReview}>);
   /** Compute real solver/profile admission without publishing history or requesting native work. */
   previewEdit(edit:(history:UndoHistory)=>SessionEdit):SessionEditPreviewResult;
   /** Discard only the matching current gesture, without editing or native work. */
