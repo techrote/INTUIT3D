@@ -45,6 +45,10 @@ export function runCutRecipeCopy(){
   // bounds of both already-authored guard and backer. Native geometric
   // intersection and precise placement remain separate provider gates.
   const port=polygon('port',[[70,5],[83,5],[83,15],[70,15]]);
+  const finish=polygon('finish',[[27,7],[39,7],[39,15],[27,15]]);
+  const finishProfile=discovery.discoverPlateProfiles(finish);
+  assert.equal(finishProfile.status,'ready');
+  assert.equal(finishProfile.candidates.length,1);
   const discovered=discovery.discoverPlateProfiles(port);
   assert.equal(discovered.status,'ready');
   assert.equal(discovered.candidates.length,1);
@@ -53,10 +57,17 @@ export function runCutRecipeCopy(){
     feature:{id:'sketch.port',kind:'sketch',dependsOn:[],writeTargets:[],
       payload:{sketch:port}},
   }],history.document.revision);
+  history=runtime.commit(history,[{
+    eventId:'author.sketch.finish',type:'feature.create',
+    feature:{id:'sketch.finish',kind:'sketch',dependsOn:[],writeTargets:[],
+      payload:{sketch:finish}},
+  }],history.document.revision);
   history=append(history,'cut.guard.relief','sketch.relief',
     candidates['sketch.relief'],'extrude.guard',{kind:'blind',depthMm:3});
   history=append(history,'cut.guard.port','sketch.port',
     discovered.candidates[0].id,'cut.guard.relief',{kind:'through_all'});
+  history=append(history,'cut.guard.finish','sketch.finish',
+    finishProfile.candidates[0].id,'cut.guard.port',{kind:'blind',depthMm:1});
   const before=history;
   const selection={format:CUT_RECIPE_COPY_FORMAT,version:1,
     expectedProjectId:before.document.projectId,
@@ -69,6 +80,11 @@ export function runCutRecipeCopy(){
   assert.deepEqual(inventory.sourceCuts.map(c=>c.extent),[
     {kind:'blind',depthMm:3},{kind:'through_all'}]);
   assert.deepEqual(inventory.targetWriterOrder,['extrude.backer']);
+  assert.deepEqual(inventory.sourceWriterOrder,[
+    'extrude.guard','cut.guard.relief','cut.guard.port','cut.guard.finish']);
+  const suffix=inspectCutRecipeCopy(before,{...selection,
+    sourceCutFeatureIds:['cut.guard.port','cut.guard.finish']},services);
+  assert.equal(suffix.sourceCuts.length,2);
   const request={...selection,expectedSourceCuts:inventory.sourceCuts,
     newCutFeatureIds:['cut.backer.relief.copy','cut.backer.port.copy'],
     eventIds:['copy.backer.relief','copy.backer.port']};
@@ -80,6 +96,7 @@ export function runCutRecipeCopy(){
     {...request,targetBodyId:'body.shim'},
     {...request,targetAfterBodyWriterId:'cut.guard.port'},
     {...request,sourceCutFeatureIds:['cut.guard.port','cut.guard.relief']},
+    {...request,sourceCutFeatureIds:['cut.guard.relief','cut.guard.finish']},
     {...request,sourceCutFeatureIds:['cut.guard.relief']},
     {...request,expectedSourceCuts:[...inventory.sourceCuts].reverse()},
     {...request,newCutFeatureIds:['cut.backer.relief.copy','cut.backer.relief.copy']},
@@ -100,6 +117,8 @@ export function runCutRecipeCopy(){
   assert.deepEqual(copied.copiedCuts.map(c=>c.status),[
     'pending_exact_provider','blocked_dependency']);
   const after=copied.history;
+  assert.equal(feature(after,'cut.guard.finish').payload.depthMm,1);
+  assert.equal(feature(after,'cut.backer.finish'),undefined);
   assert.deepEqual(actions(before,after),[
     'preserve_candidate','rebuild','preserve_candidate']);
   for(const [src,dst] of [
@@ -149,6 +168,8 @@ export function runCutRecipeCopy(){
     guardThicknessMm:feature(final,'extrude.guard').payload.thicknessMm,
     independentShimThicknessMm:feature(final,'extrude.shim').payload.thicknessMm,
     negativeSelectionsRefused:badRequests.length,
+    sourceBlockNonTerminal:true,
+    sourceTailPreserved:feature(final,'cut.guard.finish')?.payload.depthMm===1,
     archiveUndoRedo:true,exactAuthority:false,nativeSTEP:'not_executed'};
 }
 if(process.argv[1]&&fileURLToPath(import.meta.url)===process.argv[1])

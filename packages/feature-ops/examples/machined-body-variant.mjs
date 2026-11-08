@@ -51,11 +51,13 @@ const selection=(h,prefix,sourceCuts,baseSketchId,baseProfileCandidateId)=>({
 export function runMachinedBodyVariant(){
   let {history,candidates}=makeAssembly();
   const originalVent=polygon('originalvent',[[72,5],[85,5],[85,14],[72,14]]);
+  const originalFinish=polygon('originalfinish',[[27,7],[39,7],[39,15],[27,15]]);
   const variantBase=polygon('variantbase',[[0,0],[95,0],[95,30],[0,30]]);
   const variantRelief=polygon('variantrelief',[[8,7],[22,7],[22,17],[8,17]]);
   const variantVent=polygon('variantvent',[[66,8],[80,8],[80,19],[66,19]]);
   for(const [id,sketch] of [
     ['sketch.original.vent',originalVent],
+    ['sketch.original.finish',originalFinish],
     ['sketch.variant.base',variantBase],
     ['sketch.variant.relief',variantRelief],
     ['sketch.variant.vent',variantVent]
@@ -64,11 +66,15 @@ export function runMachinedBodyVariant(){
     candidates['sketch.relief'],'extrude.guard',{kind:'blind',depthMm:3});
   history=addGuardCut(history,'cut.guard.vent','sketch.original.vent',
     candidate(originalVent),'cut.guard.relief',{kind:'through_all'});
+  history=addGuardCut(history,'cut.guard.finish','sketch.original.finish',
+    candidate(originalFinish),'cut.guard.vent',{kind:'blind',depthMm:1});
   const before=history,sourceCuts=['cut.guard.relief','cut.guard.vent'];
   const selected=selection(before,'variant.adapted',sourceCuts,
     'sketch.variant.base',candidate(variantBase));
   const preview=inspectMachinedBodyVariant(before,selected,services);
   assert.equal(preview.sourceCuts.length,2);
+  assert.deepEqual(preview.sourceWriterOrder,[
+    'extrude.guard','cut.guard.relief','cut.guard.vent','cut.guard.finish']);
   const targetCuts=[
     {sourceCutFeatureId:sourceCuts[0],sourceSketchId:'sketch.variant.relief',
       profileCandidateId:candidate(variantRelief),extent:{kind:'blind',depthMm:4}},
@@ -94,6 +100,7 @@ export function runMachinedBodyVariant(){
     {...request,newCutFeatureIds:['cut.variant.relief','extrude.variant.adapted']},
     {...request,cutEventIds:['make.variant.relief','make.variant.relief']},
     {...request,sourceCutFeatureIds:[...sourceCuts].reverse()},
+    {...request,sourceCutFeatureIds:['cut.guard.relief','cut.guard.finish']},
     {...request,expectedSourceCuts:[...preview.sourceCuts].reverse()},
     {...request,targetCuts:[...targetCuts].reverse()},
     {...request,targetCuts:[targetCuts[0],{...targetCuts[1],
@@ -111,6 +118,7 @@ export function runMachinedBodyVariant(){
   }
   const made=createMachinedBodyVariant(before,request,services);
   assert.equal(made.oneUndoFrame,true);
+  assert.equal(get(made.history,'cut.guard.finish').payload.depthMm,1);
   assert.equal(made.history.undoStack.length,before.undoStack.length+1);
   assert.equal(made.history.document.revision,before.document.revision+3);
   assert.equal(made.sourceSketchSemantics,'explicit_per_cut_source_selection');
@@ -172,6 +180,8 @@ export function runMachinedBodyVariant(){
     machiningStatuses:made.copiedCuts.map(x=>x.status),
     atomicBodyAndTwoCuts:made.oneUndoFrame,
     negativeSelectionsRefused:invalid.length,
+    sourceBlockNonTerminal:true,
+    sourceTailPreserved:get(final,'cut.guard.finish')?.payload.depthMm===1,
     undoRedoAndArchive:true,
     independentVariantSketchInvalidation:true,
     unchangedShimDepthMm:3,guardAfterRetrospectiveDepthMm:14,

@@ -75,14 +75,18 @@ function prepare(history,request,services,fields) {
       targetChain.eligibleAfterWriterId !== terminal)
     fail('source or target body has no unique selected terminal');
   const writers=sourceChain.bodyWriterIds;
-  if (!same(writers.slice(-ids.length),ids) ||
-      writers.length <= ids.length ||
-      targetChain.bodyWriterIds.includes(ids[0]))
-    fail('source selection must be the dependency-ordered terminal cut suffix');
+  // A selected contiguous source block is portable even when later source
+  // cuts exist: their history and body dependencies are not changed. Each
+  // copied cut receives a NEW predecessor on the explicitly targeted body.
+  const first=writers.indexOf(ids[0]);
+  if(first<1||first+ids.length>writers.length||
+     !same(writers.slice(first,first+ids.length),ids)||
+     targetChain.bodyWriterIds.includes(ids[0]))
+    fail('source selection must be a contiguous ordered cut block after its base writer');
   const byId=new Map(s.model.featuresOf(doc).map(f=>[f.id,f]));
   const before=s.runtime.inspect(history), cache=new Map();
   const sourceCuts=ids.map((cutFeatureId,i)=>{
-    const f=byId.get(cutFeatureId), previous=writers[writers.length-ids.length+i-1];
+    const f=byId.get(cutFeatureId), previous=writers[first+i-1];
     if (f?.kind !== 'cut' || !same(f.writeTargets,[sourceBodyId]) ||
         f.payload?.targetBodyId !== sourceBodyId ||
         f.payload?.units !== 'mm' || f.payload?.frame !== 'local_xy' ||
@@ -152,7 +156,7 @@ export function inspectCutRecipeCopy(history,request,services) {
     exactAuthority:false,independentInteroperability:false};
 }
 /**
- * Copy an ordered source suffix onto an explicitly selected different body.
+ * Copy a contiguous source machining block to a different explicit body.
  * Stage each append on a disposable journal to use INTENT's per-cut preview;
  * only after all previews pass commit the same events against original history
  * in ONE RUNTIME transaction. A bad second cut cannot partially persist.
