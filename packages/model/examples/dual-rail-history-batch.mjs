@@ -17,7 +17,7 @@ import * as featureops from '@intuit3d/feature-ops';
 import { createWorkflowRuntime } from '@intuit3d/workflow-runtime';
 import {
   FEATURE_HISTORY_BATCH_FORMAT, previewFeatureHistoryBatch,
-  commitUndoableFeatureHistoryBatch,
+  commitUndoableFeatureHistoryBatch, recoverFeatureHistoryBatchSelection,
 } from '@intuit3d/model/feature-history-batch';
 import {
   BODY_REBUILD_MANIFEST_FORMAT, planBodyRebuildManifest,
@@ -85,12 +85,14 @@ export function runDualRailHistoryBatch() {
     patch:{payload:{...find(history.document,'extrude.rail.gauge').payload,
       thicknessMm:4}},
   }],history.document.revision);
-  const before=history.document;
-  const oldFrames=history.undoStack.length;
+  // Capture two selected historical edits, then continue real authoring.
+  // The inspector must recover the selection from the canonical old journal,
+  // rather than discard it or silently transfer an old source fence/consent.
+  const inspected=history.document;
   const request={
     format:FEATURE_HISTORY_BATCH_FORMAT,version:1,
-    expectedProjectId:before.projectId,expectedRevision:before.revision,
-    expectedDocumentFence:model.serializeProject(before),
+    expectedProjectId:inspected.projectId,expectedRevision:inspected.revision,
+    expectedDocumentFence:model.serializeProject(inspected),
     admission:'require_ready',confirmUnresolved:false,
     selections:[
       {kind:'scalars',targetEventId:'history.rail.base.compound',
@@ -99,10 +101,22 @@ export function runDualRailHistoryBatch() {
         eventId:'compensate.rail.cover.payload',selectedFields:['payload']},
     ],
   };
-  const preview=previewFeatureHistoryBatch(before,request);
+  history=runtime.commit(history,[{
+    type:'feature.edit',eventId:'history.rail.gauge.after.selection',
+    featureId:'extrude.rail.gauge',
+    patch:{payload:{...find(history.document,'extrude.rail.gauge').payload,
+      thicknessMm:5}},
+  }],history.document.revision);
+  const before=history.document;
+  const oldFrames=history.undoStack.length;
+  const recovered=recoverFeatureHistoryBatchSelection(before,request);
+  assert.equal(recovered.status,'ready');
+  assert.equal(recovered.appendedEventCount,1);
+  assert.deepEqual(recovered.newlyInvalidatedBodyIds,[]);
+  const preview=recovered.preview;
   assert.deepEqual(preview.invalidatedBodyIds,
     ['body.rail.base','body.rail.cover']);
-  history=commitUndoableFeatureHistoryBatch(history,request);
+  history=commitUndoableFeatureHistoryBatch(history,recovered.candidateRequest);
   const singleUndoFrame=history.undoStack.length===oldFrames+1 &&
     history.undoStack[history.undoStack.length-1].length===2;
   assert.equal(singleUndoFrame,true);
@@ -113,7 +127,7 @@ export function runDualRailHistoryBatch() {
     oldCover);
   assert.deepEqual(find(history.document,'extrude.rail.base').dependsOn,
     ['sketch.rail.base','sketch.rail.gauge']);
-  assert.equal(find(history.document,'extrude.rail.gauge').payload.thicknessMm,4);
+  assert.equal(find(history.document,'extrude.rail.gauge').payload.thicknessMm,5);
   const manifest=planBodyRebuildManifest(before,history.document,{
     format:BODY_REBUILD_MANIFEST_FORMAT,version:1,
     expectedProjectId:before.projectId,
@@ -130,10 +144,11 @@ export function runDualRailHistoryBatch() {
   history=runtime.redo(history,['redo.rail.base','redo.rail.cover']);
   assert.equal(find(history.document,'extrude.rail.base').payload.thicknessMm,oldBase);
   assert.equal(find(history.document,'extrude.rail.cover').payload.thicknessMm,oldCover);
-  assert.equal(find(history.document,'extrude.rail.gauge').payload.thicknessMm,4);
+  assert.equal(find(history.document,'extrude.rail.gauge').payload.thicknessMm,5);
   return {
     format:'intuit3d.feature-history-batch-example',
     bodyActions,singleUndoFrame,archiveUndoRedo:true,
+    recoveredSelectionAfterRuntimeEdit:true,
     preservedLaterDatum:true,preservedGauge:true,
     requiresNativeRebuild:preview.requiresNativeRebuild,
     exactGeometryAuthority:false,nativeSTEP:'not_executed',
