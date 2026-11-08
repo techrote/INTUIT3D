@@ -287,3 +287,174 @@ export function commitUndoableBodyCutRelocate(
   const staged = previewBodyCutRelocate(history.document, request);
   return commitUndoableTransaction(history, staged.events, request.expectedRevision);
 }
+
+/**
+ * @intuit3d/model/body-cut-relocate-destinations/v1
+ *
+ * Paged, read-only destination discovery for a cut selected in a body history.
+ * A chronological feature list is NOT the dependency execution order, and
+ * moving a cut past a selected datum edge can invalidate an independent
+ * authoring reference even when the projected DAG is otherwise acyclic.
+ * Reuse the actual relocation preview as the sole semantic admission check.
+ *
+ * Consumers must send fresh event IDs through previewBodyCutRelocate and then
+ * commitUndoableBodyCutRelocate against the exact revision reported here.
+ */
+export const BODY_CUT_DESTINATIONS_FORMAT =
+  'intuit3d.body-cut-relocate-destinations' as const;
+export const BODY_CUT_DESTINATIONS_VERSION = 1 as const;
+
+export interface BodyCutDestinationsRequest {
+  readonly format: typeof BODY_CUT_DESTINATIONS_FORMAT;
+  readonly version: typeof BODY_CUT_DESTINATIONS_VERSION;
+  readonly expectedProjectId: string;
+  readonly expectedRevision: number;
+  readonly targetBodyId: string;
+  readonly cutFeatureId: string;
+  /** Zero-based offset in actual body dependency order, excluding the selected cut. */
+  readonly offset: number;
+  /** At most 16 destinations per call to bound synchronous planning work. */
+  readonly limit: number;
+}
+
+export interface BodyCutDestination {
+  readonly afterBodyWriterId: string;
+  /** 'available' is semantic-only, never a native geometry validation. */
+  readonly eligibility: 'available' | 'blocked' | 'current';
+  /** Full proposed order, including blocked proposals; not a committed order. */
+  readonly proposedWriterOrder: readonly string[];
+  /** Number of fresh journal IDs needed if available (0 otherwise). */
+  readonly requiredEventIds: number;
+  readonly rewiredWriterIds: readonly string[];
+  readonly invalidatedBodyIds: readonly string[];
+  /** Exact rejection diagnostic from the authoritative preview, not guessed UI logic. */
+  readonly diagnostic: string | null;
+}
+
+export interface BodyCutDestinationsInventory {
+  readonly format: typeof BODY_CUT_DESTINATIONS_FORMAT;
+  readonly version: typeof BODY_CUT_DESTINATIONS_VERSION;
+  readonly projectId: string;
+  readonly revision: number;
+  readonly targetBodyId: string;
+  readonly cutFeatureId: string;
+  readonly writerOrderBefore: readonly string[];
+  readonly totalDestinations: number;
+  readonly offset: number;
+  readonly nextOffset: number | null;
+  readonly destinations: readonly BodyCutDestination[];
+  readonly authoredTimelineChanged: false;
+  readonly exactGeometryAuthority: false;
+  readonly requiresNativeRebuildForAvailableMoves: true;
+}
+
+/**
+ * Inspect at most sixteen positions in dependency order, never journal order.
+ * A blocked option preserves the precise reason for the user's repair UI;
+ * this function neither edits a document nor invents a provider observation.
+ * For longer histories, follow nextOffset with the SAME expected revision.
+ */
+export function inspectBodyCutRelocateDestinations(
+  input: ProjectDocument, request: BodyCutDestinationsRequest,
+): BodyCutDestinationsInventory {
+  const doc = parseProject(input);
+  if (!plain(request) || !exact(request, [
+    'format','version','expectedProjectId','expectedRevision','targetBodyId',
+    'cutFeatureId','offset','limit',
+  ]) || request.format !== BODY_CUT_DESTINATIONS_FORMAT ||
+      request.version !== BODY_CUT_DESTINATIONS_VERSION) {
+    fail('unsupported destination inventory request');
+  }
+  validId(request.expectedProjectId, 'project ID');
+  validId(request.targetBodyId, 'body ID');
+  validId(request.cutFeatureId, 'cut ID');
+  if (request.expectedProjectId !== doc.projectId ||
+      request.expectedRevision !== doc.revision) {
+    throw new ProjectRevisionError('body cut destinations: stale project or revision');
+  }
+  if (!Number.isSafeInteger(request.offset) || request.offset < 0 ||
+      !Number.isSafeInteger(request.limit) ||
+      request.limit < 1 || request.limit > 16) {
+    fail('inventory offset must be nonnegative and limit must be 1-16');
+  }
+
+  const chain = writerChain(doc, request.targetBodyId);
+  const moving = chain.find((feature) => feature.id === request.cutFeatureId);
+  if (!moving || moving.kind !== 'cut') {
+    fail('selected cut must be an active writer of the requested body');
+  }
+  const before = chain.map((feature) => feature.id);
+  const possible = before.filter((writerId) => writerId !== moving.id);
+  if (request.offset >= possible.length) fail('inventory offset out of range');
+
+  const previous = new Map<string, string>();
+  for (let i = 1; i < before.length; i++) {
+    previous.set(before[i]!, before[i - 1]!);
+  }
+  const used = new Set(doc.journal.map((event) => event.eventId));
+  let probe = 0;
+  const freshProbeId = (): string => {
+    let candidate: string;
+    do {
+      candidate = 'intuit.relocation.inventory.probe.' + probe++;
+    } while (used.has(candidate));
+    used.add(candidate);
+    return candidate;
+  };
+
+  const choices = possible.slice(request.offset, request.offset + request.limit);
+  const destinations: BodyCutDestination[] = choices.map((afterBodyWriterId) => {
+    const proposed = before.filter((writerId) => writerId !== moving.id);
+    const at = proposed.indexOf(afterBodyWriterId);
+    proposed.splice(at + 1, 0, moving.id);
+    if (proposed.every((writerId, i) => writerId === before[i])) {
+      return {
+        afterBodyWriterId, eligibility:'current', proposedWriterOrder:proposed,
+        requiredEventIds:0, rewiredWriterIds:[], invalidatedBodyIds:[],
+        diagnostic:null,
+      };
+    }
+    let count = 0;
+    for (let i = 1; i < proposed.length; i++) {
+      if (previous.get(proposed[i]!) !== proposed[i - 1]) count++;
+    }
+    if (count < 2 || count > 3) {
+      // This cannot happen with a unique linear writer chain.
+      fail('cannot determine an atomic relocation event count');
+    }
+
+    try {
+      const admitted = previewBodyCutRelocate(doc, {
+        format:BODY_CUT_RELOCATE_FORMAT,version:BODY_CUT_RELOCATE_VERSION,
+        expectedProjectId:doc.projectId,expectedRevision:doc.revision,
+        targetBodyId:request.targetBodyId,cutFeatureId:request.cutFeatureId,
+        afterBodyWriterId,eventIds:Array.from({length:count},freshProbeId),
+      });
+      return {
+        afterBodyWriterId, eligibility:'available',
+        proposedWriterOrder:admitted.writerOrderAfter,
+        requiredEventIds:admitted.events.length,
+        rewiredWriterIds:admitted.rewiredWriterIds,
+        invalidatedBodyIds:admitted.invalidatedBodyIds,
+        diagnostic:null,
+      };
+    } catch (error) {
+      if (!(error instanceof ProjectFormatError)) throw error;
+      return {
+        afterBodyWriterId, eligibility:'blocked', proposedWriterOrder:proposed,
+        requiredEventIds:0,rewiredWriterIds:[],invalidatedBodyIds:[],
+        diagnostic:error.message,
+      };
+    }
+  });
+  const end = request.offset + destinations.length;
+  return {
+    format:BODY_CUT_DESTINATIONS_FORMAT,version:BODY_CUT_DESTINATIONS_VERSION,
+    projectId:doc.projectId,revision:doc.revision,
+    targetBodyId:request.targetBodyId,cutFeatureId:request.cutFeatureId,
+    writerOrderBefore:before,totalDestinations:possible.length,
+    offset:request.offset,nextOffset:end < possible.length ? end : null,
+    destinations,authoredTimelineChanged:false,exactGeometryAuthority:false,
+    requiresNativeRebuildForAvailableMoves:true,
+  };
+}
