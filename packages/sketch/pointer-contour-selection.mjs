@@ -5,7 +5,7 @@
  * explicitly discovered/admitted semantic contours can be selected. Ambiguous
  * edges and voids never become material; native/STEP truth is not asserted.
  */
-import {createSketch,serializeSketch} from './index.mjs';
+import {createSketch,serializeSketch,solveSketch} from './index.mjs';
 import {discoverPlateProfiles} from './profile-discovery.mjs';
 import {proposeSelectedPlateProfile,admitSelectedPlateProfile} from './selected-profile.mjs';
 
@@ -70,9 +70,15 @@ function regionHit(region,point,clearanceMm){
 export function inspectPointerSelectableContours(source){
   const doc=createSketch(source),stamp=serializeSketch(doc);
   const discovery=discoverPlateProfiles(doc);
-  if(discovery.status!=='ready'&&discovery.status!=='ambiguous')
+  if(discovery.status!=='ready'&&discovery.status!=='ambiguous'){
+    // Discovery enforces solver budgets before attempting its own solve.
+    // Re-solve only already-admitted solver-sized invalid sources to give
+    // WORKBENCH genuine DOF/conflict witnesses, not an invented message.
+    const sourceSolve=(discovery.status==='source_unsolved'||
+      discovery.status==='numerical_failure')?solveSketch(doc):null;
     return refused(stamp,'source_not_profile_ready',discovery.reason,
-      discovery.sourceStatus);
+      discovery.sourceStatus,sourceSolve?.diagnostics??[]);
+  }
   const candidates=[],blocked=[];
   // A loop entirely inside another is geometrically overlapping material
   // even if none of the containing loop's segments enters the inner bbox.
