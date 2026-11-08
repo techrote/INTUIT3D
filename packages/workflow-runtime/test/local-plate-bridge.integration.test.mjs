@@ -229,3 +229,143 @@ test('authenticated provider pairing refuses experimental fallback before starti
     assert.equal(nativeCalls,before+1);
   });
 });
+
+
+test('trusted native host deadline releases a hung provider without publishing a late STEP',async()=>{
+  // This is a deliberately non-cooperative native TEST DOUBLE. It models a
+  // child that ignores cancellation; it does not qualify pinned OCCT geometry.
+  const current=plateProject();
+  let release,started,firstSignal,calls=0;
+  const gate=new Promise(resolve=>{release=resolve;});
+  const entered=new Promise(resolve=>{started=resolve;});
+  const provider=async(request,options)=>{
+    calls++;
+    if(calls===1) {
+      firstSignal=options.signal;
+      started();
+      await gate;
+      return {kind:'unresolved',code:'late_ignored_cancellation'};
+    }
+    return fakeProvider(request,options);
+  };
+  const host=await startLocalPlateBridge({
+    runtime,model,plateContract,runExperimentalPlate:provider,timeoutMs:100,
+  });
+  const evaluate=id=>evaluateLocalPlate({
+    url:host.url,token:host.token,runtime,
+    readCurrentHistory:()=>current,cutFeatureId:'cut',requestId:id,
+    exportStep:true,
+  });
+  const bounded=(promise)=>Promise.race([promise,new Promise((_,reject)=>
+    setTimeout(()=>reject(Error('local native host failed to recover')),1800))]);
+  try {
+    const pending=evaluate('host.hung.old');
+    await entered;
+    const timedOut=await bounded(pending);
+    assert.equal(timedOut.kind,'unresolved');
+    assert.equal(timedOut.code,'timeout',JSON.stringify(timedOut));
+    assert.equal(firstSignal.aborted,true,
+      'the host watchdog must signal the original native provider');
+    const recovered=await bounded(evaluate('host.recovered.new'));
+    assert.equal(recovered.kind,'experimental_plate_evaluated',JSON.stringify(recovered));
+    assert.deepEqual(Buffer.from(recovered.step.bytes),STEP);
+    assert.equal(calls,2,'second evaluation must not be blocked by the hung first provider');
+    release();
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.deepEqual(Buffer.from(recovered.step.bytes),STEP,
+      'late abandoned worker must not replace the recovered STEP');
+  } finally {
+    release();
+    await host.close();
+  }
+});
+
+test('disconnected browser cannot permanently occupy trusted native slot',async()=>{
+  const current=plateProject();
+  let started,release,calls=0,abandonedSignal;
+  const entered=new Promise(resolve=>{started=resolve;});
+  const gate=new Promise(resolve=>{release=resolve;});
+  const provider=async(request,options)=>{
+    calls++;
+    if(calls===1){
+      abandonedSignal=options.signal;
+      started();
+      await gate; // Ignores aborted signal until explicitly released.
+      return {kind:'unresolved',code:'late_disconnected'};
+    }
+    return fakeProvider(request,options);
+  };
+  const host=await startLocalPlateBridge({
+    runtime,model,plateContract,runExperimentalPlate:provider,timeoutMs:5000,
+  });
+  const opts=(id,signal)=>({
+    url:host.url,token:host.token,runtime,readCurrentHistory:()=>current,
+    cutFeatureId:'cut',requestId:id,exportStep:true,...(signal?{signal}:{}),
+  });
+  try {
+    const controller=new AbortController();
+    const pending=evaluateLocalPlate(opts('host.disconnected.old',controller.signal));
+    await entered;
+    controller.abort();
+    const cancelled=await pending;
+    assert.equal(cancelled.kind,'unresolved');
+    assert.equal(cancelled.code,'cancelled');
+    let recovered;
+    // Socket-close admission can race the replacement connection; the
+    // consumer's bounded busy retry accommodates that legitimate handoff.
+    for(let i=0;i<12;i++) {
+      recovered=await Promise.race([
+        evaluateLocalPlate(opts('host.disconnected.recover.'+i)),
+        new Promise((_,reject)=>setTimeout(()=>
+          reject(Error('disconnected native slot remained blocked')),1500)),
+      ]);
+      if(recovered.code!=='busy') break;
+      await new Promise(resolve=>setTimeout(resolve,20));
+    }
+    assert.equal(abandonedSignal.aborted,true);
+    assert.equal(recovered.kind,'experimental_plate_evaluated',JSON.stringify(recovered));
+    assert.equal(calls,2);
+    assert.deepEqual(Buffer.from(recovered.step.bytes),STEP);
+  } finally {
+    release();
+    await host.close();
+  }
+});
+
+
+test('closing a bridge with an uncooperative worker terminates the HTTP attempt promptly',async()=>{
+  // The provider intentionally ignores abort, as a wedged child could.
+  const current=plateProject();
+  let started,release,providerSignal,closing=false;
+  const entered=new Promise(resolve=>{started=resolve;});
+  const gate=new Promise(resolve=>{release=resolve;});
+  const provider=async(_request,options)=>{
+    providerSignal=options.signal;
+    started();
+    await gate;
+    return {kind:'unresolved',code:'late_shutdown'};
+  };
+  const host=await startLocalPlateBridge({
+    runtime,model,plateContract,runExperimentalPlate:provider,timeoutMs:5000,
+  });
+  const bounded=(promise)=>Promise.race([promise,new Promise((_,reject)=>
+    setTimeout(()=>reject(Error('bridge shutdown blocked on uncooperative provider')),1500))]);
+  try {
+    const pending=evaluateLocalPlate({
+      url:host.url,token:host.token,runtime,
+      readCurrentHistory:()=>current,cutFeatureId:'cut',
+      requestId:'host.shutdown.old',exportStep:true,
+    });
+    await entered;
+    closing=true;
+    const finished=host.close();
+    const response=await bounded(pending);
+    assert.equal(response.kind,'unresolved');
+    assert.equal(response.code,'host_shutdown');
+    await bounded(finished);
+    assert.equal(providerSignal.aborted,true);
+  } finally {
+    release();
+    if(!closing) await host.close();
+  }
+});

@@ -163,19 +163,51 @@ export async function startLocalPlateBridge({
       return;
     }
     const abort=new AbortController();
-    const onClose=()=>{if (!res.writableEnded) abort.abort();};
+    // Close/cancel must free the native slot even if a trusted worker ignores
+    // AbortSignal. A late reply is fenced from HTTP/STEP publication.
+    let notifyDisconnect;
+    const disconnected=new Promise(resolve=>{notifyDisconnect=resolve;});
+    const onClose=()=>{
+      if(!res.writableEnded) {
+        abort.abort();
+        notifyDisconnect({kind:'disconnected'});
+      }
+    };
     res.once('close',onClose);
-    active=abort;
-    let folder=null;
+    active={abort,shutdown() {
+      // A graceful bridge shutdown must not wait for a stuck native adapter.
+      abort.abort();
+      safeWrite(503,unresolved('host_shutdown','local native bridge is closing'),sameOrigin);
+      notifyDisconnect({kind:'disconnected'});
+    }};
+    let folder=null,watchdog=null;
     try {
       const archiveSha256=sha256(Buffer.from(raw.archive,'utf8'));
       if (raw.exportStep) folder=await mkdtemp(join(tmpdir(),'intuit3d-bridge-'));
       const output=folder?join(folder,'plate.step'):undefined;
-      const result=await workflow.evaluate(history,{
+      const nativeTask=workflow.evaluate(history,{
         cutFeatureId:raw.cutFeatureId,requestId:raw.requestId,
         readCurrentHistory:()=>history,exportStep:raw.exportStep,
         ...(output?{stepOutput:output}:{}),timeoutMs,signal:abort.signal,
       });
+      // The worker's own timeout is not a sufficient host deadline: a hung
+      // adapter can ignore both its timeout and AbortSignal. Promise.race
+      // attaches rejection handlers to late results, while the attempt's
+      // unique temporary STEP directory prevents stale artifact substitution.
+      const deadline=new Promise(resolve=>{
+        watchdog=setTimeout(()=>{
+          abort.abort();
+          resolve({kind:'native_deadline_exceeded'});
+        },timeoutMs);
+      });
+      const outcome=await Promise.race([nativeTask,deadline,disconnected]);
+      if(outcome?.kind==='disconnected') return;
+      if(outcome?.kind==='native_deadline_exceeded') {
+        safeWrite(504,unresolved('timeout',
+          'trusted native evaluation exceeded '+timeoutMs+' ms host deadline'),sameOrigin);
+        return;
+      }
+      const result=outcome;
       if (abort.signal.aborted) return;
       let step=null, publicResult=result;
       if (result.kind==='experimental_plate_evaluated' && raw.exportStep) {
@@ -209,6 +241,7 @@ export async function startLocalPlateBridge({
     } catch {
       safeWrite(500,unresolved('host_failure','local native bridge failed'),sameOrigin);
     } finally {
+      clearTimeout(watchdog);
       active=null;
       res.off('close',onClose);
       if (folder) await rm(folder,{recursive:true,force:true});
@@ -224,7 +257,7 @@ export async function startLocalPlateBridge({
   return Object.freeze({
     url:'http://127.0.0.1:'+boundPort, token,
     async close() {
-      active?.abort();
+      active?.shutdown();
       await new Promise((resolve,reject)=>server.close(err=>err?reject(err):resolve()));
     },
   });
