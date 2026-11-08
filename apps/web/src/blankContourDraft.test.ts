@@ -150,7 +150,8 @@ test('drawn vertex moves by selected semantic handle with one journal event, und
   // Candidate identity is recomputed from the authoritative successor, never
   // from the stale pre-undo selection.
   assert.equal(modelCurrentSketch(redone).lines.length,4);
-  assert.equal(modelCurrentSketch(redone).points.find(p=>p.id===chosen.pointId)?.x,135);
+  assert.deepEqual(inspectModelClosedContour(redone,selectionAfterUndoRedo)?.handles[2].position,{x:135,y:90},
+    'SKETCH solver constraints, not potentially stale source points, own the recovered coordinates');
   assert.equal(selectionAfterUndoRedo.sourceSignature,sketch.serializeSketch(modelCurrentSketch(redone)));
   const stale=dragModelClosedContourVertex(current,session,moved.selection,
     chosen.handleId,{x:140,y:90},sourceArchive);
