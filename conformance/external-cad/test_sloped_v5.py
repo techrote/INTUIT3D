@@ -19,7 +19,7 @@ from sloped_v5 import (
 
 def synthetic_receipt(kind: str, thickness: int) -> str:
     lines = []
-    for name, x, y, floor in ray_oracle(thickness):
+    for name, x, y, floor in ray_oracle(kind, thickness):
         count, low, high = ((0, -1., -1.) if floor is None else (2, 0., floor))
         lines.append(
             f"SLOPE_RAY {name} {x:.9f} {y:.9f} {count} {low:.9f} {high:.9f}"
@@ -80,8 +80,8 @@ class SlopedSourceOnlyTests(unittest.TestCase):
         self.assertAlmostEqual(expected_volume("direct", 12), 66820.3805509808)
         self.assertEqual(expected_volume("authored", 8), 44404)
         self.assertEqual(expected_volume("authored", 12), 66756)
-        self.assertEqual(len(ray_oracle(8)), 34)
-        self.assertEqual(len(set(name for name, *_ in ray_oracle(8))), 34)
+        self.assertEqual(len(ray_oracle("direct", 8)), 38)
+        self.assertEqual(len(set(name for name, *_ in ray_oracle("direct", 8))), 38)
         self.assertGreater(expected_surface("direct", 12),
                            expected_surface("direct", 8))
         with self.assertRaises(Rejected):
@@ -93,7 +93,7 @@ class SlopedSourceOnlyTests(unittest.TestCase):
                 with self.subTest(kind=kind, thickness=thickness):
                     receipt = parse_receipt(synthetic_receipt(kind, thickness),
                                             kind, thickness)
-                    self.assertEqual(receipt["rayCount"], 34)
+                    self.assertEqual(receipt["rayCount"], 38)
                     self.assertAlmostEqual(receipt["measuredVolumeMm3"],
                                            expected_volume(kind, thickness))
                     self.assertAlmostEqual(receipt["measuredSurfaceAreaMm2"],
@@ -115,6 +115,25 @@ class SlopedSourceOnlyTests(unittest.TestCase):
             with self.subTest(old=old):
                 with self.assertRaises(Rejected):
                     parse_receipt(base.replace(old, new), "direct", 8)
+
+    def test_wrong_circular_vs_square_pocket_rejected_at_diagonal(self):
+        # Circle and square share cardinal wall occupancy, but their four
+        # 4x4 diagonal samples are physically different.
+        direct = synthetic_receipt("direct", 8)
+        authored = synthetic_receipt("authored", 8)
+        self.assertIn("SLOPE_RAY pocket.diagonal.ne 19.000000000 54.000000000 "
+                      "2 0.000000000 8.000000000", direct)
+        self.assertIn("SLOPE_RAY pocket.diagonal.ne 19.000000000 54.000000000 "
+                      "2 0.000000000 5.000000000", authored)
+        disguised = authored.replace("kind=authored", "kind=direct")
+        vol = expected_volume("direct", 8)
+        area = expected_surface("direct", 8)
+        disguised = disguised.replace(
+            "expected_mm3=44404.000000000", f"expected_mm3={vol:.9f}"
+        ).replace("expected_surface_mm2=" + f"{expected_surface('authored', 8):.9f}",
+                  "expected_surface_mm2=" + f"{area:.9f}")
+        with self.assertRaisesRegex(Rejected, "floor"):
+            parse_receipt(disguised, "direct", 8)
 
     def test_nonfinite_warning_wrong_mass_area_and_duplicate_rejected(self):
         base = synthetic_receipt("authored", 12)
