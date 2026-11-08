@@ -1,0 +1,21 @@
+# Direct edge offset for a pointer-drawn closed contour
+
+**Public typed SKETCH API:** \`@intuit3d/sketch/contour-edge-offset/v1\`
+
+Mechanical workflow: **Draw outline → select true semantic edge → drag the whole edge normal to itself → model-backed edit → undo → save/reopen → reselect the original edge.** On a 120 × 80 mm rectangular panel, dragging the right edge outward 20 mm creates a 140 × 80 mm solved panel by changing the *two actual dimensional constraint pairs*, not by inventing a new preview polygon. An arbitrary 3–12 vertex directly authored contour is supported within its admitted validity envelope.
+
+## Versioned operations
+
+- \`inspectClosedContourEdges(doc,selection,contourId)\`: inventories the exact source-owned edge IDs, endpoints, midpoints and winding-aware **outward** unit normals. It refuses unsolved, stale, or unadmitted contours.
+- \`planClosedContourEdgeOffset(doc,selection,{kind:'offset-closed-contour-edge',version:1,sourceSignature,contourId,edgeId,offsetMm})\`: a signed outward offset; negative is inward. It returns \`kind:'planned_edge_offset'\`, the original \`editCommand\`, SKETCH's complete \`acceptance\`, actual applied offset and residual.
+- \`dragClosedContourEdge(doc,selection,{version:1,sourceSignature,contourId,edgeId,start:{x,y},target:{x,y}})\`: projects the **sketch-local displacement from pointer-down to current pointer** onto the selected outward edge normal, preserving off-edge grab offsets and preventing a first-frame jump. Tangential error and the applied pointer position are reported, never silently represented as freehand geometry.
+
+\`editCommand\` is precisely \`closed-contour-authoring/v1\`'s existing \`edit-closed-contour-vertices\` command. No new RUNTIME transaction type is required. A consumer submits that command and **the complete unmodified \`acceptance\`** as \`operation:'edit'\` to the existing \`sketch.contour/v1\` RUNTIME journal, with the canonical archive/project/revision fence and explicit source selection. RUNTIME replays and compares its own SKETCH result before committing one undoable event. Any mismatched or stale acceptance is refused. After commit, render only the RUNTIME-returned successor sketch, selection and semantic edge IDs; never persist the pointer planner as an alternative authority.
+
+**Pointer contract:** Capture the original pointer-down position from the same source-fenced edge pick; keep it immutable throughout the drag. Supply each current pointer coordinate as \`target\`. Returned projected/applied pointer positions preserve the original grab offset, while \`from\`/\`to\` remain actual edge geometry. The unmodified structural edit command is still replayed by RUNTIME.\n\nA subtle datum guarantee: vertex 0 is the polygon's fixed origin, so translating it normally translates all dependent vertices. When the offset edge touches that origin, the planner explicitly re-authors every other original vertex as stationary, ensuring **only the selected edge's endpoints move**. For any other edge only its two endpoint dimensions change. Holes with genuine reference constraints to moved vertices can follow under existing \`movedDependentHoles\` admission. Crossing, nesting, touch, collapsed/degenerate edges, hole exits, unselected geometry movement, stale source/selection and under-/overconstrained source are not repaired or silently tolerated; SKETCH refuses without mutation.
+
+## Qualifications and limits
+
+Run \`node --test packages/sketch/test/contour-edge-offset.test.mjs\`, \`node packages/sketch/examples/contour-edge-offset.mjs\`, \`npm run typecheck --workspace @intuit3d/sketch\`, \`npm run test --workspace @intuit3d/sketch\` and \`npm run check:workspace\`. Regression fixtures cover CW/CCW winding, both datum-adjacent and non-datum edges, signed distance, pointer projection, hole association, independent contour collision, dimension/replay identity and deliberate negative source conditions.
+
+**Analytic sketch intent only.** This API does not certify that a novel offset polygon has been processed into a pinned OCCT 8.0.1 C++ B-rep or passed independent STEP verification. WORKBENCH's real graphical edge gesture and #74 user-operated native/external qualification are separate integration gates.
