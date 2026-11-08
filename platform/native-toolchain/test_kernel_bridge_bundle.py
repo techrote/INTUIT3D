@@ -22,6 +22,7 @@ class KernelBridgeClosureTests(unittest.TestCase):
         self.native = self.kernel / "native"
         (self.native / "occt8").mkdir(parents=True)
         self.target = self.root / "offline" / "native"
+        self.target.parent.mkdir(parents=True)
         self.write("plate_envelope.py", "PLATE=1\n")
         self.write("protocol.py", "IDENTITY=7\n")
         self.write("process_supervision.py", "SUPERVISE=True\n")
