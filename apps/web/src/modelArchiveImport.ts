@@ -8,9 +8,14 @@ import type { ModelSession } from './runtimeSession';
 export const MAX_MODEL_ARCHIVE_BYTES = 4 * 1024 * 1024;
 export const MODEL_IMPORT_TIMEOUT_MS = 20_000;
 
+export type ModelImportStage = 'reading' | 'validating' | 'transferring';
+
 type ValidationReply =
+  | { kind: 'progress'; stage: ModelImportStage }
   | { kind: 'accepted'; history: ModelSession }
   | { kind: 'refused'; reason: string };
+
+type WorkerRequest = { source: string } | { file: File };
 
 type ImportWorker = Pick<Worker, 'postMessage' | 'terminate'> & {
   onmessage: ((event: MessageEvent<ValidationReply>) => void) | null;
@@ -21,6 +26,7 @@ type ImportWorker = Pick<Worker, 'postMessage' | 'terminate'> & {
 export interface ModelImportOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+  onProgress?: (stage: ModelImportStage) => void;
   /** Only used by deterministic tests. Production always creates a module worker. */
   createWorker?: () => ImportWorker;
 }
@@ -44,6 +50,28 @@ export function validateModelArchiveInWorker(
 ): Promise<ModelSession> {
   if (typeof source !== 'string' || new Blob([source]).size > MAX_MODEL_ARCHIVE_BYTES)
     return Promise.reject(Error('Model archive exceeds 4 MiB workbench limit.'));
+  return validateImportRequest({ source }, options);
+}
+
+/**
+ * Pass the selected File itself to the disposable Worker. Firefox's main/UI
+ * thread must never read or decode its text before the replacement modal.
+ * File metadata is bounded here, then independently verified in the Worker.
+ * A File is structured-cloned as a Blob; the 4 MiB JSON is not duplicated
+ * into a main-thread string or synchronously parsed by the app.
+ */
+export function validateModelFileInWorker(
+  file: File, options: ModelImportOptions = {},
+): Promise<ModelSession> {
+  if (!file || !Number.isSafeInteger(file.size) ||
+      file.size > MAX_MODEL_ARCHIVE_BYTES)
+    return Promise.reject(Error('Model archive exceeds 4 MiB workbench limit.'));
+  return validateImportRequest({ file }, options);
+}
+
+function validateImportRequest(
+  request: WorkerRequest, options: ModelImportOptions,
+): Promise<ModelSession> {
   if (options.signal?.aborted)
     return Promise.reject(Error('Archive import cancelled.'));
   const timeoutMs = options.timeoutMs ?? MODEL_IMPORT_TIMEOUT_MS;
@@ -80,7 +108,11 @@ export function validateModelArchiveInWorker(
     if (options.signal?.aborted) { onAbort(); return; }
     worker.onmessage = event => {
       const reply = event.data;
-      if (reply?.kind === 'refused' && typeof reply.reason === 'string') {
+      if (reply?.kind === 'progress' &&
+          ['reading','validating','transferring'].includes(reply.stage)) {
+        try { options.onProgress?.(reply.stage); }
+        catch { /* Presentation callbacks cannot invalidate the worker result. */ }
+      } else if (reply?.kind === 'refused' && typeof reply.reason === 'string') {
         finish(Error(reply.reason));
       } else if (reply?.kind === 'accepted' &&
           reply.history?.format === 'intuit3d.undo-history' &&
@@ -101,7 +133,7 @@ export function validateModelArchiveInWorker(
       finish(Error('Archive validation result could not be transferred.'));
     timer = setTimeout(() =>
       finish(Error('Archive validation timed out; current model is unchanged.')), timeoutMs);
-    try { worker.postMessage({ source }); }
+    try { worker.postMessage(request); }
     catch { finish(Error('Archive could not be sent for isolated validation.')); }
   });
 }
