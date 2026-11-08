@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import {isAbsolute,join} from 'node:path';
-import {mkdtempSync,readFileSync,writeFileSync,renameSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,renameSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {createHash} from 'node:crypto';
 import * as model from '@intuit3d/model';
@@ -24,14 +24,21 @@ import {startLocalPinnedOcct8Bridge} from '../local-plate-bridge.mjs';
 import {createLivePlateSession} from '../live-plate-session.mjs';
 import {createPersistentHistorySource} from '../persistent-history-source.mjs';
 import {verifyCurrentLivePlateStep} from '../nonocct-step-probe.mjs';
+import {blankNativePlateHistory,authorBlankNativePlate,widenBlankNativePlate}
+  from './blank-contour-physical-fixture.mjs';
 
 const worker=process.env.INTUIT3D_OCCT8_WORKER;
 if(!worker||!isAbsolute(worker))
   throw new Error('INTUIT3D_OCCT8_WORKER must be an actual absolute pinned C++ worker executable');
 const runtime=createWorkflowRuntime({model,transactions,bindings,dimensions,archive,sketch,discovery});
 const create=(eventId,feature)=>({eventId,type:'feature.create',feature});
-let current=transactions.startUndoHistory(model.newProject('runtime.occt8.real.plate.cut'));
-current=runtime.commit(current,[
+const runFromEmpty=process.argv.includes('--from-empty');
+const evidenceDir=process.env.INTUIT3D_NATIVE_EVIDENCE_DIR;
+if(evidenceDir && (!runFromEmpty || !isAbsolute(evidenceDir)))
+  throw new Error('INTUIT3D_NATIVE_EVIDENCE_DIR requires --from-empty and an absolute directory');
+let current=runFromEmpty?blankNativePlateHistory(runtime):
+  transactions.startUndoHistory(model.newProject('runtime.occt8.real.plate.cut'));
+if(!runFromEmpty)current=runtime.commit(current,[
   create('create.sketch',{id:'sketch.plate',kind:'sketch',dependsOn:[],writeTargets:[],
     payload:{sketch:sketch.plateSketchFixture()}}),
   create('create.plate',{id:'plate',kind:'extrude',dependsOn:['sketch.plate'],
@@ -46,6 +53,8 @@ const independentRequired=process.argv.includes('--require-independent');
 // source-pinned runtime_material_oracle. An opt-in additive run qualifies the
 // new atomic two-command edit + disk-backed session recovery.
 const runAtomicBatch=process.argv.includes('--atomic-batch');
+if(runFromEmpty && runAtomicBatch)
+  throw new Error('Use --from-empty or --atomic-batch, not both in one physical demo');
 const probeExecutable=process.env.INTUIT3D_ANVIL_STEP_PROBE;
 const expectedProbeSha256=process.env.INTUIT3D_ANVIL_PROBE_SHA256;
 if(independentRequired && (!probeExecutable||!expectedProbeSha256))
@@ -88,6 +97,22 @@ const options=(id)=>({
   url:host.url,token:host.token,requestId:id,exportStep:true,
   deadlineMs:120000,requiredBackend:'OCCT-cxx-8.0.1',
 });
+function preserveFromEmptyEvidence(label,capture){
+  if(!evidenceDir)return null;
+  assert.ok(capture,'no current pinned STEP custody to preserve');
+  const archiveSha256=createHash('sha256').update(capture.archive).digest('hex');
+  const stepSha256=createHash('sha256').update(capture.stepBytes).digest('hex');
+  assert.equal(archiveSha256,capture.receipt.source.archiveSha256);
+  assert.equal(stepSha256,capture.receipt.step.sha256);
+  mkdirSync(evidenceDir,{recursive:true});
+  // Refuse accidental overwrite of an earlier qualification: every run
+  // should be tied to its own evidence directory and immutable source.
+  writeFileSync(join(evidenceDir,label+'.i3d-model.json'),capture.archive,{flag:'wx'});
+  writeFileSync(join(evidenceDir,label+'.receipt.json'),
+    JSON.stringify(capture.receipt,null,2),{flag:'wx'});
+  writeFileSync(join(evidenceDir,label+'.step'),capture.stepBytes,{flag:'wx'});
+  return {label,archiveSha256,stepSha256,revision:capture.receipt.source.revision};
+}
 async function record(out,stage,activeSession=session){
   assert.equal(out.kind,'experimental_plate_evaluated',JSON.stringify(out));
   assert.equal(out.result.backend,'OCCT-cxx-8.0.1');
@@ -115,6 +140,85 @@ async function record(out,stage,activeSession=session){
     ...(sample?{externalCadSample:sample}:{})});
 }
 try{
+  if(runFromEmpty){
+    // This is a real from-zero structural SKETCH authoring transaction, not
+    // a pointer/browser test or a seeded rectangle masquerading as user input.
+    const authored=authorBlankNativePlate(session,runtime);
+    assert.notEqual(session.save(),authored.blankArchive);
+    assert.equal(session.currentStep(),null);
+    await record(await session.evaluate(options('pinned.drawn.original')),
+      'authored-from-empty-120mm');
+    assert.deepEqual(results[0].holes,[{x:-25,y:0,radius:6},{x:25,y:0,radius:6}]);
+    const firstCapture=session.captureCurrentStepEvidence();
+    assert.ok(firstCapture,'pinned STEP must have an archive-bound receipt');
+    assert.equal(firstCapture.archive,authored.sourceArchive);
+    assert.equal(createHash('sha256').update(firstCapture.archive).digest('hex'),
+      firstCapture.receipt.source.archiveSha256);
+    assert.equal(createHash('sha256').update(firstCapture.stepBytes).digest('hex'),
+      firstCapture.receipt.step.sha256);
+    assert.equal(firstCapture.receipt.producer.backend,'OCCT-cxx-8.0.1');
+    const originalEvidence=preserveFromEmptyEvidence('01-original',firstCapture);
+    const updated=widenBlankNativePlate(session,runtime,authored.contourReceipt);
+    assert.equal(updated.kind,'committed');
+    assert.equal(session.currentStep(),null,
+      'structural contour edit immediately revokes old STEP');
+    await record(await session.evaluate(options('pinned.drawn.widened')),
+      'retrospective-150mm-rebuild');
+    assert.deepEqual(results[1].holes,[{x:-40,y:0,radius:6},{x:10,y:0,radius:6}]);
+    assert.ok(results[1].volumeMm3>results[0].volumeMm3);
+    assert.notEqual(results[1].sha256,results[0].sha256);
+    const editedEvidence=preserveFromEmptyEvidence('02-edited',
+      session.captureCurrentStepEvidence());
+    const editedArchive=session.save();
+    const unchanged=session.applyCommand({
+      kind:'model.undo',projectId:session.refresh().projectId,
+      expectedRevision:session.refresh().revision-1,
+      eventIds:['native.drawn.stale.revision'],
+    });
+    assert.equal(unchanged.kind,'refused',
+      'a stale command must not mutate authored geometry');
+    assert.equal(session.save(),editedArchive);
+    const undo=session.applyCommand({
+      kind:'model.undo',projectId:session.refresh().projectId,
+      expectedRevision:session.refresh().revision,
+      eventIds:['native.drawn.undo.width'],
+    });
+    assert.equal(undo.kind,'committed');
+    assert.equal(session.currentStep(),null);
+    await record(await session.evaluate(options('pinned.drawn.undo')),
+      'undo-width-rebuild');
+    assert.deepEqual(results[2].holes,results[0].holes);
+    assert.ok(Math.abs(results[2].volumeMm3-results[0].volumeMm3)<1e-7);
+    const reopened=await session.reopenAndEvaluate(editedArchive,{
+      ...options('pinned.drawn.reopen'),confirmReplacement:true,
+    });
+    assert.equal(reopened.kind,'submitted');
+    await record(reopened.evaluation,'reopened-edited-contour');
+    assert.deepEqual(results[3].holes,results[1].holes);
+    assert.ok(Math.abs(results[3].volumeMm3-results[1].volumeMm3)<1e-7);
+    assert.equal(session.save(),editedArchive);
+    assert.equal(results.length,4);
+    if(evidenceDir)writeFileSync(join(evidenceDir,'manifest.json'),
+      JSON.stringify({format:'intuit3d.runtime.from-empty-native-evidence',
+        version:1,originalEvidence,editedEvidence,
+        browserPointerExecuted:false,
+        nativeWorkerExecuted:true,externalCadProbeExecuted:runIndependent,
+        results},null,2),{flag:'wx'});
+    console.log(JSON.stringify({
+      kind:runIndependent
+        ?'RUNTIME_REAL_PINNED_OCCT8_FROM_EMPTY_EXTERNAL_SAMPLE_EXECUTED'
+        :'RUNTIME_REAL_PINNED_OCCT8_FROM_EMPTY_LOCAL_BRIDGE_PASS',
+      source:'authoritative empty INTENT/SKETCH contour, two bores, exact archive journal',
+      browserPointerExecuted:false,
+      nativeWorkerExecuted:true,
+      externalCadProbeExecuted:runIndependent,
+      ...(evidenceDir?{evidenceDir}:{}),
+      exactAuthority:false,independentInteroperability:false,
+      originalArchiveSha256:createHash('sha256').update(authored.sourceArchive).digest('hex'),
+      editedArchiveSha256:createHash('sha256').update(editedArchive).digest('hex'),
+      results,
+    },null,2));
+  } else {
   const initialArchive=session.save();
   await record(await session.evaluate(options('pinned.real.8mm')),'plate-8mm-two-bores');
   const changed=await session.applyEditAndEvaluate(h=>{
@@ -238,6 +342,7 @@ try{
       persistentHistoryWrites:archiveWrites,
     }:{}),
     results},null,2));
+  }
 }finally{
   session.cancel();
   try {await host.close();}

@@ -10,6 +10,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 import * as model from '@intuit3d/model';
 import * as transactions from '@intuit3d/model/transactions';
 import * as bindings from '@intuit3d/model/dimension-bindings';
@@ -22,6 +24,8 @@ import {createClosedContour,editClosedContourVertices} from '@intuit3d/sketch/cl
 import {createWorkflowRuntime,CLOSED_CONTOUR_TRANSACTION_FORMAT} from '../index.mjs';
 import {createLivePlateSession} from '../live-plate-session.mjs';
 import {createExperimentalPlateWorkflow} from '../experimental-plate.mjs';
+import {blankNativePlateHistory,authorBlankNativePlate,widenBlankNativePlate}
+  from './blank-contour-physical-fixture.mjs';
 
 const runtime=createWorkflowRuntime({model,transactions,bindings,dimensions,archive,sketch,discovery});
 const event=(eventId,feature)=>({eventId,type:'feature.create',feature});
@@ -269,4 +273,44 @@ test('from-empty pinned handoff rejects a late positive result after equal-revis
   assert.equal(source.session.currentStep(),null);
   source.session.cancel();
   replacement.session.cancel();
+});
+
+test('physical native fixture starts at zero sketch entities, then produces two journal-fenced native requests',async()=>{
+  const source=live(blankNativePlateHistory(runtime,'runtime.blank.physical.fixture'));
+  const blank=source.session.save();
+  const authored=authorBlankNativePlate(source.session,runtime);
+  assert.equal(authored.blankArchive,blank);
+  assert.notEqual(authored.sourceArchive,blank);
+  assert.equal(source.session.refresh().stepAvailability,'unavailable');
+  const calls=[],evaluate=evaluator(source,calls);
+  const first=await evaluate('fixture.native.first');
+  assert.equal(first.kind,'experimental_plate_evaluated',JSON.stringify(first));
+  assert.deepEqual(first.intendedPlate,{width:120,depth:80,thickness:8,
+    holes:[{x:-25,y:0,radius:6},{x:25,y:0,radius:6}]});
+  const edit=widenBlankNativePlate(source.session,runtime,authored.contourReceipt);
+  assert.equal(edit.kind,'committed');
+  assert.equal(source.session.refresh().stepAvailability,'unavailable');
+  const next=await evaluate('fixture.native.second');
+  assert.equal(next.kind,'experimental_plate_evaluated',JSON.stringify(next));
+  assert.deepEqual(next.intendedPlate,{width:150,depth:80,thickness:8,
+    holes:[{x:-40,y:0,radius:6},{x:10,y:0,radius:6}]});
+  assert.notEqual(first.artifact.sha256,next.artifact.sha256);
+  assert.equal(calls.length,2);
+  const saved=source.session.save();
+  const undo=send(source.session,'model.undo',{eventIds:['fixture.undo.width']});
+  assert.equal(undo.kind,'committed');
+  assert.equal(source.session.currentStep(),null);
+  assert.equal(runtime.inspect(source.history).features.find(x=>x.featureId==='plate')
+    .profile.outer.reduce((m,p)=>Math.max(m,p.x),0),120);
+  assert.equal(source.session.reopen(saved,{confirmReplacement:true}).kind,'opened');
+  assert.equal(source.session.currentStep(),null);
+  assert.equal(source.session.save(),saved);
+  source.session.cancel();
+});
+
+test('optional genuine C++ from-empty runner is syntactically valid even when no worker is installed',()=>{
+  // The full physical command is intentionally NOT run in ordinary CI.
+  execFileSync(process.execPath,['--check',fileURLToPath(
+    new URL('./local-occt8-bridge.native-demo.mjs',import.meta.url))],
+  {timeout:15000,stdio:'pipe'});
 });
