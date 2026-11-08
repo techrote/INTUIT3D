@@ -6,7 +6,7 @@
  * A completed drag delegates to the existing solved, atomic dimension/centre
  * editors. Ambiguous colocated handles always require explicit user choice.
  */
-import {createSketch,serializeSketch} from './index.mjs';
+import {createSketch,serializeSketch,solveSketch} from './index.mjs';
 import {inspectSelectedProfileDimensions,dragSelectedProfileDimension}
   from './selected-profile-dimensions.mjs';
 import {inspectSelectedProfileHandles,moveSelectedProfileHoleCenter}
@@ -31,9 +31,18 @@ const refuse=(signature,reason,detail=null,sourceStatus=null,diagnostics=[])=>
 export function inspectPointerEditableHandles(source,selection){
   const doc=createSketch(source),stamp=serializeSketch(doc);
   const dimensions=inspectSelectedProfileDimensions(doc,selection);
-  if(dimensions.kind!=='selected_profile_dimensions')
+  if(dimensions.kind!=='selected_profile_dimensions'){
+    // Older selected-profile contracts preserve a solver status but not always
+    // its DOF/conflict witnesses. Recover those only for admitted-size
+    // unsolved sources; do not solve a sketch refused for an entity budget.
+    const status=dimensions.sourceStatus??null;
+    const unsolved=status==='underconstrained'||status==='conflicted'||
+      status==='numerical_failure';
+    const diagnostics=unsolved?solveSketch(doc).diagnostics:
+      (dimensions.diagnostics??[]);
     return refuse(stamp,dimensions.reason,dimensions.detail??null,
-      dimensions.sourceStatus??null,dimensions.diagnostics??[]);
+      status,diagnostics);
+  }
   const centers=inspectSelectedProfileHandles(doc,selection);
   if(centers.kind!=='selected_profile_handles')
     return refuse(stamp,centers.reason,centers.detail??null,
