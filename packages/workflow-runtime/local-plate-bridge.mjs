@@ -73,7 +73,7 @@ export async function startLocalPlateBridge({
     ? 'occt8_part21_plate_subset' : 'same_engine_step_readback';
   const token=randomBytes(32).toString('hex');
   let active=null;
-  let boundPort=0;
+  let boundPort=0,closing=false,closePromise=null;
   const server=createServer(async (req,res)=>{
     const safeWrite=(code,obj,allowOrigin=false)=>{
       if (res.destroyed || res.writableEnded) return;
@@ -85,6 +85,10 @@ export async function startLocalPlateBridge({
       res.end(JSON.stringify(obj));
     };
     const sameOrigin=req.headers.origin === origin;
+    if (closing) {
+      safeWrite(503,unresolved('host_shutdown','local native bridge is closing'),sameOrigin);
+      return;
+    }
     // Reject DNS rebinding, remote origins and unsupported methods before
     // reading untrusted request bytes. An absent Origin is only for CLI clients
     // presenting the same per-host secret.
@@ -129,8 +133,11 @@ export async function startLocalPlateBridge({
     if (active) {
       safeWrite(409,unresolved('busy','another native evaluation is in progress'),sameOrigin); return;
     }
-    let raw;
+    let raw,bodyTimer=null;
     try {
+      // The native deadline begins after admission. Bound the upload itself:
+      // a partial authenticated POST must not hold a connection indefinitely.
+      bodyTimer=setTimeout(()=>req.destroy(),Math.max(5000,Math.min(timeoutMs,25000)));
       const chunks=[]; let total=0;
       for await (const chunk of req) {
         total+=chunk.length;
@@ -145,6 +152,8 @@ export async function startLocalPlateBridge({
     } catch {
       safeWrite(400,unresolved('invalid_request','invalid bounded evaluation envelope'),sameOrigin);
       return;
+    } finally {
+      clearTimeout(bodyTimer);
     }
     let history, report;
     try {
@@ -158,6 +167,10 @@ export async function startLocalPlateBridge({
     }
     // A second request can finish its body while a first is still parsing.
     // Close that admission race before acquiring the single native slot.
+    if (closing) {
+      safeWrite(503,unresolved('host_shutdown','local native bridge is closing'),sameOrigin);
+      return;
+    }
     if (active) {
       safeWrite(409,unresolved('busy','another native evaluation is in progress'),sameOrigin);
       return;
@@ -256,9 +269,24 @@ export async function startLocalPlateBridge({
   boundPort=server.address().port;
   return Object.freeze({
     url:'http://127.0.0.1:'+boundPort, token,
-    async close() {
+    close() {
+      if (closePromise) return closePromise;
+      closing=true;
       active?.shutdown();
-      await new Promise((resolve,reject)=>server.close(err=>err?reject(err):resolve()));
+      // server.close() cannot finish while a browser leaves a request body
+      // unfinished: that request has not reached the active native slot.
+      // Give in-flight replies (notably 503) a short grace period, then close
+      // unfinished HTTP/1 connections. Repeat close calls share one promise.
+      closePromise=new Promise((resolve,reject)=>{
+        const force=setTimeout(()=>server.closeAllConnections(),300);
+        force.unref();
+        server.close(err=>{
+          clearTimeout(force);
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+      return closePromise;
     },
   });
 }
