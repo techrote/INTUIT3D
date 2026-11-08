@@ -53,7 +53,7 @@ def _needed_toolkits(obj: Path) -> set[str]:
     """Read real ELF DT_NEEDED records, never infer runtime closure from a name list."""
     proc = subprocess.run(["readelf", "-W", "-d", str(obj)],
                           capture_output=True, text=True, timeout=30, check=False)
-    require(proc.returncode == 0 and "(NEEDED)" in proc.stdout,
+    require(proc.returncode == 0 and "Dynamic section" in proc.stdout,
             f"cannot inspect physical ELF dependencies: {obj}: {proc.stderr[-300:]}")
     return {name for name in NEEDED_NAME.findall(proc.stdout)
             if TOOLKIT_NAME.fullmatch(name)}
@@ -94,8 +94,9 @@ def copy_toolkits(prefix: Path, target: Path, worker: Path | None = None) -> Non
         resolved = original.resolve(strict=True)
         require(resolved.is_relative_to(source_root),
                 f"toolkit points outside pinned prefix: {original}")
-        require(resolved in (p for p in candidates.values()
-                             if not p.is_symlink()),
+        require(resolved.name in candidates
+                and not candidates[resolved.name].is_symlink()
+                and candidates[resolved.name].resolve(strict=True) == resolved,
                 f"unlisted physical toolkit in SONAME chain: {name}")
         selected.add(resolved)
         if resolved not in inspected:
