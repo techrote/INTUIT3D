@@ -1095,7 +1095,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                   ?previous.includes(id)?previous.filter(item=>item!==id):[...previous,id]
                   :[id]);
               }} selectedHoleId={displayedActiveHole} selectedHoleIds={layoutIds}
-              onDimensionEdit={circleDrawing.phase==='idle'&&!profilePickMode?dragDimension:undefined}
+              onDimensionEdit={legacySketch&&circleDrawing.phase==='idle'&&!profilePickMode?dragDimension:undefined}
               onThicknessEdit={plateActive?(mm)=>update('thickness',mm):undefined}
               circleDrawing={circleDrawing}
               onCirclePick={circleDrawing.phase!=='idle'?pickCirclePoint:undefined}
