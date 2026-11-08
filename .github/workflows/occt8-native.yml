@@ -21,7 +21,12 @@ on:
         description: "Platform ref; pinned accepted build source unless explicitly supplied"
         type: string
         required: true
-        default: d5c2c3f54466479bf5bec3b04c3b66ed00549ec4
+        default: b015036b565cae422f285a9bacfbb04b771f6918
+      runtime_ref:
+        description: "Immutable RUNTIME+Workbench consumer source; use exact admitted main SHA"
+        type: string
+        required: true
+        default: 324be5870efe4887c2656c992a71aa99f19375a3
       kernel_ref:
         description: "Kernel source ref, immutable KERNEL-001 extraction #158 by default"
         type: string
@@ -40,12 +45,14 @@ jobs:
     name: Ubuntu / real pinned OCCT C++ and STEP
     runs-on: ubuntu-24.04
     timeout-minutes: 115
+    env:
+      PYTHONDONTWRITEBYTECODE: '1' # prevent runtime-derived .pyc/__pycache__ from entering immutable archive
     steps:
       - name: Checkout pinned accepted Platform source
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ inputs.platform_ref || 'd5c2c3f54466479bf5bec3b04c3b66ed00549ec4' }}
+          ref: ${{ (github.event_name == 'pull_request' && 'b015036b565cae422f285a9bacfbb04b771f6918') || (github.event_name == 'push' && github.sha) || inputs.platform_ref || 'b015036b565cae422f285a9bacfbb04b771f6918' }}
           path: platform-repo
           persist-credentials: false
       - name: Checkout KERNEL-001 #158 immutable source (or explicit KERNEL-002 ref)
@@ -55,10 +62,19 @@ jobs:
           ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && '7e893a6deb4ca7d88c7bd92ec42fb828cfc87a5c') || inputs.kernel_ref || 'c46d02847468b69a106fbfa6fad715c10399ff2c' }}
           path: kernel-repo
           persist-credentials: false
-      - name: Install native build dependencies
+      # The runtime checkout is immutable and intentionally separate from the
+      # C++ producer: its real seven-stage consumer must not use the PR merge ref.
+      - name: Checkout source-matched accepted RUNTIME consumer
+        uses: actions/checkout@v4
+        with:
+          repository: techrote/INTUIT3D
+          ref: ${{ (github.event_name == 'push' && github.sha) || (github.event_name == 'pull_request' && '324be5870efe4887c2656c992a71aa99f19375a3') || inputs.runtime_ref || '324be5870efe4887c2656c992a71aa99f19375a3' }}
+          path: runtime-repo
+          persist-credentials: false
+      - name: Install native packaging, ELF audit and build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends git cmake ninja-build g++ python3
+          sudo apt-get install -y --no-install-recommends git cmake ninja-build g++ python3 patchelf binutils
       - name: Run source and qualification contract regressions (not geometry acceptance)
         run: |
           python3 -m unittest discover -s platform-repo/platform/native-toolchain \
@@ -71,6 +87,7 @@ jobs:
             echo "kernel_ref_requested=${{ inputs.kernel_ref }}"
             echo "platform=$(git -C platform-repo rev-parse HEAD)"
             echo "kernel=$(git -C kernel-repo rev-parse HEAD)"
+            echo "runtime=$(git -C runtime-repo rev-parse HEAD)"
             echo "host=$(uname -a)"
             g++ --version | head -n 1
             cmake --version | head -n 1
@@ -273,6 +290,82 @@ jobs:
             > "$output/worker-and-step-files.sha256"
           printf 'kernel_sha=%s\nworkflow_sha=%s\n' "$kernel" "$GITHUB_SHA" \
             > "$output/source-provenance.txt"
+      # The PLATFORM candidate can now deliver an actual relocated C++ worker,
+      # but older KERNEL-001 accepted-main pushes may still lack these new scripts.
+      # On this workflow PR both source components are mandatory: no silent skip.
+      - name: Require source-matched offline bundle and real RUNTIME consumer
+        id: delivery
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f platform-repo/platform/native-toolchain/bundle_offline.py && \
+             test -f platform-repo/platform/native-toolchain/qualify_runtime_delivery.py && \
+             test -f runtime-repo/packages/workflow-runtime/test/local-occt8-bridge.native-demo.mjs; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            echo '::error::Exact-source PLATFORM offline/C++ RUNTIME acceptance tooling absent'
+            exit 1
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo 'Legacy accepted-main native plate gate: offline runtime delivery not available'
+          fi
+      - name: Install source-matched RUNTIME Node 22 dependencies
+        if: steps.delivery.outputs.available == 'true'
+        working-directory: runtime-repo
+        run: npm ci
+      - name: Package genuine OCCT 8.0.1 C++ worker and replay extracted four-case STEP
+        if: steps.delivery.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/intuit3d-native-work/offline-occt801"
+          evidence="$RUNNER_TEMP/intuit3d-native-evidence"
+          python3 platform-repo/platform/native-toolchain/bundle_offline.py \
+            --qualification "$evidence/qualification" \
+            --prefix "$RUNNER_TEMP/intuit3d-native-work/occt-prefix" \
+            --kernel-tree "$GITHUB_WORKSPACE/kernel-repo" \
+            --output "$output" \
+            --replay-evidence "$evidence/offline-extracted-fresh-steps" \
+            | tee "$evidence/offline-bundle-execution.json"
+          test -s "$output.tar.gz"
+          cp "$output.tar.gz" "$evidence/offline-occt801.tar.gz"
+          sha256sum "$evidence/offline-occt801.tar.gz" > "$evidence/offline-archive.sha256"
+          python3 - "$evidence/offline-bundle-execution.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as f: receipt=json.load(f)
+          assert receipt['status']=='OFFLINE_BUNDLE_PASS',receipt
+          assert receipt['extractedArchiveCppReplay']['status']=='OFFLINE_CXX_REPLAY_PASS',receipt
+          assert set(receipt['extractedArchiveCppReplay']['cases'])=={'8','12','edited8','restored8'},receipt
+          print('OFFLINE_BUNDLE_PASS / EXTRACTED_CXX_FOUR_STEP_PASS')
+          PY
+      - name: Install relocated archive and execute seven real INTENT/SKETCH/RUNTIME native STEP stages
+        if: steps.delivery.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/intuit3d-native-evidence"
+          archive="$RUNNER_TEMP/intuit3d-native-work/offline-occt801.tar.gz"
+          python3 platform-repo/platform/native-toolchain/qualify_runtime_delivery.py \
+            --archive "$archive" \
+            --archive-sha256 "$(sha256sum "$archive" | cut -d' ' -f1)" \
+            --kernel-sha "$(git -C kernel-repo rev-parse HEAD)" \
+            --platform-sha "$(git -C platform-repo rev-parse HEAD)" \
+            --runtime-tree "$GITHUB_WORKSPACE/runtime-repo" \
+            --runtime-sha "$(git -C runtime-repo rev-parse HEAD)" \
+            --destination "$RUNNER_TEMP/intuit3d-native-work/occt801-runtime-installed" \
+            2> "$evidence/runtime-delivery.stderr.log" \
+            | tee "$evidence/runtime-delivery.json"
+          python3 - "$evidence/runtime-delivery.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as f: receipt=json.load(f)
+          assert receipt['status']=='RUNTIME_PINNED_OCCT8_DELIVERY_PASS',receipt
+          assert receipt['nativeStepCount']==7,receipt
+          assert receipt['archiveAndRuntimeSourceMatched'] is True,receipt
+          assert set(receipt['nativeArchiveReplayCases'])=={'8','12','edited8','restored8'},receipt
+          assert receipt['independentCadInteroperability'] is False,receipt
+          assert receipt['windowsNativeQualified'] is False,receipt
+          print('RUNTIME_PINNED_OCCT8_DELIVERY_PASS / SEVEN_NATIVE_STEPS')
+          PY
       - name: Remove only huge intermediate build directory before artifact upload
         if: always()
         run: |
