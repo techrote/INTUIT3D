@@ -1122,7 +1122,8 @@ of an existing empty sketch feature, the full typed command is:
 
 ~~~js
 import {createClosedContour} from '@intuit3d/sketch/closed-contour-authoring/v1';
-import {serializeSketch} from '@intuit3d/sketch';
+import * as sketch from '@intuit3d/sketch';
+import * as model from '@intuit3d/model';
 import {CLOSED_CONTOUR_TRANSACTION_FORMAT} from '@intuit3d/workflow-runtime';
 // currentHistory and session are the EXISTING WORKBENCH authorities.
 const state=session.refresh();
@@ -1130,7 +1131,7 @@ const source=sketch.validateSketch(
   model.featuresOf(currentHistory.document)
     .find(f=>f.id==='sketch.plate').payload.sketch);
 const expectedArchive=session.save();
-const expectedSketchSignature=serializeSketch(source);
+const expectedSketchSignature=sketch.serializeSketch(source);
 const command={kind:'create-closed-contour',version:1,
   sourceSignature:expectedSketchSignature,contourId:'drawn.first',
   vertices:[{x:0,y:0},{x:120,y:0},{x:120,y:80},{x:0,y:80}]};
