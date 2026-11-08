@@ -610,6 +610,40 @@ export function createLivePlateSession({
         step,exactAuthority:false,independentInteroperability:false,
       });
     },
+    /**
+     * Capture the exact canonical archive, pinned native provenance and verified
+     * STEP bytes for an external CAD witness in ONE synchronous browser action.
+     * Never sample the archive in an unrelated React render or after an await.
+     * The receipt JSON deliberately excludes STEP bytes: independent STEP tools
+     * consume those as the separate, unchanged binary payload. This captures
+     * custody only; a real click, C++ source build and non-OCCT import still
+     * require independent evidence.
+     */
+    captureCurrentStepEvidence({requiredBackend='OCCT-cxx-8.0.1'}={}) {
+      const current=synchronize();
+      const receipt=session.currentStepReceipt({requiredBackend});
+      if(!receipt) return null;
+      // Even a caller-supplied, non-deterministic history reader may not mix
+      // this receipt with a different same-revision archive.
+      const after=synchronize();
+      if(after.archive!==current.archive||
+          receipt.source.projectId!==current.report.projectId||
+          receipt.source.revision!==current.report.revision)
+        return null;
+      const {filename,sha256,verification,bytes}=receipt.step;
+      const metadata=Object.freeze({
+        format:receipt.format,version:receipt.version,
+        source:receipt.source,producer:receipt.producer,
+        step:Object.freeze({filename,sha256,verification}),
+        exactAuthority:false,independentInteroperability:false,
+      });
+      return Object.freeze({
+        format:'intuit3d.current-step-evidence-capture',version:1,
+        archive:current.archive,receipt:metadata,
+        stepBytes:Uint8Array.from(bytes),
+        exactAuthority:false,independentInteroperability:false,
+      });
+    },
     /** Latest request wins, even if a cancelled provider ignores AbortSignal. */
     async evaluate({url,token,requestId,exportStep=true,signal,fetchImpl,
       deadlineMs=30000,requiredBackend}={}) {
