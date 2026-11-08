@@ -25,7 +25,17 @@ class OfflineBundleTests(unittest.TestCase):
             root = base / "source"
             (root / "native").mkdir(parents=True)
             (root / "bin").mkdir()
+            # The pinned bridge launches a separate Python Part 21 reader
+            # using sys.executable WITHOUT -B. Verify bytecode suppression
+            # propagates to child interpreters, not only the parent bridge.
             (root / "native/occt8_bridge.py").write_text(
+                "import subprocess, sys\n"
+                "from pathlib import Path\n"
+                "reader = Path(__file__).with_name('child_reader.py')\n"
+                "done = subprocess.run([sys.executable, str(reader)], "
+                "capture_output=True, text=True, check=True)\n"
+                "print(done.stdout.strip())\n")
+            (root / "native/child_reader.py").write_text(
                 "import local_helper\nprint(local_helper.answer)\n")
             (root / "native/local_helper.py").write_text("answer = 42\n")
             (root / "bin/intuit3d_occt8_plate").write_bytes(b"test-only worker fixture")
@@ -61,8 +71,12 @@ class OfflineBundleTests(unittest.TestCase):
                 self.assertEqual(completed.returncode, 0, completed.stderr)
 
             verify()
+            # A machine/user-level override must not hide missing propagation
+            # by the bundled launcher itself.
+            clean_env = os.environ.copy()
+            clean_env.pop("PYTHONDONTWRITEBYTECODE", None)
             launched = subprocess.run(
-                [str(extracted / "run.sh")], cwd=extracted,
+                [str(extracted / "run.sh")], cwd=extracted, env=clean_env,
                 capture_output=True, text=True, check=False)
             self.assertEqual(launched.returncode, 0, launched.stderr)
             self.assertEqual(launched.stdout.strip(), "42")
