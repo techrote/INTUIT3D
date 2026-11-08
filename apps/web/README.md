@@ -486,3 +486,25 @@ and private #177 archive acceptance remain unqualified.
 In **Solid** mode, switch to **TOP** or **ISO**. Click a visible circular opening in the actual WebGL canvas, rather than its thickness grip or a toolbar button. The selected hole ID appears at the upper left and in the model-backed inspector; Ctrl/Cmd-click adds another ID to the existing group. A pointer drag or wheel gesture remains camera navigation, not a model edit. **FRONT/RIGHT** do not infer occluded hole identities through the solid.
 
 The preview ray is intersected with the current top plane and matched only against existing solver-authored circular holes; it never creates triangle/face IDs or modifies the INTENT journal. Selection does not advance revision, invalidate or manufacture native STEP, nor recreate the WebGL context. Editing the chosen hole remains an authoritative sketch/inspector operation. For acceptance, the Chromium browser smoke uses a real CDP pointer click on the projected solved hole, verifies selection and unchanged revision/context, and ensures a stationary click does not misleadingly mark the camera as manually orbited. Firefox/Windows original archive #177 remains unqualified.
+
+
+## Contextual 3D-picked bore editing (source-owned)
+
+In **Solid** mode, choose **TOP** and click a visible circular through-hole
+in the real WebGL preview. Its stable SKETCH ID appears in the contextual
+**Selected bore** panel at the upper left, with solved X/Y centre and diameter.
+Enter new X and Y millimetre coordinates and click **Move centre** to make
+one bounded, solver-admitted, undoable sketch edit. **Apply Ø** likewise
+resizes the selected bore through RUNTIME/SKETCH. Enter confirms a field;
+Escape restores the current solved dimension without changing the model.
+A multi-selection or edge-anchored hole cannot be incorrectly edited as a
+single Cartesian circle; use the existing model-backed selection/edge panel.
+
+Reproduce: Solid → TOP → click holeA → change X 35→36 → Move centre →
+verify changed hole and revision, then Ctrl+Z → restored X 35 → change
+diameter 12→13 → Apply Ø → Ctrl+Z → 12 mm restored. Save/reopen the
+model archive and verify stable IDs. Neither the camera nor Three.js canvas
+is replaced by these edits; cached STEP bytes are revoked. This is a
+semantic sketch edit and tessellated preview, **not physical OCCT proof**.
+The original Windows Firefox private-archive import #177 remains an
+independent unqualified acceptance gate.

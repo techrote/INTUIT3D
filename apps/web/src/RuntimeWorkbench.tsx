@@ -8,6 +8,7 @@ import {
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
 import { SelectedEdgeHoleEditor } from './SelectedEdgeHoleEditor';
+import { SolidHoleQuickEdit } from './SolidHoleQuickEdit';
 import { removeModelEdgeHole } from './selectedEdgeHole';
 import { ParameterFormulaTable } from './ParameterFormulaTable';
 import type { SketchDimensionHandle } from './runtimeSketchHandles';
@@ -497,14 +498,15 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         :moveModelHoleCenter(previous,hole,x,y);
       if(result.kind==='refused'){
         setMessage(`Drag refused: ${result.candidateFeature.diagnostics.join('; ') || result.reason}`);
-        return;
+        return false;
       }
       acceptHistory(result.history);setActiveHole(hole);
       setLayoutSelected(isGroup?[...selectedIds]:[hole]);
       setMessage(isGroup
         ?`Moved ${selectedIds.length} selected hole centres together by (${x-source!.x}, ${y-source!.y}) mm in ONE undoable SKETCH transaction. Native STEP requires rebuild.`
         :`Moved ${hole} center to (${x}, ${y}) mm in one undoable sketch transaction; native STEP requires rebuild.`);
-    }catch(e){setMessage('Hole drag refused: '+String(e));}
+      return true;
+    }catch(e){setMessage('Hole drag refused: '+String(e));return false;}
   };
   const nudgeActiveHoles=(direction:string,fast:boolean)=>{
     if(!renderSketch||!displayedActiveHole||circleDrawing.phase!=='idle'||
@@ -540,11 +542,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       const result=editModelHole(liveHistory.current,hole,'diameter',diameterMm,'require_admissible');
       if(result.kind==='refused'){
         setMessage('Diameter resize refused by SKETCH: '+
-          (result.candidateFeature.diagnostics.join('; ')||result.reason));return;
+          (result.candidateFeature.diagnostics.join('; ')||result.reason));return false;
       }
       acceptHistory(result.history);setActiveHole(hole);
       setMessage(`Revision ${result.history.document.revision}: resized ${hole} circular cut to Ø${diameterMm} mm in one admitted RUNTIME/SKETCH transaction. Dependent plate/cut invalidated; old STEP revoked.`);
-    }catch(e){setMessage('Diameter resize refused: '+(e instanceof Error?e.message:String(e)));}
+      return true;
+    }catch(e){setMessage('Diameter resize refused: '+(e instanceof Error?e.message:String(e)));return false;}
   };
   const dragDimension=(id:SketchDimensionHandle,value:number)=>{
     try{
@@ -912,6 +915,27 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               circleDrawing={circleDrawing}
               onCirclePick={circleDrawing.phase!=='idle'?pickCirclePoint:undefined}/>:
             <div className="empty-overlay" data-testid="runtime-empty">Current dimensions cannot produce an admitted sketch profile. No previous mesh is represented as current.</div>}
+          {geom&&!renderSketch&&displayedActiveHole&&layoutIds.length===1&&
+            layoutIds[0]===displayedActiveHole&&
+            <SolidHoleQuickEdit
+              key={displayedActiveHole+':'+history.document.revision}
+              holeId={displayedActiveHole} hole={holes[displayedActiveHole]}
+              editable={modelHoleIsCartesian(history,displayedActiveHole)}
+              disabled={!!pendingImport||!!loadingFile}
+              onMove={(x,y)=>{
+                if(liveHistory.current.document.revision!==history.document.revision){
+                  setMessage('Selected hole edit refused: model revision advanced. Reinspect the current solved hole.');
+                  return false;
+                }
+                return dragHole(displayedActiveHole,x,y);
+              }}
+              onDiameter={diameter=>{
+                if(liveHistory.current.document.revision!==history.document.revision){
+                  setMessage('Selected bore edit refused: model revision advanced. Reinspect the current solved hole.');
+                  return false;
+                }
+                return dragHoleDiameter(displayedActiveHole,diameter);
+              }}/>}
           {geom&&<div className="runtime-mesh-caption" data-testid="runtime-boundary">
             {renderSketch?'Admitted 2D sketch':cutActive?'Cut-intent preview':'Uncut extrusion preview'} · {geom.profile.outer.length} outline vertices · {geom.profile.holes.length} displayed circular holes · {plateActive?geom.thickness+' mm extrude':'no solid yet'} · no Boolean proof
           </div>}
