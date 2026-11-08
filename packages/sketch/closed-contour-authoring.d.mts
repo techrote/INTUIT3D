@@ -41,7 +41,10 @@ export type ClosedContourAccepted={
   profile:SelectedAnalyticProfile;contourId:string;
   previousCandidateId:string|null;nextCandidateId:string;
   createdEntityIds:string[];changedConstraintIds:string[];
-  handles:ClosedContourHandle[];solverStatus:'solved';
+  handles:ClosedContourHandle[];
+  movedDependentHoles:Array<{holeId:string;centerPointId:string;
+    from:SketchLocalPoint;to:SketchLocalPoint}>;
+  solverStatus:'solved';
   degreesOfFreedom:number;diagnostics:SketchSolution['diagnostics'];
   previewOnly:true;nativeExact:false;exactBrepAvailable:false;
   independentStepQualified:false;

@@ -81,8 +81,44 @@ const finish=(before,next,contourId,count,oldTarget=null)=>{
   const afterPoints=new Map(after.solved.geometry.points.map(p=>[p.id,p]));
   const ownedVertices=new Set(oldTarget?Array.from({length:count},(_,i)=>
     ids(contourId,i).point):[]);
+  // An authored hole may follow its selected boundary reference. Admit only
+  // its proven, unchanged X/Y dimensional dependency chain; never exempt
+  // arbitrary points just because their IDs resemble contour-owned entities.
+  const permittedMoved=new Set(ownedVertices),movedDependentHoles=[];
+  const moved=id=>{
+    const a=beforePoints.get(id),b=afterPoints.get(id);
+    return !!a&&!!b&&(a.x!==b.x||a.y!==b.y);
+  };
+  if(oldTarget){
+    const holes=before.doc.circles.filter(c=>oldTarget.holeIds.includes(c.id));
+    const nextConstraints=new Map(after.doc.constraints.map(c=>[c.id,c]));
+    let added;
+    do{
+      added=false;
+      for(const hole of holes){
+        const center=hole.center;
+        if(!moved(center)||permittedMoved.has(center))continue;
+        const axes=['distanceX','distanceY'].map(kind=>
+          before.doc.constraints.filter(c=>c.kind===kind&&c.b===center));
+        if(axes.some(matches=>matches.length!==1))continue;
+        const pair=axes.flat();
+        // The gesture may edit contour dimensions, but it may not rewrite
+        // a dependent hole's authored references, offsets or radius.
+        if(pair.some(c=>JSON.stringify(nextConstraints.get(c.id))!==
+          JSON.stringify(c)))continue;
+        if(pair.some(c=>!beforePoints.has(c.a)||!afterPoints.has(c.a)))continue;
+        if(pair.some(c=>moved(c.a)&&!permittedMoved.has(c.a)))continue;
+        if(!pair.some(c=>moved(c.a)&&permittedMoved.has(c.a)))continue;
+        permittedMoved.add(center);
+        movedDependentHoles.push({holeId:hole.id,centerPointId:center,
+          from:{x:beforePoints.get(center).x,y:beforePoints.get(center).y},
+          to:{x:afterPoints.get(center).x,y:afterPoints.get(center).y}});
+        added=true;
+      }
+    }while(added);
+  }
   for(const [id,p] of beforePoints){
-    if(ownedVertices.has(id))continue;
+    if(permittedMoved.has(id))continue;
     const q=afterPoints.get(id);
     if(!q||p.x!==q.x||p.y!==q.y)
       return refuse(before.stamp,'unselected_geometry_would_move',id,
@@ -108,7 +144,7 @@ const finish=(before,next,contourId,count,oldTarget=null)=>{
       return refuse(before.stamp,'previous_profile_refused',
         accepted.reason,after.solved.status,after.solved.diagnostics);
   }
-  return {context:after,profile:selected,selection};
+  return {context:after,profile:selected,selection,movedDependentHoles};
 };
 const accepted=(before,result,contourId,changed,created=[])=>{
   const inspection=inspectClosedContour(result.context.doc,result.selection,contourId);
@@ -122,6 +158,7 @@ const accepted=(before,result,contourId,changed,created=[])=>{
       candidateFor(before.discovery,result.profile.lineIds)?.id??null,
     nextCandidateId:result.profile.candidateId,
     createdEntityIds:created,changedConstraintIds:changed,handles:inspection.handles,
+    movedDependentHoles:result.movedDependentHoles,
     solverStatus:result.context.solved.status,
     degreesOfFreedom:result.context.solved.degreesOfFreedom,
     diagnostics:result.context.solved.diagnostics,...flags};

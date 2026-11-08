@@ -17,3 +17,28 @@ This contract supplies analytic solved sketch intent only (\`previewOnly:true\`,
 
 Example: \`node packages/sketch/examples/closed-contour-authoring.mjs\`
 Tests: \`node --test packages/sketch/test/closed-contour-authoring.test.mjs\`
+
+## Associative hole centres during vertex editing
+
+A constrained, selected circular hole made with
+`@intuit3d/sketch/selected-profile-hole-authoring/v1` can be dimensioned
+relative to a newly authored polygon vertex, or to another selected hole
+centre. On a subsequent `dragClosedContourVertex` or
+`editClosedContourVertices`, the real solver carries this dependency through
+the edit. The accepted result's additive `movedDependentHoles[]` reports
+the semantic hole IDs, centre IDs, and previous/current millimetre coordinates.
+
+Only hole centres belonging to the selected contour and reached through an
+unchanged, unique pair of authored distanceX/distanceY reference constraints
+are admitted as moved dependents; chains are explicitly traversed. Unrelated
+dependent points and ambiguous/unconstrained hole-centre references remain
+blocked. The full resultant profile and circular clearance are re-admitted
+atomically. A hole contacting or escaping the boundary refuses the gesture
+without modifying the source. This is an analytic preview contract, **not**
+a newly qualified native pocket/cut or independent STEP feature.
+
+**Reproduce:** `node --test packages/sketch/test/closed-contour-authoring.test.mjs`
+and `node packages/sketch/examples/closed-contour-authoring.mjs`.
+WORKBENCH renders `movedDependentHoles[]` only after RUNTIME atomically
+journals the accepted replacement sketch and successor selection, with its
+own project/session revision fence; no cross-lane source changes here.

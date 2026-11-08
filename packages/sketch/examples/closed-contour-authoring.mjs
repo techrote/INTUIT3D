@@ -3,6 +3,7 @@ import {createSketch,parseSketch,serializeSketch,solveSketch} from '../index.mjs
 import {selectContourAtPointer} from '../pointer-contour-selection.mjs';
 import {createClosedContour,dragClosedContourVertex,inspectClosedContour}
   from '../closed-contour-authoring.mjs';
+import {editSelectedProfileHole} from '../selected-profile-hole-authoring.mjs';
 
 // WORKBENCH's pointer-to-mm transform supplies these coordinates after user
 // clicks four corners and explicitly clicks Close. No renderer is authority.
@@ -45,3 +46,24 @@ console.log(JSON.stringify({
   solver:solveSketch(reopened).status,
   previewOnly:true,nativeExact:false,independentStepQualified:false
 },null,2));
+
+// A hole references this vertex by authored X/Y constraints. Dragging the
+// polygon vertex must move the hole with it, not refuse an unrelated edit.
+const bored=editSelectedProfileHole(changed.sketch,changed.selection,{
+  kind:'add-hole',sourceSignature:changed.nextSourceSignature,
+  holeId:'housing:mount',anchorPointId:'housing:vertex:2',
+  xMm:90,yMm:40,radiusMm:5});
+assert.equal(bored.kind,'accepted',JSON.stringify(bored));
+const withDependent=dragClosedContourVertex(bored.sketch,bored.selection,{
+  version:1,sourceSignature:bored.nextSourceSignature,
+  contourId:'housing',handleId:'housing:handle:2',target:{x:130,y:75}});
+assert.equal(withDependent.kind,'accepted',JSON.stringify(withDependent));
+assert.deepEqual(withDependent.movedDependentHoles.map(h=>h.holeId),['housing:mount']);
+assert.deepEqual(withDependent.movedDependentHoles[0].to,{x:95,y:45});
+assert.equal(inspectClosedContour(parseSketch(serializeSketch(withDependent.sketch)),
+  withDependent.selection,'housing').kind,'closed_contour');
+console.log(JSON.stringify({associativeHoleDemo:{
+  followed:withDependent.movedDependentHoles,
+  selection:withDependent.selection.candidateId,
+  previewOnly:true,nativeExact:false,independentStepQualified:false
+}},null,2));

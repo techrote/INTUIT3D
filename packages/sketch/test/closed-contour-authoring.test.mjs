@@ -7,6 +7,7 @@ import {selectContourAtPointer} from '../pointer-contour-selection.mjs';
 import {createClosedContour,inspectClosedContour,editClosedContourVertices,
   dragClosedContourVertex,CLOSED_CONTOUR_AUTHORING_VERSION,
   MAX_CLOSED_CONTOUR_VERTICES} from '../closed-contour-authoring.mjs';
+import {editSelectedProfileHole} from '../selected-profile-hole-authoring.mjs';
 
 const blank=()=>createSketch({version:1,units:'mm',points:[],lines:[],
   circles:[],constraints:[]});
@@ -205,4 +206,43 @@ test('external dependent vertex with similar ID cannot be moved as part of selec
   assert.equal(result.reason,'unselected_geometry_would_move');
   assert.equal(result.detail,'custom:vertex:external');
   assert.equal(stamp(source),before);
+});
+
+test('dimensioned circular holes follow selected polygon vertex changes through an authored reference chain',()=>{
+  const created=create();ok(created);
+  const first=editSelectedProfileHole(created.sketch,created.selection,{
+    kind:'add-hole',sourceSignature:created.nextSourceSignature,
+    holeId:'machining:holeA',anchorPointId:'custom:vertex:2',
+    xMm:43,yMm:25,radiusMm:3});
+  ok(first);
+  const second=editSelectedProfileHole(first.sketch,first.selection,{
+    kind:'add-hole',sourceSignature:first.nextSourceSignature,
+    holeId:'machining:holeB',anchorPointId:'machining:holeA:center',
+    xMm:25,yMm:20,radiusMm:3});
+  ok(second);
+  const before=stamp(second.sketch);
+  const moved=dragClosedContourVertex(second.sketch,second.selection,{
+    version:1,sourceSignature:before,contourId:'custom',
+    handleId:'custom:handle:2',target:{x:68,y:45}});
+  ok(moved);
+  assert.deepEqual(moved.movedDependentHoles.map(h=>h.holeId).sort(),
+    ['machining:holeA','machining:holeB']);
+  assert.deepEqual(moved.movedDependentHoles.map(h=>h.to).sort((a,b)=>a.x-b.x),
+    [{x:33,y:25},{x:51,y:30}]);
+  assert.deepEqual([...moved.profile.holeIds].sort(),
+    ['machining:holeA','machining:holeB']);
+  assert.ok(moved.profile.profile.areaMm2>created.profile.profile.areaMm2,
+    'edited polygon expands while preserving both cutouts');
+  assert.equal(solveSketch(moved.sketch).status,'solved');
+  assert.equal(stamp(second.sketch),before,'original source was not changed');
+  const reopened=inspectClosedContour(parseSketch(stamp(moved.sketch)),
+    moved.selection,'custom');
+  assert.equal(reopened.kind,'closed_contour');
+  assert.equal(reopened.handles[2].handleId,'custom:handle:2');
+
+  const invalid=dragClosedContourVertex(second.sketch,second.selection,{
+    version:1,sourceSignature:before,contourId:'custom',
+    handleId:'custom:handle:2',target:{x:58,y:12}});
+  assert.equal(invalid.kind,'refused');
+  assert.equal(stamp(second.sketch),before);
 });
