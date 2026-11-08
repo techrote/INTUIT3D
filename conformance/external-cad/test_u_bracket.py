@@ -12,6 +12,7 @@ import zipfile
 
 from u_bracket import (ARTIFACT_SHA, CASES, KERNEL_SHA, OCCT_SHA, Rejected,
                        SOURCE_FIXTURE_SHA, expected_volume, expected_centroid, expected_covariance,
+                       expected_surface_area,
                        parse_receipt, rays, sha, verify_native_source)
 
 
@@ -23,9 +24,11 @@ def synthetic_receipt(thickness: int = 8) -> str:
     vol = expected_volume(thickness)
     cx, cy, cz = expected_centroid(thickness)
     covariance = expected_covariance(thickness)
+    surface = expected_surface_area(thickness)
     lines.append("U_ACCEPT solids=1 source_unit=millimetre imported_exact=true "
                  f"tris=300 open_edges=0 volume_mm3={vol:.9f} "
                  f"expected_mm3={vol:.9f} "
+                 f"surface_area_mm2={surface:.9f} expected_surface_mm2={surface:.9f} "
                  f"centroid_x_mm={cx:.9f} centroid_y_mm={cy:.9f} "
                  f"centroid_z_mm={cz:.9f} " +
                  " ".join(f"cov_{axis}_mm2={covariance[axis]:.9f}"
@@ -92,6 +95,8 @@ class IndependentUBracketContracts(unittest.TestCase):
     def test_two_thickness_volumes_and_distinct_profile_sample(self):
         self.assertAlmostEqual(expected_volume(8), 47604.380550980765)
         self.assertAlmostEqual(expected_volume(12), 71524.38055098077)
+        self.assertAlmostEqual(expected_surface_area(8), 16406.247779607696)
+        self.assertAlmostEqual(expected_surface_area(12), 18582.247779607696)
         self.assertAlmostEqual(expected_centroid(8)[0], -0.7151838864836263)
         self.assertAlmostEqual(expected_centroid(8)[1], -9.073874914254986)
         self.assertAlmostEqual(expected_centroid(8)[2], 3.987626167681832)
@@ -126,6 +131,8 @@ class IndependentUBracketContracts(unittest.TestCase):
             self.assertEqual(observed["rayCount"], 40)
             self.assertAlmostEqual(observed["measuredVolumeMm3"], expected_volume(thickness))
             self.assertEqual(len(observed["rays"]), 40)
+            self.assertAlmostEqual(observed["measuredSurfaceAreaMm2"],
+                                   expected_surface_area(thickness), places=7)
             for axis, predicted in expected_covariance(thickness).items():
                 self.assertAlmostEqual(observed["measuredCovarianceMm2"][axis],
                                        predicted, places=7)
@@ -224,6 +231,30 @@ class IndependentUBracketContracts(unittest.TestCase):
                 with self.subTest(component=axis, payload=altered[-110:]):
                     with self.assertRaises(Rejected):
                         parse_receipt(altered, 12)
+
+    def test_surface_area_refuses_compensated_geometry_and_bad_receipts(self):
+        # The physical exposed area can change under fine corrugations or
+        # extra small faces even when global volume, mass tensor and the
+        # selected 40 rays remain unchanged.
+        for t in (8, 12):
+            baseline = synthetic_receipt(t)
+            predicted = expected_surface_area(t)
+            measured = f"surface_area_mm2={predicted:.9f}"
+            claimed = f"expected_surface_mm2={predicted:.9f}"
+            for candidate in (
+                baseline.replace(measured, f"surface_area_mm2={predicted*1.02:.9f}"),
+                baseline.replace(claimed, f"expected_surface_mm2={predicted+300:.9f}"),
+                baseline.replace(measured, "surface_area_mm2=nan"),
+                baseline.replace(measured, "surface_area_mm2=inf"),
+                baseline.replace(measured, "surface_area_mm2=-1"),
+                baseline.replace(measured, ""),
+                baseline.replace(measured, measured + " " + measured),
+                baseline.replace(claimed, ""),
+                baseline.replace(claimed, claimed + " " + claimed),
+            ):
+                with self.subTest(thickness=t, candidate=candidate[-130:]):
+                    with self.assertRaisesRegex(Rejected, "surface|summary"):
+                        parse_receipt(candidate, t)
 
     def test_native_sha_and_source_still_not_independent_acceptance(self):
         with zipfile.ZipFile(synthetic_archive()) as z:
