@@ -4,7 +4,10 @@
  *   /absolute/pinned/worker /fresh/output
  */
 import assert from 'node:assert/strict';
-import {mkdir,writeFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
 import {buildAuthoredSlopedBracket,editAuthoredSlopedThickness,SLOPED_BODY_ID,
   SLOPED_CUT_IDS} from './runtime-occt8-sloped-profile-document.mjs';
@@ -19,6 +22,22 @@ if(!worker||!out){
 }
 const folder=resolve(out);
 await mkdir(folder,{recursive:true});
+const sourceSha=execFileSync('git',['rev-parse','HEAD'],{
+  cwd:fileURLToPath(new URL('../../../',import.meta.url)),
+  encoding:'utf8',
+}).trim();
+if(process.env.INTUIT3D_SOURCE_SHA)
+  assert.equal(sourceSha,process.env.INTUIT3D_SOURCE_SHA,
+    'pinned physical evidence checkout differs from requested source SHA');
+const workerExecutable=resolve(worker);
+const workerSha256=createHash('sha256').update(await readFile(workerExecutable)).digest('hex');
+const cppSourceSha256=createHash('sha256').update(
+  await readFile(new URL('../../../native/occt8/plate_worker.cpp',import.meta.url))
+).digest('hex');
+const provenance={sourceSha,workerSha256,cppSourceSha256,
+  pinnedVersionRequired:'OCCT-cxx-8.0.1',
+  qualifiedBinarySourceBinding:'requires-exact-head-build-log'};
+
 let fixture=buildAuthoredSlopedBracket();
 const receipts=[];
 async function exportBody(label,volume){
@@ -65,8 +84,7 @@ await writeFile(join(folder,'authored-document.json'),
   fixture.runtime.save(fixture.history),{flag:'wx'});
 await writeFile(join(folder,'authored-receipts.json'),JSON.stringify({
   result:'PINNED_CXX_AUTHORED_SLOPED_TWO_STEP_EXECUTED',
-  sourceSha:process.env.INTUIT3D_SOURCE_SHA||null,
-  sourceBound:Boolean(process.env.INTUIT3D_SOURCE_SHA),
+  provenance,
   receipts,exactAuthority:false,independentInteroperability:false,
 },null,2)+'\n',{flag:'wx'});
-console.log(JSON.stringify({result:'PINNED_CXX_AUTHORED_SLOPED_TWO_STEP_PASS',receipts},null,2));
+console.log(JSON.stringify({result:'PINNED_CXX_AUTHORED_SLOPED_TWO_STEP_PASS',provenance,receipts},null,2));
