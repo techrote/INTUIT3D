@@ -184,6 +184,13 @@ export function createLivePlateSession({
         hasActivePreview:activePreview!==null && editPreviews.has(activePreview),
         lastResultKind:lastOutcomeKind,exactAuthority:false};
     },
+    /** Current source-fenced edge-local controls, with no second journal. */
+    inspectSelectedEdgeHoles(request) {
+      const state=synchronize();
+      if(typeof runtime.inspectSelectedEdgeHoles!=='function')
+        throw new TypeError('live plate session: selected-edge inspection requires runtime provider');
+      return runtime.inspectSelectedEdgeHoles(state.history,request);
+    },
     /** Current source-fenced selected-profile inspector; never a second journal. */
     inspectSelectedProfileHoles(request) {
       const state=synchronize();
