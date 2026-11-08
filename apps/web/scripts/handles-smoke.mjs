@@ -1001,6 +1001,14 @@ async function main() {
   // The visible 1 mm grid must own the placement, not the mouse pixel jitter.
   await clickControl('[data-testid="runtime-outline-tool"]');
   await clickBlankVertex(0.24,0.29);
+  await pause(150);
+  console.log('BLANK_SNAP_PROBE '+JSON.stringify(await evaluate(`(() => ({
+    count:document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent,
+    snap:document.querySelector('[data-testid=runtime-contour-pointer-coordinate]')?.textContent,
+    vertices:[...document.querySelectorAll('[data-testid^="runtime-draft-vertex-"]')]
+      .map(e=>({x:e.getAttribute('cx'),y:e.getAttribute('cy')})),
+    message:document.querySelector('.runtime-message')?.textContent
+  }))()`)));
   await eventually(()=>evaluate("(() => {const p=document.querySelector('[data-testid=runtime-draft-vertex-0]');return p?.getAttribute('cx')==='0'&&p?.getAttribute('cy')==='0'})()"),
     'blank-sketch grid snap did not quantize the real pointer to the sketch origin');
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore,
