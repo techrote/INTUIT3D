@@ -12,9 +12,19 @@ import tempfile
 import unittest
 
 from sloped_v5 import (
-    Rejected, digest, expected_surface, expected_volume, parse_receipt,
+    Rejected, digest, expected_surface, expected_volume, expected_moments, parse_receipt,
     ray_oracle, verify_producer,
 )
+
+
+def synthetic_mass_fields(kind: str, thickness: int, cut_count: int = 2) -> str:
+    """Source-only analytic numbers, NOT observations from imported CAD."""
+    centre, cov = expected_moments(kind, thickness, cut_count)
+    keys = ("centroid_x_mm", "centroid_y_mm", "centroid_z_mm",
+            "cov_xx_mm2", "cov_yy_mm2", "cov_zz_mm2",
+            "cov_xy_mm2", "cov_xz_mm2", "cov_yz_mm2")
+    return " ".join(f"{name}={value:.9f}" for name, value
+                    in zip(keys, centre + cov))
 
 
 def synthetic_receipt(kind: str, thickness: int) -> str:
@@ -31,7 +41,7 @@ def synthetic_receipt(kind: str, thickness: int) -> str:
         f"solids=1 source_unit=millimetre imported_exact=true tris=400 "
         f"open_edges=0 volume_mm3={volume:.9f} expected_mm3={volume:.9f} "
         f"surface_area_mm2={surface:.9f} expected_surface_mm2={surface:.9f} "
-        "warnings=0"
+        f"{synthetic_mass_fields(kind, thickness)} warnings=0"
     )
     return "\n".join(lines) + "\n"
 
@@ -202,7 +212,8 @@ class ProgressiveV6OracleTests(unittest.TestCase):
             f"SLOPE_ACCEPT kind={kind} cuts={count} thickness_mm={thickness:.1f} "
             "solids=1 source_unit=millimetre imported_exact=true tris=400 "
             f"open_edges=0 volume_mm3={v:.9f} expected_mm3={v:.9f} "
-            f"surface_area_mm2={s:.9f} expected_surface_mm2={s:.9f} warnings=0"
+            f"surface_area_mm2={s:.9f} expected_surface_mm2={s:.9f} "
+            f"{synthetic_mass_fields(kind, thickness, count)} warnings=0"
         )
         return "\n".join(rows) + "\n"
 
@@ -224,6 +235,35 @@ class ProgressiveV6OracleTests(unittest.TestCase):
         self.assertAlmostEqual(expected_volume("authored", 8, 0), 45600)
         self.assertEqual(expected_volume("authored", 8, 1), 44704)
         self.assertEqual(expected_volume("authored", 8, 2), 44404)
+
+    def test_material_distribution_and_nan_rejected_across_all_progressions(self):
+        # Synthetic parser adversaries demonstrate a previously unobserved
+        # equal-volume/area, point-ray-preserving displacement in the receipt.
+        # The Rust probe must independently calculate the values from triangles.
+        for kind in ("direct", "authored"):
+            for count in (0, 1, 2):
+                for thickness in (8, 12):
+                    with self.subTest(kind=kind, count=count, thickness=thickness):
+                        good = self.v6_receipt(kind, count, thickness)
+                        parsed = parse_receipt(good, kind, thickness,
+                                               cut_count=count)
+                        c, cov = expected_moments(kind, thickness, count)
+                        self.assertAlmostEqual(parsed["measuredCentroidMm"][0], c[0])
+                        self.assertAlmostEqual(parsed["measuredMaterialCovarianceMm2"][3],
+                                               cov[3])
+                        for field in ("centroid_x_mm", "centroid_z_mm",
+                                      "cov_xx_mm2", "cov_xy_mm2"):
+                            marker = next(token for token in good.splitlines()[-1].split()
+                                          if token.startswith(field + "="))
+                            bad_value = float(marker.split("=", 1)[1])
+                            displaced = good.replace(
+                                marker, f"{field}={bad_value + 10:.9f}")
+                            with self.assertRaisesRegex(Rejected, "centroid|covariance"):
+                                parse_receipt(displaced, kind, thickness,
+                                              cut_count=count)
+                            with self.assertRaises(Rejected):
+                                parse_receipt(good.replace(marker, f"{field}=nan"),
+                                              kind, thickness, cut_count=count)
 
     def test_progressive_wrong_stage_and_absent_cut_rejection(self):
         for kind in ("direct", "authored"):
