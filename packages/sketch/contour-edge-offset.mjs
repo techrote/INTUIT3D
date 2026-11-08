@@ -58,9 +58,13 @@ export function inspectClosedContourEdges(source,selection,contourId){
     const delta=sub(end,start),lengthMm=Math.hypot(delta.x,delta.y);
     if(!finite(lengthMm)||lengthMm===0)
       return refuse(signature,'unrepresentable_contour_edge',edgeId);
-    const normal=sign>0
+    const rawNormal=sign>0
       ?{x:delta.y/lengthMm,y:-delta.x/lengthMm}
       :{x:-delta.y/lengthMm,y:delta.x/lengthMm};
+    // Signed zero is numerically equivalent but not a stable semantic
+    // inventory representation across strict replay / UI comparisons.
+    const normal={x:rawNormal.x===0?0:rawNormal.x,
+      y:rawNormal.y===0?0:rawNormal.y};
     const midpoint={x:start.x+delta.x/2,y:start.y+delta.y/2};
     if(!validPoint(normal)||!validPoint(midpoint))
       return refuse(signature,'unrepresentable_edge_midpoint',edgeId);
