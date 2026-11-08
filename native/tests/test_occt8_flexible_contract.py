@@ -55,6 +55,7 @@ class ProgressiveV6Tests(unittest.TestCase):
     def test_reject_bad_identity_units_orientation_and_overlap(self):
         for mutation in (
             lambda q:q.update(units="inch"),
+            lambda q:q["cuts"][0].update(featureId=q["featureId"]),
             lambda q:q["profile"]["vertices"].reverse(),
             lambda q:q["cuts"].append(copy.deepcopy(BASE["cuts"][0])),
             lambda q:q["cuts"].__setitem__(0,{**q["cuts"][0],"x":55,"y":50}),
@@ -126,6 +127,9 @@ class ProgressiveV6Tests(unittest.TestCase):
         def duplicate_cut_identity(q):
             q["cuts"][1]["featureId"]=q["cuts"][0]["featureId"]
 
+        def alias_target_body(q):
+            q["cuts"][0]["featureId"]=q["featureId"]
+
         bad_cases=(
             ("unknown-protocol",good.replace(
                 "INTUIT3D_OCCT8_FLEX_LINEAR_CHAIN_V6",
@@ -142,6 +146,8 @@ class ProgressiveV6Tests(unittest.TestCase):
                 "cut footprints overlap or touch"),
             ("duplicate-feature-id",malformed(duplicate_cut_identity),
                 "duplicate cut feature identity"),
+            ("cut-aliases-target-body",malformed(alias_target_body),
+                "cut feature identity conflicts with target body"),
         )
         with tempfile.TemporaryDirectory(prefix="intuit-v6-native-refusal-") as d:
             directory=Path(d)
