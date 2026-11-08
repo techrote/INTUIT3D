@@ -26,8 +26,8 @@ class OfflineBundleTests(unittest.TestCase):
             (root / "native").mkdir(parents=True)
             (root / "bin").mkdir()
             (root / "native/occt8_bridge.py").write_text(
-                "import local_helper\\nprint(local_helper.answer)\\n")
-            (root / "native/local_helper.py").write_text("answer = 42\\n")
+                "import local_helper\nprint(local_helper.answer)\n")
+            (root / "native/local_helper.py").write_text("answer = 42\n")
             (root / "bin/intuit3d_occt8_plate").write_bytes(b"test-only worker fixture")
             for source, target in (
                 ("verify_offline_bundle.py", "verify.py"),
