@@ -221,6 +221,7 @@ async function main(){
     active:document.querySelector('[data-testid=runtime-active-hole]')?.textContent?.trim(),
     hint:document.querySelector('[data-testid=runtime-solid-selected-hole]')?.textContent?.trim(),
     quickEditor:Boolean(document.querySelector('[data-testid=runtime-solid-quickedit]')),
+    pickTrace:document.querySelector('[data-testid=runtime-3d-viewport] canvas')?.dataset.pickTrace,
     target:document.elementFromPoint(${visibleHole.x},${visibleHole.y})?.outerHTML?.slice(0,300),
     canvasBounds:(()=>{const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');const r=c?.getBoundingClientRect();return r?{x:r.x,y:r.y,w:r.width,h:r.height}:null})(),
   }))()`);
