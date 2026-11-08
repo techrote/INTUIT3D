@@ -106,6 +106,56 @@ async function main() {
   await eventually(() => evaluate("Boolean(document.querySelector('[data-testid=runtime-panel]') && document.querySelector('[data-testid=runtime-exact-state]'))"), 'model-backed CAD is the default startup');
   check(await evaluate("document.querySelector('[data-testid=enter-model-runtime]')===null"), 'Legacy preview mounted alongside the model authority');
   await screenshot('00-model-first-start.png');
+
+  // Real React model-backed user path: select an admitted sketch contour by
+  // pointer, explicitly choose its solver-owned width handle, type a precise
+  // dimension, submit, then undo. No mock document or renderer authority.
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-mode-sketch]');b?.click();return !!b})()"),
+    'Model-backed Sketch control missing');
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-profile-select-mode]');b?.click();return !!b})()"),
+    'Explicit semantic contour selection missing');
+  const profilePoint = await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=runtime-sketch]');
+    if(!svg||!svg.getScreenCTM())return null;
+    const p=svg.createSVGPoint();p.x=60;p.y=15;
+    const q=p.matrixTransform(svg.getScreenCTM());
+    return {x:q.x,y:q.y};
+  })()`);
+  check(profilePoint && Number.isFinite(profilePoint.x), 'Model-backed semantic profile projection invalid');
+  await mouse('mouseMoved',profilePoint.x,profilePoint.y);
+  await mouse('mousePressed',profilePoint.x,profilePoint.y,1);
+  await mouse('mouseReleased',profilePoint.x,profilePoint.y,0);
+  await eventually(()=>evaluate(
+    "document.querySelector('[data-testid=runtime-pointer-profile-selected]')?.textContent?.includes('profile')"
+  ),'actual pointer contour selection');
+  check(await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-pointer-profile-handle]');
+    if(!s)return false;
+    const opt=[...s.options].find(o=>o.value.includes('dimension:width'));
+    if(!opt)return false;
+    s.value=opt.value;s.dispatchEvent(new Event('change',{bubbles:true}));
+    return true;
+  })()`),'Semantic width handle missing from explicit selection list');
+  await eventually(()=>evaluate(
+    "Boolean(document.querySelector('[data-testid=runtime-profile-numeric-editor]'))"
+  ),'numeric semantic editor');
+  check(await evaluate(`(() => {
+    const el=document.querySelector('[data-testid=runtime-profile-numeric-value]');
+    if(!el)return false;el.focus();el.select();return document.activeElement===el;
+  })()`),'numeric semantic dimension input cannot focus');
+  await send('Input.insertText',{text:'135'});
+  await key('Enter','Enter',13);
+  await eventually(()=>evaluate(
+    "document.querySelector('input[aria-label=\"Plate width\"]')?.value==='135'"
+  ),'numeric semantic edit through RUNTIME');
+  await screenshot('00a-model-numeric-profile.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('[data-testid=runtime-panel] button')].find(el=>el.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'Model-backed undo control missing');
+  await eventually(()=>evaluate(
+    "document.querySelector('input[aria-label=\"Plate width\"]')?.value==='120'"
+  ),'numeric semantic undo');
+  await screenshot('00b-model-numeric-profile-undo.png');
+
   // Legacy preview regression remains available only by explicit opt-in.
   await send('Page.navigate', { url: origin + '/?mode=preview' });
   await eventually(async () => evaluate("Boolean(document.querySelector('canvas') && document.querySelector('[data-testid=enter-model-runtime]'))"), 'explicit preview mode');
