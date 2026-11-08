@@ -91,7 +91,7 @@ test('stale/wrong-target/foreign selection and conflicting edits refuse before m
     {changes:[{constraintId:'L:length',expectedValueMm:120,valueMm:120}]},
     {changes:[{constraintId:'L:holeLowerRadius',expectedValueMm:5,valueMm:-1}]},
     {changes:[{constraintId:'L:holeLowerRadius',expectedValueMm:5,valueMm:100}]},
-    {changes:[{constraintId:'L:flangeHeight',expectedValueMm:30,valueMm:100}]}
+    {changes:[{constraintId:'L:flangeHeight',expectedValueMm:30,valueMm:Infinity}]}
   ];
   for(const override of invalid){
     assert.throws(()=>editSelectedBodyProfileDimensions(history,
