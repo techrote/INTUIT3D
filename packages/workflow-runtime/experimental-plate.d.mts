@@ -59,7 +59,8 @@ export declare function createExperimentalPlateWorkflow<Request extends {
   protocol:string;requestId:string;featureId:string;revision:number;units:'mm';
   plate:ExperimentalPlateGeometry;exportStep:boolean;
 }>(services:Readonly<{
-  runtime:Pick<WorkflowRuntime,'inspect'>;
+  /** Both evaluation report and exact canonical journal are required to fence native work. */
+  runtime:Pick<WorkflowRuntime,'inspect'|'save'>;
   model:{featuresOf(document:ProjectDocument):readonly Feature[]};
   plateContract:{
     PLATE_PROTOCOL:string;

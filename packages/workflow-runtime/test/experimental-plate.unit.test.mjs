@@ -35,7 +35,7 @@ function rig(opts={}) {
       observed:{source:{valid:true}},artifact:request.exportStep?{
         path:'/tmp/plate.step',verification:'same_engine_step_readback'}:null};
   });
-  const runner=createExperimentalPlateWorkflow({runtime:{inspect:state},
+  const runner=createExperimentalPlateWorkflow({runtime:{inspect:state,save:history=>JSON.stringify(history)},
     model:{featuresOf:()=>features},plateContract:contract,runExperimentalPlate:provider});
   const evaluate=(extra={})=>runner.evaluate(history,{
     cutFeatureId:'cut',requestId:'plate.req.1',readCurrentHistory:()=>live.current,...extra});
@@ -67,6 +67,23 @@ test('revision change during work cannot return current result',async()=>{
     assert.notEqual(opts.readCurrentRevision(),3);
   }});
   assert.equal((await a.evaluate()).code,'stale_revision');
+});
+test('same project, same revision and identical feature report cannot substitute a different journal',async()=>{
+  const a=rig({during:(live,request,options)=>{
+    assert.equal(options.readCurrentRevision(),request.revision);
+    // The fixture's feature evaluation report is deliberately unchanged.
+    // Only non-feature journal metadata differs: a report-only fence accepted
+    // this as current and could publish a native result for the wrong archive.
+    live.current={...live.current,journalWitness:'divergent-history'};
+    assert.notEqual(options.readCurrentRevision(),request.revision);
+  }});
+  assert.equal((await a.evaluate()).code,'stale_revision');
+});
+test('same-revision journal divergence refuses dispatch before invoking native',async()=>{
+  const a=rig();
+  a.live.current={...a.history,journalWitness:'different-history'};
+  assert.equal((await a.evaluate()).code,'stale_revision');
+  assert.equal(a.calls(),0);
 });
 test('swapped project with same revision is refused',async()=>{
   const a=rig({during:(live,req,opts)=>{

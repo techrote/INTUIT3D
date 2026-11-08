@@ -54,7 +54,8 @@ export function rectanglePlateFromProfile(profile, thicknessMm) {
 export function createExperimentalPlateWorkflow({
   runtime, model, plateContract, runExperimentalPlate, providerKind='ocp',
 }) {
-  if (typeof runtime?.inspect !== 'function' || typeof model?.featuresOf !== 'function' ||
+  if (typeof runtime?.inspect !== 'function' || typeof runtime?.save !== 'function' ||
+      typeof model?.featuresOf !== 'function' ||
       typeof plateContract?.parsePlateRequest !== 'function' ||
       typeof plateContract?.PLATE_PROTOCOL !== 'string' ||
       typeof runExperimentalPlate !== 'function')
@@ -77,14 +78,18 @@ export function createExperimentalPlateWorkflow({
     if (typeof cutFeatureId !== 'string' || !cutFeatureId || typeof requestId !== 'string' || !requestId)
       throw new TypeError('runtime plate: explicit cut and request identity required');
     const report = runtime.inspect(history);
+    // A runtime report describes the evaluated feature graph, not the entire
+    // durable INTENT journal. Two different undo/archive histories can produce
+    // the same report at the same project/revision. Pin the *canonical archive*
+    // instead: native work must never be published for a substituted history.
+    const sourceArchive=runtime.save(history);
     const context={projectId:report.projectId,revision:report.revision,cutFeatureId};
-    const currentSnapshot=JSON.stringify(report);
     const isCurrent=()=>{
       try {
         const live=readCurrentHistory();
         return live?.document?.projectId===report.projectId &&
           live.document.revision===report.revision &&
-          JSON.stringify(runtime.inspect(live))===currentSnapshot;
+          runtime.save(live)===sourceArchive;
       } catch { return false; }
     };
     if (!isCurrent()) return unresolved('stale_revision','source no longer matches authoritative history',context);
