@@ -153,3 +153,22 @@ if(selectedProfileControls.kind==='ready') {
   const stale:boolean=selectedProfileControls.notCommitted;
   void stale;
 }
+
+
+/** A typed WORKBENCH can inspect the current edge-control geometry without
+ * duplicating SKETCH state or treating the analytic result as exact. */
+const selectedEdgeControls=session.inspectSelectedEdgeHoles({
+  projectId:state.projectId,expectedRevision:state.revision,
+  sketchFeatureId:'sketch.plate',
+});
+if(selectedEdgeControls.kind==='ready'){
+  const analytic:false=selectedEdgeControls.exactAuthority;
+  const signature:string=selectedEdgeControls.inspection.sourceSignature;
+  const candidate:string=selectedEdgeControls.inspection.selection.candidateId;
+  const editable:boolean|undefined=selectedEdgeControls.inspection.edges[0]?.editable;
+  const along:number|undefined=selectedEdgeControls.inspection.holes[0]?.edgeBinding?.alongMm;
+  void [analytic,signature,candidate,editable,along];
+}else{
+  const rejected:true=selectedEdgeControls.notCommitted;
+  void rejected;
+}
