@@ -45,6 +45,14 @@ export function createLivePlateSession({
   }
   let observed=snapshot().archive;
   let serial=0,controller=null,latest=null,latestArchive=null,lastOutcomeKind=null;
+  let lastOutcomeCode=null,lastOutcomeReason=null;
+  // A bounded diagnostic for the current journal, not another native result
+  // cache. It is invalidated alongside receipts on every authoritative edit.
+  function recordOutcome(result) {
+    lastOutcomeKind=result.kind;
+    lastOutcomeCode=result.kind==='unresolved' ? result.code??'requires_reconciliation' : null;
+    lastOutcomeReason=result.kind==='unresolved' ? result.reason??'native provider refused evaluation' : null;
+  }
   // Previews are ephemeral proposals, never a second durable model or native receipt.
   const editPreviews=new WeakMap();
   let activePreview=null;
@@ -68,6 +76,8 @@ export function createLivePlateSession({
       latestArchive=null;
     }
     lastOutcomeKind=null;
+    lastOutcomeCode=null;
+    lastOutcomeReason=null;
   }
   function synchronize() {
     const current=snapshot();
@@ -248,11 +258,22 @@ export function createLivePlateSession({
     /** Call after external model changes; refuses to retain stale native bytes. */
     refresh() {
       const state=synchronize();
+      const inFlight=controller!==null,hasVerifiedStep=!!latest?.step;
+      // Orthogonal provenance: a previous verified STEP can still match this
+      // exact archive while the latest native attempt is pending or failed.
+      // Neither state promotes experimental geometry to exact CAD authority.
+      const providerState=inFlight?'pending'
+        :lastOutcomeKind==='unresolved'?'provider_failed'
+        :lastOutcomeKind==='experimental_plate_evaluated'?'evaluated':'idle';
+      const stepAvailability=!hasVerifiedStep?'unavailable'
+        :(inFlight||providerState==='provider_failed'?'last_good':'current');
       return {format:LIVE_PLATE_SESSION_FORMAT,version:LIVE_PLATE_SESSION_VERSION,
         projectId:state.report.projectId,revision:state.report.revision,
-        inFlight:controller!==null,hasVerifiedStep:!!latest?.step,
+        inFlight,hasVerifiedStep,providerState,stepAvailability,
         hasActivePreview:activePreview!==null && editPreviews.has(activePreview),
-        lastResultKind:lastOutcomeKind,exactAuthority:false};
+        lastResultKind:lastOutcomeKind,
+        lastResultCode:lastOutcomeCode,lastResultReason:lastOutcomeReason,
+        exactAuthority:false};
     },
     /**
      * Inspect removal impact against the one durable INTENT document. The
@@ -694,15 +715,23 @@ export function createLivePlateSession({
         if(abort.signal.aborted) return refuse('cancelled','native evaluation cancelled');
         if(!result||!['unresolved','experimental_plate_evaluated'].includes(result.kind)||
             result.exactAuthority!==false||result.independentInteroperability!==false)
-          return refuse('invalid_provider_result','native response is not a qualified experimental contract');
+          {
+            const failure=refuse('invalid_provider_result','native response is not a qualified experimental contract');
+            recordOutcome(failure);
+            return failure;
+          }
         if(result.kind==='experimental_plate_evaluated' &&
             (result.source?.projectId!==before.report.projectId||
              result.source.revision!==before.report.revision||
              result.result?.requestId!==id||result.result?.cutFeatureId!==cutFeatureId||
              (exportStep&&!result.step)||(!exportStep&&result.step)))
-          return refuse('invalid_provider_result','native result does not match current authored request');
+          {
+            const failure=refuse('invalid_provider_result','native result does not match current authored request');
+            recordOutcome(failure);
+            return failure;
+          }
         // A failed same-revision refresh must not erase verified current bytes.
-        lastOutcomeKind=result.kind;
+        recordOutcome(result);
         if(result.kind==='experimental_plate_evaluated' && result.step ||
            !latest || latestArchive!==before.archive) {
           // The public evaluation result belongs to the caller. Never cache
@@ -721,15 +750,17 @@ export function createLivePlateSession({
       try {
         const settled=await Promise.race([run(),lifecycle]);
         if(settled==='timeout') {
+          const timeout=refuse('timeout','native evaluation exceeded '+deadlineMs+' ms deadline');
           if(serial===operation&&synchronize().archive===before.archive)
-            lastOutcomeKind='unresolved';
-          return refuse('timeout','native evaluation exceeded '+deadlineMs+' ms deadline');
+            recordOutcome(timeout);
+          return timeout;
         }
         if(settled==='aborted') {
           if(serial!==operation||synchronize().archive!==before.archive)
             return refuse('stale_revision','a newer edit or request superseded native evaluation');
-          lastOutcomeKind='unresolved';
-          return refuse('cancelled','native evaluation cancelled');
+          const cancelled=refuse('cancelled','native evaluation cancelled');
+          recordOutcome(cancelled);
+          return cancelled;
         }
         return settled;
       } finally {
