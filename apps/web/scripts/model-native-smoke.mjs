@@ -203,10 +203,15 @@ async function main(){
   }
   // Select a real authored hole from the actual Three.js canvas using real
   // CDP pointer events, not a DOM callback or synthetic model edit.
+  // Camera preset state is published synchronously, whereas the projected hole
+  // markers are republished by the following animation frame. Never click a
+  // stale ISO marker while the camera has already moved to TOP.
+  const beforeTopMarkers=await evaluate("document.querySelector('[data-testid=runtime-3d-viewport] canvas')?.dataset.holePickMarkers");
   await pointerClick('runtime-camera-top');
   const visibleHole=await eventually(()=>evaluate(`(() => {
     const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');
-    if(!c||c.dataset.cameraPreset!=='top')return null;
+    if(!c||c.dataset.cameraPreset!=='top'||
+       c.dataset.holePickMarkers===${JSON.stringify(beforeTopMarkers)})return null;
     const h=JSON.parse(c.dataset.holePickMarkers||'[]').find(x=>x.id==='holeA');
     if(!h)return null;
     const rect=c.getBoundingClientRect();
@@ -217,17 +222,65 @@ async function main(){
   await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:visibleHole.x,y:visibleHole.y});
   await send('Input.dispatchMouseEvent',{type:'mousePressed',x:visibleHole.x,y:visibleHole.y,button:'left',clickCount:1});
   await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:visibleHole.x,y:visibleHole.y,button:'left',clickCount:1});
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-solid-selected-hole]')?.textContent?.includes('holeA')"),
-    '3D hole click did not select existing solver holeA');
+  const actualSolidPick=await evaluate(`(() => ({
+    active:document.querySelector('[data-testid=runtime-active-hole]')?.textContent?.trim(),
+    hint:document.querySelector('[data-testid=runtime-solid-selected-hole]')?.textContent?.trim(),
+    quickEditor:Boolean(document.querySelector('[data-testid=runtime-solid-quickedit]')),
+    pickTrace:document.querySelector('[data-testid=runtime-3d-viewport] canvas')?.dataset.pickTrace,
+    target:document.elementFromPoint(${visibleHole.x},${visibleHole.y})?.outerHTML?.slice(0,300),
+    canvasBounds:(()=>{const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');const r=c?.getBoundingClientRect();return r?{x:r.x,y:r.y,w:r.width,h:r.height}:null})(),
+  }))()`);
+  check(actualSolidPick.active?.includes('Selected circular cut: holeA'),
+    '3D canvas click did not set the authoritative selected hole: '+JSON.stringify(actualSolidPick));
   check(await evaluate("document.querySelector('[data-testid=runtime-3d-viewport] canvas')?.dataset.cameraPreset==='top'"),
     'Stationary hole selection was mistaken for a camera drag');
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,
     '3D hole selection accidentally authored a CAD revision');
   check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');return c===window.__intuit3dTest3DCanvas&&c?.getContext('webgl2')===window.__intuit3dTest3DContext})()"),
     '3D hole selection recreated the GPU context');
+  // Genuine 3D canvas picking now opens a contextual, source-owned bore editor.
+  // Use actual Chromium keyboard entry and pointer apply/undo, not a helper call.
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-solid-quickedit]')?.textContent?.includes('holeA')"),
+    '3D-picked hole has no contextual precision editor');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-solid-quickedit-x]');e.focus();e.select();return document.activeElement===e})()"),
+    'selected-hole X editor is not focusable');
+  await send('Input.insertText',{text:'36'});
+  await pointerClick('runtime-solid-quickedit-move');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value==='36'"),
+    '3D-picked bore centre did not commit through SKETCH');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")!==cameraRev,
+    'selected-hole 3D movement did not advance the authoritative revision');
+  check(await evaluate("(() => {const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');return c===window.__intuit3dTest3DCanvas&&c?.getContext('webgl2')===window.__intuit3dTest3DContext})()"),
+    '3D precision edit recreated the GPU context');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value==='35'"),
+    '3D contextual centre edit was not undoable');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-solid-quickedit-diameter]');e.focus();e.select();return document.activeElement===e})()"),
+    'selected-hole bore editor is not focusable after undo');
+  await send('Input.insertText',{text:'13'});
+  await pointerClick('runtime-solid-quickedit-resize');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-diameter]')?.value==='13'"),
+    '3D-picked diameter did not commit through SKETCH');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-hole-holeA-diameter]')?.value==='12'"),
+    '3D contextual diameter edit was not undoable');
+  // INTENT undo is an explicit compensating journal transaction: it restores
+  // the original *values*, not the former revision counter. Export must remain
+  // stale until physical STEP is rebuilt for this new authoritative revision.
+  const afterContextualUndos=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  const beforeEditRevision=Number(cameraRev?.match(/[0-9]+/)?.[0]);
+  const afterEditRevision=Number(afterContextualUndos?.match(/[0-9]+/)?.[0]);
+  check(Number.isInteger(afterEditRevision)&&afterEditRevision>beforeEditRevision,
+    '3D contextual undos did not preserve monotonic journal revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent")==='pending_exact_provider',
+    '3D contextual undo falsely retained previous exact STEP authority');
+  await screenshot('native-00b-3d-selected-hole-edit.png');
   await pointerClick('runtime-camera-isometric');
   await pointerClick('runtime-camera-fit');
-  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,'FIT authored model revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===afterContextualUndos,
+    'FIT altered the current journal revision after contextual edits');
   await screenshot('native-00-camera-views.png');
   check(await evaluate("(() => {const h=document.querySelector('[data-testid=runtime-thickness-handle]');h?.focus();return document.activeElement===h})()"),
     '3D camera controls did not return keyboard focus to thickness grip');
