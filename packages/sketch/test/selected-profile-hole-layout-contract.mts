@@ -22,6 +22,17 @@ if(view.kind==='selected_profile_hole_layout'){
     edits:[{holeId:h.holeId,xMm:h.position.x+1,yMm:h.position.y,
       radiusMm:h.radiusMm}]
   };
+  const anchoredCmd:SelectedProfileHoleLayoutCommand={
+    kind:'set-hole-layout',sourceSignature:inspection.sourceSignature,
+    edits:[{holeId:h.holeId,xMm:h.position.x+1,yMm:h.position.y,
+      radiusMm:h.radiusMm,anchorPointId:h.xReferencePointId??''}]
+  };
+  const anchored=editSelectedProfileHoleLayout(sketch,selection,anchoredCmd);
+  if(anchored.kind==='accepted'){
+    const changedReferences:string[]=anchored.reanchoredHoleIds;
+    const anchor:string=anchored.edits[0]!.xReferencePointId;
+    void changedReferences;void anchor;
+  }
   const result=editSelectedProfileHoleLayout(sketch,selection,cmd);
   if(result.kind==='accepted'){
     const accepted:SelectedProfileHoleLayoutAccepted=result;

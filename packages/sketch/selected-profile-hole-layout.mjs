@@ -54,9 +54,12 @@ export function editSelectedProfileHoleLayout(source,selection,command){
   if(!exact(command,['kind','sourceSignature','edits'])||
      command.kind!=='set-hole-layout'||typeof command.sourceSignature!=='string'||
      !Array.isArray(command.edits)||command.edits.length<1||command.edits.length>16||
-     command.edits.some(e=>!exact(e,['holeId','xMm','yMm','radiusMm'])||
+     command.edits.some(e=>
+       !(exact(e,['holeId','xMm','yMm','radiusMm'])||
+         exact(e,['holeId','xMm','yMm','radiusMm','anchorPointId']))||
        typeof e.holeId!=='string'||!finite(e.xMm)||!finite(e.yMm)||
-       !finite(e.radiusMm)||e.radiusMm<=0))
+       !finite(e.radiusMm)||e.radiusMm<=0||
+       (Object.hasOwn(e,'anchorPointId')&&typeof e.anchorPointId!=='string')))
     return refusal(stamp,'invalid_command');
   if(command.sourceSignature!==stamp)return refusal(stamp,'stale_source');
   const requested=new Map();
@@ -75,6 +78,7 @@ export function editSelectedProfileHoleLayout(source,selection,command){
   const next=structuredClone(doc),nextConstraints=new Map(next.constraints.map(c=>[c.id,c]));
   const anchors=new Map(view.anchors.map(a=>[a.pointId,a.position]));
   const changed=new Set();
+  const reanchored=new Set();
   const offsets=[];
   for(const edit of command.edits){
     const h=byId.get(edit.holeId);
@@ -86,22 +90,36 @@ export function editSelectedProfileHoleLayout(source,selection,command){
        yc.a!==h.yReferencePointId||
        !rc||rc.kind!=='radius'||rc.circle!==h.holeId)
       return refusal(stamp,'authored_constraints_changed',h.holeId);
-    const xAnchor=targetByCenter.get(xc.a)||anchors.get(xc.a);
-    const yAnchor=targetByCenter.get(yc.a)||anchors.get(yc.a);
+    // An explicit selected semantic anchor rebinds BOTH axes. Omission
+    // preserves the original authored references, never guessing new intent.
+    if(edit.anchorPointId===h.centerPointId)
+      return refusal(stamp,'self_reference',h.holeId);
+    if(Object.hasOwn(edit,'anchorPointId')&&!anchors.has(edit.anchorPointId))
+      return refusal(stamp,'unknown_selected_anchor',h.holeId);
+    const xRef=edit.anchorPointId??xc.a,yRef=edit.anchorPointId??yc.a;
+    const xAnchor=targetByCenter.get(xRef)||anchors.get(xRef);
+    const yAnchor=targetByCenter.get(yRef)||anchors.get(yRef);
     if(!xAnchor||!yAnchor)
       return refusal(stamp,'unresolved_reference',h.holeId);
     const dx=edit.xMm-xAnchor.x,dy=edit.yMm-yAnchor.y;
     if(!finite(dx)||!finite(dy))
       return refusal(stamp,'unrepresentable_dimension',h.holeId);
-    if(xc.value!==dx){nextConstraints.get(xc.id).value=dx;changed.add(xc.id);}
-    if(yc.value!==dy){nextConstraints.get(yc.id).value=dy;changed.add(yc.id);}
+    const nextX=nextConstraints.get(xc.id),nextY=nextConstraints.get(yc.id);
+    if(nextX.a!==xRef||nextY.a!==yRef)reanchored.add(h.holeId);
+    if(nextX.a!==xRef||nextX.value!==dx){
+      nextX.a=xRef;nextX.value=dx;changed.add(xc.id);
+    }
+    if(nextY.a!==yRef||nextY.value!==dy){
+      nextY.a=yRef;nextY.value=dy;changed.add(yc.id);
+    }
     if(rc.value!==edit.radiusMm){
       nextConstraints.get(rc.id).value=edit.radiusMm;
       next.circles.find(c=>c.id===h.holeId).radius=edit.radiusMm;
       changed.add(rc.id);
     }
     offsets.push({holeId:h.holeId,xConstraintId:xc.id,yConstraintId:yc.id,
-      radiusConstraintId:rc.id,xOffsetMm:dx,yOffsetMm:dy});
+      radiusConstraintId:rc.id,xReferencePointId:xRef,yReferencePointId:yRef,
+      xOffsetMm:dx,yOffsetMm:dy});
   }
   if(!changed.size)return refusal(stamp,'no_change');
   let validated,solved;
@@ -144,6 +162,7 @@ export function editSelectedProfileHoleLayout(source,selection,command){
     selection:{candidateId:profile.candidateId,sourceSignature:nextStamp},
     profile,semanticProfileId:profile.semanticProfileId,
     changedConstraintIds:[...changed].sort(),edits,affectedHoleIds,
+    reanchoredHoleIds:[...reanchored].sort(),
     previewOnly:true,nativeExact:false,exactBrepAvailable:false,
     independentStepQualified:false};
 }

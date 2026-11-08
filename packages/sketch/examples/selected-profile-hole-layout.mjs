@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {createDimensionedLPlateSketch} from '../selected-profile.mjs';
 import {discoverPlateProfiles} from '../profile-discovery.mjs';
 import {editConstraint,parseSketch,serializeSketch} from '../index.mjs';
-import {editSelectedProfileHole} from '../selected-profile-hole-authoring.mjs';
 import {inspectSelectedProfileHoleLayout,editSelectedProfileHoleLayout}
   from '../selected-profile-hole-layout.mjs';
 
@@ -26,23 +25,15 @@ console.log(JSON.stringify(summary('original',sketch,selection)));
 const swapped=editSelectedProfileHoleLayout(sketch,selection,{
   kind:'set-hole-layout',sourceSignature:serializeSketch(sketch),
   edits:[
-    {holeId:'L:holeLower',xMm:20,yMm:60,radiusMm:4},
+    {holeId:'L:holeLower',xMm:20,yMm:60,radiusMm:4,anchorPointId:'L:a'},
     {holeId:'L:holeUpper',xMm:90,yMm:15,radiusMm:6}
   ]
 });
 assert.equal(swapped.kind,'accepted',swapped.reason);
 sketch=swapped.sketch;selection=swapped.selection;
 console.log(JSON.stringify(summary('swap_holes',sketch,selection)));
-// The lower hole was originally anchored to the right-hand length endpoint.
- // After swapping it into the upper web, preserving that reference would move
- // it outside the selected contour on a length edit. Deliberately reanchor to
- // the stable origin before changing the length; never silently relax intent.
-const reanchored=editSelectedProfileHole(sketch,selection,{
-  kind:'reanchor-hole',sourceSignature:serializeSketch(sketch),
-  holeId:'L:holeLower',anchorPointId:'L:a'
-});
-assert.equal(reanchored.kind,'accepted',reanchored.reason);
-sketch=reanchored.sketch;selection=reanchored.selection;
+// Position, radius and deliberate reference change were one source commit.
+assert.deepEqual(swapped.reanchoredHoleIds,['L:holeLower']);
 sketch=editConstraint(sketch,'L:length',{value:150});
 selection={...selection,sourceSignature:serializeSketch(sketch)};
 console.log(JSON.stringify(summary('resize_outline',sketch,selection)));

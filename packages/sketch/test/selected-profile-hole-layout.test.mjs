@@ -145,6 +145,46 @@ test('retrospective width exposes a no-longer-selected hole until intent is expl
     'L:holeLower','L:holeUpper']);
 });
 
+test('atomic XY/radius edit can explicitly reanchor a selected hole for a later width change',()=>{
+  const {sketch,selection}=start(),stamp=serializeSketch(sketch);
+  const result=editSelectedProfileHoleLayout(sketch,selection,{
+    kind:'set-hole-layout',sourceSignature:stamp,edits:[
+      {holeId:'L:holeLower',xMm:20,yMm:60,radiusMm:4,anchorPointId:'L:a'},
+      {holeId:'L:holeUpper',xMm:90,yMm:15,radiusMm:6}
+    ]});
+  assert.equal(result.kind,'accepted',result.reason);
+  assert.deepEqual(result.reanchoredHoleIds,['L:holeLower']);
+  assert.deepEqual(result.edits.map(e=>e.xReferencePointId),['L:a','L:e']);
+  assert.deepEqual(result.edits.map(e=>e.yReferencePointId),['L:a','L:e']);
+  assert.equal(serializeSketch(sketch),stamp);
+  const ids=d=>[...d.points,...d.lines,...d.circles,...d.constraints].map(e=>e.id);
+  assert.deepEqual(ids(sketch),ids(result.sketch));
+  const widened=editConstraint(result.sketch,'L:length',{value:150});
+  const reopened=parseSketch(serializeSketch(widened));
+  const view=inspect(reopened,{candidateId:selection.candidateId,
+    sourceSignature:serializeSketch(reopened)});
+  assert.deepEqual(view.holes.map(h=>h.holeId),['L:holeLower','L:holeUpper']);
+  assert.deepEqual(control(view,'L:holeLower').position,{x:20,y:60});
+  assert.deepEqual(control(view,'L:holeUpper').position,{x:90,y:15});
+  assert.equal(control(view,'L:holeLower').xReferencePointId,'L:a');
+});
+
+test('invalid anchor edits refuse without changing original intent',()=>{
+  const {sketch,selection}=start(),stamp=serializeSketch(sketch);
+  for(const [anchor,reason] of [
+    ['L:holeLowerCenter','self_reference'],['outside:point','unknown_selected_anchor']
+  ]){
+    const result=editSelectedProfileHoleLayout(sketch,selection,{
+      kind:'set-hole-layout',sourceSignature:stamp,edits:[
+        {holeId:'L:holeLower',xMm:85,yMm:15,radiusMm:5,anchorPointId:anchor}
+      ]});
+    assert.equal(result.kind,'refused');
+    assert.equal(result.reason,reason);
+    assert.equal(Object.hasOwn(result,'sketch'),false);
+    assert.equal(serializeSketch(sketch),stamp);
+  }
+});
+
 test('implicitly moved intermediary cannot silently change an explicit target',()=>{
   let {sketch,selection}=start();
   for(const [id,anchor,x,r] of [

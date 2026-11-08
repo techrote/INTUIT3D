@@ -16,7 +16,9 @@ export type SelectedProfileHoleLayoutInspection={
 };
 export type SelectedProfileHoleLayoutCommand={
   kind:'set-hole-layout';sourceSignature:string;
-  edits:Array<{holeId:string;xMm:number;yMm:number;radiusMm:number}>;
+  /** Optional explicit reference for both X/Y axes; omitted retains intent. */
+  edits:Array<{holeId:string;xMm:number;yMm:number;radiusMm:number;
+    anchorPointId?:string}>;
 };
 export type SelectedProfileHoleLayoutRefusal={
   kind:'refused';version:1;sourceSignature:string;reason:string;
@@ -32,9 +34,10 @@ export type SelectedProfileHoleLayoutAccepted={
     holeId:string;before:{x:number;y:number;radiusMm:number};
     after:{x:number;y:number;radiusMm:number};
     xConstraintId:string;yConstraintId:string;radiusConstraintId:string;
+    xReferencePointId:string;yReferencePointId:string;
     xOffsetMm:number;yOffsetMm:number;
   }>;
-  affectedHoleIds:string[];
+  affectedHoleIds:string[];reanchoredHoleIds:string[];
   previewOnly:true;nativeExact:false;exactBrepAvailable:false;
   independentStepQualified:false;
 };
