@@ -221,3 +221,52 @@ test('from-empty contour refuses crossing and forged successor without publicati
   assert.equal(source.session.currentStep(),null);
   source.session.cancel();
 });
+
+
+test('from-empty pinned handoff rejects a late positive result after equal-revision divergent archive substitution',async()=>{
+  const source=live();
+  contour(source,'create');
+  addBore(source);
+  addSolidAndCut(source);
+  // Both histories produce the same shape, project ID and numeric revision.
+  // Only the original feature.create event identity differs. A revision-only
+  // callback would accept the obsolete native reply for this substituted file.
+  const replacement=live(emptyProject('different.seed.sketch'));
+  contour(replacement,'create');
+  addBore(replacement);
+  addSolidAndCut(replacement);
+  const original=source.history, replacementHistory=replacement.history;
+  const originalArchive=runtime.save(original);
+  const replacementArchive=runtime.save(replacementHistory);
+  assert.equal(original.document.projectId,replacementHistory.document.projectId);
+  assert.equal(original.document.revision,replacementHistory.document.revision);
+  assert.notEqual(originalArchive,replacementArchive);
+  assert.deepEqual(
+    runtime.inspect(original).features.find(f=>f.featureId==='plate').profile,
+    runtime.inspect(replacementHistory).features.find(f=>f.featureId==='plate').profile,
+  );
+  let current=original;
+  const calls=[],positive=syntheticPinnedProvider(calls);
+  const workflow=createExperimentalPlateWorkflow({runtime,model,plateContract,
+    providerKind:'occt8',
+    runExperimentalPlate:async(request,options)=>{
+      const report=await positive(request,options);
+      // Substitute a different *canonical* archive before the provider's
+      // otherwise-positive response is handed back to RUNTIME.
+      current=replacementHistory;
+      assert.notEqual(options.readCurrentRevision(),request.revision);
+      return report;
+    }});
+  const result=await workflow.evaluate(original,{
+    cutFeatureId:'cut',requestId:'drawn.native.divergent-source',
+    exportStep:true,readCurrentHistory:()=>current,
+  });
+  assert.equal(calls.length,1);
+  assert.equal(result.kind,'unresolved');
+  assert.equal(result.code,'stale_revision');
+  assert.equal(result.artifact,null);
+  assert.equal(runtime.save(current),replacementArchive);
+  assert.equal(source.session.currentStep(),null);
+  source.session.cancel();
+  replacement.session.cancel();
+});
