@@ -143,10 +143,10 @@ export function planBodyRebuildManifest(
   const beforeFeatures = featuresOf(previous);
   const afterFeatures = featuresOf(current);
   const afterPlan = planProject(current);
-  const afterById = new Map(afterFeatures.map((feature) => [feature.id, feature]));
+  const afterById = new Map(afterFeatures.map((feature) => [feature.id, feature] as const));
   const executable = new Set(afterPlan.executableOrder);
   const afterStates = new Map(afterPlan.features.map((entry) =>
-    [entry.feature.id, entry]));
+    [entry.feature.id, entry] as const));
   const affected = new Set(invalidation.invalidatedFeatureIds);
   const unchanged = new Set(invalidation.unchangedReady);
   const selected = new Set(request.bodyIds);
