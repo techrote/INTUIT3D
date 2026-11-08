@@ -76,11 +76,11 @@ test('real SKETCH accepts rectangular click sequence and refuses a crossing poly
   assert.equal(build(draw(h,[{x:0,y:0},{x:120,y:80},{x:0,y:80},{x:120,y:0}])).kind,'refused');
   assert.equal(modelSketchIsEmpty(h),true,'SKETCH proposals never write the model');
 });
-test('from-empty committed contour uses the only live RUNTIME journal, then undo/reopen/redo',t=>{
-  if(!structuralContourRuntimeAvailable()){
-    t.skip('RUNTIME structural contract #319 not yet admitted to accepted main');
-    return;
-  }
+test('from-empty committed contour uses the only live RUNTIME journal, then undo/reopen/redo',()=>{
+  // #319 is accepted on main. A missing structural transaction is now an
+  // integration regression, never a reason to silently skip the CAD journey.
+  assert.equal(structuralContourRuntimeAvailable(),true,
+    'accepted RUNTIME structural contour contract must be available');
   let current=newModelEmptySketchSession('workbench.blank.runtime');
   const session=createLivePlateSession({runtime,readCurrentHistory:()=>current,
     publishHistory:next=>{current=next;}});
