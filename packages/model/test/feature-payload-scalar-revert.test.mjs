@@ -192,6 +192,11 @@ test('unsupported binding manifests cannot masquerade as freely authored dimensi
     {format:'intuit3d.dimension-bindings',version:1,entries:[],extra:true},
     {format:'intuit3d.dimension-bindings',version:1,
       entries:[{field:'clearanceMm',unit:'invalid',expression:{op:'literal'}}]},
+    {format:'intuit3d.dimension-bindings',version:1,
+      entries:[{field:'clearanceMm',unit:'mm',expression:{op:'unknown'}}]},
+    {format:'intuit3d.dimension-bindings',version:1,
+      entries:[{field:'missingMm',unit:'mm',
+        expression:{op:'literal',value:2,unit:'mm'}}]},
     {...valid,entries:[{field:'thicknessMm',unit:'mm',
       expression:{op:'literal',value:14,unit:'mm'}}]},
   ];
