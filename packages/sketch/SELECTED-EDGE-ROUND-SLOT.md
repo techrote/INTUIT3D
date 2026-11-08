@@ -42,9 +42,10 @@ termination. Slot material removal is `width * straightDepth + πr²/2`.
    and hole membership must persist. No automatic rebinding.
 7. Commit the **whole** returned authoring envelope as one revision-fenced
    RUNTIME history event, and pass the derived analytic arc sketch/profile
-   through a version-pinned consumer. WORKBENCH may expose the three handles
-   with selection, rigid slide, explicit edge relocation and collision refusal messages; it must not feed the
-   compiled arc sketch back to the ordinary linear-selected-profile API.
+   through a version-pinned consumer. WORKBENCH may expose the four
+   handles with selection, rigid slide, explicit edge relocation and collision
+   refusal messages; it must not feed the compiled arc sketch back to the
+   ordinary linear-selected-profile API.
 
 ## Geometry and correctness
 
