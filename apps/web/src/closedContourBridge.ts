@@ -111,8 +111,11 @@ export type ClosedContourVertexEdit =
  */
 export function dragModelClosedContourVertex(
   h:ModelSession,session:LivePlateSession,selection:SelectedProfileSelection,
-  handleId:string,target:SketchLocalPoint,
+  handleId:string,target:SketchLocalPoint,expectedArchive:string,
 ):ClosedContourVertexEdit {
+  if(serializeModelSession(h)!==expectedArchive)
+    return {kind:'refused',code:'stale_source',
+      reason:'The canonical journal has changed since this vertex was selected. Reselect the contour.'};
   const inspected=inspectModelClosedContour(h,selection);
   if(!inspected)return {kind:'refused',code:'stale_selection',
     reason:'The current solver source does not admit this selected drawn contour. Reselect it.'};
@@ -134,7 +137,7 @@ export function dragModelClosedContourVertex(
     projectId:h.document.projectId,expectedRevision:h.document.revision,
     request:{
       format:'intuit3d.runtime.closed-contour-transaction',version:1,
-      expectedArchive:serializeModelSession(h),
+      expectedArchive,
       expectedSketchSignature:inspected.sourceSignature,
       sketchFeatureId:'sketch.plate',eventId:'workbench.contour.drag.'+h.document.revision,
       operation:'drag',admission:'require_admissible',
