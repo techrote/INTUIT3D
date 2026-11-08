@@ -164,7 +164,7 @@ class OfflineBundleTests(unittest.TestCase):
             worker_source.write_text(
                 '#include <stdio.h>\n'
                 'extern int destep(void); extern int direct(void);\n'
-                'int main(void) {printf("%d\\\n", destep()+direct()); return 0;}\n')
+                'int main(void) {printf("%d\\n", destep()+direct()); return 0;}\n')
             worker = portable / "bin" / "worker"
             subprocess.run(
                 ["cc", str(worker_source), "-o", str(worker),
