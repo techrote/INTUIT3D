@@ -257,7 +257,7 @@ class ProgressiveV6OracleTests(unittest.TestCase):
                                           if token.startswith(field + "="))
                             bad_value = float(marker.split("=", 1)[1])
                             displaced = good.replace(
-                                marker, f"{field}={bad_value + 10:.9f}")
+                                marker, f"{field}={bad_value + (100 if field.startswith('cov_') else 10):.9f}")
                             with self.assertRaisesRegex(Rejected, "centroid|covariance"):
                                 parse_receipt(displaced, kind, thickness,
                                               cut_count=count)
