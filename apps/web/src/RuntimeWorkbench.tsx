@@ -16,6 +16,7 @@ import { createLivePlateSession } from '@intuit3d/workflow-runtime/live-plate-se
 import { experimentalStepFilename } from './localNativeStep';
 import { MAX_MODEL_ARCHIVE_BYTES, validateModelFileInWorker, type ModelImportStage } from './modelArchiveImport';
 import { checkedModelArchiveSize, modelArchiveDownloadName, modelArchiveSummary } from './modelFileLifecycle';
+import { deleteLocalRecovery, listLocalRecoveries, readLocalRecovery, storeLocalRecovery, type LocalRecoverySummary } from './modelRecovery';
 
 const LABEL: Record<ModelDimension,string> = {
   width:'Plate width', depth:'Plate depth', holeDiameter:'Hole diameter',
@@ -98,9 +99,43 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [cascadeConfirmation,setCascadeConfirmation]=useState<string|null>(null);
   const [timeline,setTimeline]=useState<'authored'|'evaluated'>('authored');
   const [message,setMessage]=useState<string|null>(null);
-  const [pendingImport,setPendingImport]=useState<{file:string;history:ModelSession;origin:'file'|'new'}|null>(null);
+  const [pendingImport,setPendingImport]=useState<{file:string;history:ModelSession;origin:'file'|'new'|'recovery'}|null>(null);
   // The browser cannot prove that a requested file download reached the OS.
   const [needsArchiveExport,setNeedsArchiveExport]=useState(true);
+  // Automatic *local* recovery copies are serialized RUNTIME archives, not a
+  // second authoritative model. A fresh starter must never overwrite a prior
+  // user session until the user has actually authored a change.
+  const recoverySessionId=useRef('session.'+crypto.randomUUID());
+  const [recoveryActivated,setRecoveryActivated]=useState(false);
+  const [recoveryEntries,setRecoveryEntries]=useState<LocalRecoverySummary[]>([]);
+  const [recoveryStatus,setRecoveryStatus]=useState<'checking'|'ready'|'error'>('checking');
+  const [recoveryError,setRecoveryError]=useState<string|null>(null);
+  const recoveryWriteQueue=useRef<Promise<void>>(Promise.resolve());
+  const refreshRecovery=async()=>{
+    try{
+      const entries=await listLocalRecoveries();
+      setRecoveryEntries(entries);setRecoveryStatus('ready');setRecoveryError(null);
+    }catch(e){setRecoveryStatus('error');setRecoveryError(String(e));}
+  };
+  useEffect(()=>{void refreshRecovery();},[]);
+  useEffect(()=>{
+    if(!recoveryActivated)return;
+    const snapshot=history,requested=!needsArchiveExport;
+    // Coalesce direct-manipulation bursts and serialize all writes for this
+    // browser session, so a slower older revision cannot win the race.
+    const timer=setTimeout(()=>{
+      recoveryWriteQueue.current=recoveryWriteQueue.current.catch(()=>{}).then(async()=>{
+        const archive=serializeModelSession(snapshot);
+        await storeLocalRecovery(snapshot,recoverySessionId.current,archive,requested);
+        await refreshRecovery();
+      }).catch(e=>{
+        setRecoveryStatus('error');
+        setRecoveryError('Automatic local recovery failed: '+String(e)+
+          '. Export a model archive to protect this session.');
+      });
+    },450);
+    return()=>clearTimeout(timer);
+  },[history,needsArchiveExport,recoveryActivated]);
   const fileInput=useRef<HTMLInputElement>(null);
   const loadTicket=useRef(0);
   const importAbort=useRef<AbortController|null>(null);
@@ -148,6 +183,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     setCircleDrawing({phase:'idle'});
     setFeatureCombo(null);
     setHistory(next);
+    setRecoveryActivated(true);
     setNeedsArchiveExport(true);
     // An accepted journal change may trigger a new native evaluation, but a
     // burst of sketch drags coalesces and unsupported profiles stay pending.
@@ -490,7 +526,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       setMessage('Model archive download requested. Verify the file exists in Downloads before leaving. The INTENT journal and undo history are included; exact solid/STEP are not.');
     }catch(e){setMessage('Save failed: '+String(e));}
   };
-  const openModelFile=async(file:File)=>{
+  const openModelFile=async(file:File,origin:'file'|'recovery'='file')=>{
     cancelActiveImport();
     const ticket=loadTicket.current;
     const abort=new AbortController();
@@ -512,7 +548,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         },
       });
       if(ticket!==loadTicket.current||abort.signal.aborted)return;
-      setPendingImport({file:file.name,history:incoming,origin:'file'});
+      setPendingImport({file:file.name,history:incoming,origin});
     }catch(e){
       if(ticket===loadTicket.current&&!abort.signal.aborted)
         setMessage('Open rejected (current model retained): '+String(e));
@@ -522,6 +558,24 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         setLoadingFile(null);
       }
     }
+  };
+  const restoreLocal=async(id:string)=>{
+    try{
+      // Do not read a record while this session's latest write is unfinished.
+      await recoveryWriteQueue.current;
+      const source=await readLocalRecovery(id);
+      checkedModelArchiveSize(source);
+      await openModelFile(new File([source],'local-recovery.i3d-model.json',
+        {type:'application/json'}),'recovery');
+    }catch(e){setMessage('Local recovery could not be opened; current model retained: '+String(e));}
+  };
+  const forgetLocal=async(id:string)=>{
+    try{
+      await recoveryWriteQueue.current;
+      await deleteLocalRecovery(id);
+      await refreshRecovery();
+      setMessage('Local recovery checkpoint forgotten. Current model unchanged.');
+    }catch(e){setMessage('Could not forget local recovery: '+String(e));}
   };
   const load=(event:ChangeEvent<HTMLInputElement>)=>{
     const file=event.target.files?.[0];
@@ -538,14 +592,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     cancelActiveImport();
     acceptHistory(pendingImport.history);
     // Imported archives already exist on disk; newly created projects do not.
-    setNeedsArchiveExport(pendingImport.origin==='new');
+    setNeedsArchiveExport(pendingImport.origin!=='file');
     const plateRows=modelFeatureTimeline(pendingImport.history).filter(row=>row.featureId==='plate');
     const hasPlate=plateRows.some(row=>row.active);
     // A removed extrusion remains the selected recoverable tombstone after
     // reopening; only a never-extruded sketch selects the source sketch.
     setSketchMode(!hasPlate);setSelected(plateRows.length?'plate':'sketch.plate');
     setActiveHole(null);setPendingImport(null);setFeatureCombo(null);
-    setMessage('Model archive reopened with durable feature IDs, undo/redo and no cached meshes.');
+    setMessage(pendingImport.origin==='recovery'?'Local recovery restored as an unexported authoritative model; save an archive to retain a filesystem copy.':'Model archive reopened with durable feature IDs, undo/redo and no cached meshes.');
   };
   // STEP stays in the RUNTIME live session until the very moment the user
   // downloads it. Edits, undo, archive replacement and provider changes revoke it.
@@ -676,6 +730,26 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           aria-label="Open INTUIT model archive" />
       </div>
     </header>
+    <details className="runtime-local-recovery" data-testid="runtime-local-recovery">
+      <summary data-testid="runtime-local-recovery-toggle">Browser-local crash recovery · {recoveryStatus==='checking'?'checking local storage':recoveryStatus==='error'?'storage unavailable':recoveryEntries.length+' checkpoint(s)'}</summary>
+      <p>After your first edit, a bounded, local-only RUNTIME model archive is checkpointed in this browser.
+        It contains the actual journal and undo/redo frames, not meshes or STEP. Browser storage can be
+        cleared or evicted: <strong>downloaded model archives remain essential.</strong>
+        Recovering always validates in the isolated Worker and requires confirmation.</p>
+      {recoveryError&&<p role="status" data-testid="runtime-local-recovery-error">{recoveryError}</p>}
+      {recoveryStatus==='ready'&&!recoveryEntries.length&&<p>No previous local drafts in this browser.</p>}
+      {recoveryEntries.map(entry=><div className="runtime-local-recovery-entry" key={entry.id}>
+        <span>{entry.projectId} · revision {entry.revision} · {entry.undoFrames} undo / {entry.redoFrames} redo
+          {' '}· {new Date(entry.updatedAt).toLocaleString()} · {entry.exportRequested?'download requested':'unexported draft'}
+          {entry.id===recoverySessionId.current?' · this tab':''}</span>
+        <button type="button" className="ribbon-button" data-testid={'runtime-recovery-restore-'+entry.id}
+          disabled={!!pendingImport||!!loadingFile}
+          onClick={()=>void restoreLocal(entry.id)}>Review &amp; restore</button>
+        <button type="button" className="ribbon-button" data-testid={'runtime-recovery-forget-'+entry.id}
+          disabled={!!pendingImport||!!loadingFile}
+          onClick={()=>void forgetLocal(entry.id)}>Forget</button>
+      </div>)}
+    </details>
     <nav className="toolstrip" aria-label="Model-backed CAD controls">
       <div className="ribbon-group"><span className="ribbon-label">GEOMETRY</span>
         <button className={!sketchMode?'ribbon-button active':'ribbon-button'} data-testid="runtime-mode-solid" onClick={()=>setSketchMode(false)}>Solid</button>
@@ -1127,8 +1201,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       {needsArchiveExport&&<p data-testid="runtime-import-unexported"><strong>Current model has changes not exported since the last download request.</strong> Cancel and save its archive first to retain them.</p>}
       <p>Replace discards the current in-memory undo/redo journal. The incoming archive was validated in an isolated worker; no cached B-rep, STEP or exact-solid authority is imported.</p>
       <div className="recovery-actions">
-        <button onClick={()=>{cancelActiveImport();setPendingImport(null);}}>Cancel</button>
-        <button onClick={useIncoming}>Replace with model archive</button>
+        <button data-testid="runtime-import-review-cancel" onClick={()=>{cancelActiveImport();setPendingImport(null);}}>Cancel</button>
+        <button data-testid="runtime-import-review-confirm" onClick={useIncoming}>Replace with model archive</button>
       </div>
     </section></div>}
   </div>;

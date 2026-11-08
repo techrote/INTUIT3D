@@ -423,3 +423,37 @@ Mark this acceptance **unqualified** until the original private file and
 Windows/Firefox environment are actually replayed. A synthetic Chromium
 test, Worker-side read, and persistent renderer are risk reductions, not
 proof of the cause or resolution of #177.
+
+
+## Authoritative model crash recovery — browser-local checkpoints
+
+The **model-backed CAD workbench** (not the separate legacy preview sandbox)
+retains up to six recent edited browser sessions in origin-scoped IndexedDB.
+A 450 ms quiet period after an accepted authoritative journal change stores
+the same RUNTIME model archive used by **Save model archive**, including
+project ID, revision and undo/redo frames. A newly opened, unedited template
+does not overwrite earlier sessions. Multiple tabs have distinct session IDs,
+so there is no shared mutable CAD document or cross-tab journal authority.
+
+Expand **Browser-local crash recovery** beneath the title bar. For the desired
+project/revision, click **Review & restore**. The saved archive is passed through
+the existing isolated validation Worker and then the normal identity/revision
+replacement-confirmation dialog; **Cancel** leaves the current model untouched.
+A recovered draft is marked **unexported**, even if the older browser session
+requested a download. **Forget** removes that local checkpoint.
+
+This is best-effort recovery, **not** a filesystem save, guaranteed persistence,
+cloud sync, backup service or native-solid/STEP cache. Private browsing, browser
+storage eviction, quota/security settings, a sudden power loss before the queued
+transaction completes, and profile deletion can remove checkpoints. Storage
+errors are surfaced in the disclosure; export project archives regularly.
+The 4 MiB limit and journal validation remain enforced. Never treat these
+checkpoints as evidence that Windows Firefox issue #177 is resolved.
+
+Executable qualification: \`npm test --workspace @intuit3d/web\`,
+\`npm run typecheck --workspace @intuit3d/web\`, and
+\`npm run test:browser:handles --workspace @intuit3d/web\`. The browser test
+covers actual Chromium editing, IndexedDB checkpointing, cancel, full page
+reload, Worker review, confirmed restore and undo/redo. The original private
+40 KiB owner archive selected in Windows Firefox still needs the separate,
+privacy-respecting human replay above.

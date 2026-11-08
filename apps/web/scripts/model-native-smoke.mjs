@@ -132,6 +132,13 @@ async function main(){
   ws.addEventListener('message',event=>{
     const packet=JSON.parse(event.data);
     if(packet.method==='Runtime.exceptionThrown')exceptions.push(packet.params?.exceptionDetails?.text);
+    // The app correctly warns on reload with unexported changes. This test
+    // deliberately accepts that native browser dialog while simulating a
+    // renderer restart, so that IndexedDB continuity can be verified.
+    if(packet.method==='Page.javascriptDialogOpening' && packet.params?.type==='beforeunload'){
+      void send('Page.handleJavaScriptDialog',{accept:true}).catch(error=>
+        exceptions.push('beforeunload replay dialog: '+String(error)));
+    }
     const wait=pending.get(packet.id);
     if(!wait)return;
     pending.delete(packet.id);clearTimeout(wait.timer);
@@ -922,7 +929,7 @@ async function main(){
     'bolt circle did not commit exactly one model revision');
   check(await evaluate("document.querySelector('[data-testid=\"runtime-status-sketch.plate\"]')?.textContent==='analytic_profile_only'"),
     'bolt-circle solver did not admit the sketch');
-  await screenshot('native-10-circular-bolt-array.png');
+  await screenshot('native-10-circular-bolt-array.png','native-11-local-recovery-after-reload.png');
   await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===0"),
@@ -931,13 +938,60 @@ async function main(){
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===2"),
     'bolt-circle Redo did not recover the same hole IDs');
+  // Browser-local crash recovery: real IndexedDB save from the committed
+  // RUNTIME journal, real pointer disclosure/import review, cancel and reopen.
+  // This is independent of Windows Firefox's private #177 archive acceptance.
+  const recoveryRevision=Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0]);
+  await eventually(()=>evaluate("(() => {const row=document.querySelector('.runtime-local-recovery-entry');return Boolean(row&&row.textContent.includes('revision "+recoveryRevision+"')&&row.textContent.includes('unexported draft'));})()"),
+    'automatic local recovery did not persist the latest unexported revision');
+  await pointerClick('runtime-local-recovery-toggle');
+  const recoveryRestoreId=await evaluate(
+    "document.querySelector('[data-testid^=\"runtime-recovery-restore-\"]')?.dataset.testid");
+  check(recoveryRestoreId?.startsWith('runtime-recovery-restore-session.'),
+    'missing session-specific local recovery checkpoint');
+  await pointerClick(recoveryRestoreId);
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'recovery failed isolated Worker validation or did not require replacement review');
+  check(await evaluate("document.querySelector('[data-testid=runtime-import-incoming]')?.textContent.includes('revision "+recoveryRevision+"')"),
+    'local recovery review lost the journal revision');
+  await pointerClick('runtime-import-review-cancel');
+  check(Number((await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/\d+/)?.[0])===recoveryRevision,
+    'cancelling recovery mutated the current model');
+  // Reload the entire React application: in-memory state is destroyed.
+  // The user must explicitly restore the durable IndexedDB copy.
+  await send('Page.reload',{ignoreCache:true});
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-local-recovery-toggle]'))"),
+    'local recovery UI unavailable after browser reload');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=\""+recoveryRestoreId+"\"]')!==null"),
+    'the checkpoint was not durable across a full browser reload');
+  await pointerClick('runtime-local-recovery-toggle');
+  await pointerClick(recoveryRestoreId);
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'recovered checkpoint did not pass Worker validation after reload');
+  await pointerClick('runtime-import-review-confirm');
+  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-revision]')?.textContent.match(/\\d+/)?.[0])==="+recoveryRevision),
+    'explicit recovery did not restore the original authoritative revision');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===2"),
+    'recovering an archive lost newly authored circular holes');
+  check(await evaluate("document.querySelector('[data-testid=runtime-archive-state]')?.textContent.includes('UNEXPORTED')"),
+    'IndexedDB recovery incorrectly claimed an OS-level exported archive');
+  await screenshot('native-11-local-recovery-after-reload.png');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===0"),
+    'reopened recovery lost authoritative undo frames');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===2"),
+    'reopened recovery failed redo of authored circular holes');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder with schema-compatible OCP identity, NOT OCP/native/STEP interoperability',
     downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,realPhysicalGeometry:false,
-    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png','native-10a-selected-rigid-rotation.png','native-10-circular-bolt-array.png'
+    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,localRecoveryIndexedDbReload:true,recoveryWorkerReviewCancel:true,recoveryUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
+      'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png','native-10a-selected-rigid-rotation.png','native-10-circular-bolt-array.png','native-11-local-recovery-after-reload.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
