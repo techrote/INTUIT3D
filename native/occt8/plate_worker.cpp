@@ -46,7 +46,7 @@ struct RectCut { std::string id; bool circular=false; double x,y,width,depth,cut
 struct Request {
   std::string request_id,feature_id;
   long long revision=0;
-  bool export_step=false,cut_chain=false,mixed_chain=false,l_profile_chain=false,orthogonal_chain=false,linear_chain=false;
+  bool export_step=false,cut_chain=false,mixed_chain=false,l_profile_chain=false,orthogonal_chain=false,linear_chain=false,flex_chain=false;
   double width=0,depth=0,thickness=0,leg_width=0,foot_height=0;
   std::string profile_id;
   std::vector<Hole> holes;
@@ -233,18 +233,20 @@ Request read_request(const std::filesystem::path& path) {
                       magic!="INTUIT3D_OCCT8_MIXED_CUT_CHAIN_V2"&&
                       magic!="INTUIT3D_OCCT8_L_PROFILE_CHAIN_V3"&&
                       magic!="INTUIT3D_OCCT8_ORTHOGONAL_CHAIN_V4"&&
-                      magic!="INTUIT3D_OCCT8_LINEAR_CHAIN_V5"))
+                      magic!="INTUIT3D_OCCT8_LINEAR_CHAIN_V5"&&
+                      magic!="INTUIT3D_OCCT8_FLEX_LINEAR_CHAIN_V6"))
     throw std::runtime_error("invalid canonical request protocol");
   q.mixed_chain=(magic=="INTUIT3D_OCCT8_MIXED_CUT_CHAIN_V2");
   q.l_profile_chain=(magic=="INTUIT3D_OCCT8_L_PROFILE_CHAIN_V3");
   q.orthogonal_chain=(magic=="INTUIT3D_OCCT8_ORTHOGONAL_CHAIN_V4");
   q.linear_chain=(magic=="INTUIT3D_OCCT8_LINEAR_CHAIN_V5");
+  q.flex_chain=(magic=="INTUIT3D_OCCT8_FLEX_LINEAR_CHAIN_V6");
   q.cut_chain=(magic!="INTUIT3D_OCCT8_PLATE_V1");
-  if(q.orthogonal_chain||q.linear_chain) {
+  if(q.orthogonal_chain||q.linear_chain||q.flex_chain) {
     int vertex_count=0;
     if(!(file>>q.request_id>>q.feature_id>>q.revision>>export_flag>>
          q.profile_id>>q.thickness>>vertex_count>>cut_count)||
-       vertex_count<(q.linear_chain?3:6)||vertex_count>64)
+       vertex_count<((q.linear_chain||q.flex_chain)?3:6)||vertex_count>64)
       throw std::runtime_error("invalid selected orthogonal contour header");
     for(int i=0;i<vertex_count;++i) {
       Point p{};
@@ -252,7 +254,7 @@ Request read_request(const std::filesystem::path& path) {
         throw std::runtime_error("truncated selected contour");
       q.vertices.push_back(p);
     }
-    if(q.linear_chain)validate_linear_polygon(q.vertices);
+    if(q.linear_chain||q.flex_chain)validate_linear_polygon(q.vertices);
     else validate_polygon(q.vertices);
     auto xmin=q.vertices[0].x,xmax=xmin,ymin=q.vertices[0].y,ymax=ymin;
     for(const auto& p:q.vertices) {
@@ -276,8 +278,8 @@ Request read_request(const std::filesystem::path& path) {
   const auto dimension=[](double v) {return std::isfinite(v)&&v>=1e-6&&v<=1e6;};
   if(!dimension(q.width)||!dimension(q.depth)||!dimension(q.thickness))
     throw std::runtime_error("invalid plate dimensions");
-  if((q.orthogonal_chain||q.linear_chain) &&
-     (!id_ok(q.profile_id)||q.profile_id==q.feature_id||cut_count<2))
+  if((q.orthogonal_chain||q.linear_chain||q.flex_chain) &&
+     (!id_ok(q.profile_id)||q.profile_id==q.feature_id||(cut_count<2&&!q.flex_chain)))
     throw std::runtime_error("invalid selected orthogonal profile ID or cuts");
   if(q.l_profile_chain &&
      (!id_ok(q.profile_id)||!dimension(q.leg_width)||!dimension(q.foot_height)||
@@ -310,17 +312,17 @@ Request read_request(const std::filesystem::path& path) {
   for(int i=0;i<cut_count;++i) {
     RectCut c{};
     std::string kind="R";
-    if(!(file>>c.id) || ((q.mixed_chain||q.l_profile_chain||q.orthogonal_chain||q.linear_chain) && !(file>>kind)) ||
+    if(!(file>>c.id) || ((q.mixed_chain||q.l_profile_chain||q.orthogonal_chain||q.linear_chain||q.flex_chain) && !(file>>kind)) ||
        !(file>>c.x>>c.y>>c.width>>c.depth>>c.cut_depth))
       throw std::runtime_error("truncated ordered cut");
     if(kind!="R" && kind!="C")
       throw std::runtime_error("unsupported cut profile kind");
     c.circular=(kind=="C");
-    if(!id_ok(c.id)||((q.l_profile_chain||q.orthogonal_chain||q.linear_chain)&&c.id==q.profile_id)||!std::isfinite(c.x)||!std::isfinite(c.y)||
+    if(!id_ok(c.id)||((q.l_profile_chain||q.orthogonal_chain||q.linear_chain||q.flex_chain)&&c.id==q.profile_id)||!std::isfinite(c.x)||!std::isfinite(c.y)||
        !dimension(c.width)||!dimension(c.cut_depth)||
        (c.circular ? c.depth!=0 : !dimension(c.depth))||
        c.cut_depth>q.thickness||
-       (q.linear_chain ?
+       ((q.linear_chain||q.flex_chain) ?
          !linear_cut_inside_polygon(q.vertices,c) :
          q.orthogonal_chain ?
          !cut_inside_polygon(q.vertices,c) :
@@ -401,15 +403,15 @@ void require_shape(const Request& q,const Metrics& m) {
     removed_area+=std::acos(-1.0)*h.r*h.r;
     bore_wall+=2*std::acos(-1.0)*h.r;
   }
-  const double stock_area=(q.orthogonal_chain||q.linear_chain)?polygon_area(q.vertices):
+  const double stock_area=(q.orthogonal_chain||q.linear_chain||q.flex_chain)?polygon_area(q.vertices):
     q.l_profile_chain ? q.width*q.foot_height+q.leg_width*(q.depth-q.foot_height):
     q.width*q.depth;
-  const double stock_perimeter=(q.orthogonal_chain||q.linear_chain)?
-    polygon_perimeter(q.vertices,q.linear_chain):2*(q.width+q.depth);
+  const double stock_perimeter=(q.orthogonal_chain||q.linear_chain||q.flex_chain)?
+    polygon_perimeter(q.vertices,(q.linear_chain||q.flex_chain)):2*(q.width+q.depth);
   double v=(stock_area-removed_area)*q.thickness;
   double a=2*(stock_area-removed_area)+
        (stock_perimeter+bore_wall)*q.thickness;
-  int expected_faces=((q.orthogonal_chain||q.linear_chain)?static_cast<int>(q.vertices.size())+2:
+  int expected_faces=((q.orthogonal_chain||q.linear_chain||q.flex_chain)?static_cast<int>(q.vertices.size())+2:
     q.l_profile_chain?8:6)+static_cast<int>(q.holes.size());
   for(const auto& c:q.cuts) {
     const bool through=(c.cut_depth==q.thickness);
@@ -448,7 +450,7 @@ void require_shape(const Request& q,const Metrics& m) {
 }
 TopoDS_Shape construct(const Request& q) {
   TopoDS_Shape shape;
-  if(q.orthogonal_chain||q.linear_chain) {
+  if(q.orthogonal_chain||q.linear_chain||q.flex_chain) {
     // One closed, validated CCW contour. Do not join boxes or infer a sketch.
     BRepBuilderAPI_MakePolygon poly;
     for(const auto& p:q.vertices)poly.Add(gp_Pnt(p.x,p.y,0));
@@ -530,7 +532,8 @@ void write_report(const Request& q,const Metrics& source,
                   const Metrics* step,const std::filesystem::path& output) {
   // IDs have already been restricted to JSON-safe alphanumeric characters.
   std::ostringstream s;
-  s<<"{\"protocol\":\""<<(q.linear_chain?"intuit3d/kernel/linear-profile-cut-chain-v5":
+  s<<"{\"protocol\":\""<<(q.flex_chain?"intuit3d/kernel/flexible-linear-profile-v6":
+       q.linear_chain?"intuit3d/kernel/linear-profile-cut-chain-v5":
        q.orthogonal_chain?"intuit3d/kernel/orthogonal-profile-cut-chain-v4":
       q.l_profile_chain?"intuit3d/kernel/l-profile-cut-chain-v3":
      q.mixed_chain?"intuit3d/kernel/plate-mixed-cut-chain-v2":
