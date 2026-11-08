@@ -131,6 +131,10 @@
     "./selected-edge-cut": {
       "types": "./src/selected-edge-cut.ts",
       "default": "./src/selected-edge-cut.ts"
+    },
+    "./selected-edge-batch-rebind": {
+      "types": "./src/selected-edge-batch-rebind.ts",
+      "default": "./src/selected-edge-batch-rebind.ts"
     }
   },
   "scripts": {
