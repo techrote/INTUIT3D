@@ -18,12 +18,12 @@ import sys
 ANVIL_PIN = "50c053840933c92d598976e837e63ccd7626c312"
 HEX40 = re.compile(r"[a-f0-9]{40}\Z")
 HEX64 = re.compile(r"[a-f0-9]{64}\Z")
-FLOAT = r"-?(?:[0-9]+(?:\\.[0-9]+)?|\\.[0-9]+)"
+FLOAT = r"-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)"
 MOMENT_FIELDS = ("centroid_x_mm", "centroid_y_mm", "centroid_z_mm",
                  "cov_xx_mm2", "cov_yy_mm2", "cov_zz_mm2",
                  "cov_xy_mm2", "cov_xz_mm2", "cov_yz_mm2")
 MOMENTS = re.compile("WITNESS_MOMENTS " + " ".join(
-    name + "=(" + FLOAT + ")" for name in MOMENT_FIELDS) + r"\\Z")
+    name + "=(" + FLOAT + ")" for name in MOMENT_FIELDS) + r"\Z")
 SUCCESS = re.compile(
     r"WITNESS_ACCEPT solids=1 imported_exact=true warnings=0 "
     r"rays=(\d+) triangles=(\d+) volume_mm3=([0-9.]+) area_mm2=([0-9.]+)\Z")
