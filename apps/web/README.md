@@ -480,3 +480,9 @@ Unit tests cover orientations, narrow viewport bounds and invalid inputs.
 Real Chromium smoke clicks the presets, checks actual Three.js camera
 coordinates, unchanged journal revision and WebGL2 context. Windows Firefox
 and private #177 archive acceptance remain unqualified.
+
+## Selecting sketch holes from the real 3D canvas
+
+In **Solid** mode, switch to **TOP** or **ISO**. Click a visible circular opening in the actual WebGL canvas, rather than its thickness grip or a toolbar button. The selected hole ID appears at the upper left and in the model-backed inspector; Ctrl/Cmd-click adds another ID to the existing group. A pointer drag or wheel gesture remains camera navigation, not a model edit. **FRONT/RIGHT** do not infer occluded hole identities through the solid.
+
+The preview ray is intersected with the current top plane and matched only against existing solver-authored circular holes; it never creates triangle/face IDs or modifies the INTENT journal. Selection does not advance revision, invalidate or manufacture native STEP, nor recreate the WebGL context. Editing the chosen hole remains an authoritative sketch/inspector operation. For acceptance, the Chromium browser smoke uses a real CDP pointer click on the projected solved hole, verifies selection and unchanged revision/context, and ensures a stationary click does not misleadingly mark the camera as manually orbited. Firefox/Windows original archive #177 remains unqualified.
