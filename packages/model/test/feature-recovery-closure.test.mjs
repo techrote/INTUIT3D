@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  commitEvent, featuresOf, newProject, planProject, ProjectFormatError,
+  commitEvent, featuresOf, newProject, planProject, parseProject, ProjectFormatError,
   ProjectRevisionError, serializeProject,
 } from '../src/index.ts';
 import {
@@ -110,14 +110,13 @@ test('one undo frame and archive reopen preserve author identities and unrelated
 test('revision and full-journal fences reject concurrent divergent branches at equal revision',()=>{
   const initial=part(), removed=cascade(initial,'extrude.datum');
   const request=inspectRequest(removed);
-  const fork=commitEvent(initial,{eventId:'event.fork',type:'feature.edit',
-    featureId:'sketch.frame',patch:{payload:{widthMm:115,heightMm:55}}});
-  // Both branches have different journals. For an equal-revision adversary,
-  // use two distinct edits of the same active project revision.
-  const alternate=commitEvent(removed,{
-    eventId:'event.concurrent.edit',type:'feature.edit',featureId:'sketch.frame',
-    patch:{payload:{widthMm:116,heightMm:55}},
-  });
+  // Same project and revision, different valid journal event ID. A scalar
+  // revision-only guard would accept this divergent authoring branch.
+  const divergent=JSON.parse(serializeProject(removed));
+  divergent.journal[divergent.journal.length-1].eventId='event.concurrent.cascade';
+  const alternate=parseProject(divergent);
+  assert.equal(alternate.revision,removed.revision);
+  assert.notEqual(serializeProject(alternate),serializeProject(removed));
   assert.throws(()=>inspectFeatureRecoveryClosure(alternate,request),ProjectRevisionError);
   assert.throws(()=>inspectFeatureRecoveryClosure(removed,{
     ...request,expectedRevision:removed.revision-1,
@@ -125,7 +124,6 @@ test('revision and full-journal fences reject concurrent divergent branches at e
   assert.throws(()=>inspectFeatureRecoveryClosure(removed,{
     ...request,expectedProjectId:'project.foreign',
   }),ProjectRevisionError);
-  assert.ok(fork.revision>initial.revision);
   assert.equal(serializeProject(removed),request.expectedDocumentFence);
 });
 
