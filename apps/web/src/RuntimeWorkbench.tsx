@@ -883,7 +883,6 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             <span>{geom?'Public SKETCH solver + profile admission':'Invalid or unresolved geometry'}</span></div>
           <span className={geom?'preview-tag':'preview-tag stale'}>{geom?'TESSELLATED PREVIEW · NOT EXACT':'NO CURRENT VALID MESH'}</span>
         </div>
-        {renderSketch&&<p className="microcopy" data-testid="runtime-hole-nudge-help">Click a sketch hole, then use arrow keys to nudge 1 mm (Shift: 10 mm). Ctrl-select multiple holes to move together. Each accepted nudge is one undoable model revision. Hole rims cannot cross the admitted plate boundary.</p>}
         <div className="viewport-stage">
           {geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={renderSketch}
               onHoleMove={circleDrawing.phase==='idle'?dragHole:undefined}
@@ -909,7 +908,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           </div>}
           <div className="viewport-hint">{renderSketch?(circleDrawing.phase!=='idle'?
             'Circle tool: centre click → radius click; profile admission rejects overlaps or outside holes':
-            'Drag edge/diameter handles or hole centers; arrow keys nudge focused dimensions (Shift = 0.1 mm)'):
+            'Drag edge/diameter handles or hole centres. Focus a dimension and press arrows (Shift: 0.1 mm); click a hole then press arrows to nudge 1 mm (Shift: 10 mm), Ctrl-select for a group.'):
             'Drag extrusion-thickness grip or use ↑/↓ · Drag background to orbit · Wheel to zoom · Right-drag to pan'}</div>
         </div>
         <section className="timeline" aria-label="Authoritative history versus dependency schedule">
