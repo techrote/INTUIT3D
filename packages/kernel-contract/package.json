@@ -71,6 +71,42 @@
     "./runtime-occt8-cut-provider": {
       "types": "./src/runtime-occt8-cut-provider.d.mts",
       "node": "./src/runtime-occt8-cut-provider.mjs"
+    },
+    "./occt8-orthogonal-profile-v4": {
+      "types": "./src/occt8-orthogonal-profile-v4.d.mts",
+      "default": "./src/occt8-orthogonal-profile-v4.mjs"
+    },
+    "./local-occt8-orthogonal-profile-provider": {
+      "types": "./src/local-occt8-orthogonal-profile-provider.d.mts",
+      "node": "./src/local-occt8-orthogonal-profile-provider.mjs"
+    },
+    "./runtime-occt8-orthogonal-profile-provider": {
+      "types": "./src/runtime-occt8-orthogonal-profile-provider.d.mts",
+      "node": "./src/runtime-occt8-orthogonal-profile-provider.mjs"
+    },
+    "./runtime-occt8-flexible-linear-provider": {
+      "types": "./src/runtime-occt8-flexible-linear-provider.d.mts",
+      "node": "./src/runtime-occt8-flexible-linear-provider.mjs"
+    },
+    "./occt8-flexible-linear-v6": {
+      "types": "./src/occt8-flexible-linear-v6.d.mts",
+      "default": "./src/occt8-flexible-linear-v6.mjs"
+    },
+    "./local-occt8-flexible-linear-provider": {
+      "types": "./src/local-occt8-flexible-linear-provider.d.mts",
+      "node": "./src/local-occt8-flexible-linear-provider.mjs"
+    },
+    "./occt8-linear-profile-v5": {
+      "types": "./src/occt8-linear-profile-v5.d.mts",
+      "default": "./src/occt8-linear-profile-v5.mjs"
+    },
+    "./local-occt8-linear-profile-provider": {
+      "types": "./src/local-occt8-linear-profile-provider.d.mts",
+      "node": "./src/local-occt8-linear-profile-provider.mjs"
+    },
+    "./runtime-occt8-linear-profile-provider": {
+      "types": "./src/runtime-occt8-linear-profile-provider.d.mts",
+      "node": "./src/runtime-occt8-linear-profile-provider.mjs"
     }
   },
   "scripts": {

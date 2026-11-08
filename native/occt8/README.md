@@ -158,3 +158,96 @@ node --test packages/kernel-contract/test/occt8-cut-chain.test.mjs
 The C++ code constructs real `BRepAlgoAPI_Cut` solids sequentially, checks one valid solid plus analytic material volume, area, face and through-bore invariants, writes genuine STEP and requires same-engine reconstruction. The bridge shares the existing isolated subprocess deadline and exclusive artifact publication. The Node contract preserves revision/abort fencing and reports `exactAuthority:false`, `independentInteroperability:false` until production/external CAD gates are independently demonstrated. **Do not enable the plate-only independent Part 21 structural reader or cross-version bore-only audit for this new profile:** they intentionally do not handle extra pocket faces. They fail closed rather than silently grant STEP provenance.
 
 The synthetic/source-only regressions do **not** qualify C++ execution. Only tests executing with a real `INTUIT3D_OCCT8_WORKER` and retaining binary/STEP evidence establish native qualification; full non-OCCT external CAD reconstruction and a browser-operated authoring path are separate requirements. This is a narrow initial production-facing cut shape, not general curve/profile support.
+
+
+## KERNEL-002 selected orthogonal-profile v4 — 7 November 2026
+
+A new `intuit3d/kernel/orthogonal-profile-cut-chain-v4` **additive**
+native operation consumes a semantic `profileId`, extrusion thickness and
+6–64 explicit, positively wound, simple orthogonal vertices, with 2–16
+ordered circular/rectangular blind or through cuts. The current authored
+RUNTIME adapter requires a **real solved selected SKETCH** and ordered,
+identified cut journal; it does not create a second browser-side model.
+Nonorthogonal curves, fillets, face projections, contour islands, touching
+cuts and unsolved contours remain explicitly unsupported.
+
+The pinned C++ worker now constructs a single arbitrary stepped contour face
+rather than pretending every body is a centered six-edge L, checks its own
+self-intersection, cutter containment and overlap, executes zero-fuzzy Boolean
+operations and verifies one valid solid, analytically independently computed
+polygon area/perimeter, material volume, surface area and circular wall inventory.
+The supervised bridge retains deadline, revision, STEP digest and exclusive
+publication rules. Both TypeScript and Python contracts reject malformed
+contours and false physical receipts. Neither a source-only pass nor same-engine
+STEP readback grants production exactness or external CAD interoperability.
+
+Representative **eight-edge U-bracket**: stock area 6100 mm², perimeter
+500 mm, thickness 8→12 mm, one 5 mm-radius blind pocket 3 mm deep and one
+10×12 mm through window. Native physical volume targets:
+`48800 - 75*pi - 960 = 47604.38055… mm³` and
+`73200 - 75*pi - 1440 = 71524.38055… mm³`.
+Stable semantic body, profile and cutter IDs survive both physical requests.
+
+Required executable proof on a genuinely compiled pinned 8.0.1 worker:
+
+```sh
+python3 -m unittest discover -s native/tests -p test_occt8_orthogonal_contract.py -v
+node --test packages/kernel-contract/test/occt8-orthogonal-profile-v4.test.mjs
+INTUIT3D_OCCT8_WORKER=/absolute/path/intuit3d_occt8_plate \
+  python3 -m unittest discover -s native/tests -p test_occt8_orthogonal_contract.py -v
+node packages/kernel-contract/examples/pinned-occt8-orthogonal-profile.mjs \
+  /absolute/path/intuit3d_occt8_plate /fresh/output
+```
+
+The final two commands must produce genuine C++-generated STEP files and
+different digests; their absence is a skip, **not** a native pass. External
+AnvilCAD reconstruction and WORKBENCH interaction must be admitted separately
+by INTEGRATION (#74); this operation is tracked under KERNEL-002 #154.
+
+
+## Additive v5 selected planar straight-line contours (KERNEL-002 candidate)
+
+The v4 rectilinear selected-contour contract is **unchanged**. The new
+`intuit3d/kernel/linear-profile-cut-chain-v5` accepts 3–64 explicitly selected,
+counterclockwise, simple planar line-segment vertices, including sloped edges
+and concave contours. Profile identity, named body ID, ordered and disjoint
+blind/through round or rectangular cuts, thickness edits, typed IPC, isolation,
+revision fencing, SHA-256 custody, no-overwrite publication and one valid solid
+are retained. Circular arcs are **not** approximated; the runtime adapter
+requires actual solved straight-line SKETCH edges and rejects islands/arcs.
+
+Representative `native/examples/occt8-sloped-bracket-linear.request.json`:
+six-edge sloped concave bracket, 5700 mm² stock area,
+`320 + sqrt(4000)` mm perimeter; radius-5 blind 3 mm hole and
+14×8 mm through-window. Thickness 8→12 mm retains semantic IDs and changes
+the physical STEP solid from `5700*8 - 75*pi - 112*8` to
+`5700*12 - 75*pi - 112*12` cubic millimetres. Inclined-line
+self-intersection, collinear/touching edges and cutters crossing profile
+boundaries fail closed; cuts never infer a body target.
+
+Source-only contract commands (not physical truth):
+
+```sh
+python3 -m unittest discover -s native/tests -p test_occt8_linear_contract.py -v
+node --test packages/kernel-contract/test/occt8-linear-profile-v5.test.mjs
+npm run typecheck --workspace=@intuit3d/kernel-contract
+```
+
+**Required pinned execution** using an actually compiled OCCT 8.0.1 worker
+from the exact candidate head:
+
+```sh
+INTUIT3D_OCCT8_WORKER=/absolute/pinned/intuit3d_occt8_plate \
+  python3 -m unittest discover -s native/tests -p test_occt8_linear_contract.py -v
+node packages/kernel-contract/examples/pinned-occt8-sloped-profile.mjs \
+  /absolute/pinned/intuit3d_occt8_plate /fresh/sloped-v5-out
+```
+
+The latter must produce two distinct actual STEP files and
+`sloped-receipts.json` containing real C++ source and same-engine STEP
+measurements. Neither this source, an unavailable-worker skip, nor the
+same-engine STEP import demonstrates production exact authority, independently
+imported non-OCCT STEP or browser/human acceptance. RUNTIME may consume the
+additive `runtime-occt8-linear-profile-provider` without displacing the
+admitted v4 path; INTEGRATION alone decides guarded merge and #154 closure.
+
