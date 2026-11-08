@@ -18,6 +18,7 @@ import { transformSelectedModelHoles } from './rigidHoleTransform';
 import { stampSelectedModelHoles, removeSelectedModelHoles } from './selectedHoleStamp';
 import { createLivePlateSession } from '@intuit3d/workflow-runtime/live-plate-session';
 import { experimentalStepFilename } from './localNativeStep';
+import { buildPinnedStepEvidenceZip, pinnedStepEvidenceFilename } from './stepEvidenceBundle';
 import { MAX_MODEL_ARCHIVE_BYTES, validateModelFileInWorker, type ModelImportStage } from './modelArchiveImport';
 import { checkedModelArchiveSize, modelArchiveDownloadName, modelArchiveSummary } from './modelFileLifecycle';
 import { deleteLocalRecovery, listLocalRecoveries, readLocalRecovery, storeLocalRecovery, type LocalRecoverySummary } from './modelRecovery';
@@ -165,6 +166,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [nativeUrl,setNativeUrl]=useState('');
   const [nativeToken,setNativeToken]=useState('');
   const [nativeBusy,setNativeBusy]=useState(false);
+  // UI readiness only. The synchronous capture rechecks the live journal at click.
+  const [pinnedEvidenceReady,setPinnedEvidenceReady]=useState(false);
   const [autoNative,setAutoNative]=useState(false);
   const autoNativeTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const [nativeReport,setNativeReport]=useState<string|null>(null);
@@ -178,6 +181,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     }
     nativeSession.current?.cancel();
     setNativeBusy(false);
+    setPinnedEvidenceReady(false);
     setNativeReport(null);
     setNativeEvidence(null);
   };
@@ -698,10 +702,37 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     }finally{setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);}
     setNativeReport(`Experimental STEP downloaded · revision ${current.document.revision} · ${step.bytes.byteLength} bytes · SHA-256 ${step.sha256}. Same-engine readback only; not independent STEP or production exactness.`);
   };
+  /** One real user click => ONE atomic RUNTIME capture => one ZIP download.
+   * A synthetic/OCP receipt cannot make this gate ready, and no payload is
+   * sampled from separate mutable React/model/STEP variables after capture. */
+  const downloadPinnedEvidence=()=>{
+    const capture=nativeSession.current?.captureCurrentStepEvidence();
+    if(!capture){
+      setPinnedEvidenceReady(false);
+      setNativeReport('Pinned STEP custody unavailable: no current-revision OCCT8 C++ receipt. Rebuild with the pinned provider; experimental OCP is not acceptable.');
+      return;
+    }
+    try {
+      const zip=buildPinnedStepEvidenceZip(capture);
+      const filename=pinnedStepEvidenceFilename(
+        capture.receipt.source.projectId,capture.receipt.source.revision);
+      const objectUrl=URL.createObjectURL(new Blob([new Uint8Array(zip)],{type:'application/zip'}));
+      try {
+        const link=document.createElement('a');
+        link.href=objectUrl;link.download=filename;
+        document.body.appendChild(link);link.click();link.remove();
+      }finally{setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);}
+      setNativeReport('Pinned OCCT8 source-custody ZIP download requested · revision '+
+        capture.receipt.source.revision+'. Contains exact archive, receipt and unchanged native STEP from one user click. Independently validate its physical geometry before claiming product acceptance.');
+    }catch(error){
+      setNativeReport('Pinned STEP custody refused: '+
+        (error instanceof Error?error.message:String(error)));
+    }
+  };
   const rebuildNative=async(downloadImmediately:boolean)=>{
     const id=++nativeTicket.current;
     const current=liveHistory.current;
-    setNativeBusy(true);setNativeReport(null);setNativeEvidence(null);
+    setNativeBusy(true);setPinnedEvidenceReady(false);setNativeReport(null);setNativeEvidence(null);
     try{
       const outcome=await nativeSession.current!.evaluate({
         url:nativeUrl.trim(),token:nativeToken.trim(),
@@ -730,6 +761,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         Number.isFinite(source.volumeMm3) && source.volumeMm3>0 ? source.volumeMm3:null;
       setNativeEvidence({revision:outcome.source.revision,solidCount,volumeMm3,
         holeCount:outcome.result.intendedPlate?.holes?.length??0});
+      setPinnedEvidenceReady(Boolean(nativeSession.current?.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'})));
       if(downloadImmediately) downloadCachedStep();
       else setNativeReport(`Experimental STEP prepared · revision ${outcome.source.revision} · SHA-256 ${step.sha256}. Use Download current STEP to publish these revision-fenced bytes. Same-engine readback only; not independent STEP.`);
     }catch(error){
@@ -1261,6 +1293,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             data-testid="runtime-native-download-cached"
             disabled={nativeBusy || !!pendingImport || !nativeSession.current?.currentStep()}
             onClick={downloadCachedStep}>Download current STEP</button>
+          <button type="button" className="ribbon-button runtime-native-export"
+            data-testid="runtime-native-evidence-zip"
+            disabled={nativeBusy || !!pendingImport || !pinnedEvidenceReady}
+            onClick={downloadPinnedEvidence}>Download pinned STEP evidence ZIP</button>
+          <p className="microcopy">Pinned OCCT 8.0.1 C++ only: this button enables after a revision-matched native result. It captures the authoritative model archive, producer receipt and exact STEP bytes together in one ZIP for independent CAD verification. A missing/stale/OCP result cannot publish evidence. The ZIP alone does not prove native build provenance or external STEP interoperability.</p>
           {nativeBusy&&<button type="button" className="ribbon-button"
             data-testid="runtime-native-cancel" onClick={()=>{invalidateNative();setNativeReport('Native evaluation cancelled; no STEP published.');}}>Cancel native evaluation</button>}
           {nativeEvidence&&<div className="runtime-native-evidence" data-testid="runtime-native-evidence" role="status">
