@@ -12,7 +12,7 @@ import {inspectSelectedEdgeHolePlacement} from './selected-edge-hole-placement.m
 export const SELECTED_EDGE_BREAKPOINTS_VERSION=1;
 export const MAX_SELECTED_EDGE_BREAKPOINTS=8;
 const finite=x=>typeof x==='number'&&Number.isFinite(x);
-const validId=x=>typeof x==='string'&&/^[A-Za-z][\\w:.-]{0,98}$/.test(x);
+const validId=x=>typeof x==='string'&&/^[A-Za-z][A-Za-z0-9_:.-]{0,98}$/.test(x);
 const exact=(x,ks)=>!!x&&typeof x==='object'&&!Array.isArray(x)&&
   Object.keys(x).length===ks.length&&ks.every(k=>Object.hasOwn(x,k));
 const eq=(a,b)=>JSON.stringify([...a].sort())===JSON.stringify([...b].sort());
@@ -334,7 +334,7 @@ export function removeSelectedEdgeBreakpoints(source,selection,command){
   next.lines=next.lines.filter(l=>!deletedLines.has(l.id));
   next.constraints=next.constraints.filter(c=>!deletedConstraints.has(c.id));
   const expected=view.profile.lineIds.filter(l=>!deletedLines.has(l));
-  const outcome=finish(doc,next,view.profile,expected,new Set(),stamp);
+  const outcome=finish(doc,next,view.profile,expected,deletedPoints,stamp);
   if(!outcome.sketch)return outcome;
   return accepted(outcome,stamp,view.profile,id,view.originalEdgeId,[],[],[]);
 }
