@@ -970,8 +970,27 @@ async function main(){
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
     'recovered checkpoint did not pass Worker validation after reload');
   await pointerClick('runtime-import-review-confirm');
-  await eventually(()=>evaluate("Number(document.querySelector('[data-testid=runtime-revision]')?.textContent.match(/\d+/)?.[0])==="+recoveryRevision),
-    'explicit recovery did not restore the original authoritative revision');
+  // Decode the browser's visible revision outside the CDP expression string.
+  // Backslash escapes inside nested JS strings can silently turn /\d+/ into /d+/.
+  // A passing check also requires the confirmation dialog to have closed.
+  try{
+    await eventually(async()=>{
+      const label=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+      const got=Number(String(label??'').match(/[0-9]+/)?.[0]);
+      return got===recoveryRevision &&
+        await evaluate("document.querySelector('[data-testid=runtime-import-review]')===null");
+    },'explicit recovery did not restore the original authoritative revision');
+  }catch(error){
+    const observed=await evaluate(`(() => JSON.stringify({
+      revision:document.querySelector('[data-testid=runtime-revision]')?.textContent??null,
+      reviewVisible:Boolean(document.querySelector('[data-testid=runtime-import-review]')),
+      processing:document.querySelector('[data-testid=runtime-import-stage]')?.textContent??null,
+      message:document.querySelector('.runtime-message')?.textContent??null,
+      archiveState:document.querySelector('[data-testid=runtime-archive-state]')?.textContent??null,
+    }))()`);
+    await screenshot('native-11-recovery-revision-failure.png').catch(()=>{});
+    throw Error(`Recovery revision mismatch (expected ${recoveryRevision}; observed ${observed}): ${String(error)}`);
+  }
   await eventually(()=>evaluate("document.querySelectorAll('[data-testid^=\"runtime-hole-editor-orbit.\"]').length===2"),
     'recovering an archive lost newly authored circular holes');
   check(await evaluate("document.querySelector('[data-testid=runtime-archive-state]')?.textContent.includes('UNEXPORTED')"),
