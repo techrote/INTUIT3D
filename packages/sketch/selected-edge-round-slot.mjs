@@ -314,7 +314,10 @@ export function rebaseSelectedEdgeRoundSlot(authoring,source,selection,command){
     String(error?.message||error));}
   const result=compile(doc,selection,view.slot);
   if(result.kind!=='selected_edge_round_slot')return result;
-  if(result.originalEdgeId!==view.originalEdgeId||
+  if(result.originalProfileId!==view.originalProfileId||
+     result.originalEdgeId!==view.originalEdgeId||
+     result.originalStartPointId!==view.originalStartPointId||
+     result.originalEndPointId!==view.originalEndPointId||
      JSON.stringify(result.holeIds)!==JSON.stringify(view.holeIds))
     return refusal(stamp,'source_semantic_reference_changed');
   const next={...view.authoring,source:doc,selection:{...selection}};
