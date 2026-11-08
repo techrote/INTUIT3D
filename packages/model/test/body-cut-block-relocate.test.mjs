@@ -183,12 +183,12 @@ test('destination inventory is paged, source fenced, and shares actual preview a
     eventId:'edit.sketch.base',type:'feature.edit',featureId:'sketch.base',
     patch:{payload:{widthMm:130,depthMm:62}},
   });
-  assert.throws(()=>inventory(changed,{...request(doc),offset:0,limit:2}),
-    ProjectFormatError);
-  const stale={...inventory(doc)};
+  const {afterBodyWriterId,eventIds,...oldSelection}=request(doc);
   assert.throws(()=>inspectBodyCutBlockDestinations(changed,{
-    ...request(doc),offset:0,limit:2,afterBodyWriterId:undefined,eventIds:undefined,
-  }),ProjectFormatError);
+    ...oldSelection,offset:0,limit:2,
+  }),ProjectRevisionError);
+  assert.throws(()=>previewBodyCutBlockRelocate(changed,request(doc)),
+    ProjectRevisionError);
 });
 
 test('stale revision, equal-revision divergent journal, malformed and reordered selection reject',()=>{
@@ -202,6 +202,10 @@ test('stale revision, equal-revision divergent journal, malformed and reordered 
     [{expectedRevision:doc.revision-1},ProjectRevisionError],
     [{expectedProjectId:'project.wrong'},ProjectRevisionError],
     [{expectedDocumentFence:serializeProject(alternate)},ProjectRevisionError],
+    [{expectedDocumentFence:serializeProject({
+      ...doc,journal:doc.journal.map((event,i) =>
+        i===0 ? {...event,feature:{...event.feature,payload:{widthMm:127,depthMm:62}}} : event),
+    })},ProjectRevisionError],
     [{cutFeatureIds:['cut.relief','cut.bearing']},ProjectFormatError],
     [{cutFeatureIds:['cut.key','cut.relief']},ProjectFormatError],
     [{cutFeatureIds:['cut.bearing','cut.bearing']},ProjectFormatError],
