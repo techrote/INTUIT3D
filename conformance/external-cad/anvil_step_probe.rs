@@ -480,7 +480,278 @@ fn u_bracket(args: &[String]) {
              surface_area,expected_surface);
 }
 
+
+// KERNEL-002 v5: independently import real selected *sloped* contours and
+// reconstruct two differently edited C++ STEP exports. The oracle is the
+// immutable selected six-edge polygon and actual cuts, not native STEP text,
+// native mass-property receipts, or another OCCT reader. "direct" contains a
+// circular blind pocket; "authored" contains a rectangular blind pocket.
+// Independent analytic 3D mass distribution of the selected sloped polygon
+// minus explicitly located cutter volumes. Never uses producer STEP metadata.
+fn sloped_mass_expected(kind: &str, cut_count: usize, t: f64)
+    -> ([f64;3],[f64;6]) {
+    let vertices=[(0.0f64,0.0f64),(120.0,0.0),(120.0,20.0),
+                  (65.0,20.0),(45.0,80.0),(0.0,80.0)];
+    let mut twice_area=0.0;
+    let mut first_x=0.0; let mut first_y=0.0;
+    let mut second_xx=0.0; let mut second_yy=0.0; let mut second_xy=0.0;
+    for i in 0..vertices.len() {
+        let (x,y)=vertices[i]; let (nx,ny)=vertices[(i+1)%vertices.len()];
+        let cross=x*ny-nx*y;
+        twice_area+=cross;
+        first_x+=(x+nx)*cross/6.0;
+        first_y+=(y+ny)*cross/6.0;
+        second_xx+=(x*x+x*nx+nx*nx)*cross/12.0;
+        second_yy+=(y*y+y*ny+ny*ny)*cross/12.0;
+        second_xy+=(2.0*x*y+x*ny+nx*y+2.0*nx*ny)*cross/24.0;
+    }
+    let area=twice_area/2.0;
+    if (area-5700.0f64).abs()>1e-8 { fail("invalid independent sloped polygon oracle"); }
+    let mut mass=area*t;
+    let mut first=[first_x*t,first_y*t,area*t*t/2.0];
+    let mut second=[second_xx*t,second_yy*t,area*t*t*t/3.0,
+                    second_xy*t,first_x*t*t/2.0,first_y*t*t/2.0];
+    let axes=[(0,0),(1,1),(2,2),(0,1),(0,2),(1,2)];
+    let has_window=if kind=="direct" {cut_count==2} else {cut_count>=1};
+    let has_pocket=if kind=="direct" {cut_count>=1} else {cut_count==2};
+    let mut subtract=|removed:f64,c:[f64;3],variance:[f64;3]| {
+        mass-=removed;
+        for i in 0..3 {first[i]-=removed*c[i];}
+        for (k,(i,j)) in axes.iter().enumerate() {
+            second[k]-=removed*(c[*i]*c[*j]+
+                       if i==j {variance[*i]} else {0.0});
+        }
+    };
+    if has_window {
+        subtract(112.0*t,[95.0,10.0,t/2.0],
+                 [14.0f64.powi(2)/12.0,8.0f64.powi(2)/12.0,t*t/12.0]);
+    }
+    if has_pocket {
+        let area=if kind=="direct" {std::f64::consts::PI*25.0} else {100.0};
+        let lateral=if kind=="direct" {25.0/4.0} else {100.0/12.0};
+        subtract(area*3.0,[15.0,50.0,t-1.5],[lateral,lateral,9.0/12.0]);
+    }
+    let centre=[first[0]/mass,first[1]/mass,first[2]/mass];
+    let mut covariance=[0.0;6];
+    for (k,(i,j)) in axes.iter().enumerate() {
+        covariance[k]=second[k]/mass-centre[*i]*centre[*j];
+    }
+    (centre,covariance)
+}
+
+fn sloped_profile(args: &[String]) {
+    let progressive=args.get(1).map(String::as_str)==Some("--progressive-v6");
+    if (progressive && args.len()!=6) || (!progressive && args.len()!=5) {
+        fail("usage: --sloped-profile STEP direct|authored 8|12 OR --progressive-v6 STEP direct|authored 0|1|2 8|12");
+    }
+    let kind=args[3].as_str();
+    if kind!="direct" && kind!="authored" { fail("unsupported sloped profile fixture"); }
+    let cut_count=if progressive {
+        args[4].parse::<usize>().unwrap_or_else(|_|fail("invalid progressive cut count"))
+    } else { 2 };
+    if cut_count>2 { fail("unsupported progressive cut count"); }
+    let t=number(&args[if progressive {5} else {4}]);
+    if t!=8.0 && t!=12.0 { fail("unsupported sloped profile thickness"); }
+    // Direct progresses stock -> blind R5 -> blind+through.
+    // Authored progresses stock -> through -> through+square blind.
+    let has_window=if kind=="direct" {cut_count==2} else {cut_count>=1};
+    let has_pocket=if kind=="direct" {cut_count>=1} else {cut_count==2};
+    let pocket_area=if kind=="direct" { std::f64::consts::PI*25.0 } else {100.0};
+    let pocket_wall=if kind=="direct" { 2.0*std::f64::consts::PI*5.0*3.0 } else {40.0*3.0};
+    let removed_window=if has_window {112.0} else {0.0};
+    let added_wall=if has_window {44.0} else {0.0};
+    let wanted=(5700.0-removed_window)*t
+        -(if has_pocket {pocket_area*3.0} else {0.0});
+    let wanted_surface=2.0*(5700.0-removed_window)
+        +(320.0+4000.0f64.sqrt()+added_wall)*t
+        +(if has_pocket {pocket_wall} else {0.0});
+    let source=fs::read_to_string(&args[2])
+        .unwrap_or_else(|_| fail("cannot read actual sloped-profile STEP bytes"));
+    let cad=import(&source)
+        .unwrap_or_else(|e|fail(&format!("independent sloped STEP import failed: {e}")));
+    if cad.length_unit!="millimetre" && cad.length_unit!="millimeter" {
+        fail("sloped-profile imported length unit is not millimetres");
+    }
+    if cad.bodies.len()!=1 || !cad.bodies[0].solid ||
+       cad.bodies[0].exact.is_none() || !cad.warnings.is_empty() {
+        fail("sloped-profile import must produce one warning-free exact B-rep solid");
+    }
+    let mesh=&cad.bodies[0].mesh;
+    if mesh.vertices.is_empty() || mesh.faces.is_empty() {
+        fail("empty independently reconstructed sloped mesh");
+    }
+    let mut directed:HashMap<(u32,u32),usize>=HashMap::new();
+    let mut signed_volume=0.0f64;
+    let mut first_moment=[0.0f64;3];
+    let mut second_moment=[0.0f64;6];
+    let axes=[(0,0),(1,1),(2,2),(0,1),(0,2),(1,2)];
+    let mut surface=0.0f64;
+    let mut tris=0usize;
+    for triangle in mesh.faces.iter().flat_map(|face| &face.triangles) {
+        let a=point(mesh,triangle[0]);
+        let b=point(mesh,triangle[1]);
+        let c=point(mesh,triangle[2]);
+        tris+=1;
+        let u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]];
+        let v=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
+        let cross=[u[1]*v[2]-u[2]*v[1],
+                   u[2]*v[0]-u[0]*v[2],
+                   u[0]*v[1]-u[1]*v[0]];
+        surface+=0.5*(cross.iter().map(|x|x*x).sum::<f64>()).sqrt();
+        let origin_cross=[b[1]*c[2]-b[2]*c[1],
+                          b[2]*c[0]-b[0]*c[2],
+                          b[0]*c[1]-b[1]*c[0]];
+        let tetra=(a[0]*origin_cross[0]+a[1]*origin_cross[1]
+                   +a[2]*origin_cross[2])/6.0;
+        signed_volume+=tetra;
+        for axis in 0..3 {
+            first_moment[axis]+=tetra*(a[axis]+b[axis]+c[axis])/4.0;
+        }
+        for (k,(i,j)) in axes.iter().enumerate() {
+            let si=a[*i]+b[*i]+c[*i];
+            let sj=a[*j]+b[*j]+c[*j];
+            let diagonal=a[*i]*a[*j]+b[*i]*b[*j]+c[*i]*c[*j];
+            second_moment[k]+=tetra*(si*sj+diagonal)/20.0;
+        }
+        for i in 0..3 {
+            *directed.entry((triangle[i],triangle[(i+1)%3])).or_default()+=1;
+        }
+    }
+    let open=directed.iter().filter(|((a,b),n)|
+        **n!=1 || directed.get(&(*b,*a))!=Some(&1)).count();
+    let volume=signed_volume.abs();
+    if tris<8 || open!=0 || !volume.is_finite() || !surface.is_finite() ||
+       (volume-wanted).abs()>wanted*0.01 ||
+       (surface-wanted_surface).abs()>wanted_surface*0.01 {
+        fail(&format!("sloped profile wrong mesh/mass/area: triangles={tris} open={open} volume={volume} expected={wanted} surface={surface} expected_surface={wanted_surface}"));
+    }
+
+    // Centroid and full material covariance detect volume/area-preserving
+    // material displacement that sparse point rays can miss.
+    let (expected_centre,expected_covariance)=sloped_mass_expected(kind,cut_count,t);
+    let centre=[
+        first_moment[0]/signed_volume,first_moment[1]/signed_volume,
+        first_moment[2]/signed_volume,
+    ];
+    for i in 0..3 {
+        if !centre[i].is_finite() || (centre[i]-expected_centre[i]).abs()>0.15 {
+            fail(&format!("sloped imported material centroid axis {i} wrong: {:.6} vs {:.6} mm",
+                          centre[i],expected_centre[i]));
+        }
+    }
+    let mut covariance=[0.0;6];
+    for (k,(i,j)) in axes.iter().enumerate() {
+        covariance[k]=second_moment[k]/signed_volume-centre[*i]*centre[*j];
+        let reference=expected_covariance[k];
+        let tolerance=if k<3 { (reference.abs()*0.01).max(0.1) }
+                      else { (reference.abs()*0.05).max(0.25) };
+        if !covariance[k].is_finite() || (covariance[k]-reference).abs()>tolerance {
+            fail(&format!("sloped imported material covariance {k} wrong: {:.6} vs {:.6} mm²",
+                          covariance[k],reference));
+        }
+    }
+    // Every point is in the independently authored world coordinate system.
+    // The diagonal from (65,20) to (45,80) is x=65-(y-20)/3.
+    // Test both sides of three different portions of the actual sloped edge,
+    // along with concave re-entrant corner, stock, exterior and both cut walls.
+    let mut rays:Vec<(String,f64,f64,Option<f64>)>=vec![
+        ("stock.bottom".into(),40.0,5.0,Some(t)),
+        ("stock.left".into(),5.0,40.0,Some(t)),
+        ("stock.top".into(),5.0,75.0,Some(t)),
+        ("stock.right_foot".into(),112.0,10.0,Some(t)),
+        ("exterior.left".into(),-2.0,40.0,None),
+        ("exterior.bottom".into(),40.0,-2.0,None),
+        ("exterior.right".into(),122.0,10.0,None),
+        ("exterior.top".into(),20.0,82.0,None),
+        ("notch.below".into(),70.0,19.0,Some(t)),
+        ("notch.above".into(),70.0,21.0,None),
+    ];
+    for (i,y) in [30.0f64,50.0,70.0].iter().enumerate() {
+        let edge_x=65.0-(*y-20.0)/3.0;
+        rays.push((format!("slope.{i}.inner"),edge_x-1.0,*y,Some(t)));
+        rays.push((format!("slope.{i}.outer"),edge_x+1.0,*y,None));
+    }
+    rays.push(("window.centre".into(),95.0,10.0,if has_window {None} else {Some(t)}));
+    for (side,dx,dy,half) in [
+        ("east",1.0,0.0,7.0),("west",-1.0,0.0,7.0),
+        ("north",0.0,1.0,4.0),("south",0.0,-1.0,4.0),
+    ] {
+        rays.push((format!("window.inner.{side}"),
+                   95.0+(half-0.5)*dx,10.0+(half-0.5)*dy,
+                   if has_window {None} else {Some(t)}));
+        rays.push((format!("window.outer.{side}"),
+                   95.0+(half+0.5)*dx,10.0+(half+0.5)*dy,Some(t)));
+    }
+    let floor=if has_pocket {Some(t-3.0)} else {Some(t)};
+    rays.push(("pocket.centre".into(),15.0,50.0,floor));
+    for (side,dx,dy) in [
+        ("east",1.0,0.0),("west",-1.0,0.0),
+        ("north",0.0,1.0),("south",0.0,-1.0),
+    ] {
+        rays.push((format!("pocket.inner.{side}"),15.0+4.5*dx,50.0+4.5*dy,floor));
+        rays.push((format!("pocket.outer.{side}"),15.0+5.5*dx,50.0+5.5*dy,Some(t)));
+    }
+    // A circular R5 pocket and 10x10 square pocket have *identical*
+    // occupancy at the four cardinal wall probes. At (+/-4,+/-4),
+    // the point is outside the circle (r=5.657) but inside the square.
+    // This is an indispensable physical shape-discrimination predicate:
+    // volume and surface budgets alone cannot reliably reject a wrong cut.
+    let diagonal_top=if kind=="direct" || !has_pocket { Some(t) } else { floor };
+    for (side,dx,dy) in [
+        ("ne",1.0,1.0),("nw",-1.0,1.0),
+        ("se",1.0,-1.0),("sw",-1.0,-1.0),
+    ] {
+        rays.push((format!("pocket.diagonal.{side}"),
+                   15.0+4.0*dx,50.0+4.0*dy,diagonal_top));
+    }
+    // Twelve independent angular directions bracket the circular or square
+    // pocket wall at +/-0.2 mm in the imported B-rep triangulation. Unlike
+    // the four diagonal/cardinal rays, these constrain actual wall radius,
+    // selected centre and angular shape across every progressive cut stage.
+    // For stages before the pocket exists, both samples must remain material.
+    for i in 0..12 {
+        let angle=(15.0_f64+30.0*i as f64).to_radians();
+        let dx=angle.cos(); let dy=angle.sin();
+        let wall=if kind=="direct" {5.0}
+                 else {5.0/dx.abs().max(dy.abs())};
+        let inner=wall-0.2; let outer=wall+0.2;
+        rays.push((format!("pocket.radial.{i}.inner"),
+                   15.0+inner*dx,50.0+inner*dy,
+                   Some(if has_pocket {t-3.0} else {t})));
+        rays.push((format!("pocket.radial.{i}.outer"),
+                   15.0+outer*dx,50.0+outer*dy,Some(t)));
+    }
+    if rays.len()!=62 { fail("incomplete generalized sloped-profile ray oracle"); }
+    for (name,x,y,expected) in rays {
+        let zs=intersections(mesh,x,y);
+        match expected {
+            Some(top) => if zs.len()!=2 || zs[0].abs()>0.05 ||
+                            (zs[1]-top).abs()>0.05 {
+                fail(&format!("{name}: incorrect imported material/floor at ({x},{y}): {zs:?}"));
+            },
+            None => if !zs.is_empty() {
+                fail(&format!("{name}: unexpected material in sloped void at ({x},{y}): {zs:?}"));
+            },
+        }
+        println!("SLOPE_RAY {name} {x:.9} {y:.9} {} {:.9} {:.9}",
+                 zs.len(),zs.first().copied().unwrap_or(-1.0),
+                 zs.last().copied().unwrap_or(-1.0));
+    }
+    let moments=format!(
+        "centroid_x_mm={:.9} centroid_y_mm={:.9} centroid_z_mm={:.9} cov_xx_mm2={:.9} cov_yy_mm2={:.9} cov_zz_mm2={:.9} cov_xy_mm2={:.9} cov_xz_mm2={:.9} cov_yz_mm2={:.9}",
+        centre[0],centre[1],centre[2],covariance[0],covariance[1],
+        covariance[2],covariance[3],covariance[4],covariance[5]);
+    if progressive {
+        println!("SLOPE_ACCEPT kind={kind} cuts={cut_count} thickness_mm={t:.1} solids=1 source_unit={} imported_exact=true tris={tris} open_edges=0 volume_mm3={volume:.9} expected_mm3={wanted:.9} surface_area_mm2={surface:.9} expected_surface_mm2={wanted_surface:.9} {moments} warnings=0",cad.length_unit);
+    } else {
+        println!("SLOPE_ACCEPT kind={kind} thickness_mm={t:.1} solids=1 source_unit={} imported_exact=true tris={tris} open_edges=0 volume_mm3={volume:.9} expected_mm3={wanted:.9} surface_area_mm2={surface:.9} expected_surface_mm2={wanted_surface:.9} {moments} warnings=0",cad.length_unit);
+    }
+}
+
 fn main() {
+    if matches!(env::args().nth(1).as_deref(), Some("--sloped-profile" | "--progressive-v6")) {
+        sloped_profile(&env::args().collect::<Vec<_>>()); return;
+    }
     let args:Vec<String>=env::args().collect();
     if args.get(1).map(String::as_str)==Some("--u-bracket") { u_bracket(&args); return; }
     if args.get(1).map(String::as_str)==Some("--cut-chains") { cut_chains(&args); return; }
