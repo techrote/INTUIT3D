@@ -3,7 +3,7 @@
  * Only transient drafts live here. RUNTIME/SKETCH owns all anchor constraints,
  * contour selection, solver admission and the single INTENT undo journal event.
  */
-import {runtime, type ModelSession} from './runtimeSession';
+import {runtime, type ModelSession} from './runtimeSession.ts';
 
 export type EdgeHoleReview=ReturnType<typeof runtime.inspectSelectedEdgeHoles>;
 export type EdgeHoleEdit=Readonly<{
