@@ -29,7 +29,9 @@ import {
 import type { UndoHistory } from './transactions.ts';
 import {
   DIMENSION_BINDINGS_FORMAT, DIMENSION_BINDINGS_VERSION,
+  MAX_DIMENSION_BINDINGS_PER_FEATURE,
 } from './dimension-bindings.ts';
+import { collectDimensionParameterReferences } from './dimension-edit.ts';
 import { planIncrementalEvaluation } from './incremental.ts';
 import type { IncrementalEvaluationPlan } from './incremental.ts';
 
@@ -119,7 +121,8 @@ function bound(payload: JsonRecord, field: string): boolean {
         Object.hasOwn(manifest, key)) ||
       manifest.format !== DIMENSION_BINDINGS_FORMAT ||
       manifest.version !== DIMENSION_BINDINGS_VERSION ||
-      !Array.isArray(manifest.entries)) return true;
+      !Array.isArray(manifest.entries) ||
+      manifest.entries.length > MAX_DIMENSION_BINDINGS_PER_FEATURE) return true;
   const seen = new Set<string>();
   for (const entry of manifest.entries) {
     if (!plain(entry) || Object.keys(entry).length !== 3 ||
@@ -127,8 +130,20 @@ function bound(payload: JsonRecord, field: string): boolean {
           Object.hasOwn(entry, key)) ||
         typeof entry.field !== 'string' ||
         !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(entry.field) ||
+        entry.field === 'dimensionBindings' ||
         !['mm', 'deg', 'unitless'].includes(entry.unit as string) ||
-        !plain(entry.expression) || seen.has(entry.field)) return true;
+        !Object.hasOwn(payload, entry.field) ||
+        typeof payload[entry.field] !== 'number' ||
+        !Number.isFinite(payload[entry.field]) ||
+        seen.has(entry.field)) return true;
+    // Reuse the accepted bounded AST parser instead of assuming that a
+    // plain-looking object is a supported expression in the current version.
+    try {
+      collectDimensionParameterReferences(entry.expression);
+    } catch (error) {
+      if (error instanceof ProjectFormatError) return true;
+      throw error;
+    }
     seen.add(entry.field);
   }
   // A fully recognized binding for a DIFFERENT dimension is not ownership
