@@ -123,6 +123,10 @@
     "./parameter-sheet-rebase": {
       "types": "./src/parameter-sheet-rebase.ts",
       "default": "./src/parameter-sheet-rebase.ts"
+    },
+    "./parameter-sheet-resolution": {
+      "types": "./src/parameter-sheet-resolution.ts",
+      "default": "./src/parameter-sheet-resolution.ts"
     }
   },
   "scripts": {
