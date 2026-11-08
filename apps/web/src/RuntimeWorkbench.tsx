@@ -8,6 +8,7 @@ import {
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
 import { HistoricalEditInspector } from './HistoricalEditInspector';
+import { ProfileNumericEditor } from './ProfileNumericEditor';
 import { SelectedEdgeHoleEditor } from './SelectedEdgeHoleEditor';
 import { selectModelProfileAtPointer, inspectModelPointerProfile, dragModelPointerProfileHandle } from './pointerProfileBridge';
 import type {SelectedProfileSelection} from '@intuit3d/sketch/selected-profile/v1';
@@ -1081,6 +1082,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                 </span>
               </label>
               <p className="microcopy">One amber handle appears on the sketch after explicit selection. Drag and release to commit one solver-admitted, undoable constraint change. Colocated handles are never chosen by nearest-hit guessing.</p>
+              {pointerDragHandle&&<ProfileNumericEditor
+                key={history.document.projectId+':'+history.document.revision+':'+pointerDragHandle.handleId}
+                handle={pointerDragHandle} disabled={!!pendingImport||!!loadingFile}
+                onCommit={target=>dragProfile(pointerDragHandle.handleId,target.x,target.y)}/>}
+              
             </>:<p className="microcopy">The sketch source changed or this contour is unsolved. Reselect the current solved contour; no stale drag is permitted.</p>}
             <button type="button" className="ribbon-button" data-testid="runtime-pointer-profile-clear"
               onClick={()=>{setPointerSelection(null);setPointerHandleId('');setProfilePickMode(false);}}>
