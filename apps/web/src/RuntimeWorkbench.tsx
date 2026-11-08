@@ -11,6 +11,7 @@ import { ParameterFormulaTable } from './ParameterFormulaTable';
 import type { SketchDimensionHandle } from './runtimeSketchHandles';
 import { nextCircleDrawing, type CircleDrawingState } from './circleDrawing';
 import { patternModelCircularHoles } from './circularHolePattern';
+import { transformSelectedModelHoles } from './rigidHoleTransform';
 import { createLivePlateSession } from '@intuit3d/workflow-runtime/live-plate-session';
 import { experimentalStepFilename } from './localNativeStep';
 import { MAX_MODEL_ARCHIVE_BYTES, validateModelFileInWorker, type ModelImportStage } from './modelArchiveImport';
@@ -93,6 +94,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [activeHole,setActiveHole]=useState<string|null>(null);
   const [layoutSelected,setLayoutSelected]=useState<string[]>(['holeA']);
   const [layoutDraft,setLayoutDraft]=useState({scaleX:'120',scaleY:'100',radiusScale:'100'});
+  const [rigidDraft,setRigidDraft]=useState({translateXmm:'0',translateYmm:'0',rotateDegrees:'90'});
   const [cascadeConfirmation,setCascadeConfirmation]=useState<string|null>(null);
   const [timeline,setTimeline]=useState<'authored'|'evaluated'>('authored');
   const [message,setMessage]=useState<string|null>(null);
@@ -350,6 +352,27 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         'Invalidated '+(result.invalidation.invalidatedFeatureIds.join(' → ')||'none')+
         '. Preview only; STEP must rebuild.');
     }catch(e){setMessage('Bolt circle refused: '+(e instanceof Error?e.message:String(e)));}
+  };
+  const applyRigidTransform=()=>{
+    try {
+      if(Object.values(rigidDraft).some(value=>!value.trim()))
+        throw Error('Enter signed X/Y translations and a rotation angle.');
+      const translateXmm=Number(rigidDraft.translateXmm);
+      const translateYmm=Number(rigidDraft.translateYmm);
+      const rotateDegrees=Number(rigidDraft.rotateDegrees);
+      const result=transformSelectedModelHoles(liveHistory.current,{
+        holeIds:layoutIds,translateXmm,translateYmm,rotateDegrees,
+      });
+      if(result.kind==='refused'){
+        setMessage('Rigid transform refused by SKETCH/profile admission: '+
+          (result.candidateFeature.diagnostics.join('; ')||result.reason));
+        return;
+      }
+      acceptHistory(result.history);
+      setRigidDraft({translateXmm:'0',translateYmm:'0',rotateDegrees:'0'});
+      setSketchMode(true);
+      setMessage(`Revision ${result.history.document.revision}: rigidly repositioned ${layoutIds.length} authored holes in ONE undoable SKETCH transaction. Stable IDs/radii kept, STEP revoked. Invalidated: ${result.invalidation.invalidatedFeatureIds.join(' → ')||'none'}.`);
+    }catch(e){setMessage('Rigid transform refused: '+(e instanceof Error?e.message:String(e)));}
   };
   const applyLayoutResize=()=>{
     try {
@@ -947,6 +970,24 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             <small data-testid="runtime-layout-current-span">
               Current selected span: {layoutSpan?layoutSpan.x.toFixed(3):'—'} × {layoutSpan?layoutSpan.y.toFixed(3):'—'} mm (X × Y)
             </small>
+            <div className="runtime-hole-add" data-testid="runtime-rigid-transform">
+              <strong>Rigidly rotate/move selected holes · one transaction</strong>
+              <p className="microcopy">Select two or more holes above, then rotate them about their authoritative centre (mean of selected fixed centres). Signed rotation is anticlockwise, followed by X/Y translation. This is a one-shot journal edit, not an associative transform.</p>
+              {(['translateXmm','translateYmm','rotateDegrees'] as const).map(field=><label className="runtime-scalar" key={field}>
+                <span>{field==='translateXmm'?'X translation':field==='translateYmm'?'Y translation':'Signed rotation'}</span>
+                <span className="runtime-scalar-control">
+                  <input type="number" step="any" data-testid={`runtime-rigid-${field}`}
+                    aria-label={field==='translateXmm'?'Rigid X translation':field==='translateYmm'?'Rigid Y translation':'Rigid rotation degrees'}
+                    value={rigidDraft[field]}
+                    onChange={e=>setRigidDraft(previous=>({...previous,[field]:e.target.value}))}/>
+                  <small>{field==='rotateDegrees'?'°':'mm'}</small>
+                </span>
+              </label>)}
+              <button type="button" className="ribbon-button runtime-native-export"
+                data-testid="runtime-rigid-apply" disabled={!!pendingImport||layoutIds.length<2}
+                onClick={applyRigidTransform}>Rotate / move selected holes</button>
+              <p className="microcopy">Undo restores every selected centre in one step. Collision/out-of-profile proposals are refused and old STEP receipts cannot be reused.</p>
+            </div>
             {(['scaleX','scaleY','radiusScale'] as const).map(field=><label className="runtime-scalar" key={field}>
               <span>{field==='scaleX'?'X spacing':field==='scaleY'?'Y spacing':'Bore diameter'}</span>
               <span className="runtime-scalar-control">

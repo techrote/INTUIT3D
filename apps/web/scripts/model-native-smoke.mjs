@@ -866,6 +866,50 @@ async function main(){
   check(await evaluate("document.querySelector('.project-title')?.textContent?.includes('Sketch project')"),
     'Sketch-only project incorrectly titled as completed plate');
   await screenshot('native-09-model-first-new-sketch-shortcut.png');
+  // Real Chromium semantic multi-selection, model-backed 90-degree rotation,
+  // one-revision commit and keyboard Undo/Redo; no synthetic state mutation.
+  const rigidBefore=await evaluate(`(() => {
+    const read=(id,field)=>Number(document.querySelector('[data-testid="runtime-hole-'+id+'-'+field+'"]')?.value);
+    return {a:{x:read('holeA','x'),y:read('holeA','y'),d:read('holeA','diameter')},
+      b:{x:read('holeB','x'),y:read('holeB','y'),d:read('holeB','diameter')}};
+  })()`);
+  check(Object.values(rigidBefore.a).every(Number.isFinite)&&Object.values(rigidBefore.b).every(Number.isFinite),
+    'missing source hole values for rigid rotation');
+  for(const id of ['holeA','holeB']){
+    if(!await evaluate(`document.querySelector('[data-testid=runtime-layout-select-${id}]')?.checked`))
+      await pointerClick('runtime-layout-select-'+id);
+  }
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-rigid-apply]')?.disabled===false"),
+    'selected-hole rigid rotation button disabled');
+  const rigidRevision=Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0]);
+  await pointerClick('runtime-rigid-apply');
+  const rigidPivot={x:(rigidBefore.a.x+rigidBefore.b.x)/2,y:(rigidBefore.a.y+rigidBefore.b.y)/2};
+  await eventually(()=>evaluate(`(() => {
+    const n=(id,field)=>Number(document.querySelector('[data-testid="runtime-hole-'+id+'-'+field+'"]')?.value);
+    return Math.abs(n('holeA','x')-${rigidPivot.x-(rigidBefore.a.y-rigidPivot.y)})<1e-5 &&
+      Math.abs(n('holeA','y')-${rigidPivot.y+(rigidBefore.a.x-rigidPivot.x)})<1e-5 &&
+      Math.abs(n('holeB','x')-${rigidPivot.x-(rigidBefore.b.y-rigidPivot.y)})<1e-5 &&
+      Math.abs(n('holeB','y')-${rigidPivot.y+(rigidBefore.b.x-rigidPivot.x)})<1e-5 &&
+      n('holeA','diameter')===${rigidBefore.a.d} && n('holeB','diameter')===${rigidBefore.b.d};
+  })()`),'rigid transform did not commit real rotated hole centres');
+  check(Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0])===rigidRevision+1,
+    'rigid transform did not advance exactly one model revision');
+  await screenshot('native-10a-selected-rigid-rotation.png');
+  const undoRigid=async()=>{
+    await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+    await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+    await eventually(()=>evaluate(`Math.abs(Number(document.querySelector('[data-testid=runtime-hole-holeA-x]')?.value)-${rigidBefore.a.x})<1e-5 &&
+      Math.abs(Number(document.querySelector('[data-testid=runtime-hole-holeB-y]')?.value)-${rigidBefore.b.y})<1e-5`),
+      'rigid Undo did not restore both original hole positions');
+  };
+  await undoRigid();
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await eventually(()=>evaluate(`Math.abs(Number(document.querySelector('[data-testid=runtime-hole-holeA-y]')?.value)-${rigidPivot.y+(rigidBefore.a.x-rigidPivot.x)})<1e-5`),
+    'rigid Redo did not recover rotated geometry');
+  await undoRigid(); // restore sketch-first starting geometry for bolt-circle test
   // Real Chromium pointer and keyboard: create an admitted bolt-circle from
   // the sketch-first project, Undo all new holes, then Redo identical IDs.
   const orbitRevision=Number((await evaluate(
@@ -892,8 +936,8 @@ async function main(){
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder with schema-compatible OCP identity, NOT OCP/native/STEP interoperability',
     downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,realPhysicalGeometry:false,
-    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png','native-10-circular-bolt-array.png'
+    retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
+      'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-09-model-first-new-sketch-shortcut.png','native-10a-selected-rigid-rotation.png','native-10-circular-bolt-array.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
