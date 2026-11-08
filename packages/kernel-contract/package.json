@@ -84,6 +84,10 @@
       "types": "./src/runtime-occt8-orthogonal-profile-provider.d.mts",
       "node": "./src/runtime-occt8-orthogonal-profile-provider.mjs"
     },
+    "./runtime-occt8-flexible-linear-provider": {
+      "types": "./src/runtime-occt8-flexible-linear-provider.d.mts",
+      "node": "./src/runtime-occt8-flexible-linear-provider.mjs"
+    },
     "./occt8-flexible-linear-v6": {
       "types": "./src/occt8-flexible-linear-v6.d.mts",
       "default": "./src/occt8-flexible-linear-v6.mjs"

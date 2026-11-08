@@ -27,7 +27,9 @@ function polygon(id,xy){
     constraints:points.map(p=>({id:'fixed.'+p.id,kind:'fixed',
       point:p.id,x:p.x,y:p.y}))});
 }
-export function buildAuthoredSlopedBracket(){
+export function buildAuthoredSlopedBracket({cutCount=2}={}){
+  assert.ok(Number.isInteger(cutCount)&&cutCount>=0&&cutCount<=2,
+    "only the authored zero/one/two cut demonstration is supported");
   const runtime=createWorkflowRuntime({model,transactions,bindings,dimensions,
     archive,sketch,discovery});
   const services={runtime,model,sketch,discovery,cutChain};
@@ -58,12 +60,13 @@ export function buildAuthoredSlopedBracket(){
     sourceSketchId:'sketch.sloped',profileCandidateId:select('sketch.sloped'),
     extrudeFeatureId:'extrude.sloped',outputBodyId:SLOPED_BODY_ID,depthMm:8},
     services).history;
-  history=authorProfileBodyCut(history,{...fmt,
+  if(cutCount>=1) history=authorProfileBodyCut(history,{...fmt,
     eventId:'make.cut.sloped.through',expectedRevision:history.document.revision,
     sourceSketchId:'sketch.sloped.window',
     profileCandidateId:select('sketch.sloped.window'),
     extrudeFeatureId:'extrude.sloped',cutFeatureId:SLOPED_CUT_IDS[0],
     targetBodyId:SLOPED_BODY_ID},services).history;
+  if(cutCount>=2){
   const append=cutChain.previewBodyCutAppend(history.document,{
     format:cutChain.BODY_CUT_CHAIN_FORMAT,
     version:cutChain.BODY_CUT_CHAIN_VERSION,
@@ -77,10 +80,13 @@ export function buildAuthoredSlopedBracket(){
   });
   assert.equal(append.semanticStatus,'ready');
   history=runtime.commit(history,[append.event],history.document.revision);
+  }
+  if(cutCount===2){
   const q=requestFromRuntimeOcct8Linear(history,SLOPED_BODY_ID,{
     runtime,model,requestId:'native.sloped.initial',exportStep:false,
   });
   assert.deepEqual(q.cuts.map(c=>c.featureId),SLOPED_CUT_IDS);
+  }
   return {history,runtime,model,services};
 }
 export function editAuthoredSlopedThickness(fixture,thicknessMm){
