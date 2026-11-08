@@ -124,6 +124,60 @@ def ray_oracle(kind: str, thickness: int, cut_count: int = 2) -> list[tuple[str,
     return rays
 
 
+def expected_moments(kind: str, thickness: int,
+                     cut_count: int = 2) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Analytic selected-polygon mass centroid and six 3D covariance entries.
+
+    Green's theorem integrates the CCW sloped contour directly. Rectangular
+    through and circular/square blind tool moments are then subtracted.
+    This oracle is authored independently of CAD mesh, STEP and native reports.
+    """
+    window, pocket = cut_presence(kind, thickness, cut_count)
+    vertices = ((0., 0.), (120., 0.), (120., 20.),
+                (65., 20.), (45., 80.), (0., 80.))
+    area2 = moment_x = moment_y = second_xx = second_yy = second_xy = 0.
+    for (x, y), (nx, ny) in zip(vertices, vertices[1:] + vertices[:1]):
+        edge = x * ny - nx * y
+        area2 += edge
+        moment_x += (x + nx) * edge / 6
+        moment_y += (y + ny) * edge / 6
+        second_xx += (x*x + x*nx + nx*nx) * edge / 12
+        second_yy += (y*y + y*ny + ny*ny) * edge / 12
+        second_xy += (2*x*y + x*ny + nx*y + 2*nx*ny) * edge / 24
+    area = area2 / 2
+    require(abs(area - 5700) < 1e-8, "invalid independent polygon oracle")
+    t = float(thickness)
+    total = area * t
+    first = [moment_x*t, moment_y*t, area*t*t/2]
+    second = [second_xx*t, second_yy*t, area*t**3/3,
+              second_xy*t, moment_x*t*t/2, moment_y*t*t/2]
+    axes = ((0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2))
+
+    def subtract(volume: float, centre: tuple[float, ...],
+                 variance: tuple[float, ...]) -> None:
+        nonlocal total
+        total -= volume
+        for i in range(3):
+            first[i] -= volume * centre[i]
+        for k, (i, j) in enumerate(axes):
+            second[k] -= volume * (
+                centre[i] * centre[j] + (variance[i] if i == j else 0))
+
+    if window:
+        subtract(112*t, (95, 10, t/2), (14**2/12, 8**2/12, t*t/12))
+    if pocket:
+        lateral = 25/4 if kind == "direct" else 100/12
+        pocket_area = 25*math.pi if kind == "direct" else 100
+        subtract(pocket_area*3, (15, 50, t-1.5),
+                 (lateral, lateral, 9/12))
+    require(abs(total - expected_volume(kind, thickness, cut_count)) < 1e-7,
+            "analytic selected-profile mass is inconsistent")
+    centre = tuple(v / total for v in first)
+    covariance = tuple(second[k]/total - centre[i]*centre[j]
+                       for k, (i, j) in enumerate(axes))
+    return centre, covariance
+
+
 def parse_receipt(stdout: str, kind: str, thickness: int,
                   cut_count: int | None = None) -> dict:
     # None means legacy two-cut v5 receipt without a cuts field.
@@ -165,6 +219,11 @@ def parse_receipt(stdout: str, kind: str, thickness: int,
         "expected_mm3", "surface_area_mm2", "expected_surface_mm2",
         "warnings",
     }
+    required.update({
+        "centroid_x_mm", "centroid_y_mm", "centroid_z_mm",
+        "cov_xx_mm2", "cov_yy_mm2", "cov_zz_mm2",
+        "cov_xy_mm2", "cov_xz_mm2", "cov_yz_mm2",
+    })
     if cut_count is not None:
         required.add("cuts")
     require(len(fields) == len(pairs) and set(fields) == required,
@@ -196,7 +255,28 @@ def parse_receipt(stdout: str, kind: str, thickness: int,
     require(abs(claimed_area-surface_oracle) < 1e-5 and
             abs(area-surface_oracle) <= surface_oracle*.01,
             "independently reconstructed selected-profile surface wrong")
+    centre_names = ("centroid_x_mm", "centroid_y_mm", "centroid_z_mm")
+    cov_names = ("cov_xx_mm2", "cov_yy_mm2", "cov_zz_mm2",
+                 "cov_xy_mm2", "cov_xz_mm2", "cov_yz_mm2")
+    try:
+        centre = tuple(float(fields[key]) for key in centre_names)
+        covariance = tuple(float(fields[key]) for key in cov_names)
+    except ValueError as exc:
+        raise Rejected("invalid independently reconstructed material moments") from exc
+    analytic_centre, analytic_covariance = expected_moments(
+        kind, thickness, progression)
+    for i, (actual, expected_centre) in enumerate(zip(centre, analytic_centre)):
+        require(math.isfinite(actual) and abs(actual - expected_centre) <= .15,
+                f"independent selected-profile centroid axis {i} wrong")
+    for i, (actual, reference) in enumerate(zip(covariance, analytic_covariance)):
+        tolerance = max(abs(reference)*.01, .1) if i < 3 else max(abs(reference)*.05, .25)
+        require(math.isfinite(actual) and abs(actual-reference) <= tolerance,
+                f"independent selected-profile material covariance {i} wrong")
     return {"importedExactBRep": True, "cutCount": progression, "rayCount": 38,
+            "measuredCentroidMm": list(centre),
+            "expectedCentroidMm": list(analytic_centre),
+            "measuredMaterialCovarianceMm2": list(covariance),
+            "expectedMaterialCovarianceMm2": list(analytic_covariance),
             "rays": observed, "triangleCount": triangles,
             "measuredVolumeMm3": volume, "expectedVolumeMm3": oracle,
             "measuredSurfaceAreaMm2": area,
