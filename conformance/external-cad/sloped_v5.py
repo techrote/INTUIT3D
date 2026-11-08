@@ -127,8 +127,8 @@ def ray_oracle(kind: str, thickness: int, cut_count: int = 2) -> list[tuple[str,
 def parse_receipt(stdout: str, kind: str, thickness: int,
                   cut_count: int | None = None) -> dict:
     # None means legacy two-cut v5 receipt without a cuts field.
-    count = 2 if cut_count is None else cut_count
-    expected = ray_oracle(kind, thickness, count)
+    progression = 2 if cut_count is None else cut_count
+    expected = ray_oracle(kind, thickness, progression)
     lines = stdout.splitlines()
     require(len(lines) == 39, "missing, extra or duplicate physical ray lines")
     observed = []
@@ -170,7 +170,7 @@ def parse_receipt(stdout: str, kind: str, thickness: int,
     require(len(fields) == len(pairs) and set(fields) == required,
             "duplicate, missing or unexpected sloped import receipt fields")
     if cut_count is not None:
-        require(fields["cuts"] == str(count),
+        require(fields["cuts"] == str(progression),
                 "independent progressive cut count mismatch")
     require(fields["kind"] == kind and
             fields["source_unit"] in ("millimetre", "millimeter") and
@@ -185,8 +185,8 @@ def parse_receipt(stdout: str, kind: str, thickness: int,
         claimed_area = float(fields["expected_surface_mm2"])
     except ValueError as exc:
         raise Rejected("invalid independent imported mass or surface") from exc
-    oracle = expected_volume(kind, thickness, count)
-    surface_oracle = expected_surface(kind, thickness, count)
+    oracle = expected_volume(kind, thickness, progression)
+    surface_oracle = expected_surface(kind, thickness, progression)
     require(all(map(math.isfinite, (read_t, volume, claimed, area, claimed_area)))
             and read_t == thickness and triangles >= 8 and volume > 0 and area > 0,
             "nonfinite, empty or wrong thickness independent solid")
@@ -196,7 +196,7 @@ def parse_receipt(stdout: str, kind: str, thickness: int,
     require(abs(claimed_area-surface_oracle) < 1e-5 and
             abs(area-surface_oracle) <= surface_oracle*.01,
             "independently reconstructed selected-profile surface wrong")
-    return {"importedExactBRep": True, "cutCount": count, "rayCount": 38,
+    return {"importedExactBRep": True, "cutCount": progression, "rayCount": 38,
             "rays": observed, "triangleCount": triangles,
             "measuredVolumeMm3": volume, "expectedVolumeMm3": oracle,
             "measuredSurfaceAreaMm2": area,
