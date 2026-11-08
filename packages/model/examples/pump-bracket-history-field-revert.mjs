@@ -22,6 +22,8 @@ import {
   FEATURE_EDIT_FIELD_REVERT_FORMAT,previewFeatureEditFieldRevert,
   commitUndoableFeatureEditFieldRevert,
 } from '@intuit3d/model/feature-edit-revert';
+import {HISTORICAL_EDIT_INVENTORY_FORMAT,inspectHistoricalFeatureEdits}
+  from '@intuit3d/model/historical-edit-inventory';
 
 const runtime=createWorkflowRuntime({model,transactions,bindings,dimensions,
   archive,sketch,discovery});
@@ -87,8 +89,20 @@ export function runPumpBracketHistoryFieldRevert(){
   assert.throws(()=>previewFeatureEditRevert(before,{
     ...common,format:FEATURE_EDIT_REVERT_FORMAT,version:1,
   }),model.ProjectRevisionError);
+  const inventory=inspectHistoricalFeatureEdits(before,{
+    format:HISTORICAL_EDIT_INVENTORY_FORMAT,version:1,
+    expectedProjectId:before.projectId,expectedRevision:before.revision,
+    expectedDocumentFence:common.expectedDocumentFence,
+    probeEventId:'probe.pump.history.fields',cursor:null,limit:16,
+  });
+  const choice=inventory.rows.find(x=>x.targetEventId==='edit.base.compound');
+  assert.equal(choice?.status,'blocked');
+  const thickness=choice.fieldChoices.find(x=>x.field==='payload');
+  assert.equal(thickness?.status,'available');
+  assert.equal(choice.fieldChoices.find(x=>x.field==='dependsOn')?.status,'blocked');
   const req={...common,format:FEATURE_EDIT_FIELD_REVERT_FORMAT,
-    version:1,selectedFields:['payload']};
+    version:1,selectedFields:[thickness.field],
+    admission:thickness.admission,confirmUnresolved:thickness.confirmUnresolved};
   const preview=previewFeatureEditFieldRevert(before,req);
   assert.deepEqual(preview.revertedFields,['payload']);
   assert.deepEqual(preview.invalidatedBodyIds,['body.base','body.cover']);
@@ -113,7 +127,8 @@ export function runPumpBracketHistoryFieldRevert(){
   assert.deepEqual(find(history.document,'extrude.base').dependsOn,
     ['sketch.base','sketch.gauge','sketch.cover']);
   return {format:'intuit3d.feature-edit-field-revert-demo',
-    bodyActions:actions,archiveUndoRedo:true,
+    bodyActions:actions,historyFullEditBlocked:true,
+    selectedFieldAvailable:true,archiveUndoRedo:true,
     preservedLaterDatum:true,exactGeometryAuthority:false,
     nativeSTEP:'not_executed'};
 }
