@@ -86,7 +86,16 @@ test('native reply is refused after a different same-revision journal replaces t
       current=divergent;
       assert.notEqual(options.readCurrentRevision(),request.revision,
         'the native progress fence must detect equal-revision journal substitution');
-      return {kind:'unresolved',code:'provider_unavailable',artifact:null};
+      // A positive, correctly shaped native report was previously accepted
+      // for the wrong same-revision archive by a feature-report-only fence.
+      return {kind:'experimental_report',
+        requestId:request.requestId,featureId:request.featureId,
+        revision:request.revision,
+        backend:plateContract.EXPERIMENTAL_BACKEND,
+        occtVersion:plateContract.EXPERIMENTAL_OCCT_VERSION,
+        exactAuthority:false,independentInteroperability:false,
+        observed:{source:{valid:true}},artifact:null};
+
     }});
   const outcome=await flow.evaluate(original,{
     cutFeatureId:'cut',requestId:'plate.alternate.archive',
