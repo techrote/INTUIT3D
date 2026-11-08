@@ -59,6 +59,10 @@
     "./circular-bolt-orientation/v1": {
       "types": "./circular-bolt-transform.d.mts",
       "default": "./src/circular-bolt-transform.mjs"
+    },
+    "./coordinated-body-cuts/v1": {
+      "types": "./coordinated-body-cuts.d.mts",
+      "default": "./src/coordinated-body-cuts.mjs"
     }
   },
   "peerDependencies": {
