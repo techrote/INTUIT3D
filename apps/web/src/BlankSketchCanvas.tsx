@@ -77,7 +77,7 @@ export function BlankSketchCanvas({
       <text x="-16" y="-12" fill="#93b6c8" fontSize="4">SKETCH XY · MILLIMETRES · ANALYTIC ONLY</text>
     </svg>
     <p data-testid="runtime-blank-contour-guidance" className="microcopy">
-      {draft?'Click 3–12 vertices. The visible construction grid snaps at 1 mm; hold Shift for fine 0.001 mm off-grid placement. Close commits only after SKETCH/RUNTIME admission. Escape cancels.':
+      {draft?'Click 3–12 vertices. The 10 mm grid is visual; pointer clicks snap to 1 mm. Hold Shift for fine 0.001 mm off-grid placement. Close commits only after SKETCH/RUNTIME admission. Escape cancels.':
         'This sketch has no seeded outline or holes. Start drawing to create the first solver-owned profile.'}
       {!runtimeReady&&<strong data-testid="runtime-contour-dependency"> RUNTIME #319 structural journal admission pending; Close will refuse without modifying the model.</strong>}
     </p>
