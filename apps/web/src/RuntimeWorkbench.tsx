@@ -7,6 +7,7 @@ import {
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
+import { HistoricalEditInspector } from './HistoricalEditInspector';
 import { SelectedEdgeHoleEditor } from './SelectedEdgeHoleEditor';
 import { selectModelProfileAtPointer, inspectModelPointerProfile, dragModelPointerProfileHandle } from './pointerProfileBridge';
 import type {SelectedProfileSelection} from '@intuit3d/sketch/selected-profile/v1';
@@ -881,7 +882,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         <button className="ribbon-button" data-testid="runtime-new-sketch"
           title="New sketch-first project (Ctrl+N); replacement confirmation required"
           onClick={prepareNewSketch}>New sketch-first project</button>
-        <button className="ribbon-button" title="Save authoritative model archive (Ctrl+S)" onClick={save}>Save model archive</button>
+        <button className="ribbon-button" data-testid="runtime-save-archive" title="Save authoritative model archive (Ctrl+S)" onClick={save}>Save model archive</button>
         <button className="ribbon-button" title="Open authoritative model archive (Ctrl+O), or drop one JSON archive on the workbench" onClick={()=>fileInput.current?.click()}>Open model archive</button>
         <button className="ribbon-button" onClick={()=>{
           if(window.confirm('Leave the model-backed editor? Export your model archive first; the model session will close.'))onClose();
@@ -1116,6 +1117,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               onClick={restoreSelectedFeature}>Restore selected feature</button>
           </div>):<p className="microcopy">Select the extrusion or cut in the feature browser to remove or restore it. Sketch constraints and parameter sources remain protected in this workbench.</p>}
         </div>
+        <HistoricalEditInspector key={history.document.projectId+':'+history.document.revision}
+          history={history} disabled={!!pendingImport||!!loadingFile}
+          onCommit={(next,source)=>{
+            if(liveHistory.current!==source)return false;
+            acceptHistory(next);return true;
+          }} onMessage={setMessage}/>
         <div className="inspector-section">
           <div className="section-head">EDIT RETROSPECTIVE DIMENSIONS</div>
           {(['width','depth','holeDiameter','holePitch'] as const).map(field=><ScalarInput

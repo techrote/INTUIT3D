@@ -1217,14 +1217,107 @@ async function main(){
   await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-130)<0.001"),
     'Semantic pointer drag lost model-backed redo');
   await screenshot('native-12-selected-profile-direct-drag.png');
+  // Real user-operated INTENT history review. An explicit pointer click chooses
+  // the newest model-authored sketch payload edit. No synthetic React or
+  // history handler invocation and no native STEP authority is assumed.
+  await pointerClick('runtime-history-open');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-history-review]:not([disabled])'))"),
+    'Historical edit inspector did not expose an INTENT-admitted field');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-history-review]');return e?.dataset.historyField==='payload'&&Boolean(e.dataset.historyEvent)})()"),
+    'Newest historical choice is not an actual authored SKETCH payload');
+  const historySourceRevision=Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0]);
+  await pointerClick('runtime-history-review');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-history-confirmation]'))"),
+    'Pointer history selection did not expose explicit compensation review');
+  if(await evaluate("Boolean(document.querySelector('[data-testid=runtime-history-consent]'))"))
+    await pointerClick('runtime-history-consent');
+  await pointerClick('runtime-history-apply');
+  await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-120)<0.001"),
+    'Pointer-reviewed historical compensation did not restore the prior sketch dimension');
+  check(Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0])===historySourceRevision+1,
+    'Historical one-field compensation did not commit exactly one model revision');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'Historical field compensation reused a stale native STEP receipt');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-130)<0.001"),
+    'Historical compensating edit could not be undone');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-120)<0.001"),
+    'Historical compensating edit could not be redone');
+  await screenshot('native-13-historical-field-compensation.png');
+  // Actual filesystem-archive round-trip of the history compensation, not a
+  // direct JSON -> runtime helper. Use the user's Save button, Chromium's File
+  // input, the isolated validation Worker and explicit Replace confirmation.
+  // The earlier Page.reload destroys the original in-page Blob interceptor.
+  // Reinstall it once in this fresh browser document before the Save gesture.
+  const historyArchiveCount=await evaluate(`(() => {
+    if(!window.__nativeStepBlobs){
+      window.__nativeStepBlobs=[];
+      const create=URL.createObjectURL.bind(URL);
+      URL.createObjectURL=blob=>{window.__nativeStepBlobs.push(blob);return create(blob)};
+    }
+    return window.__nativeStepBlobs.length;
+  })()`);
+  await pointerClick('runtime-save-archive');
+  await eventually(()=>evaluate('window.__nativeStepBlobs.length>'+historyArchiveCount),
+    'historical compensation Save did not publish a browser model archive');
+  const historicalArchive=await evaluate("(async()=>await window.__nativeStepBlobs.at(-1).text())()");
+  const historicalSaved=JSON.parse(historicalArchive);
+  // INTENT undo/redo append compensating journal revisions; the saved
+  // state is +3 (compensate, undo, redo), not the original +1 commit.
+  const historicalSavedRevision=Number((await evaluate(
+    "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0]);
+  check(historicalSavedRevision===historySourceRevision+3,
+    'history compensation + keyboard undo/redo did not each advance one revision');
+  check(historicalSaved.format==='intuit3d.model-archive' &&
+    historicalSaved.history?.document?.revision===historicalSavedRevision &&
+    historicalSaved.history.undoStack?.length>0,
+    'downloaded compensation archive lost authoritative revision or undo frames: '+
+    JSON.stringify({format:historicalSaved.format,archiveRevision:historicalSaved.revision,
+      historyRevision:historicalSaved.history?.document?.revision,
+      expectedRevision:historicalSavedRevision,undoFrames:historicalSaved.history?.undoStack?.length,
+      type:historicalSaved.history?.format}));
+  const historicalArchivePath=resolve(artifacts,'native-browser-historical-compensation.i3d-model.json');
+  writeFileSync(historicalArchivePath,historicalArchive);
+  const historicalDom=await send('DOM.getDocument',{depth:1});
+  const historicalInput=await send('DOM.querySelector',{
+    nodeId:historicalDom.root.nodeId,
+    selector:'input[aria-label="Open INTUIT model archive"]'
+  });
+  check(historicalInput.nodeId>0,'historical archive file input missing');
+  await send('DOM.setFileInputFiles',{nodeId:historicalInput.nodeId,files:[historicalArchivePath]});
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'history archive was not validated in the disposable Worker');
+  await pointerClick('runtime-import-review-confirm');
+  await eventually(async()=>{
+    const rev=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+    return Number(String(rev??'').match(/[0-9]+/)?.[0])===historicalSavedRevision &&
+      await evaluate("!document.querySelector('[data-testid=runtime-import-review]')") &&
+      await evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-120)<0.001");
+  },'reopened historical compensation lost the journal revision or restored width');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
+    'Worker-reopened history archive incorrectly retained stale native STEP');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:2});
+  await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-130)<0.001"),
+    'reopened historical compensation lost its original undo frame');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',windowsVirtualKeyCode:90,modifiers:10});
+  await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-120)<0.001"),
+    'reopened historical compensation could not be redone');
+  await screenshot('native-14-historical-compensation-reopened.png');
   await pointerClick('runtime-mode-solid');
   check(exceptions.length===0,'Browser exceptions: '+exceptions.join('; '));
   writeFileSync(join(artifacts,'native-browser-report.json'),JSON.stringify({
     evidence:'actual Chromium React UI and binary Blob/download interception',
     provider:'synthetic HTTP responder with schema-compatible OCP identity, NOT OCP/native/STEP interoperability',
-    downloadedFiles:4,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,oneClickPinnedOcpRefusal:true,realPhysicalGeometry:false,
+    downloadedFiles:5,historicalCompensationArchiveReopen:true,staleDownloadRefused:true,liveRuntimeNativeSession:true,buildWithoutDownload:true,cachedDownloadRevisionFence:true,autoRebuildAfterEdit:true,holeDrag:true,outlineDrag:true,diameterDrag:true,depthKeyboardEdit:true,timelineUndo:true,physicalHoleArrayClick:true,oneStepArrayUndoRedo:true,parameterFreezePointer:true,independentThicknessEdit:true,freezeUndoRedo:true,freezeArchiveReopen:true,namedParameterEdit:true,namedParameterUndoRedo:true,namedParameterArchiveReopen:true,wrongProviderRefused:true,badStepDigestRefused:true,oneClickPinnedOcpRefusal:true,realPhysicalGeometry:false,
     retrospectiveMultiHoleLayout:true,layoutLiveRebuild:true,keyboardHoleNudge:true,keyboardNudgeUndo:true,selectedContourPointerDrag:true,selectedContourRevisionFenced:true,circularHoleArrayPointer:true,circularHoleUndoRedo:true,selectedRigidRotationPointer:true,rigidRotationUndoRedo:true,localRecoveryIndexedDbReload:true,recoveryWorkerReviewCancel:true,recoveryUndoRedo:true,independentStep:false,humanAcceptance:false,requests,screenshots:[
-      'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-08b-pinned-custody-refusal.png','native-09-model-first-new-sketch-shortcut.png','native-10a-selected-rigid-rotation.png','native-10-circular-bolt-array.png','native-11-local-recovery-after-reload.png'
+      'native-00c-named-thickness-parameter.png','native-00e-named-parameter-reopened.png','native-00-hole-drag-timeline.png','native-00b-direct-dimensions.png','native-00d-one-shot-hole-array.png','native-01-paired.png','native-02-download.png','native-03-edit-cancels-stale.png','native-04-parameter-frozen.png','native-05-frozen-archive-reopened.png','native-06-live-session-build-and-download.png','native-07-auto-native-rebuild-after-dimension-edit.png','native-08-retrospective-hole-layout-rebuild.png','native-08b-pinned-custody-refusal.png','native-09-model-first-new-sketch-shortcut.png','native-10a-selected-rigid-rotation.png','native-10-circular-bolt-array.png','native-11-local-recovery-after-reload.png','native-13-historical-field-compensation.png','native-14-historical-compensation-reopened.png'
     ]},null,2)+'\n');
   console.log('WORKBENCH_NATIVE_UI_BROWSER_PASS synthetic_http_only');
 }
