@@ -83,6 +83,10 @@
     "./shared-cut-source-retrofit/v1": {
       "types": "./shared-cut-source-retrofit.d.mts",
       "default": "./src/shared-cut-source-retrofit.mjs"
+    },
+    "./compound-pocket-reconfigure/v1": {
+      "types": "./compound-pocket-reconfigure.d.mts",
+      "default": "./src/compound-pocket-reconfigure.mjs"
     }
   },
   "peerDependencies": {
