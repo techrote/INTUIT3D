@@ -217,8 +217,15 @@ async function main(){
   await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:visibleHole.x,y:visibleHole.y});
   await send('Input.dispatchMouseEvent',{type:'mousePressed',x:visibleHole.x,y:visibleHole.y,button:'left',clickCount:1});
   await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:visibleHole.x,y:visibleHole.y,button:'left',clickCount:1});
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-solid-selected-hole]')?.textContent?.includes('holeA')"),
-    '3D hole click did not select existing solver holeA');
+  const actualSolidPick=await evaluate(`(() => ({
+    active:document.querySelector('[data-testid=runtime-active-hole]')?.textContent?.trim(),
+    hint:document.querySelector('[data-testid=runtime-solid-selected-hole]')?.textContent?.trim(),
+    quickEditor:Boolean(document.querySelector('[data-testid=runtime-solid-quickedit]')),
+    target:document.elementFromPoint(${visibleHole.x},${visibleHole.y})?.outerHTML?.slice(0,300),
+    canvasBounds:(()=>{const c=document.querySelector('[data-testid=runtime-3d-viewport] canvas');const r=c?.getBoundingClientRect();return r?{x:r.x,y:r.y,w:r.width,h:r.height}:null})(),
+  }))()`);
+  check(actualSolidPick.active?.includes('Selected circular cut: holeA'),
+    '3D canvas click did not set the authoritative selected hole: '+JSON.stringify(actualSolidPick));
   check(await evaluate("document.querySelector('[data-testid=runtime-3d-viewport] canvas')?.dataset.cameraPreset==='top'"),
     'Stationary hole selection was mistaken for a camera drag');
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===cameraRev,
