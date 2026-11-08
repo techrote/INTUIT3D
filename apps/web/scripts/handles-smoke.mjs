@@ -997,8 +997,18 @@ async function main() {
     await evaluate("Boolean(document.querySelector('[data-testid=runtime-blank-sketch]'))"),
     'Escape after crossing refusal changed the original empty model');
   await screenshot('29b-crossing-outline-escape.png');
-  // A new independent gesture on the unchanged zero-entity sketch succeeds.
+  // Real CDP click intentionally misses (0,0) by fractions of a millimetre.
+  // The visible 1 mm grid must own the placement, not the mouse pixel jitter.
   await clickControl('[data-testid="runtime-outline-tool"]');
+  await clickBlankVertex(0.24,0.29);
+  await eventually(()=>evaluate("(() => {const p=document.querySelector('[data-testid=runtime-draft-vertex-0]');return p?.getAttribute('cx')==='0'&&p?.getAttribute('cy')==='0'})()"),
+    'blank-sketch grid snap did not quantize the real pointer to the sketch origin');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore,
+    'grid-snapped ephemeral click changed the authoritative journal');
+  await clickControl('[data-testid="runtime-undo-contour-point"]');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent?.includes('0 / 12')"),
+    'Undo vertex failed after snapped pointer click');
+  // A new independent gesture on the unchanged zero-entity sketch succeeds.
   for(const [x,y] of [[0,0],[120,0],[120,80],[0,80]])
     await clickBlankVertex(x,y);
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent?.includes('4 / 12')"),
@@ -1226,6 +1236,7 @@ async function main() {
     actualChromiumSelectedHoleStampAndBatchDeleteUndo: true,
     actualChromiumSelectedEdgeHoleCreateUndoRedoArchive: true,
     actualCrossingContourRefusedAndEscapePreservesEmptyHistory: true,
+    realChromiumBlankGridSnapPreservesDraftAndUndo: true,
     genuineEmptySketchFourPointerVerticesAuthoritativeContourUndoRedoSaveReopen: true,
     genuineDrawnContourExtrusionHoleCutUndoRedoSaveReopen: true,
     genuinelyDrawnVertexNumericAndPointerEditUndoRedoReopen: true,
