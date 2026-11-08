@@ -1270,7 +1270,11 @@ async function main(){
   check(historicalSaved.format==='intuit3d.model-archive' &&
     historicalSaved.history?.document?.revision===historySourceRevision+1 &&
     historicalSaved.history.undoStack?.length>0,
-    'downloaded compensation archive lost authoritative revision or undo frames');
+    'downloaded compensation archive lost authoritative revision or undo frames: '+
+    JSON.stringify({format:historicalSaved.format,archiveRevision:historicalSaved.revision,
+      historyRevision:historicalSaved.history?.document?.revision,
+      expectedRevision:historySourceRevision+1,undoFrames:historicalSaved.history?.undoStack?.length,
+      type:historicalSaved.history?.format}));
   const historicalArchivePath=resolve(artifacts,'native-browser-historical-compensation.i3d-model.json');
   writeFileSync(historicalArchivePath,historicalArchive);
   const historicalDom=await send('DOM.getDocument',{depth:1});
