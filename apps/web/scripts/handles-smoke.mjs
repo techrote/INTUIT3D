@@ -1020,6 +1020,22 @@ async function main() {
   for(let i=0;i<5;i++)await clickControl('[data-testid="runtime-blank-zoom-out"]');
   await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox').split(' ')[2])>1000`),
     'zoom-out navigation did not expose a larger drawable workspace');
+  // Pan enough that the *original* fixed label at x=-16 exits the viewBox.
+  // Without a screen-fixed readout the operator loses precise coordinates.
+  const farPan=await evaluate(`(() => {
+    const b=document.querySelector('[data-testid=runtime-blank-sketch]').getBoundingClientRect();
+    return {startX:b.left+b.width/2,endX:b.left+12,y:b.top+b.height/2};
+  })()`);
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',
+    x:farPan.startX,y:farPan.y,buttons:0});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',
+    x:farPan.startX,y:farPan.y,button:'middle',buttons:4,clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',
+    x:farPan.endX,y:farPan.y,button:'middle',buttons:4});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',
+    x:farPan.endX,y:farPan.y,button:'middle',buttons:0,clickCount:1});
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox').split(' ')[0])>0`),
+    'large middle pan did not move original SVG-space readout off-screen');
   const farPoint=await evaluate(`(() => {
     const s=document.querySelector('[data-testid=runtime-blank-sketch]');
     const p=new DOMPoint(500,20).matrixTransform(s.getScreenCTM());
