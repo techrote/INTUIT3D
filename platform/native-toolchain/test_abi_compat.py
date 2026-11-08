@@ -1,12 +1,15 @@
 """Compiled ELF ABI inventory/preflight tests; not OCCT geometry acceptance."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import abi_compat as abi
 
@@ -56,6 +59,27 @@ class AbiProfileTests(unittest.TestCase):
         (self.libs/'libTKMath.so.8.0').unlink()
         with self.assertRaises(abi.ABIError):
             abi.verify_abi(self.worker,self.libs,expected)
+
+    def test_real_ldd_ignores_inherited_bash_env_startup_hook(self):
+        # On Debian/Ubuntu ldd is a Bash script. BASH_ENV is sourced before
+        # the script starts, even if all LD_* environment variables are gone.
+        # The negative control proves whether this host has that behaviour.
+        root = Path(self.h.name)
+        hook = root/'host-preload.sh'
+        marker = root/'ldd-hook-executed'
+        hook.write_text('printf injected > ' + shlex.quote(str(marker)) + '\n')
+        hostile = dict(os.environ, BASH_ENV=str(hook))
+        control = subprocess.run(['ldd', '--version'], env=hostile,
+                                 capture_output=True, text=True, timeout=15)
+        self.assertEqual(control.returncode, 0, control.stderr)
+        if not marker.exists():
+            self.skipTest('ldd on this host does not source BASH_ENV')
+        marker.unlink()
+        profile = abi.symbol_profile(self.worker, self.libs)
+        with mock.patch.dict(os.environ, {'BASH_ENV': str(hook)}):
+            result = abi.verify_abi(self.worker, self.libs, profile)
+        self.assertEqual(result['status'], 'HOST_ELF_ABI_PREFLIGHT_PASS')
+        self.assertFalse(marker.exists(), 'host startup code executed during ABI inspection')
 
     def test_version_selection_uses_numeric_order_not_lexical(self):
         sample='''Version needs section '.gnu.version_r' contains 1 entry:

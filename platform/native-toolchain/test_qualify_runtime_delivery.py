@@ -134,6 +134,32 @@ console.log(JSON.stringify(''' + json.dumps(fixture()) + '''));
         self.assertEqual(result['workerSha256'], self.digest)
         self.assertEqual(result['nativeStepCount'], 7)
 
+
+    def test_ambient_node_preload_cannot_spoof_sketch_or_native_receipt(self):
+        # An actual Node --import hook can otherwise synthesize the SKETCH
+        # fixture and seven native receipts without running the source checkout.
+        # The toy compiled ELF in this test is NOT native OCCT qualification.
+        import os
+        marker = Path(self.folder.name) / 'startup-hook-executed'
+        preload = Path(self.folder.name) / 'spoof.mjs'
+        preload.write_text(
+            "import {writeFileSync} from 'node:fs';\n"
+            + f"writeFileSync({json.dumps(str(marker))}, 'spoofed');\n"
+            + "const fake = process.argv.length > 1 ? "
+            + json.dumps(fixture()) + " : "
+            + "{\"units\":\"mm\",\"width\":120,\"height\":80,\"holes\":[{\"x\":-25,\"y\":0,\"radius\":6},{\"x\":25,\"y\":0,\"radius\":6}]}" + ";\n"
+            + "console.log(JSON.stringify(fake)); process.exit(0);\n"
+        )
+        with mock.patch.dict(os.environ,
+                             {'NODE_OPTIONS': '--import=' + str(preload),
+                              'NODE_PATH': str(preload.parent),
+                              'PYTHONPATH': str(preload.parent),
+                              'BASH_ENV': str(preload)}, clear=False):
+            result = delivery.run_consumer(self.checkout, self.sha,
+                                           self.worker, self.digest)
+        self.assertEqual(result['status'], 'RUNTIME_PINNED_OCCT8_DELIVERY_PASS')
+        self.assertFalse(marker.exists(), 'ambient Node hook superseded real demo')
+
     def test_rejects_stale_source_fixture_even_with_plausible_native_receipts(self):
         # A wrong immutable SKETCH fixture is a fail-closed product mismatch,
         # not permission to weaken native physical measurements.

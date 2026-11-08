@@ -22,6 +22,7 @@ import tempfile
 
 from qualify import COMMIT, VERSION, TOOLKITS, compare_geometry, verify_prefix
 from abi_compat import symbol_profile, ABIError
+from execution_environment import sealed_env
 from reproducible_archive import ArchiveError, ROOT_NAME as ARCHIVE_ROOT_NAME, write_archive
 
 BRIDGE_FILES = ("occt8_bridge.py", "plate_envelope.py", "protocol.py",
@@ -52,7 +53,8 @@ NEEDED_NAME = re.compile(r"\(NEEDED\).*?\[([^\]]+)\]")
 def _needed_toolkits(obj: Path) -> set[str]:
     """Read real ELF DT_NEEDED records, never infer runtime closure from a name list."""
     proc = subprocess.run(["readelf", "-W", "-d", str(obj)],
-                          capture_output=True, text=True, timeout=30, check=False)
+                          capture_output=True, text=True, timeout=30, check=False,
+                          env=sealed_env())
     require(proc.returncode == 0 and "Dynamic section" in proc.stdout,
             f"cannot inspect physical ELF dependencies: {obj}: {proc.stderr[-300:]}")
     return {name for name in NEEDED_NAME.findall(proc.stdout)
@@ -196,10 +198,11 @@ def relocate_worker(original: Path, target: Path) -> None:
     shutil.copy2(original, target)
     result = subprocess.run([patcher, "--force-rpath", "--set-rpath",
                              "$ORIGIN/../lib", str(target)],
-                            capture_output=True, text=True, timeout=30, check=False)
+                            capture_output=True, text=True, timeout=30, check=False,
+                            env=sealed_env())
     require(result.returncode == 0, f"patchelf failed: {result.stderr}")
     dynamic = subprocess.run(["readelf", "-d", str(target)], capture_output=True,
-                             text=True, timeout=30, check=False)
+                             text=True, timeout=30, check=False, env=sealed_env())
     require(dynamic.returncode == 0 and "(RPATH)" in dynamic.stdout and
             "[$ORIGIN/../lib]" in dynamic.stdout,
             "relocated worker has no transitive origin-relative DT_RPATH")
@@ -225,12 +228,13 @@ def relocate_toolkits(directory: Path) -> None:
     for library in physical:
         patched = subprocess.run(
             [patcher, "--force-rpath", "--set-rpath", "$ORIGIN", str(library)],
-            capture_output=True, text=True, timeout=30, check=False)
+            capture_output=True, text=True, timeout=30, check=False,
+            env=sealed_env())
         require(patched.returncode == 0,
                 f"failed to relocate toolkit {library.name}: {patched.stderr}")
         dynamic = subprocess.run(
             ["readelf", "-d", str(library)], capture_output=True,
-            text=True, timeout=30, check=False)
+            text=True, timeout=30, check=False, env=sealed_env())
         require(dynamic.returncode == 0 and "(RPATH)" in dynamic.stdout
                 and "[$ORIGIN]" in dynamic.stdout
                 and "(RUNPATH)" not in dynamic.stdout,
@@ -239,11 +243,9 @@ def relocate_toolkits(directory: Path) -> None:
 
 def validate_elf_resolution(worker: Path, lib: Path) -> str:
     command = subprocess.run(["ldd", str(worker)], capture_output=True, text=True,
-                             # No loader overrides: prove packaged ELF/RPATH
-                             # closure, not a host-prefix or injected-env pass.
-                             env={k: v for k, v in os.environ.items() if k not in
-                                  ("LD_LIBRARY_PATH", "LD_PRELOAD", "LD_AUDIT", "LD_DEBUG")},
-                             timeout=30, check=False)
+                             # No ambient Bash/loader hooks: prove packaged ELF/RPATH
+                             # closure, not host-prefix or inherited-env substitution.
+                             env=sealed_env(), timeout=30, check=False)
     require(command.returncode == 0 and "not found" not in command.stdout,
             f"relocated ELF cannot load: {command.stdout} {command.stderr}")
     occt_lines = [line for line in command.stdout.splitlines()
@@ -261,18 +263,21 @@ def validate_elf_resolution(worker: Path, lib: Path) -> str:
 
 def launcher(root: Path) -> None:
     script = root / "run.sh"
-    script.write_text('''#!/usr/bin/env bash
-set -euo pipefail
-ROOT="$(cd -- "$(dirname -- "$0")" && pwd -P)"
+    script.write_text('''#!/bin/sh
+set -eu
+unset BASH_ENV ENV
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)"
 # Use the copied exact-version toolkit instead of a host OCCT.
 # The executable and each bundled OCCT toolkit carry origin-only DT_RPATH.
 # Remove ambient linker overrides instead of masking a broken relocated ELF.
 unset LD_LIBRARY_PATH LD_PRELOAD LD_AUDIT LD_DEBUG
-# -B only covers this interpreter. The pinned KERNEL bridge launches the
-# Part 21 reader with sys.executable; propagate the bytecode restriction to
-# that child and any subsequent Python subprocesses as well.
+# A packaged worker must not import host Python modules or the user's
+# site-packages/usercustomize.py. The bridge starts a second Python interpreter
+# for Part 21 checks, so keep protection in the inherited child environment.
+unset PYTHONPATH PYTHONHOME PYTHONUSERBASE PYTHONSTARTUP PYTHONINSPECT
+export PYTHONNOUSERSITE=1
 export PYTHONDONTWRITEBYTECODE=1
-exec python3 -B "$ROOT/native/occt8_bridge.py" --worker "$ROOT/bin/intuit3d_occt8_plate" "$@"
+exec python3 -E -s -B "$ROOT/native/occt8_bridge.py" --worker "$ROOT/bin/intuit3d_occt8_plate" "$@"
 ''', encoding="utf-8")
     script.chmod(0o755)
 
@@ -290,7 +295,8 @@ def smoke_relocated(root: Path, qualification: Path) -> dict:
                        "--part21-step-audit", "--step-output", str(step)]
             done = subprocess.run(command, input=source.read_bytes(),
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                  cwd=temp, timeout=90, check=False)
+                                  cwd=temp, env=sealed_env(),
+                                  timeout=90, check=False)
             require(done.returncode == 0,
                     f"relocated native C++ {thickness}mm failed: "
                     + done.stderr.decode(errors="replace")[-2000:])
@@ -361,7 +367,8 @@ def build(args: argparse.Namespace) -> dict:
         require(step.is_file() and sha256(step) == case["stepSha256"],
                 f"qualified STEP missing or changed: {step}")
     git = subprocess.run(["git", "-C", str(args.kernel_tree), "rev-parse", "HEAD"],
-                         capture_output=True, text=True, check=False)
+                         capture_output=True, text=True, check=False,
+                         env=sealed_env())
     kernel_sha = git.stdout.strip()
     require(git.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", kernel_sha)
             is not None, "missing immutable Kernel source revision")
