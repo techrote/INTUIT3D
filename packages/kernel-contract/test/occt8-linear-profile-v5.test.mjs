@@ -38,7 +38,7 @@ test('v5 rejects winding, crossings, diagonal boundary touch, cut overlap and un
     change(x=>{x.cuts[0].x=55;x.cuts[0].y=50;}),
     change(x=>{x.cuts[1].x=55;x.cuts[1].y=50;}),
     change(x=>{x.cuts[1].x=15;x.cuts[1].y=50;}),
-    change(x=>{x.profile.vertices[4]={x:130,y:50};}),
+    change(x=>{x.profile.vertices[4]={x:110,y:-10};}),
     change(x=>{x.profile.vertices[3]={x:120,y:0};}),
     change(x=>{x.units='inch';}),
     change(x=>{x.cuts[1].cutDepthMm=9;}),
