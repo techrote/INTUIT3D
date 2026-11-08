@@ -75,7 +75,7 @@ test('one authored edge-referenced hole cut connects two independent body DAGs w
     ['cut.bracket.mount','sketch.bore','extrude.guide']);
   assert.deepEqual(cut(result.document).writeTargets,['body.bracket']);
   assert.equal(cut(result.document).payload.edgeSourceBodyId,'body.guide');
-  assert.deepEqual(cut(result.document).payload.selectedEdge,anchor(before).reference);
+  assert.deepEqual(JSON.parse(JSON.stringify(cut(result.document).payload.selectedEdge)),anchor(before).reference);
   assert.deepEqual(result.invalidation.readyToEvaluate,['cut.bracket.datum.bore']);
   assert.ok(result.invalidation.unchangedReady.includes('extrude.spacer'));
   assert.equal(inspectSelectedEdgeCut(result.document,'cut.bracket.datum.bore',
