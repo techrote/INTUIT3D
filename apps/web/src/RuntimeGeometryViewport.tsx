@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { frameCadCamera, type CameraViewPreset } from './cameraViews';
 import type { PlateProfile } from '@intuit3d/sketch';
 import { handleDimensionAtPoint, nudgeSketchHandle, type SketchDimensionHandle } from './runtimeSketchHandles';
 import { circleDrawingPreview, type CircleDrawingState } from './circleDrawing';
@@ -76,6 +77,9 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   // A CAD revision changes the mesh, not the camera, OrbitControls, canvas or
   // WebGL context. These are browser presentation resources, never CAD state.
   const previewScene = useRef<{update:(profile:PlateProfile,thickness:number)=>void}|null>(null);
+  // Only a disposable preview camera; this state never changes CAD authority.
+  const cameraCommand = useRef<((view:CameraViewPreset|'fit')=>void)|null>(null);
+  const [cameraView,setCameraView] = useState<CameraViewPreset|'custom'>('isometric');
   const [previewError,setPreviewError] = useState<string|null>(null);
   useEffect(() => {
     if (sketchMode || !host.current) return;
@@ -133,6 +137,8 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         try{
           controls?.update();
           updateThicknessGrip();
+          renderer.domElement.dataset.cameraPosition=[camera.position.x,camera.position.y,camera.position.z].map(x=>x.toFixed(4)).join(',');
+          renderer.domElement.dataset.cameraTarget=[controls?.target.x??0,controls?.target.y??0,controls?.target.z??0].map(x=>x.toFixed(4)).join(',');
           renderer.render(scene,camera);
         }catch{
           contextLost=true;
@@ -208,6 +214,40 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         requestFrame();
       }
     };
+    const switchCameraView=(preset:CameraViewPreset|'fit')=>{
+      if(!renderer||!controls||!lastCenter||!lastProfile||lastThickness===null||contextLost)return;
+      try{
+        const xs=lastProfile.outer.map(p=>p.x),ys=lastProfile.outer.map(p=>p.y);
+        const frame=frameCadCamera({
+          minX:Math.min(...xs),maxX:Math.max(...xs),
+          minY:Math.min(...ys),maxY:Math.max(...ys),thickness:lastThickness,
+        },Math.max(.1,node.clientWidth/Math.max(1,node.clientHeight)),
+        preset==='fit'?'isometric':preset);
+        const target=new THREE.Vector3(frame.center.x,frame.center.y,frame.center.z);
+        // FIT keeps a manually chosen view direction. Presets align to the
+        // sketch axes; neither operation reconstructs the canvas/renderer.
+        const direction=preset==='fit'
+          ?camera.position.clone().sub(controls.target).normalize()
+          :new THREE.Vector3(frame.offset.x,frame.offset.y,frame.offset.z);
+        if(direction.lengthSq()<.5)direction.set(1,-1,1).normalize();
+        if(preset!=='fit'){
+          camera.up.set(frame.up.x,frame.up.y,frame.up.z);
+          renderer.domElement.dataset.cameraPreset=preset;
+          setCameraView(preset);
+        }
+        controls.target.copy(target);
+        camera.position.copy(target).addScaledVector(direction,frame.distance);
+        camera.near=Math.max(.01,frame.distance/10000);
+        camera.far=Math.max(1000,frame.distance+Math.hypot(
+          frame.center.x,frame.center.y,frame.center.z)*10+1000);
+        camera.updateProjectionMatrix();controls.update();
+        // Publish the new camera pose *before* the next animation frame, so
+        // actual browser click tests never read the preceding frame's pose.
+        renderer.domElement.dataset.cameraPosition=[camera.position.x,camera.position.y,camera.position.z].map(x=>x.toFixed(4)).join(',');
+        renderer.domElement.dataset.cameraTarget=[controls.target.x,controls.target.y,controls.target.z].map(x=>x.toFixed(4)).join(',');
+        requestFrame();
+      }catch{setPreviewError('Cannot frame this preview. The model remains unchanged.');}
+    };
     const onContextLost=(event:Event)=>{
       event.preventDefault();
       contextLost=true;thicknessAxis.current=null;
@@ -227,6 +267,11 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       controls=new OrbitControls(camera,renderer.domElement);
       controls.enableDamping=true;
       controls.addEventListener('change',requestFrame);
+      controls.addEventListener('start',()=>{
+        if(renderer)renderer.domElement.dataset.cameraPreset='custom';
+        setCameraView('custom');
+      });
+      renderer.domElement.dataset.cameraPreset='isometric';
       const resize=()=>{
         if(!renderer)return;
         const rect=node.getBoundingClientRect();
@@ -241,11 +286,12 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       resize();
       previewScene.current={update};
       update(profile,thickness);
+      cameraCommand.current=switchCameraView;
     }catch{
       setPreviewError('WebGL preview could not start. Sketch, history and file operations remain available.');
     }
     return ()=>{
-      disposed=true;previewScene.current=null;
+      disposed=true;previewScene.current=null;cameraCommand.current=null;
       if(frameId)cancelAnimationFrame(frameId);
       observer?.disconnect();
       controls?.dispose();
@@ -457,6 +503,18 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       D {dimensionPreview?.id==='depth'?dimensionPreview.value:height} mm
     </text>}
   </svg> : <div ref={host} className="runtime-3d-canvas" data-testid="runtime-3d-viewport">
+    <nav className="runtime-camera-toolbar" aria-label="3D preview camera views">
+      {(['isometric','top','front','right'] as const).map(preset=>
+        <button key={preset} type="button" data-testid={'runtime-camera-'+preset}
+          aria-pressed={cameraView===preset}
+          title={'Frame '+preset+' view, display only; no CAD edit'}
+          onClick={()=>cameraCommand.current?.(preset)}>
+          {preset==='isometric'?'ISO':preset.toUpperCase()}
+        </button>)}
+      <button type="button" data-testid="runtime-camera-fit"
+        title="Fit the current 3D preview, retaining its orbit direction"
+        onClick={()=>cameraCommand.current?.('fit')}>FIT</button>
+    </nav>
     {onThicknessEdit&&<button type="button" ref={thicknessGrip}
       className="runtime-3d-thickness-grip" data-testid="runtime-thickness-handle"
       role="slider" aria-label="Extrusion thickness direct handle in millimetres"

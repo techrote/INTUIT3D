@@ -372,3 +372,21 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
 }
 .runtime-local-recovery-entry span { flex: 1 1 18rem; overflow-wrap: anywhere; }
 .runtime-local-recovery-entry button { flex: 0 0 auto; }
+
+/* Source-independent 3D CAD camera navigation: display-only controls. */
+.runtime-camera-toolbar {
+  position:absolute;z-index:6;top:12px;right:12px;
+  display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px;
+  max-width:min(330px,65%);padding:5px;
+  background:#132638ee;border:1px solid #426379;border-radius:7px;
+  box-shadow:0 3px 12px #0007;
+}
+.runtime-camera-toolbar button {
+  min-width:38px;padding:6px 7px;border:1px solid #36566a;border-radius:4px;
+  background:#1c3648;color:#c5dfe9;font:650 10px ui-monospace,monospace;
+}
+.runtime-camera-toolbar button:hover {background:#31546a;}
+.runtime-camera-toolbar button[aria-pressed="true"] {
+  background:#305a65;color:#e3fff8;border-color:#63c7c5;
+}
+.runtime-camera-toolbar button:focus-visible {outline:2px solid #ffe29c;outline-offset:2px;}
