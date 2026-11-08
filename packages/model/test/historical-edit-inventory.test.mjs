@@ -263,3 +263,74 @@ test('connected SKETCH FEATUREOPS RUNTIME motor saddle authoring exercises the m
   assert.equal(evidence.preservedLaterSameFeatureDatumLink,true);
   assert.equal(evidence.exactGeometryAuthority,false);
 });
+
+test('history inspector reports before, authored and current mechanical values, not guessed deltas',()=>{
+  let doc=baseline();
+  doc=commitEvent(doc,{eventId:'edit.motor.compound.history',type:'feature.edit',
+    featureId:'extrude.motor',patch:{
+      payload:{thicknessMm:16},dependsOn:['sketch.motor','sketch.gauge'],
+    }});
+  doc=commitEvent(doc,{eventId:'edit.motor.later.datum.history',type:'feature.edit',
+    featureId:'extrude.motor',patch:{dependsOn:['sketch.gauge','sketch.motor']}});
+  const snapshot=serializeProject(doc);
+  const row=inspectHistoricalFeatureEdits(doc,inventoryRequest(doc)).rows
+    .find(x=>x.targetEventId==='edit.motor.compound.history');
+  assert.ok(row);
+  const payload=row.fieldTransitions.find(x=>x.field==='payload');
+  const datum=row.fieldTransitions.find(x=>x.field==='dependsOn');
+  assert.equal(payload.before.thicknessMm,13);
+  assert.equal(payload.authored.thicknessMm,16);
+  assert.equal(payload.current.thicknessMm,16);
+  assert.equal(payload.laterEdited,false);
+  assert.equal(payload.laterLifecycleChange,false);
+  assert.deepEqual(datum.before,['sketch.motor']);
+  assert.deepEqual(datum.authored,['sketch.motor','sketch.gauge']);
+  assert.deepEqual(datum.current,['sketch.gauge','sketch.motor']);
+  assert.equal(datum.laterEdited,true);
+  assert.equal(row.status,'blocked');
+  assert.deepEqual(row.fieldChoices.map(x=>[x.field,x.status]),
+    [['payload','available'],['dependsOn','blocked']]);
+  assert.equal(serializeProject(doc),snapshot);
+});
+
+test('blocked history stays inspectable through retirement, restoration, undo and saved replay',()=>{
+  let doc=baseline();
+  doc=commitEvent(doc,{eventId:'retire.motor',type:'feature.remove',
+    featureId:'extrude.motor'});
+  const removed=inspectHistoricalFeatureEdits(doc,inventoryRequest(doc)).rows
+    .find(x=>x.targetEventId==='edit.motor.thickness');
+  assert.equal(removed.status,'blocked');
+  assert.equal(removed.fieldTransitions[0].before.thicknessMm,9);
+  assert.equal(removed.fieldTransitions[0].authored.thicknessMm,13);
+  assert.equal(removed.fieldTransitions[0].current,null);
+  assert.equal(removed.fieldTransitions[0].laterLifecycleChange,true);
+  doc=commitEvent(doc,{eventId:'restore.motor',type:'feature.restore',
+    featureId:'extrude.motor'});
+  let history=startUndoHistory(doc);
+  history=deserializeModelArchive(serializeModelArchive(createModelArchive(history))).history;
+  const restored=inspectHistoricalFeatureEdits(history.document,
+    inventoryRequest(history.document)).rows.find(x=>x.targetEventId==='edit.motor.thickness');
+  assert.equal(restored.status,'blocked');
+  assert.equal(restored.fieldTransitions[0].current.thicknessMm,13);
+  assert.equal(restored.fieldTransitions[0].laterLifecycleChange,true);
+});
+
+test('field snapshots show later edits even after values return to the authored value',()=>{
+  let doc=baseline();
+  doc=commitEvent(doc,{eventId:'edit.gauge.later.temporary',type:'feature.edit',
+    featureId:'sketch.gauge',patch:{payload:{widthMm:52}}});
+  doc=commitEvent(doc,{eventId:'edit.gauge.later.same',type:'feature.edit',
+    featureId:'sketch.gauge',patch:{payload:{widthMm:41}}});
+  const row=inspectHistoricalFeatureEdits(doc,inventoryRequest(doc)).rows
+    .find(x=>x.targetEventId==='edit.gauge.width');
+  assert.equal(row.fieldTransitions[0].before.widthMm,30);
+  assert.equal(row.fieldTransitions[0].authored.widthMm,41);
+  assert.equal(row.fieldTransitions[0].current.widthMm,41);
+  assert.equal(row.fieldTransitions[0].laterEdited,true);
+  assert.equal(row.status,'blocked');
+  const divergent={...doc,journal:doc.journal.map(e=>
+    e.eventId==='edit.gauge.later.temporary'
+      ? {...e,patch:{payload:{widthMm:53}}}:e)};
+  assert.throws(()=>inspectHistoricalFeatureEdits(divergent,inventoryRequest(doc)),
+    ProjectRevisionError);
+});
