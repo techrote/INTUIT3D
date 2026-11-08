@@ -6,15 +6,19 @@ on:
   workflow_dispatch:
     inputs:
       platform_ref:
-        description: "Platform source ref (default current PR #122, or exact 40-char SHA)"
+        description: "Platform source ref; supply immutable PR #159 candidate SHA"
         type: string
         required: true
-        default: refs/pull/122/head
+        default: refs/pull/159/head
       kernel_ref:
-        description: "Kernel source ref (default current PR #67, or exact 40-char SHA)"
+        description: "Kernel source ref; use admitted KERNEL-001 exact SHA"
         type: string
         required: true
-        default: refs/pull/67/head
+        default: c46d02847468b69a106fbfa6fad715c10399ff2c
+      runtime_ref:
+        description: "Immutable accepted RUNTIME consumer source SHA; do not pass floating main"
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -29,24 +33,38 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 115
     steps:
-      - name: Checkout scoped Platform candidate (PR #122 by default)
+      - name: Checkout scoped Platform candidate (exact source preferred)
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
           ref: ${{ inputs.platform_ref }}
           path: platform-repo
           persist-credentials: false
-      - name: Checkout current KERNEL #67 candidate (or supplied immutable SHA)
+      - name: Checkout KERNEL admitted source (immutable SHA)
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
           ref: ${{ inputs.kernel_ref }}
           path: kernel-repo
           persist-credentials: false
+      - name: Checkout immutable RUNTIME product consumer
+        uses: actions/checkout@v4
+        with:
+          repository: techrote/INTUIT3D
+          ref: ${{ inputs.runtime_ref }}
+          path: runtime-repo
+          persist-credentials: false
+      - name: Install Node 22 for real native product consumer
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install accepted RUNTIME workspace dependencies
+        working-directory: runtime-repo
+        run: npm ci
       - name: Install native build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends git cmake ninja-build g++ python3
+          sudo apt-get install -y --no-install-recommends git cmake ninja-build g++ python3 patchelf binutils
       - name: Run source and qualification contract regressions (not geometry acceptance)
         run: |
           python3 -m unittest discover -s platform-repo/platform/native-toolchain \
@@ -96,6 +114,42 @@ jobs:
             "$RUNNER_TEMP/intuit3d-native-evidence/qualification/plate-8mm.step" \
             "$RUNNER_TEMP/intuit3d-native-evidence/qualification/plate-12mm.step" \
             > "$RUNNER_TEMP/intuit3d-native-evidence/native-files.sha256"
+      # INTEGRATION-owned workflow install is required before this can execute.
+      # Fail the hosted job if the *actual extracted published archive* cannot
+      # run both pinned C++ plates, a geometric edit and its restoration.
+      - name: Publish source-matched offline C++ bundle and replay edited STEP after extraction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 platform-repo/platform/native-toolchain/bundle_offline.py \
+            --qualification "$RUNNER_TEMP/intuit3d-native-evidence/qualification" \
+            --prefix "$RUNNER_TEMP/intuit3d-native-work/occt-prefix" \
+            --kernel-tree "$GITHUB_WORKSPACE/kernel-repo" \
+            --output "$RUNNER_TEMP/intuit3d-native-work/offline-occt801" \
+            --replay-evidence "$RUNNER_TEMP/intuit3d-native-evidence/offline-extracted-fresh-steps" \
+            | tee "$RUNNER_TEMP/intuit3d-native-evidence/offline-bundle-execution.json"
+          test -s "$RUNNER_TEMP/intuit3d-native-work/offline-occt801.tar.gz"
+          cp "$RUNNER_TEMP/intuit3d-native-work/offline-occt801.tar.gz" \
+             "$RUNNER_TEMP/intuit3d-native-evidence/offline-occt801.tar.gz"
+          sha256sum "$RUNNER_TEMP/intuit3d-native-evidence/offline-occt801.tar.gz" \
+            > "$RUNNER_TEMP/intuit3d-native-evidence/offline-archive.sha256"
+      # Platform source is a template: INTEGRATION owns actual .github adoption.
+      # Verify both the native bundle and seven real local RUNTIME C++/STEP
+      # stages before a host can publish a working installed product consumer.
+      - name: Execute source-matched real RUNTIME local-bridge demo from installed OCCT8 archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/intuit3d-native-work/offline-occt801.tar.gz"
+          python3 platform-repo/platform/native-toolchain/qualify_runtime_delivery.py \
+            --archive "$ARCHIVE" \
+            --archive-sha256 "$(sha256sum "$ARCHIVE" | cut -d' ' -f1)" \
+            --kernel-sha "$(git -C kernel-repo rev-parse HEAD)" \
+            --platform-sha "$(git -C platform-repo rev-parse HEAD)" \
+            --runtime-tree "$GITHUB_WORKSPACE/runtime-repo" \
+            --runtime-sha "$(git -C runtime-repo rev-parse HEAD)" \
+            --destination "$RUNNER_TEMP/intuit3d-native-work/occt801-runtime-installed" \
+            2>&1 | tee "$RUNNER_TEMP/intuit3d-native-evidence/runtime-delivery.log"
       - name: Remove only huge intermediate build directory before artifact upload
         if: always()
         run: |

@@ -208,6 +208,14 @@ def qualification(args: argparse.Namespace) -> int:
         if sys.platform != "linux":
             raise Blocked("this executable qualification harness targets Linux ELF; Windows native is unqualified")
         require_kernel(args.kernel_tree)
+        # Attest the exact KERNEL source used by this real native build.
+        # Offline bundles must reject evidence from an unrelated PR head.
+        commit = subprocess.run(
+            ["git", "-C", str(args.kernel_tree), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=False, timeout=20)
+        if commit.returncode or not re.fullmatch(r"[0-9a-f]{40}", commit.stdout.strip()):
+            raise Blocked("unable to attest KERNEL source commit")
+        report["kernelSourceCommit"] = commit.stdout.strip()
         if args.source:
             provision(args.source, args.prefix, args.output, args.jobs, run)
         prefix_record = verify_prefix(args.prefix)
