@@ -544,3 +544,54 @@ apps/web/src/stepEvidenceBundle.test.ts` (or `npm test --workspace
 @intuit3d/web`). Chromium browser smoke additionally asserts the OCP/synthetic
 test host cannot enable pinned-custody export. The real pinned C++ browser
 click and Windows Firefox original-archive replay require separate evidence.
+
+
+## Private Windows Firefox archive hang — bounded local evidence (#177)
+
+The reported original Windows Firefox file-selection hang is **not** diagnosed or
+closed by a successful synthetic Chromium test or JSON.parse. Keep the owner's
+40,431-byte, revision-11 original archive and the separate no-undo diagnostic
+**private**. Never attach either to a public issue, pull request or CI artifact.
+
+From a local source-matched checkout after installing workspace dependencies:
+
+```powershell
+# Use the ORIGINAL private archive on the user's local Windows machine.
+node --experimental-strip-types apps/web/scripts/probe-private-archive.mjs "C:\\private\\intuit3d-plate.i3d-model.json"
+npm run dev:local
+```
+
+The isolated Node probe executes **stat → read → JSON.parse →
+RUNTIME.reopen → RUNTIME.inspect → Workbench admission**, with per-stage and
+overall timeouts. It emits only stage/timing, byte count, revision, undo and redo
+counts or a failure stage/error class. It never prints file paths, archive
+contents, project ID, feature details or exception messages. A probe success
+**does not** establish Windows Firefox file-picker or WebGL correctness.
+
+In **Windows Firefox** (with DevTools Console open), select the original
+archive using **Open model archive**. Observe console entries prefixed
+`INTUIT3D_IMPORT_STAGE`, or use **Download import stage trace** while import
+processing is visible, at confirmation, or after cancellation/replacement.
+The trace is a local JSON file with only stage names and elapsed milliseconds.
+It is safe to inspect before optionally sharing; no archive bytes or identity
+are included. The stage `file_selected` only proves that the browser delivered
+a change event; a frozen system picker before this event cannot be observed
+from JavaScript. If the tab freezes without that first marker, note that
+separately.
+
+If the isolated Worker finishes, verify that confirmation shows the expected
+revision 11 and 8 undo frames. **Cancel** once and confirm the previous project
+has not changed; select the original again and **Replace** only when ready to
+load it. Confirm the resulting revision, 2D/3D interaction, an Undo and Redo,
+then request a fresh model archive and reopen it via the same File/Worker
+validation pathway. Record which precise stage, if any, becomes unresponsive.
+Check `about:crashes` for an actual crash report, `about:support` graphics
+details and Firefox Browser Toolbox if relevant. Keep any identifying
+system/driver information and the archive private unless explicitly approved.
+
+Run `npm test --workspace @intuit3d/web` and
+`npm run test:browser:handles --workspace @intuit3d/web` on the candidate
+or accepted exact source. The latter exercises real hosted Chromium gestures
+against a generated multi-edit archive; it is **not** evidence that the
+owner's original Windows Firefox hang is fixed. On a failed import, current
+model and undo history must remain intact and no stale STEP may be exported.

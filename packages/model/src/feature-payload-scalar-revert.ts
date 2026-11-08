@@ -68,6 +68,9 @@ export interface FeaturePayloadScalarRevertPreview {
   readonly plan: EvaluationPlan;
   readonly invalidation: IncrementalEvaluationPlan;
   readonly regressedReadyFeatureIds: readonly string[];
+  /** Pending historical target is consent-relevant even with no new regression. */
+  readonly unresolvedSelectedFeatureIds: readonly string[];
+  readonly requiresUnresolvedConsent: boolean;
   readonly invalidatedBodyIds: readonly string[];
   /** Geometric/sketch validation must be performed by real consumers. */
   readonly requiresSketchAdmission: true;
@@ -234,12 +237,17 @@ export function previewFeaturePayloadScalarRevert(
   if (regressed.some((id)=>!affected.has(id))) {
     fail('selected dimension reversion regresses unrelated ready features');
   }
-  if (request.admission==='require_ready' &&
-      (nextStates.get(feature.id)!=='ready' || regressed.length)) {
-    fail('selected dimension reversion leaves ready intent unresolved');
+  // Do not let a scalar selection bypass the same explicit consent required
+  // for batch compensation of an already-pending feature.
+  const unresolvedSelected = nextStates.get(feature.id) !== 'ready'
+    ? [feature.id] : [];
+  const requiresUnresolvedConsent =
+    regressed.length > 0 || unresolvedSelected.length > 0;
+  if (request.admission==='require_ready' && requiresUnresolvedConsent) {
+    fail('selected dimension reversion leaves selected or downstream intent unresolved');
   }
-  if (regressed.length && !request.confirmUnresolved) {
-    fail('explicit confirmation required for unresolved downstream intent');
+  if (requiresUnresolvedConsent && !request.confirmUnresolved) {
+    fail('explicit confirmation required for unresolved selected or downstream intent');
   }
   const bodies=new Set<string>();
   for(const doc of [source,step.document]) {
@@ -254,7 +262,9 @@ export function previewFeaturePayloadScalarRevert(
     targetEventId:request.targetEventId,featureId:feature.id,restored,
     event:step.document.journal[step.document.journal.length-1]!,
     document:step.document,plan:step.plan,invalidation,
-    regressedReadyFeatureIds:regressed,invalidatedBodyIds:[...bodies],
+    regressedReadyFeatureIds:regressed,
+    unresolvedSelectedFeatureIds:unresolvedSelected,requiresUnresolvedConsent,
+    invalidatedBodyIds:[...bodies],
     requiresSketchAdmission:true,requiresNativeRebuild:true,
     exactGeometryAuthority:false,
   };

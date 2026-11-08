@@ -8,6 +8,9 @@ import type {SelectedEdgeHoleCommand,SelectedEdgeHoleRefusal,SelectedEdgeHoleIns
 import type {SelectedProfileHoleCommand,SelectedProfileHoleRefusal,SelectedProfileHoleInspection} from '@intuit3d/sketch/selected-profile-hole-authoring/v1';
 import type {SelectedProfileHoleLayoutCommand,SelectedProfileHoleLayoutRefusal,SelectedProfileHoleLayoutInspection,SelectedProfileHoleLayoutAccepted} from '@intuit3d/sketch/selected-profile-hole-layout/v1';
 import type {ProfileDiscoveryResponse} from '@intuit3d/sketch/profile-discovery/v1';
+import type {CreateClosedContourCommand,EditClosedContourCommand,
+  DragClosedContourGesture,ClosedContourAccepted,ClosedContourDragged}
+  from '@intuit3d/sketch/closed-contour-authoring/v1';
 
 
 export const WORKFLOW_INVALIDATION_FORMAT: 'intuit3d.workflow-invalidation';
@@ -27,6 +30,40 @@ export interface WorkflowInvalidation {
 }
 export function diffWorkflowPlans(previous: EvaluationPlan, current: EvaluationPlan): WorkflowInvalidation;
 
+
+export const CLOSED_CONTOUR_TRANSACTION_FORMAT:'intuit3d.runtime.closed-contour-transaction';
+export const CLOSED_CONTOUR_TRANSACTION_VERSION:1;
+/** A reviewed SKETCH authoring result, bound to the ENTIRE authoritative archive.
+ * The runtime independently replays the SKETCH command. Do not supply a
+ * projected mesh or a caller-assembled sketch instead of acceptance. */
+export interface ClosedContourRuntimeRequest {
+  format:typeof CLOSED_CONTOUR_TRANSACTION_FORMAT;
+  version:typeof CLOSED_CONTOUR_TRANSACTION_VERSION;
+  expectedProjectId:string;
+  expectedRevision:number;
+  expectedArchive:string;
+  expectedSketchSignature:string;
+  sketchFeatureId:string;
+  eventId:string;
+  admission?:'require_admissible'|'preserve_unresolved';
+  operation:'create'|'edit'|'drag';
+  command:CreateClosedContourCommand|EditClosedContourCommand|DragClosedContourGesture;
+  /** Required for edit/drag; absent for create. */
+  selection?:SelectedProfileSelection;
+  acceptance:ClosedContourAccepted|ClosedContourDragged;
+}
+export type ClosedContourRuntimeResult =
+  | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
+      sketchStatus:RuntimeStatus;invalidation:WorkflowInvalidation;
+      selection:SelectedProfileSelection;contourId:string;
+      nextSketchSignature:string;sourceRevision:number;revision:number;
+      exactAuthority:false}>
+  | Readonly<{kind:'refused';code:'stale_revision'|'stale_source'|
+      'stale_sketch'|'missing_sketch'|'invalid_selection'|'sketch_refused'|
+      'changed_acceptance'|'invalid_successor'|'inadmissible_sketch';
+      notCommitted:true;reason:string;sourceProjectId:string;sourceRevision:number;
+      sourceReason?:string|null;detail?:string|null;
+      candidateFeature?:RuntimeFeature;candidateRevision?:number}>;
 export const WORKFLOW_RUNTIME_FORMAT: 'intuit3d.workflow-runtime-evaluation';
 export const WORKFLOW_RUNTIME_VERSION: 1;
 export type RuntimeStatus =
@@ -294,6 +331,8 @@ export interface WorkflowRuntime {
   diff(previousHistory: UndoHistory, nextHistory: UndoHistory): WorkflowInvalidation;
   commit(history: UndoHistory, events: readonly JournalEvent[], expectedRevision?: number): UndoHistory;
   editDimensions(history: UndoHistory, request: DimensionBatchEditRequest): UndoHistory;
+  /** Exact-source structural contour authoring in one INTENT undo frame. */
+  commitClosedContour(history: UndoHistory, request: ClosedContourRuntimeRequest): ClosedContourRuntimeResult;
   /** One revision-fenced, undoable model event; optional refusal before commit. */
   editSketchConstraints(history: UndoHistory, request: SketchConstraintBatchRequest): SketchConstraintBatchResult;
   /** One authoritative edit of the number, centres and radii of circular holes. */

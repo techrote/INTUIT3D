@@ -51,6 +51,10 @@ export interface FeatureEditRevertPreview {
   readonly featureId: string;
   readonly revertedFields: readonly (keyof FeaturePatch)[];
   readonly regressedReadyFeatureIds: readonly string[];
+  /** Historical target remains pending/blocked/conflicted after compensation. */
+  readonly unresolvedSelectedFeatureIds: readonly string[];
+  /** Consent covers already-unresolved selected intent as well as new regressions. */
+  readonly requiresUnresolvedConsent: boolean;
   readonly invalidatedBodyIds: readonly string[];
   readonly requiresNativeRebuild: true;
   readonly exactGeometryAuthority: false;
@@ -187,12 +191,18 @@ function previewRevertFields(
   if (regressed.some((id) => !affected.has(id))) {
     fail('inverse edit regresses unrelated ready authoring');
   }
-  if (request.admission === 'require_ready' &&
-      (nextStates.get(target.featureId) !== 'ready' || regressed.length)) {
-    fail('historical reversion leaves previously ready intent unresolved');
+  // A target can have been pending both before and after this reversion.
+  // Its historical edit is still an explicit unresolved design choice, not
+  // implicit permission granted by the absence of new ready regressions.
+  const unresolvedSelected = nextStates.get(target.featureId) !== 'ready'
+    ? [target.featureId] : [];
+  const requiresUnresolvedConsent =
+    regressed.length > 0 || unresolvedSelected.length > 0;
+  if (request.admission === 'require_ready' && requiresUnresolvedConsent) {
+    fail('historical reversion leaves selected or downstream intent unresolved');
   }
-  if (regressed.length && !request.confirmUnresolved) {
-    fail('explicit confirmation required for unresolved downstream intent');
+  if (requiresUnresolvedConsent && !request.confirmUnresolved) {
+    fail('explicit confirmation required for unresolved selected or downstream intent');
   }
   // A historical edit may have retargeted an extrude/cut to a different body.
   // Include BOTH sides of the revert: the departing body must be retired just
@@ -212,6 +222,7 @@ function previewRevertFields(
     document: staged.document, plan: staged.plan, invalidation,
     targetEventId: request.targetEventId, featureId: target.featureId,
     revertedFields: fields, regressedReadyFeatureIds: regressed,
+    unresolvedSelectedFeatureIds: unresolvedSelected, requiresUnresolvedConsent,
     invalidatedBodyIds: [...bodyIds],
     requiresNativeRebuild: true, exactGeometryAuthority: false,
   };

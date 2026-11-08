@@ -127,12 +127,23 @@ export function createLivePlateSession({
         invalidation.revision!==after.report.revision||
         invalidation.exactReuseAllowed!==false)
       throw new Error('live plate session: invalid model dependency fence');
-    return {kind:'candidate',before,after,next,invalidation};
+    // The successor profile is not independently selectable from a stale
+    // preview. Return only the versioned contour receipt from the committed
+    // SKETCH result, copied before the authoritative archive publication.
+    const contourReceipt=outcome?.kind==='committed' &&
+      typeof outcome.nextSketchSignature==='string' &&
+      outcome.selection && outcome.exactAuthority===false
+      ? Object.freeze({format:'intuit3d.runtime.contour-receipt',version:1,
+          projectId:after.report.projectId,revision:after.report.revision,
+          contourId:outcome.contourId,selection:structuredClone(outcome.selection),
+          nextSketchSignature:outcome.nextSketchSignature,exactAuthority:false})
+      : null;
+    return {kind:'candidate',before,after,next,invalidation,contourReceipt};
   }
   function publishCandidate(candidate) {
     publish(candidate.next,candidate.after.archive);
     return {kind:'committed',history:candidate.next,report:candidate.after.report,
-      invalidation:candidate.invalidation};
+      invalidation:candidate.invalidation,...(candidate.contourReceipt?{contourReceipt:candidate.contourReceipt}:{})};
   }
   // Execute a command against an INTENT history candidate, never against a
   // cached preview or native B-rep. Also used by atomic multi-command staging.
@@ -144,7 +155,7 @@ export function createLivePlateSession({
           ![
             'model.events','model.undo','model.redo',
             'model.feature.remove','model.feature.recover-closure','dimensions.batch',
-            'sketch.constraints','sketch.holes','sketch.holes.rectangular',
+            'sketch.constraints','sketch.contour/v1','sketch.holes','sketch.holes.rectangular',
             'sketch.holes.circular','sketch.holes.transform',
             'sketch.holes.resize','sketch.holes.selected-edge',
              'sketch.holes.selected-profile','sketch.holes.selected-profile-layout',
@@ -246,6 +257,7 @@ export function createLivePlateSession({
           }
           case 'dimensions.batch': return runtime.editDimensions(history,request);
           case 'sketch.constraints': return runtime.editSketchConstraints(history,request);
+          case 'sketch.contour/v1': return runtime.commitClosedContour(history,{...request,expectedProjectId:command.projectId});
           case 'sketch.holes': return runtime.editPlateHoles(history,request);
           case 'sketch.holes.rectangular': return runtime.patternPlateHoles(history,request);
           case 'sketch.holes.circular': return runtime.patternCircularHoles(history,request);
