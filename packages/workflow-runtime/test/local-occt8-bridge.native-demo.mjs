@@ -109,7 +109,7 @@ function preserveFromEmptyEvidence(label,capture){
   // should be tied to its own evidence directory and immutable source.
   writeFileSync(join(evidenceDir,label+'.i3d-model.json'),capture.archive,{flag:'wx'});
   writeFileSync(join(evidenceDir,label+'.receipt.json'),
-    JSON.stringify(capture.receipt,null,2)+'\\n',{flag:'wx'});
+    JSON.stringify(capture.receipt,null,2),{flag:'wx'});
   writeFileSync(join(evidenceDir,label+'.step'),capture.stepBytes,{flag:'wx'});
   return {label,archiveSha256,stepSha256,revision:capture.receipt.source.revision};
 }
@@ -203,7 +203,7 @@ try{
         version:1,originalEvidence,editedEvidence,
         browserPointerExecuted:false,
         nativeWorkerExecuted:true,externalCadProbeExecuted:runIndependent,
-        results},null,2)+'\\n',{flag:'wx'});
+        results},null,2),{flag:'wx'});
     console.log(JSON.stringify({
       kind:runIndependent
         ?'RUNTIME_REAL_PINNED_OCCT8_FROM_EMPTY_EXTERNAL_SAMPLE_EXECUTED'
