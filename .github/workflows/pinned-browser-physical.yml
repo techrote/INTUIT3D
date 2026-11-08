@@ -18,9 +18,13 @@ concurrency:
 
 jobs:
   physical:
-    name: Ubuntu / actual Chromium to C++ STEP to non-OCCT CAD
+    name: Ubuntu / ${{ matrix.journey }} / actual Chromium to C++ STEP to non-OCCT CAD
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        journey: [existing-plate, sketch-first-template]
     steps:
       - name: Checkout exact candidate Integration and accepted consumer source
         uses: actions/checkout@v4
@@ -68,6 +72,7 @@ jobs:
           INTUIT3D_OCCT8_WORKER: ${{ runner.temp }}/installed-occt801/bin/intuit3d_occt8_plate
           INTUIT3D_OCCT8_WORKER_SHA256: a346489f79e49c1eb81a1bebe5987d31fbd6e92814c2f5a7028c1ecf4d3dbbc1
           INTUIT3D_PINNED_BROWSER_ARTIFACTS: pinned-browser-evidence
+          INTUIT3D_BROWSER_SKETCH_FIRST: ${{ matrix.journey == 'sketch-first-template' && '1' || '0' }}
         run: node tooling/qualify-pinned-browser-step.mjs
       # Separate source-pinned non-OCCT Rust STEP importer already executed in
       # CI; no additional Rust build or OCCT build needed in this workflow.
@@ -87,6 +92,13 @@ jobs:
           root=pathlib.Path('pinned-browser-evidence')
           report=json.loads((root/'browser-receipt.json').read_text())
           assert report['status']=='PINNED_OCCT8_BROWSER_TWO_REVISION_ZIPS_CAPTURED',report
+          assert report['journey'] in ('preauthored-plate','sketch-first-template'),report
+          if report['journey']=='sketch-first-template':
+              author=report['authoredFeatures']
+              assert author['pointerDrawnClosedProfile'] is False,author
+              assert author['sketchSource']=='solved_start_template_not_pointer_drawn',author
+              assert author['extrusion']=='actual_browser_control',author
+              assert author['cut']=='actual_browser_control',author
           assert report['nativeWorkerSha256']=='a346489f79e49c1eb81a1bebe5987d31fbd6e92814c2f5a7028c1ecf4d3dbbc1'
           assert report['revision8']!=report['revision12']
           sys.path.insert(0,'conformance/external-cad')
@@ -188,7 +200,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: real-browser-pinned-cxx-independent-step
+          name: ${{ matrix.journey == 'existing-plate' && 'real-browser-pinned-cxx-independent-step' || 'real-browser-sketch-first-pinned-cxx-independent-step' }}
           path: |
             pinned-browser-evidence/
           if-no-files-found: warn
