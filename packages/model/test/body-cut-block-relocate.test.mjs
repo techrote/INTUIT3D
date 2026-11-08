@@ -251,6 +251,36 @@ test('original named-edge topology and explicit selected-edge writer identity bl
     /requires earlier source writer cut.relief/);
 });
 
+test('a named predecessor edge is not silently rebound even if old writer stays earlier',()=>{
+  const doc=gearbox(),bearing=featuresOf(doc).find(f=>f.id==='cut.bearing');
+  const anchored=commitEvent(doc,{
+    eventId:'edit.bearing.topology',type:'feature.edit',featureId:bearing.id,
+    patch:{payload:{...bearing.payload,location:{
+      format:'intuit3d.semantic-topology-reference',version:1,
+      projectId:doc.projectId,atRevision:doc.revision,
+      anchor:{kind:'edge',featureId:'cut.key',roleId:'edge.key.wall'},
+    }}},
+  });
+  assert.throws(()=>previewBodyCutBlockRelocate(anchored,request(anchored)),
+    /authored topology still anchors cut.bearing to cut.key/);
+  const candidate=inventory(anchored).destinations.at(-1);
+  assert.equal(candidate.eligibility,'blocked');
+});
+
+test('projected sketch cycle is retained and relocation fails without partial mutation',()=>{
+  const doc=gearbox();
+  const projected=commitEvent(doc,{
+    eventId:'edit.sketch.tapping.projected',type:'feature.edit',
+    featureId:'sketch.tapping',
+    patch:{dependsOn:['cut.relief']},
+  });
+  const history=startUndoHistory(projected);
+  const frozen=serializeUndoHistory(history);
+  assert.throws(()=>commitUndoableBodyCutBlockRelocate(history,request(projected)),
+    /relocation regresses|does not preserve|requires earlier|ordered|cyclic|previously ready/);
+  assert.equal(serializeUndoHistory(history),frozen);
+});
+
 test('actual SKETCH FEATUREOPS RUNTIME servo mount example executes through public contracts',()=>{
   const file=fileURLToPath(new URL('../examples/servo-mount-cut-block-relocate.mjs',
     import.meta.url));
