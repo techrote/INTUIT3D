@@ -879,3 +879,40 @@ cross-package browser and independent product acceptance. Only Integration
 may merge and close the original #73 lifecycle gate. Both ordinary and
 native demonstrations retain `exactAuthority:false` and
 `independentInteroperability:false` at the application boundary.
+
+## Authoritative selected-profile hole add/reanchor/remove
+
+The typed `session.applyCommand({kind:'sketch.holes.selected-profile',...})`
+(or atomic `applyCommands`) connects SKETCH's accepted
+`selected-profile-hole-authoring/v1` provider to the existing INTENT history.
+Use `discoverPlateProfiles` on the current authored sketch to construct
+`selection:{candidateId,sourceSignature}`, then inspect permitted anchors via
+`inspectSelectedProfileHoleAuthoring(sketch,selection)`. Send a typed
+`add-hole`, `reanchor-hole` or `remove-hole` with the same source signature,
+explicit sketch feature ID and unique journal event ID, fenced by the current
+session project ID and revision. For example:
+
+```js
+const {projectId,revision}=session.refresh();
+const result=session.applyCommand({kind:'sketch.holes.selected-profile',
+  projectId,expectedRevision:revision,
+  request:{sketchFeatureId:'sketch.L',eventId:'mount.add',selection,
+    command:{kind:'add-hole',sourceSignature:selection.sourceSignature,
+      holeId:'mount:profile',anchorPointId:'L:a',xMm:60,yMm:15,radiusMm:4}},
+});
+```
+
+SKETCH re-solves and re-admits the selected contour, and RUNTIME writes one
+undoable `feature.edit` in the canonical archive only after acceptance.
+Source mismatch, stale revisions, forbidden anchors and conflicting circles
+refuse without an edit or native dispatch. Reanchoring changes the dimension
+reference but preserves the semantic hole identity; retrospective dimension
+edits propagate through the ordinary solver, with undo/redo and durable reopen.
+An ambiguous multi-contour source remains non-exact in the ordinary runtime
+report: explicit 2D selection never infers a native body. Successful edits
+invalidate stale STEP; only `session.currentStep()` may be downloaded following
+fresh provider evaluation. No production OCCT 8.0.1 C++ or independent STEP
+geometry evidence follows from these SKETCH/INTENT tests.
+
+Package tests: `npm test --workspace @intuit3d/workflow-runtime` and
+`npm run typecheck --workspace @intuit3d/workflow-runtime`.

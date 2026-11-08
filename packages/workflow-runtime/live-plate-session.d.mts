@@ -7,7 +7,8 @@ import type {DimensionBatchEditRequest} from '@intuit3d/model/dimension-batch-ed
 import type {WorkflowRuntime,WorkflowInvalidation,RuntimeReport,SketchConstraintBatchResult,
   SketchConstraintBatchRequest,PlateHoleBatchRequest,RectangularHoleArrayRequest,
   CircularHolePatternRequest,RigidHoleTransformRequest,HoleLayoutResizeRequest,
-  SelectedEdgeHoleRuntimeRequest,SelectedEdgeHoleRuntimeResult} from './index.mjs';
+  SelectedEdgeHoleRuntimeRequest,SelectedEdgeHoleRuntimeResult,
+   SelectedProfileHoleRuntimeRequest,SelectedProfileHoleRuntimeResult} from './index.mjs';
 import type {LocalPlateClientResult,VerifiedLocalStep} from './local-plate-client.mjs';
 
 export declare const LIVE_PLATE_SESSION_FORMAT:'intuit3d.live-plate-session';
@@ -41,6 +42,7 @@ export type LiveCadCommand = Readonly<{projectId:string;expectedRevision:number}
   | Readonly<{kind:'sketch.holes.transform';request:Omit<RigidHoleTransformRequest,'expectedRevision'>}>
   | Readonly<{kind:'sketch.holes.resize';request:Omit<HoleLayoutResizeRequest,'expectedRevision'>}>
   | Readonly<{kind:'sketch.holes.selected-edge';request:Omit<SelectedEdgeHoleRuntimeRequest,'expectedRevision'>}>
+  | Readonly<{kind:'sketch.holes.selected-profile';request:Omit<SelectedProfileHoleRuntimeRequest,'expectedRevision'>}>
 );
 /** A bounded group of accepted public commands, staged without publishing
  * intermediate revisions. Each operation omits its own project/revision fence:
@@ -66,7 +68,7 @@ export interface SessionParameterDraft {
 }
 export type SessionParameterDraftReview =
   ParameterSheetRebaseResult | ParameterSheetResolutionResult;
-export type SessionEdit = UndoHistory | SketchConstraintBatchResult | SelectedEdgeHoleRuntimeResult;
+export type SessionEdit = UndoHistory | SketchConstraintBatchResult | SelectedEdgeHoleRuntimeResult | SelectedProfileHoleRuntimeResult;
 export type SessionEditResult =
   | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
       invalidation:WorkflowInvalidation}>

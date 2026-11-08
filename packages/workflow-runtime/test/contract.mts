@@ -92,6 +92,18 @@ if(edgeResult.kind==='committed'){
   const refused:true=edgeResult.notCommitted;
   void refused;
 }
+const profileHoleResult=runtime.editSelectedProfileHole(session,{
+  sketchFeatureId:'sketch.plate',eventId:'type.selected.profile.hole',
+  expectedRevision:session.document.revision,
+  selection:{candidateId:'contour',sourceSignature:'sketch-signature'},
+  command:{kind:'add-hole',sourceSignature:'sketch-signature',
+    holeId:'mount:profile',anchorPointId:'corner-a',xMm:60,yMm:20,radiusMm:3},
+});
+if(profileHoleResult.kind==='committed'){
+  const selected:string=profileHoleResult.semanticProfileId;
+  const noNative:false=profileHoleResult.exactAuthority;
+  void [selected,noNative];
+}
 const delta:WorkflowInvalidation=runtime.diff(session,session);
 const direct:WorkflowInvalidation=diffWorkflowPlans(model.planProject(session.document),model.planProject(session.document));
 const exact:false=delta.exactReuseAllowed;

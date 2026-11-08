@@ -5,6 +5,7 @@ import type {DimensionBatchEditRequest} from '@intuit3d/model/dimension-batch-ed
 import type {SketchDocument, SketchSolution, PlateProfile} from '@intuit3d/sketch';
 import type {SelectedProfileSelection} from '@intuit3d/sketch/selected-profile/v1';
 import type {SelectedEdgeHoleCommand,SelectedEdgeHoleRefusal} from '@intuit3d/sketch/selected-edge-hole-placement/v1';
+import type {SelectedProfileHoleCommand,SelectedProfileHoleRefusal} from '@intuit3d/sketch/selected-profile-hole-authoring/v1';
 import type {ProfileDiscoveryResponse} from '@intuit3d/sketch/profile-discovery/v1';
 
 
@@ -191,6 +192,24 @@ export type SelectedEdgeHoleRuntimeResult =
       changedConstraintIds:string[];createdHoleIds:string[];
       reanchoredHoleIds:string[];exactAuthority:false}>;
 
+/** Explicitly selected contour hole edit, with no inferred native body authority. */
+export interface SelectedProfileHoleRuntimeRequest {
+  sketchFeatureId:string;
+  eventId:string;
+  expectedRevision:number;
+  selection:SelectedProfileSelection;
+  command:SelectedProfileHoleCommand;
+}
+export type SelectedProfileHoleRuntimeResult =
+  | Readonly<{kind:'refused';code:'stale_selection'|'selected_profile_hole_refused';
+      notCommitted:true;sourceRevision:number;reason:string;
+      review?:SelectedProfileHoleRefusal}>
+  | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
+      invalidation:WorkflowInvalidation;sketchStatus:RuntimeStatus;
+      selection:SelectedProfileSelection;semanticProfileId:string;
+      holeId:string;operation:SelectedProfileHoleCommand['kind'];
+      changedConstraintIds:string[];exactAuthority:false}>;
+
 export interface RuntimeServices {
   model: { planProject(document: ProjectDocument): EvaluationPlan };
   transactions: {
@@ -235,6 +254,7 @@ export interface WorkflowRuntime {
    * An ambiguous multi-contour sketch may remain invalid_profile in RuntimeReport:
    * selected-contour admission alone never authorizes physical native export. */
   editSelectedEdgeHoles(history:UndoHistory,request:SelectedEdgeHoleRuntimeRequest):SelectedEdgeHoleRuntimeResult;
+  editSelectedProfileHole(history:UndoHistory,request:SelectedProfileHoleRuntimeRequest):SelectedProfileHoleRuntimeResult;
   undo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   redo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;
   save(history: UndoHistory): string;

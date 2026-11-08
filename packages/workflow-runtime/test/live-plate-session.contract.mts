@@ -106,6 +106,16 @@ const edgeCommand=session.applyCommand({
   },
 });
 void edgeCommand;
+const profileHoleCommand=session.applyCommand({
+  kind:'sketch.holes.selected-profile',projectId:state.projectId,
+  expectedRevision:state.revision,request:{
+    sketchFeatureId:'sketch.plate',eventId:'type.session.profile.hole',
+    selection:{candidateId:'contour',sourceSignature:'snapshot'},
+    command:{kind:'add-hole',sourceSignature:'snapshot',
+      holeId:'mount:profile',anchorPointId:'corner-a',xMm:60,yMm:20,radiusMm:3},
+  },
+});
+void profileHoleCommand;
 const grouped:LiveCadBatch={
   kind:'commands.batch',projectId:state.projectId,
   expectedRevision:state.revision,commands:[

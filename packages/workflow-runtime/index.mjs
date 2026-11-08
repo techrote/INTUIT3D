@@ -5,6 +5,7 @@
  */
 import {diffWorkflowPlans} from './invalidation.mjs';
 import {setSelectedEdgeHoles} from '@intuit3d/sketch/selected-edge-hole-placement/v1';
+import {editSelectedProfileHole as authorProfileHole} from '@intuit3d/sketch/selected-profile-hole-authoring/v1';
 import {applyPlateHoleOperations,planRectangularHoleArray,planCircularHolePattern,planRigidHoleTransform,planHoleLayoutResize} from './hole-edit.mjs';
 export {WORKFLOW_INVALIDATION_FORMAT, WORKFLOW_INVALIDATION_VERSION, diffWorkflowPlans} from './invalidation.mjs';
 
@@ -426,6 +427,57 @@ export function createWorkflowRuntime(services) {
       exactAuthority:false};
   }
 
+
+  /**
+   * Author an explicitly selected profile hole through the accepted SKETCH
+   * anchor provider, committing exactly one source-fenced INTENT journal event.
+   * Never interpret selected 2D topology as a native body/STEP selection.
+   */
+  function editSelectedProfileHole(history,request) {
+    const {sketchFeatureId,eventId,expectedRevision,selection,command}=request??{};
+    const previous=transactions.parseUndoHistory(history);
+    if(!Number.isSafeInteger(expectedRevision)||
+        expectedRevision!==previous.document.revision)
+      throw new Error('runtime selected-profile hole: stale or missing expectedRevision');
+    if(typeof sketchFeatureId!=='string'||!sketchFeatureId||
+        typeof eventId!=='string'||!eventId||
+        !selection||typeof selection!=='object'||Array.isArray(selection)||
+        !command||typeof command!=='object'||Array.isArray(command))
+      throw new TypeError('runtime selected-profile hole: sketch/event, selection and command required');
+    const entry=model.planProject(previous.document).features.find(
+      x=>x.feature.id===sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      throw new TypeError('runtime selected-profile hole: authoritative sketch feature required');
+    const current=sketch.validateSketch(entry.feature.payload.sketch);
+    if(selection.sourceSignature!==command.sourceSignature)
+      return {kind:'refused',code:'stale_selection',notCommitted:true,
+        sourceRevision:expectedRevision,
+        reason:'selected contour and command have different sketch signatures'};
+    const proposal=authorProfileHole(current,selection,command);
+    if(proposal.kind!=='accepted')
+      return {kind:'refused',code:'selected_profile_hole_refused',notCommitted:true,
+        sourceRevision:expectedRevision,reason:proposal.reason,review:proposal};
+    if(proposal.nativeExact!==false||proposal.exactBrepAvailable!==false||
+        proposal.semanticProfileId!==selection.candidateId||
+        proposal.selection.candidateId!==selection.candidateId||
+        proposal.sourceSignature!==selection.sourceSignature)
+      throw new Error('runtime selected-profile hole: SKETCH provider source/authority mismatch');
+    const nextSketch=sketch.validateSketch(proposal.sketch);
+    const candidate=commit(previous,[{
+      eventId,type:'feature.edit',featureId:sketchFeatureId,
+      patch:{payload:{...entry.feature.payload,sketch:nextSketch}},
+    }],expectedRevision);
+    const report=inspect(candidate);
+    const feature=report.features.find(x=>x.featureId===sketchFeatureId);
+    if(!feature) throw new Error('runtime selected-profile hole: committed sketch disappeared');
+    return {kind:'committed',history:candidate,report,
+      invalidation:diff(previous,candidate),sketchStatus:feature.status,
+      selection:proposal.selection,semanticProfileId:proposal.semanticProfileId,
+      holeId:proposal.holeId,operation:proposal.operation,
+      changedConstraintIds:proposal.changedConstraintIds,
+      exactAuthority:false};
+  }
+
   /** Explicitly delegated, revision-fenced authoritative commands. */
   function commit(history, events, expectedRevision = history.document.revision) {
     return transactions.commitUndoableTransaction(history, events, expectedRevision);
@@ -446,5 +498,5 @@ export function createWorkflowRuntime(services) {
   function reopen(serialized) {
     return archive.deserializeModelArchive(serialized).history;
   }
-  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, editSelectedEdgeHoles, undo, redo, save, reopen});
+  return Object.freeze({inspect, diff, commit, editDimensions, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, editSelectedEdgeHoles, editSelectedProfileHole, undo, redo, save, reopen});
 }
