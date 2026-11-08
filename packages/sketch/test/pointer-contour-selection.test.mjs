@@ -144,6 +144,9 @@ test('unsolved or intersecting sketches cannot be laundered through pointer sele
     const inventory=inspectPointerSelectableContours(doc);
     assert.equal(inventory.kind,'refused');
     assert.equal(inventory.reason,'source_not_profile_ready');
+    assert.ok(inventory.diagnostics.length>0);
+    assert.ok(inventory.diagnostics.some(d=>d.code==='free_degrees_of_freedom'||
+      d.code==='contradictory_constraints'));
     assert.equal(pick(doc).kind,'refused');
   }
   const nested=addRectangle(base,'nested',10,10,10,10);
