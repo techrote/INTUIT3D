@@ -27,6 +27,8 @@ export type ExperimentalPlateWorkflowResult = Readonly<{
     kind:'unresolved';
     code:string; reason:string; projectId?:string;revision?:number;
     cutFeatureId?:string;artifact:null;
+    /** Active authored geometry features deliberately not representable by plate-v1. */
+    unsupportedFeatureIds?:readonly string[];
   }> |
   Readonly<{
     kind:'experimental_plate_evaluated';
