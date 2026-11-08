@@ -142,9 +142,9 @@ export function planBodyRebuildManifest(
   const invalidation = planIncrementalEvaluation(previous, current);
   const beforeFeatures = featuresOf(previous);
   const afterFeatures = featuresOf(current);
-  const beforePlan = planProject(previous);
   const afterPlan = planProject(current);
   const afterById = new Map(afterFeatures.map((feature) => [feature.id, feature]));
+  const executable = new Set(afterPlan.executableOrder);
   const afterStates = new Map(afterPlan.features.map((entry) =>
     [entry.feature.id, entry]));
   const affected = new Set(invalidation.invalidatedFeatureIds);
@@ -207,9 +207,6 @@ export function planBodyRebuildManifest(
       requiresProviderValidation: true,
     };
   });
-  // The old plan is deliberately retained as validated input for the
-  // ancestry/removed-writer comparison; no old provider result is imported.
-  void beforePlan;
   return {
     format: BODY_REBUILD_MANIFEST_FORMAT,
     version: BODY_REBUILD_MANIFEST_VERSION,
