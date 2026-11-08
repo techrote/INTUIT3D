@@ -102,6 +102,7 @@ jobs:
               assert author['extrusion']=='actual_browser_control',author
               assert author['cut']=='actual_browser_control',author
               assert author['earlierFeatureEdit']=='second_solver_admitted_bore',author
+              assert author['retrospectiveDimensionEdit']=='real_3d_thickness_grip_8_to_12mm_ArrowUp_Undo_Redo',author
               assert author['sourceRevocation'] is True,author
           if report['journey']=='sketch-first-template':
               author=report['authoredFeatures']
@@ -201,8 +202,21 @@ jobs:
                           if event['type']=='feature.create'
                           and event['feature']['id']=='plate']
               assert len(extrusions)==1,extrusions
-              thickness=extrusions[0]['payload']['thicknessMm']
-              assert thickness==8,thickness
+              initial_thickness=extrusions[0]['payload']['thicknessMm']
+              assert initial_thickness==8,initial_thickness
+              # The real 3D thickness grip authors feature.edit events AFTER
+              # extrusion and cut. The latest canonical authored plate payload,
+              # not its initial create or the native producer, determines truth.
+              latest_plate=next((
+                  event['patch']['payload']
+                  for event in reversed(journal)
+                  if event.get('type')=='feature.edit'
+                  and event.get('featureId')=='plate'
+                  and isinstance(event.get('patch',{}).get('payload'),dict)
+                  and 'thicknessMm' in event['patch']['payload']),None)
+              assert latest_plate is not None,'no retrospective authored thickness edit'
+              thickness=latest_plate['thicknessMm']
+              assert thickness==12,thickness
               area_stock=width*height
               cx,cy=(x0+x1)/2,(y0+y1)/2
               holes=[(x-cx,y-cy,r,math.pi*r*r) for x,y,r in circles]
@@ -238,12 +252,13 @@ jobs:
                 'RAY right.bore.high 25 0 7 0 0 1 void',
                 'RAY exterior.right 70 0 4 1 0 0 void',
                 'RAY exterior.north 0 45 4 0 1 0 void',
-                'RAY exterior.above 0 0 12 0 0 1 void',
+                'RAY exterior.above 0 0 16 0 0 1 void',
                 'RAY exterior.below 0 0 -3 0 0 -1 void',
               ]
               print('SOURCE_DERIVED_INDEPENDENT_ANALYTIC_ORACLE',
                     json.dumps({'actualPointerWidthMm':width,
                                 'actualPointerHeightMm':height,
+                                'retrospectiveThicknessMm':thickness,
                                 'sourceVolumeMm3':volume,'sourceSurfaceMm2':surface,
                                 'sourceCentroid':[mx,my,thickness/2],
                                 'sourceCovariance':[vx,vy,vz,vxy]}))
