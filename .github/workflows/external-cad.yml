@@ -45,7 +45,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: techrote/INTUIT3D
-          ref: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || inputs.cad_ref || github.sha }}
+          ref: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'intuit/integration/195-cross-engine-original-20261108' && 'e155633b3fe3ce07295953432f16305c3eb191db') || (github.event_name == 'pull_request' && github.event.pull_request.head.sha) || inputs.cad_ref || github.sha }}
           path: cad-source
           persist-credentials: false
       - name: Download original actual OCP STEP evidence (not generated mock files)
@@ -315,6 +315,93 @@ jobs:
           assert sum(case['rayCount'] for case in r['cases']) == 80, r
           assert r['cases'][0]['nativeStepSha256'] != r['cases'][1]['nativeStepSha256'], r
           print('NON_OCCT_SOURCE_MATCHED_U_BRACKET_ACCEPTED two original STEP solids, 80 real material/void/floor rays')
+          PY
+      # Reuse original OCCT8 worker and sixteen STEP files from the exact
+      # KERNEL #195 physical run, without recompiling expensive OCCT.
+      # This Integration PR pins the independently authored STEP #221 candidate
+      # and its AnvilCAD Rust importer; real geometry readback is compulsory.
+      - name: Checkout exact source-matched KERNEL generalized v5/v6 producer
+        uses: actions/checkout@v4
+        with:
+          repository: techrote/INTUIT3D
+          ref: 93e984963db720cacdd8bb679a559a3b8df88ce8
+          path: kernel-source
+          persist-credentials: false
+      - name: Acquire original immutable selected sloped v5/v6 C++ STEP artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          # Do not accept newly generated or synthetic STEP files.
+          test "$(git -C kernel-source rev-parse HEAD)" = '93e984963db720cacdd8bb679a559a3b8df88ce8'
+          test "$(git -C cad-source rev-parse HEAD)" = 'e155633b3fe3ce07295953432f16305c3eb191db' || {
+            echo "::error::Selected sloped candidate code changed; requalify exact candidate SHA"; exit 1;
+          }
+          curl --fail --location --retry 3 --connect-timeout 20 --max-time 600 \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            -o "$root/original-selected-v5-v6.zip" \
+            https://api.github.com/repos/techrote/INTUIT3D/actions/artifacts/13608757244/zip
+          actual="$(sha256sum "$root/original-selected-v5-v6.zip" | cut -d' ' -f1)"
+          expected="1f29b9988b2c360c8c030ec65a5e3ffa72b9bfae8ed2c87e9258cfc253437558"
+          test "$actual" = "$expected" || {
+            echo "::error::Original OCCT worker/STEP upload ZIP digest mismatch"; exit 1;
+          }
+          mkdir -p "$root/new-native"
+          unzip -q "$root/original-selected-v5-v6.zip" -d "$root/new-native"
+          worker="$root/new-native/qualification/worker-build/intuit3d_occt8_plate"
+          test -f "$worker"
+          actual_worker="$(sha256sum "$worker" | cut -d' ' -f1)"
+          test "$actual_worker" = 'd888308e6ac867d6d3fb59accc3a552ce74f13a23e78d2bd003a7b5a10f2c795' || {
+            echo "::error::Compiled pinned OCCT worker bytes/source changed"; exit 1;
+          }
+          chmod +x "$worker"
+          test -f "$root/new-native/selected-sloped-v5-v6/original-step-sha256.json"
+          printf 'producer_run=42456419544\nproducer_artifact=13608757244\nzip_sha256=%s\nkernel_source=93e984963db720cacdd8bb679a559a3b8df88ce8\nstep_candidate=e155633b3fe3ce07295953432f16305c3eb191db\nworker_sha256=%s\n' \
+            "$actual" "$actual_worker" > "$root/new-native-custody.txt"
+      - name: Independently import 16 original v5/v6 STEP and reject wrong shapes
+        shell: bash
+        working-directory: cad-source
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/intuit3d-external-evidence"
+          source_root="$root/new-native/selected-sloped-v5-v6"
+          worker="$root/new-native/qualification/worker-build/intuit3d_occt8_plate"
+          probe="$(cat "$root/independent-probe.path")"
+          test -x "$probe"
+          probe_sha="$(sha256sum "$probe" | cut -d' ' -f1)"
+          anvil_sha='50c053840933c92d598976e837e63ccd7626c312'
+          python3 conformance/external-cad/sloped_v5.py \
+            --direct-dir "$source_root/direct-v5" \
+            --authored-dir "$source_root/authored-v5" \
+            --kernel-tree ../kernel-source --kernel-sha 93e984963db720cacdd8bb679a559a3b8df88ce8 \
+            --worker "$worker" --probe "$probe" \
+            --probe-sha256 "$probe_sha" --anvil-source-sha "$anvil_sha" \
+            --output-dir "$root/selected-v5-independent" \
+            2>&1 | tee "$root/selected-v5-execution.log"
+          python3 conformance/external-cad/progressive_v6.py \
+            --direct-dir "$source_root/direct-v6" \
+            --authored-dir "$source_root/authored-v6" \
+            --kernel-tree ../kernel-source --kernel-sha 93e984963db720cacdd8bb679a559a3b8df88ce8 \
+            --worker "$worker" --probe "$probe" \
+            --probe-sha256 "$probe_sha" --anvil-source-sha "$anvil_sha" \
+            --output-dir "$root/progressive-v6-independent" \
+            2>&1 | tee "$root/progressive-v6-execution.log"
+          python3 - "$root" <<'PY'
+          import json, pathlib, sys
+          root=pathlib.Path(sys.argv[1])
+          v5=json.loads((root/'selected-v5-independent/qualification.json').read_text())
+          v6=json.loads((root/'progressive-v6-independent/qualification.json').read_text())
+          assert v5['status']=='NON_OCCT_SLOPED_V5_FOUR_STEP_PHYSICAL_PASS',v5
+          assert v6['status']=='NON_OCCT_PROGRESSIVE_V6_PHYSICAL_GATE_PASS',v6
+          assert v5['independentCadInteroperability'] is True
+          assert v6['independentCadInteroperability'] is True
+          assert len(v5['cases'])==4 and sum(c['rayCount'] for c in v5['cases'])==248
+          assert len(v6['cases'])==12 and sum(c['rayCount'] for c in v6['cases'])==744
+          assert len(v6['physicalNegatives'])==4 and all(x['rejected'] for x in v6['physicalNegatives'])
+          print('NON_OCCT_SOURCE_MATCHED_SELECTED_V5_V6_16_STEP_PHYSICAL_PASS: 992 rays, 4 adversaries')
           PY
       - name: Exclude distributor binary and extraction tree from evidence upload
         if: always()
