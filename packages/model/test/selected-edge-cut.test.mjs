@@ -6,6 +6,7 @@ import {startUndoHistory, undoTransaction, redoTransaction} from '../src/transac
 import {createModelArchive, serializeModelArchive, deserializeModelArchive} from '../src/archive.ts';
 import {planIncrementalEvaluation} from '../src/incremental.ts';
 import {TOPOLOGY_REFERENCE_FORMAT} from '../src/topology.ts';
+import {runSelectedEdgeClampJig} from '../examples/selected-edge-clamp-jig.mjs';
 import {BODY_CUT_CHAIN_FORMAT} from '../src/body-cut-chain.ts';
 import {
   SELECTED_EDGE_CUT_FORMAT, SELECTED_EDGE_CUT_REBIND_FORMAT,
@@ -179,6 +180,26 @@ test('stale selected role, source changes and invalid current terminals refuse r
   assert.throws(()=>previewSelectedEdgeCutRebind(base,
     rebind(base,newSource,{expectedRevision:base.revision-1})),
     ProjectRevisionError);
+  // The same edge at a *new* source revision is a legitimate explicit
+  // provenance refresh. The role is still not a verified geometric edge.
+  const refreshed=previewSelectedEdgeCutRebind(base,
+    rebind(base,anchor(base),{releasePreviousSourceDependency:true}));
+  assert.equal(refreshed.semanticStatus,'ready');
+  assert.equal(refreshed.events.length,1);
+  assert.equal(inspectSelectedEdgeCut(refreshed.document,
+    'cut.bracket.datum.bore','body.bracket').placementStatus,'pending_evidence');
   assert.throws(()=>previewSelectedEdgeCutRebind(base,
-    rebind(base,anchor(base),{releasePreviousSourceDependency:true})),ProjectFormatError);
+    rebind(base,{...anchor(base),reference:cut(base).payload.selectedEdge},
+      {releasePreviousSourceDependency:true})),ProjectFormatError);
+});
+
+test('accepted SKETCH / FEATUREOPS / RUNTIME clamp-jig mechanical workflow replays selected-edge intent',()=>{
+  const result=runSelectedEdgeClampJig();
+  assert.equal(result.sketchAdmitted,true);
+  assert.equal(result.stableSelection,true);
+  assert.equal(result.archiveUndoRedo,true);
+  assert.equal(result.nativeExact,false);
+  assert.equal(result.independentSTEP,false);
+  assert.ok(result.structuralInvalidation.includes('cut.clamp.edge'));
+  assert.equal(result.topologyEvidence,'required');
 });
