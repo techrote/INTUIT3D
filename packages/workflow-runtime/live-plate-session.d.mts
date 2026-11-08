@@ -8,6 +8,7 @@ import type {WorkflowRuntime,WorkflowInvalidation,RuntimeReport,SketchConstraint
   SketchConstraintBatchRequest,PlateHoleBatchRequest,RectangularHoleArrayRequest,
   CircularHolePatternRequest,RigidHoleTransformRequest,HoleLayoutResizeRequest,
   SelectedEdgeHoleRuntimeRequest,SelectedEdgeHoleRuntimeResult,
+  SelectedEdgeHoleRuntimeInspectionRequest,SelectedEdgeHoleRuntimeInspectionResult,
    SelectedProfileHoleRuntimeRequest,SelectedProfileHoleRuntimeResult,
   SelectedProfileHoleRuntimeInspectionRequest,SelectedProfileHoleRuntimeInspectionResult} from './index.mjs';
 import type {LocalPlateClientResult,VerifiedLocalStep} from './local-plate-client.mjs';
@@ -122,6 +123,9 @@ export interface LivePlateSession {
   refresh():LivePlateSessionState;
   /** Genuine synchronous INTENT/ SKETCH transaction; never a private journal. */
   applyEdit(edit:(history:UndoHistory)=>SessionEdit):SessionEditResult;
+  /** Return source-fenced edge-local SKETCH controls without edits or native work. */
+  inspectSelectedEdgeHoles(request:SelectedEdgeHoleRuntimeInspectionRequest):
+    SelectedEdgeHoleRuntimeInspectionResult;
   /** Return current source-fenced SKETCH controls, without edits or native work. */
   inspectSelectedProfileHoles(request:SelectedProfileHoleRuntimeInspectionRequest):
     SelectedProfileHoleRuntimeInspectionResult;
@@ -194,7 +198,7 @@ export interface LivePlateSession {
 }
 export declare function createLivePlateSession(options:Readonly<{
   runtime:Pick<WorkflowRuntime,'save'|'reopen'|'inspect'|'diff'> &
-    Partial<Pick<WorkflowRuntime,'inspectSelectedProfileHoles'>>;
+    Partial<Pick<WorkflowRuntime,'inspectSelectedProfileHoles'|'inspectSelectedEdgeHoles'>>;
   /** Same synchronous source of truth used by the actual browser/editor. */
   readCurrentHistory:()=>UndoHistory;
   /** Must immediately update the state returned by readCurrentHistory. */

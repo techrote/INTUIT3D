@@ -4,7 +4,7 @@ import type {DimensionBindingEvaluation} from '@intuit3d/model/dimension-binding
 import type {DimensionBatchEditRequest} from '@intuit3d/model/dimension-batch-edit';
 import type {SketchDocument, SketchSolution, PlateProfile} from '@intuit3d/sketch';
 import type {SelectedProfileSelection} from '@intuit3d/sketch/selected-profile/v1';
-import type {SelectedEdgeHoleCommand,SelectedEdgeHoleRefusal} from '@intuit3d/sketch/selected-edge-hole-placement/v1';
+import type {SelectedEdgeHoleCommand,SelectedEdgeHoleRefusal,SelectedEdgeHoleInspection} from '@intuit3d/sketch/selected-edge-hole-placement/v1';
 import type {SelectedProfileHoleCommand,SelectedProfileHoleRefusal,SelectedProfileHoleInspection} from '@intuit3d/sketch/selected-profile-hole-authoring/v1';
 import type {ProfileDiscoveryResponse} from '@intuit3d/sketch/profile-discovery/v1';
 
@@ -192,6 +192,20 @@ export type SelectedEdgeHoleRuntimeResult =
       changedConstraintIds:string[];createdHoleIds:string[];
       reanchoredHoleIds:string[];exactAuthority:false}>;
 
+/** Read-only edge-local authoring controls from the one authoritative sketch. */
+export interface SelectedEdgeHoleRuntimeInspectionRequest {
+  projectId:string;expectedRevision:number;sketchFeatureId:string;
+  /** Omit for exactly one solved contour; otherwise select explicitly. */
+  candidateId?:string;
+}
+export type SelectedEdgeHoleRuntimeInspectionResult =
+  | Readonly<{kind:'ready';projectId:string;sourceRevision:number;
+      sketchFeatureId:string;inspection:SelectedEdgeHoleInspection;
+      exactAuthority:false}>
+  | Readonly<{kind:'refused';code:'stale_command'|'missing_sketch'|'selection_required'|'profile_unavailable';
+      reason:string;notCommitted:true;sourceProjectId:string;sourceRevision:number;
+      review?:SelectedEdgeHoleRefusal;exactAuthority:false}>;
+
 /** Read-only authoritative profile and available anchor controls; never STEP. */
 export interface SelectedProfileHoleRuntimeInspectionRequest {
   projectId:string;expectedRevision:number;sketchFeatureId:string;
@@ -268,6 +282,7 @@ export interface WorkflowRuntime {
    * An ambiguous multi-contour sketch may remain invalid_profile in RuntimeReport:
    * selected-contour admission alone never authorizes physical native export. */
   editSelectedEdgeHoles(history:UndoHistory,request:SelectedEdgeHoleRuntimeRequest):SelectedEdgeHoleRuntimeResult;
+  inspectSelectedEdgeHoles(history:UndoHistory,request:SelectedEdgeHoleRuntimeInspectionRequest):SelectedEdgeHoleRuntimeInspectionResult;
   inspectSelectedProfileHoles(history:UndoHistory,request:SelectedProfileHoleRuntimeInspectionRequest):SelectedProfileHoleRuntimeInspectionResult;
   editSelectedProfileHole(history:UndoHistory,request:SelectedProfileHoleRuntimeRequest):SelectedProfileHoleRuntimeResult;
   undo(history: UndoHistory, eventIds: readonly string[], expectedRevision?: number): UndoHistory;

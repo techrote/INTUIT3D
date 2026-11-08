@@ -931,3 +931,31 @@ missing sketch, obsolete contour or unresolved selection returns a typed
 `kind:'refused'` without mutating the archive, starting native work or
 invalidating current verified STEP. Always inspect again after any edit, undo
 or reopen. Analytic selection is not a body target, B-rep, exact geometry or STEP.
+
+
+### Read editable selected-edge holes from the authoritative session
+
+WORKBENCH uses `session.inspectSelectedEdgeHoles({projectId,expectedRevision,
+sketchFeatureId,candidateId?})` with the latest `session.refresh()` fence.
+For one admissible solved contour, `candidateId` may be omitted; otherwise
+the pointer-selected semantic `cycle:` profile is mandatory. A ready result
+exposes `inspection.edges` (including `editable`, tangent/inward vectors,
+axis, length and anchor point), `inspection.holes` (existing dimension
+bindings), and the canonical `inspection.selection`. Send that selection
+verbatim with `sourceSignature:inspection.sourceSignature` to the existing
+`sketch.holes.selected-edge` command. Reinspect after every dimension edit,
+hole edit, undo, redo or reopen; never persist a stale edge/selection snapshot
+as the project's authority.
+
+The read-only inspector refuses stale project/revision, missing sketch,
+obsolete contour and unresolved selection without publishing any journal
+event, invalidating an unchanged current STEP receipt, or dispatching native
+work. Edge placement still performs the real SKETCH solve/profile admission
+and one undoable INTENT edit; unsupported axis-free edges remain non-editable.
+Neither this inspector nor analytic hole authoring implies a native body,
+physical B-rep, STEP or independently certified geometry.
+
+Reproduce in `test/selected-edge-session.integration.test.mjs` with:
+`npm test --workspace @intuit3d/workflow-runtime` and
+`npm run typecheck --workspace @intuit3d/workflow-runtime`.
+

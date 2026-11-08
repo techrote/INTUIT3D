@@ -184,3 +184,41 @@ test('selected L profile does not pretend the rectangle-only trusted bridge can 
     assert.equal(session.refresh().hasVerifiedStep,false);
   }finally{session.cancel();await host.close();}
 });
+
+test('live selected-edge inspector supplies editable controls and rejects stale selection without native dispatch',()=>{
+  let current=initial(),nativeCalls=0,publications=0;
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>current,
+    publishHistory:h=>{publications++;current=h;},
+    evaluateImpl:async()=>{nativeCalls++;throw new Error('read-only inspector dispatched native');}});
+  const state=session.refresh(),before=session.save();
+  const request={projectId:state.projectId,expectedRevision:state.revision,sketchFeatureId:'sketch.L'};
+  const inspected=session.inspectSelectedEdgeHoles(request);
+  assert.equal(inspected.kind,'ready',JSON.stringify(inspected));
+  assert.equal(inspected.exactAuthority,false);
+  assert.equal(inspected.inspection.previewOnly,true);
+  assert.equal(inspected.inspection.nativeExact,false);
+  assert.equal(inspected.inspection.sourceSignature,sketch.serializeSketch(currentSketch(current)));
+  assert.equal(inspected.inspection.selection.sourceSignature,inspected.inspection.sourceSignature);
+  assert.ok(inspected.inspection.edges.some(e=>e.edgeId==='L:edge0'&&e.editable));
+  assert.equal(publications,0);
+  assert.equal(nativeCalls,0);
+  assert.equal(session.save(),before);
+  assert.equal(session.inspectSelectedEdgeHoles({...request,projectId:'other.project'}).code,'stale_command');
+  assert.equal(session.inspectSelectedEdgeHoles({...request,sketchFeatureId:'absent'}).code,'missing_sketch');
+  assert.equal(session.inspectSelectedEdgeHoles({...request,candidateId:'cycle:absent'}).code,'profile_unavailable');
+  assert.equal(publications,0);
+  const accepted=submit(session,operation(inspected.inspection.selection,'edge.inspected.add',[add()]));
+  assert.equal(accepted.kind,'committed',JSON.stringify(accepted));
+  assert.equal(publications,1);
+  assert.equal(session.inspectSelectedEdgeHoles(request).code,'stale_command');
+  const next=session.refresh();
+  const latest=session.inspectSelectedEdgeHoles({
+    projectId:next.projectId,expectedRevision:next.revision,sketchFeatureId:'sketch.L'});
+  assert.equal(latest.kind,'ready');
+  assert.equal(latest.inspection.holes.find(h=>h.holeId==='mount:a').edgeBinding.alongMm,55);
+  assert.notEqual(latest.inspection.sourceSignature,inspected.inspection.sourceSignature);
+  assert.equal(nativeCalls,0);
+  assert.equal(session.currentStep(),null);
+  session.cancel();
+});
