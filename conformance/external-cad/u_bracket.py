@@ -67,6 +67,38 @@ def expected_centroid(thickness: int) -> tuple[float, float, float]:
     )
 
 
+def expected_covariance(thickness: int) -> dict[str, float]:
+    """Source-derived volume-normalized *central* second moments in mm².
+
+    Independently integrate the occupied CSG: centred stock (120x80),
+    a 70x50 through-notch (0,15), a 10x12 through-window (47,10),
+    and a radius-5 blind cylindrical pocket (-47,10), top 3 mm.
+    No native OCCT mass-property receipt is an oracle here.
+    """
+    volume = expected_volume(thickness)
+    centroid = expected_centroid(thickness)
+    t = float(thickness)
+    names = ("xx", "yy", "zz", "xy", "xz", "yz")
+    indices = ((0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2))
+    components = (
+        (1, 120*80*t, (0., 0., t/2),
+         (120**2/12, 80**2/12, t**2/12)),
+        (-1, 70*50*t, (0., 15., t/2),
+         (70**2/12, 50**2/12, t**2/12)),
+        (-1, 10*12*t, (47., 10., t/2),
+         (10**2/12, 12**2/12, t**2/12)),
+        (-1, math.pi*25*3, (-47., 10., t-1.5),
+         (25/4, 25/4, 3**2/12)),
+    )
+    result = {}
+    for name, (i, j) in zip(names, indices):
+        raw = sum(sign*part_volume*(centre[i]*centre[j] +
+                   (variance[i] if i == j else 0.))
+                  for sign, part_volume, centre, variance in components)
+        result[name] = raw/volume-centroid[i]*centroid[j]
+    return result
+
+
 def rays(thickness: int) -> list[tuple[str, float, float, float | None]]:
     """Model-coordinate ray oracle; no CAD import or native receipt dependency."""
     require(thickness in (8, 12), "unsupported U-bracket fixture thickness")
@@ -139,6 +171,7 @@ def parse_receipt(stdout: str, thickness: int) -> dict:
         "solids", "source_unit", "imported_exact", "tris", "open_edges",
         "volume_mm3", "expected_mm3", "centroid_x_mm",
         "centroid_y_mm", "centroid_z_mm", "warnings",
+        *(f"cov_{axis}_mm2" for axis in ("xx", "yy", "zz", "xy", "xz", "yz")),
     }, "duplicate, unsupported or missing independent solid fields")
     require(summary["solids"] == "1" and summary["source_unit"] in
             ("millimetre", "millimeter") and summary["imported_exact"] == "true"
@@ -148,6 +181,8 @@ def parse_receipt(stdout: str, thickness: int) -> dict:
         triangles = int(summary["tris"])
         measured, claimed = float(summary["volume_mm3"]), float(summary["expected_mm3"])
         centroid = tuple(float(summary[f"centroid_{axis}_mm"]) for axis in "xyz")
+        covariance = {axis: float(summary[f"cov_{axis}_mm2"])
+                      for axis in ("xx", "yy", "zz", "xy", "xz", "yz")}
     except ValueError as exc:
         raise Rejected("invalid independent U-bracket volume") from exc
     oracle = expected_volume(thickness)
@@ -159,9 +194,21 @@ def parse_receipt(stdout: str, thickness: int) -> dict:
     require(all(math.isfinite(p) and abs(p - e) <= .15
                 for p, e in zip(centroid, expected_centre)),
             "independently imported U-bracket material centroid mismatches source fixture")
+    expected_cov = expected_covariance(thickness)
+    for axis, reference in expected_cov.items():
+        observed = covariance[axis]
+        # Tolerances for separately tessellated curved pockets, not exact
+        # analytic B-rep integration: 1% diagonal and 5% off-diagonal,
+        # each with bounded mm² floors for very small cross covariances.
+        tolerance = (max(0.1, abs(reference)*.01) if axis in ("xx", "yy", "zz")
+                     else max(0.25, abs(reference)*.05))
+        require(math.isfinite(observed) and abs(observed-reference) <= tolerance,
+                f"independent mass covariance {axis} disagrees with source geometry")
     return dict(importedExactBRep=True, measuredVolumeMm3=measured,
                 expectedVolumeMm3=oracle,
                 measuredCentroidMm=dict(zip("xyz", centroid)),
+                measuredCovarianceMm2=covariance,
+                expectedCovarianceMm2=expected_cov,
                 expectedCentroidMm=dict(zip("xyz", expected_centre)),
                 rayCount=len(observations),
                 triangles=triangles, rays=observations, sourceUnit=summary["source_unit"])
