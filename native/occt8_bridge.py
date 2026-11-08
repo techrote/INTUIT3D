@@ -21,6 +21,9 @@ from occt8_profile_contract import (SCHEMA as PROFILE_SCHEMA, canonical_profile_
 from occt8_orthogonal_contract import (
     SCHEMA as ORTHOGONAL_SCHEMA, canonical_orthogonal_request,
     validate_orthogonal_request, validate_orthogonal_result)
+from occt8_linear_contract import (
+    SCHEMA as LINEAR_SCHEMA, canonical_linear_request,
+    validate_linear_request, validate_linear_result)
 from occt8_cut_contract import (SCHEMA as CUT_SCHEMA, MIXED_SCHEMA,
                                 canonical_cut_request, canonical_mixed_cut_request,
                                 validate_cut_request, validate_mixed_cut_request,
@@ -32,6 +35,8 @@ MAX_RESPONSE_BYTES = 128 * 1024
 MAX_STEP_BYTES = 32 * 1024 * 1024
 
 def canonical_request(request: dict) -> str:
+    if request["protocol"] == LINEAR_SCHEMA:
+        return canonical_linear_request(request)
     if request["protocol"] == ORTHOGONAL_SCHEMA:
         return canonical_orthogonal_request(request)
     if request["protocol"] == PROFILE_SCHEMA:
@@ -120,12 +125,13 @@ def execute(request_input: object, *, worker: Path, step_output: Path | None = N
             timeout: float = 30.0, cross_version_audit: bool = False,
             part21_audit: bool = False) -> dict:
     schema = request_input.get("protocol") if isinstance(request_input, dict) else None
-    request = (validate_orthogonal_request(request_input) if schema == ORTHOGONAL_SCHEMA else
+    request = (validate_linear_request(request_input) if schema == LINEAR_SCHEMA else
+               validate_orthogonal_request(request_input) if schema == ORTHOGONAL_SCHEMA else
                validate_profile_request(request_input) if schema == PROFILE_SCHEMA else
                validate_cut_request(request_input) if schema == CUT_SCHEMA else
                validate_mixed_cut_request(request_input) if schema == MIXED_SCHEMA else
                validate_request(request_input))
-    if request["protocol"] in (CUT_SCHEMA, MIXED_SCHEMA, PROFILE_SCHEMA, ORTHOGONAL_SCHEMA) and (cross_version_audit or part21_audit):
+    if request["protocol"] in (CUT_SCHEMA, MIXED_SCHEMA, PROFILE_SCHEMA, ORTHOGONAL_SCHEMA, LINEAR_SCHEMA) and (cross_version_audit or part21_audit):
         raise ValueError("plate-subset STEP readers do not support cut-chain STEP")
     # Normalize relative output paths before changing the subprocess cwd.
     if step_output is not None:
@@ -163,7 +169,9 @@ def execute(request_input: object, *, worker: Path, step_output: Path | None = N
             if not report.is_file() or report.stat().st_size > MAX_RESPONSE_BYTES:
                 raise ValueError("absent or oversized worker report")
             response = json.loads(report.read_text(encoding="utf-8"))
-            if request["protocol"] == ORTHOGONAL_SCHEMA:
+            if request["protocol"] == LINEAR_SCHEMA:
+                validate_linear_result(request, response)
+            elif request["protocol"] == ORTHOGONAL_SCHEMA:
                 validate_orthogonal_result(request, response)
             elif request["protocol"] == PROFILE_SCHEMA:
                 validate_profile_result(request, response)
