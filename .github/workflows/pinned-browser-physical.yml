@@ -153,7 +153,12 @@ jobs:
           while IFS= read -r -d '' f; do
             if [[ "$(sha256sum "$f" | cut -d' ' -f1)" == "$expected" ]]; then probe="$f"; break; fi
           done < <(find "$RUNNER_TEMP/independent-anvil-evidence" -type f -name intuit_step_probe -print0)
-          test -n "$probe" && test -x "$probe"
+          test -n "$probe"
+          # Artifact ZIPs discard POSIX execute mode. Restore permissions only
+          # after a full byte-for-byte SHA match; chmod does not change the file.
+          chmod u+x "$probe"
+          test -x "$probe"
+          test "$(sha256sum "$probe" | cut -d ' ' -f1)" = "$expected"
           root='pinned-browser-evidence'
           python3 conformance/external-cad/session_step.py \
             --current-archive "$root/current.archive.json" \
