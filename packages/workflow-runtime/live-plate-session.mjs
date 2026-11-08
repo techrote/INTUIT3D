@@ -126,7 +126,7 @@ export function createLivePlateSession({
             'sketch.constraints','sketch.holes','sketch.holes.rectangular',
             'sketch.holes.circular','sketch.holes.transform',
             'sketch.holes.resize','sketch.holes.selected-edge',
-             'sketch.holes.selected-profile',
+             'sketch.holes.selected-profile','sketch.holes.selected-profile-layout',
           ].includes(command.kind))
         throw new TypeError('live plate session: unsupported or unversioned CAD command');
       const commandRefused=(source)=>({
@@ -170,6 +170,7 @@ export function createLivePlateSession({
           case 'sketch.holes.resize': return runtime.resizePlateHoleLayout(history,request);
           case 'sketch.holes.selected-edge': return runtime.editSelectedEdgeHoles(history,request);
            case 'sketch.holes.selected-profile': return runtime.editSelectedProfileHole(history,request);
+          case 'sketch.holes.selected-profile-layout': return runtime.editSelectedProfileHoleLayout(history,request);
           default: throw new TypeError('live plate session: unsupported CAD command');
         }
   }
@@ -197,6 +198,13 @@ export function createLivePlateSession({
       if(typeof runtime.inspectSelectedProfileHoles!=='function')
         throw new TypeError('live plate session: selected-profile inspection requires runtime provider');
       return runtime.inspectSelectedProfileHoles(state.history,request);
+    },
+    /** Inspect simultaneous hole positions/radii from the actual saved sketch. */
+    inspectSelectedProfileHoleLayout(request) {
+      const state=synchronize();
+      if(typeof runtime.inspectSelectedProfileHoleLayout!=='function')
+        throw new TypeError('live plate session: profile hole layout inspection requires runtime provider');
+      return runtime.inspectSelectedProfileHoleLayout(state.history,request);
     },
     /** Delegate a genuine INTENT command; commit only if revision/project fences hold. */
     applyEdit(edit) {
