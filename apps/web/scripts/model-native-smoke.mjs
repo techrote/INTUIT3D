@@ -270,8 +270,8 @@ async function main(){
   // the original *values*, not the former revision counter. Export must remain
   // stale until physical STEP is rebuilt for this new authoritative revision.
   const afterContextualUndos=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
-  const beforeEditRevision=Number(cameraRev?.match(/\\d+/)?.[0]);
-  const afterEditRevision=Number(afterContextualUndos?.match(/\\d+/)?.[0]);
+  const beforeEditRevision=Number(cameraRev?.match(/[0-9]+/)?.[0]);
+  const afterEditRevision=Number(afterContextualUndos?.match(/[0-9]+/)?.[0]);
   check(Number.isInteger(afterEditRevision)&&afterEditRevision>beforeEditRevision,
     '3D contextual undos did not preserve monotonic journal revision');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent")==='pending_exact_provider',
