@@ -1015,6 +1015,34 @@ async function main() {
   await clickControl('[data-testid="runtime-blank-view-reset"]');
   await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox')==='-20 -20 240 160'`),
     'Zoom/reset controls did not restore the real pointer mapping');
+  // Prove the new navigation actually enables authoring *outside* the
+  // original 220 mm right-hand limit, rather than only changing a viewBox.
+  for(let i=0;i<5;i++)await clickControl('[data-testid="runtime-blank-zoom-out"]');
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox').split(' ')[2])>1000`),
+    'zoom-out navigation did not expose a larger drawable workspace');
+  const farPoint=await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-blank-sketch]');
+    const p=new DOMPoint(500,20).matrixTransform(s.getScreenCTM());
+    const b=s.getBoundingClientRect();
+    return {x:p.x,y:p.y,inside:p.x>=b.left&&p.x<=b.right&&p.y>=b.top&&p.y<=b.bottom};
+  })()`);
+  check(farPoint?.inside,'far geometry is not visible inside the navigated blank canvas');
+  await clickControl('[data-testid="runtime-outline-tool"]');
+  await mouse('mouseMoved',farPoint.x,farPoint.y);
+  await mouse('mousePressed',farPoint.x,farPoint.y,1);
+  await mouse('mouseReleased',farPoint.x,farPoint.y);
+  await eventually(()=>evaluate(`(() => {
+    const v=document.querySelector('[data-testid=runtime-draft-vertex-0]');
+    return v&&Math.abs(Number(v.getAttribute('cx'))-500)<2;
+  })()`),'the navigated canvas refused a pointer vertex outside its old viewBox');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore,
+    'off-extent drafting unexpectedly committed a CAD revision');
+  await clickControl('[data-testid="runtime-cancel-contour"]');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-contour-vertex-count]')"),
+    'navigated draft could not be cancelled without admission');
+  await clickControl('[data-testid="runtime-blank-view-reset"]');
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox')==='-20 -20 240 160'`),
+    'Reset view failed after off-extent authoring');
   // Adversarial *real pointer* admission before the successful journey:
   // a bow-tie's four legitimate clicks must never silently author a profile.
   // Escape after SKETCH's refusal must discard only ephemeral draft vertices.
