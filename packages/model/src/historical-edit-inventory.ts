@@ -23,6 +23,13 @@ import type {
   FeatureEditRevertRequest, FeatureEditRevertPreview,
   FeatureEditFieldRevertRequest,
 } from './feature-edit-revert.ts';
+import {
+  FEATURE_PAYLOAD_SCALAR_REVERT_FORMAT, previewFeaturePayloadScalarRevert,
+} from './feature-payload-scalar-revert.ts';
+import type {
+  FeaturePayloadScalarRevertPreview,
+  FeaturePayloadScalarRevertRequest,
+} from './feature-payload-scalar-revert.ts';
 
 export const HISTORICAL_EDIT_INVENTORY_FORMAT =
   'intuit3d.historical-edit-inventory' as const;
@@ -75,6 +82,19 @@ export interface HistoricalEditFieldTransition {
   readonly laterLifecycleChange: boolean;
 }
 
+/** Individually evaluated named dimensions within a compound JSON payload. */
+export interface HistoricalScalarRevertChoice {
+  readonly field: string;
+  readonly before: number;
+  readonly authored: number;
+  readonly current: number | null;
+  readonly status: HistoricalEditChoiceStatus;
+  readonly reason: string | null;
+  readonly regressedReadyFeatureIds: readonly string[];
+  readonly invalidatedBodyIds: readonly string[];
+  readonly admission: FeatureEditRevertRequest['admission'] | null;
+  readonly confirmUnresolved: boolean;
+}
 export interface HistoricalEditChoice {
   readonly targetEventId: string;
   readonly featureId: string;
@@ -85,6 +105,8 @@ export interface HistoricalEditChoice {
   readonly fieldTransitions: readonly HistoricalEditFieldTransition[];
   /** Real admissibility for each historically authored top-level field. */
   readonly fieldChoices: readonly HistoricalFieldRevertChoice[];
+  /** Preview-backed top-level numeric Mm/Deg payload value choices. */
+  readonly scalarChoices: readonly HistoricalScalarRevertChoice[];
   readonly status: HistoricalEditChoiceStatus;
   /** Actual model refusal, not provider-geometry speculation. */
   readonly reason: string | null;
@@ -185,13 +207,14 @@ function summarize(
   status: Exclude<HistoricalEditChoiceStatus, 'blocked'>,
   fieldChoices: readonly HistoricalFieldRevertChoice[],
   fieldTransitions: readonly HistoricalEditFieldTransition[],
+  scalarChoices: readonly HistoricalScalarRevertChoice[],
 ): HistoricalEditChoice {
   const admission = status === 'available' ? 'require_ready' : 'permit_unresolved';
   return {
     targetEventId: source.eventId, featureId: source.featureId,
     sourceRevision: source.ordinal + 1,
     originallyEditedFields: source.changedFields, fieldChoices, fieldTransitions,
-    status, reason: null,
+    scalarChoices, status, reason: null,
     revertedFields: preview.revertedFields,
     regressedReadyFeatureIds: preview.regressedReadyFeatureIds,
     invalidatedBodyIds: preview.invalidatedBodyIds,
@@ -250,6 +273,70 @@ function evaluateFieldChoice(
   }
 }
 
+const DIMENSION_SCALAR = /^[A-Za-z][A-Za-z0-9_]{0,60}(Mm|Deg)$/;
+/**
+ * The value menu is strictly a narrower source action, not a heuristic merge.
+ * An intervening payload replacement blocks every value choice because intent
+ * on a copied key cannot be recovered reliably from the journal.
+ */
+function scalarChoicesFor(
+  document: ProjectDocument, base: FeatureEditRevertRequest,
+  transitions: readonly HistoricalEditFieldTransition[],
+): readonly HistoricalScalarRevertChoice[] {
+  const payload = transitions.find((entry) => entry.field === 'payload');
+  if (!payload || !plain(payload.before) || !plain(payload.authored)) return [];
+  const keys = Object.keys(payload.authored)
+    .filter((field) =>
+      DIMENSION_SCALAR.test(field) &&
+      typeof payload.before[field] === 'number' &&
+      typeof payload.authored[field] === 'number' &&
+      payload.before[field] !== payload.authored[field])
+    .slice(0, 16);
+  return keys.map((field) => {
+    const before = payload.before[field] as number;
+    const authored = payload.authored[field] as number;
+    const current = plain(payload.current) &&
+      typeof payload.current[field] === 'number'
+      ? payload.current[field] as number : null;
+    const request: FeaturePayloadScalarRevertRequest = {
+      format: FEATURE_PAYLOAD_SCALAR_REVERT_FORMAT, version: 1,
+      expectedProjectId: base.expectedProjectId,
+      expectedRevision: base.expectedRevision,
+      expectedDocumentFence: base.expectedDocumentFence,
+      targetEventId: base.targetEventId, eventId: base.eventId,
+      selectedFields: [field],
+      admission: 'require_ready', confirmUnresolved: false,
+    };
+    const summary = (status: Exclude<HistoricalEditChoiceStatus, 'blocked'>,
+      preview: FeaturePayloadScalarRevertPreview): HistoricalScalarRevertChoice => ({
+      field, before, authored, current, status, reason: null,
+      regressedReadyFeatureIds: preview.regressedReadyFeatureIds,
+      invalidatedBodyIds: preview.invalidatedBodyIds,
+      admission: status === 'available' ? 'require_ready' : 'permit_unresolved',
+      confirmUnresolved: preview.regressedReadyFeatureIds.length > 0,
+    });
+    try {
+      return summary('available',
+        previewFeaturePayloadScalarRevert(document, request));
+    } catch (error) {
+      diagnostic(error);
+    }
+    try {
+      const preview = previewFeaturePayloadScalarRevert(document, {
+        ...request, admission: 'permit_unresolved', confirmUnresolved: true,
+      });
+      return summary(preview.regressedReadyFeatureIds.length
+        ? 'requires_confirmation' : 'requires_unresolved_admission', preview);
+    } catch (error) {
+      return {
+        field, before, authored, current, status: 'blocked',
+        reason: diagnostic(error), regressedReadyFeatureIds: [],
+        invalidatedBodyIds: [], admission: null, confirmUnresolved: false,
+      };
+    }
+  });
+}
+
 /**
  * Evaluate bounded, paginated authored edit choices in reverse journal order.
  * ALL feature.edit events are returned, including definitively blocked ones.
@@ -295,9 +382,10 @@ export function inspectHistoricalFeatureEdits(
       event.featureId, sourceEdit.changedFields);
     const fieldChoices = sourceEdit.changedFields.map((field) =>
       evaluateFieldChoice(document, base, field));
+    const scalarChoices = scalarChoicesFor(document, base, fieldTransitions);
     try {
       rows.push(summarize(previewFeatureEditRevert(document, base),
-        sourceEdit, 'available', fieldChoices, fieldTransitions));
+        sourceEdit, 'available', fieldChoices, fieldTransitions, scalarChoices));
       continue;
     } catch (error) {
       diagnostic(error);
@@ -309,13 +397,13 @@ export function inspectHistoricalFeatureEdits(
       rows.push(summarize(preview, sourceEdit,
         preview.regressedReadyFeatureIds.length
           ? 'requires_confirmation' : 'requires_unresolved_admission',
-        fieldChoices, fieldTransitions));
+        fieldChoices, fieldTransitions, scalarChoices));
     } catch (error) {
       rows.push({
         targetEventId: event.eventId, featureId: event.featureId,
         sourceRevision: ordinal + 1,
         originallyEditedFields: sourceEdit.changedFields, fieldChoices,
-        fieldTransitions,
+        fieldTransitions, scalarChoices,
         status: 'blocked', reason: diagnostic(error),
         revertedFields: [], regressedReadyFeatureIds: [],
         invalidatedBodyIds: [], resultingTargetStatus: null,
