@@ -1085,8 +1085,8 @@ or independent geometry authority:
   experimental evidence, never an exactness claim.
 - `stepAvailability`: `unavailable`, `current` or `last_good`.
   Last-good bytes are **still bound to the unchanged canonical source**,
-  but a newer provider request is pending or failed. Do not label those
-  bytes as a newly generated STEP. The only download authority remains
+  but a newer provider request is pending, failed, or completed without
+  generating STEP. Do not label those bytes as a newly generated STEP. The only download authority remains
   `captureCurrentStepEvidence()` (or `currentStepReceipt()` for other
   explicitly labelled use cases).
 - `lastResultCode` and `lastResultReason`: the current revision's native
