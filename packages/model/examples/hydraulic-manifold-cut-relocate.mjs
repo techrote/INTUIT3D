@@ -27,7 +27,8 @@ import {
 } from '@intuit3d/model/selected-edge-cut';
 import {
   BODY_CUT_RELOCATE_FORMAT,previewBodyCutRelocate,
-  commitUndoableBodyCutRelocate,
+  commitUndoableBodyCutRelocate, BODY_CUT_DESTINATIONS_FORMAT,
+  inspectBodyCutRelocateDestinations,
 } from '@intuit3d/model/body-cut-relocate';
 import {
   BODY_REBUILD_MANIFEST_FORMAT,planBodyRebuildManifest,
@@ -126,6 +127,19 @@ export function runHydraulicManifoldCutRelocate(){
         anchor:{kind:'edge',featureId:'cut.drain',roleId:'edge.drain.outlet'}}},
   });
   const before=history.document;
+  // A workbench timeline must offer only semantically admissible destinations,
+  // not blindly move the mounting cut by authored creation chronology.
+  const inventory=inspectBodyCutRelocateDestinations(before,{
+    format:BODY_CUT_DESTINATIONS_FORMAT,version:1,
+    expectedProjectId:before.projectId,expectedRevision:before.revision,
+    targetBodyId:'body.manifold',cutFeatureId:'cut.manifold',offset:0,limit:16,
+  });
+  const placement=inventory.destinations.find(option=>
+    option.afterBodyWriterId==='cut.valve');
+  assert.equal(placement.eligibility,'available');
+  assert.equal(placement.requiredEventIds,3);
+  assert.deepEqual(placement.invalidatedBodyIds,
+    ['body.manifold','body.saddle']);
   const request={
     format:BODY_CUT_RELOCATE_FORMAT,version:1,
     expectedProjectId:before.projectId,expectedRevision:before.revision,
@@ -199,6 +213,8 @@ export function runHydraulicManifoldCutRelocate(){
     writerOrderBefore:preview.writerOrderBefore,
     writerOrderAfter:preview.writerOrderAfter,
     rewiredWriterIds:preview.rewiredWriterIds,
+    legalDestinations:inventory.destinations.filter(x=>x.eligibility==='available').length,
+    selectedDestinationEventCount:placement.requiredEventIds,
     bodyActions:manifest.bodies.map(row=>row.action),
     invalidatedBodies:preview.invalidatedBodyIds,
     retrospectiveEditReplay:delta.readyToEvaluate,
