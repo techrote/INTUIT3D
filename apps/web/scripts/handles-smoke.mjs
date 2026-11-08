@@ -1062,8 +1062,22 @@ async function main() {
   await eventually(()=>evaluate(
     "document.querySelector('[data-testid=runtime-contour-pointer-coordinate]')?.textContent.includes('NEXT X 500.000')"),
     'current SVG pointer transform did not deliver a 500 mm hover after middle pan');
+  await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=runtime-blank-sketch]');
+    window.__offOriginClicks=[];
+    svg.addEventListener('click',event=>{
+      window.__offOriginClicks.push({button:event.button,target:event.target.tagName});
+    },{capture:true});
+  })()`);
   await mouse('mousePressed',farPoint.x,farPoint.y,1);
   await mouse('mouseReleased',farPoint.x,farPoint.y);
+  const clickObservation=await evaluate(`(() => ({
+    clickEvents:window.__offOriginClicks,
+    vertexCount:document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent,
+    vertices:[...document.querySelectorAll('[data-testid^=runtime-draft-vertex-]')].map(v=>[v.getAttribute('cx'),v.getAttribute('cy')]),
+    readout:document.querySelector('[data-testid=runtime-contour-pointer-coordinate]')?.textContent
+  }))()`);
+  console.log('WORKBENCH_OFF_ORIGIN_CAPTURE '+JSON.stringify(clickObservation));
   await eventually(()=>evaluate(`(() => {
     const v=document.querySelector('[data-testid=runtime-draft-vertex-0]');
     return v&&Math.abs(Number(v.getAttribute('cx'))-500)<2;
