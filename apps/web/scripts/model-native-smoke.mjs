@@ -263,6 +263,42 @@ async function main(){
   await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='12' && document.querySelector('[data-testid=runtime-parameter-name]')?.value==='plateThickness'"),
     'formula spreadsheet undo did not restore the original named source');
+  // A draft is NOT erased when a different authoritative inspector commits.
+  // Exercise real Chromium keys and pointer clicks through the exact
+  // #213 per-conflict review API, then undo both operations independently.
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-formula-expression-0]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'cannot draft stale sheet in real Chromium');
+  await send('Input.insertText',{text:'16'});
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-parameter-value]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'cannot edit authoritative parameter during unsaved formula draft');
+  await send('Input.insertText',{text:'13'});
+  await pointerClick('runtime-parameter-apply');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='13' && !!document.querySelector('[data-testid=runtime-formula-stale]') && document.querySelector('[data-testid=runtime-formula-expression-0]')?.value==='16'"),
+    'authoritative edit erased unsaved formula draft or stale indicator');
+  await pointerClick('runtime-formula-preview');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-formula-conflicts]')?.textContent?.includes('edited_row_changed')"),
+    'INTENT conflict did not appear in browser');
+  check(await evaluate("document.querySelector('[data-testid=runtime-formula-commit]')?.disabled"),
+    'unapproved stale draft erroneously allowed commit');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-formula-approve-0]');e?.click();return e?.checked})()"),
+    'individual model conflict cannot be acknowledged');
+  await pointerClick('runtime-formula-resolve');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-formula-value-comparison]')) && !document.querySelector('[data-testid=runtime-formula-commit]')?.disabled"),
+    'explicit conflict review did not produce scalar comparison');
+  check(await evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='13'"),
+    'conflict approval implicitly changed model before final commit');
+  await pointerClick('runtime-formula-commit');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='16'"),
+    'reviewed stale formula was not committed');
+  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
+    'reviewed spreadsheet fabricated exact geometry provenance');
+  await screenshot('native-00d1-reviewed-parameter-conflict.png');
+  for(const expected of ['13','12']){
+    await send('Input.dispatchKeyEvent',{type:'keyDown',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+    await send('Input.dispatchKeyEvent',{type:'keyUp',key:'z',code:'KeyZ',modifiers:2,windowsVirtualKeyCode:90});
+    await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-dimension-thickness]')?.value==='"+expected+"'"),
+      'reviewed parameter and concurrent inspector undo were not separately reversible');
+  }
   // Exact same 12-mm state continues into existing save/reopen/undo tests.
   // Real browser save -> OS file picker -> isolated #188 validation Worker ->
   // explicit Replace -> same authoritative named source and undo journal.
