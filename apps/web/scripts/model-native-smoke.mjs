@@ -714,7 +714,7 @@ async function main(){
   check(await evaluate("(() => {document.querySelector('[data-testid=runtime-mode-solid]').click();return true})()"),'cannot return to solid viewport');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-3d-viewport]'))"),'3D preview after sketch drag');
 
-  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent.includes('NO EXACT KERNEL')"),
+  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent.includes('VIEWPORT IS PREVIEW')"),
     'experimental bridge promoted to exact');
   check(await evaluate(`(() => {
     const update=(testid,value)=>{
