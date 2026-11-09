@@ -1862,8 +1862,14 @@ async function main() {
   check(await evaluate("document.querySelector('[data-testid=runtime-general-create-extrude]')?.disabled===false"),
     '#348 selected profile does not enable named extrusion');
   await clickControl('[data-testid="runtime-general-create-extrude"]');
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-extrude.part]')?.textContent==='preview_only'"),
-    '#348 named FEATUREOPS extrusion did not become a preview-only RUNTIME feature');
+  try {
+    await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-extrude.part]')?.textContent==='preview_only'"),
+      '#348 named FEATUREOPS extrusion did not become a preview-only RUNTIME feature');
+  }catch(error){
+    const detail=await evaluate("(() => ({message:document.querySelector('.runtime-message')?.textContent,source:document.querySelector('[data-testid=runtime-general-source]')?.textContent,revision:document.querySelector('[data-testid=runtime-revision]')?.textContent,features:[...document.querySelectorAll('.feature-item')].map(n=>n.textContent),button:document.querySelector('[data-testid=runtime-general-create-extrude]')?.outerHTML.slice(0,350)}))()");
+    await screenshot('42-general-extrude-refusal.png');
+    throw Error(String(error)+' diagnostics='+JSON.stringify(detail));
+  }
   check(await evaluate("document.querySelector('[data-testid=runtime-general-target]')?.value===''"),
     '#348 UI inferred body target instead of asking the user');
   check(await evaluate("document.querySelector('[data-testid=runtime-general-create-cut]')?.disabled===true"),
