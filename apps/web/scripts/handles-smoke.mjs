@@ -1924,11 +1924,16 @@ async function main() {
     '#348 post-import source-owned cycle could not be reselected');
   check(await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-general-target]');if(!s)return false;s.value='extrude.part';s.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
     '#348 reopened named depth editor missing');
+  // An existing body's depth uses an independent source/target-fenced draft.
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-edit-depth-value]')?.value==='8'"),
+    'reopened body editor did not show its persisted 8 mm depth');
+  check(await evaluate("document.querySelector('[data-testid=runtime-general-depth]')?.value==='8'"),
+    'body editing unexpectedly changed the new-extrusion draft');
   // React numeric input requires a native value setter to update controlled
   // state, rather than merely overwriting the DOM property.
-  await evaluate("(() => {const d=document.querySelector('[data-testid=runtime-general-depth]');const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(d,'14');d.dispatchEvent(new Event('input',{bubbles:true}));return true})()");
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-depth]')?.value==='14'"),
-    '#348 post-import depth draft not editable');
+  await evaluate("(() => {const d=document.querySelector('[data-testid=runtime-general-edit-depth-value]');const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(d,'14');d.dispatchEvent(new Event('input',{bubbles:true}));return true})()");
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-edit-depth-value]')?.value==='14'"),
+    '#348 post-import selected-body depth draft not editable');
   await clickControl('[data-testid="runtime-general-edit-depth"]');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-body-status]')?.textContent.includes('14 mm')"),
     '#348 resumed user editing did not commit new exact depth');
@@ -1983,14 +1988,37 @@ async function main() {
     '#348 original target body missing from multi-body selector');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('14 mm extrude preview')&&document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('Cut-intent preview')"),
     '#348 choosing first body displayed the wrong solid or wrong targeted-cut status');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-edit-depth-value]')?.value==='14'"),
+    'original body editor inherited secondary body 4 mm depth');
   await screenshot('46-general-multi-body-original-target.png');
   check(await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-general-target]');s.value='extrude.secondary';s.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
     '#348 secondary target body missing from multi-body selector');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('4 mm extrude preview')&&document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('Uncut extrusion preview')"),
     '#348 choosing second body retained first body geometry or its unrelated cut');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-edit-depth-value]')?.value==='4'"),
+    'secondary body editor inherited original body 14 mm depth');
+  check(await evaluate("document.querySelector('[data-testid=runtime-general-depth]')?.value==='4'"),
+    'new-body authoring depth was unexpectedly overwritten by existing-body editing');
+  check(await evaluate("document.querySelector('[data-testid=runtime-general-edit-depth]')?.disabled===true"),
+    'unchanged selected-body depth must not create a redundant journal revision');
+  // A pending 7 mm secondary-body edit must not cross into body.part.
+  await evaluate("(() => {const d=document.querySelector('[data-testid=runtime-general-edit-depth-value]');const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(d,'7');d.dispatchEvent(new Event('input',{bubbles:true}));return true})()");
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-edit-depth-value]')?.value==='7'"),
+    'secondary body edit draft did not accept input');
+  check(await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-general-target]');s.value='extrude.part';s.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
+    'original target body could not be reselected');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-edit-depth-value]')?.value==='14'"),
+    'secondary body draft bled into original body editor');
+  check(await evaluate("document.querySelector('[data-testid=runtime-general-edit-depth]')?.disabled===true"),
+    'switching target after a pending unrelated edit enabled an accidental commit');
+  check(await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-general-target]');s.value='extrude.secondary';s.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
+    'secondary pending draft owner could not be reselected');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-edit-depth-value]')?.value==='7'"),
+    'pending secondary-body draft lost semantic body identity');
   check(await revision()===twoBodyRevision,
-    '#348 switching explicit targets mutated the model journal');
+    'editing drafts or switching explicitly targeted bodies mutated the model journal');
   await screenshot('47-general-multi-body-secondary-target.png');
+  await screenshot('48-general-target-bound-depth-draft.png');
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -2010,7 +2038,8 @@ async function main() {
     screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','31c-solved-sketch-navigation.png','31a-edge-drag-admitted.png','31b-edge-undo-redo-archive-reopened.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png','38-actual-pointer-tab-draft.png','38b-source-refused-tab-preview.png','39-actual-pointer-tab-committed.png','40-actual-tab-semantic-dimension.png','41-actual-tab-worker-reopen.png','41a-reopened-tab-source-handle-selected.png','41b-reopened-tab-vertex-edited.png','41c-reopened-tab-vertex-undo-redo.png','41d-retired-tab-handle-not-selectable.png','41e-unselected-tab-vertex-direct-drag-preview.png','41f-unselected-tab-vertex-direct-drag-committed.png',
       '42-general-selected-profile-extruded.png','43-general-explicit-body-cut-pending.png',
       '44-general-named-body-worker-reopened.png','45-general-post-import-depth-edited.png',
-      '46-general-multi-body-original-target.png','47-general-multi-body-secondary-target.png'],
+      '46-general-multi-body-original-target.png','47-general-multi-body-secondary-target.png',
+      '48-general-target-bound-depth-draft.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -2041,6 +2070,7 @@ async function main() {
     solvedSketchWheelMiddlePanFitNoJournalAndSubsequentEdgeEdit: true,
     sourceSelectedNamedExtrusionExplicitBodyCutWorkerReopenReselectDepthUndoRedo: true,
     explicitMultiBodyTargetSelectsMatchingAnalyticSolidAndCutStatusWithoutRevision: true,
+    namedBodyDepthEditorSourceAndSemanticTargetFenced: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
