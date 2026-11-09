@@ -459,3 +459,42 @@ test('local pinned STEP custody refuses omitted second solid after authoritative
     assert.equal(calls.length,2,'restoring an eligible one-body journal permits fresh native work');
   });
 });
+
+test('STEP receipt refuses equal-revision divergent journal between synchronous source reads',async()=>{
+  const base=plateProject();
+  const variant=(id,thicknessMm)=>runtime.commit(base,[{
+    eventId:id,type:'feature.edit',featureId:'plate',
+    patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm}},
+  }]);
+  const original=variant('receipt.race.original',12);
+  const divergent=variant('receipt.race.divergent',13);
+  assert.equal(original.document.projectId,divergent.document.projectId);
+  assert.equal(original.document.revision,divergent.document.revision);
+  assert.notEqual(runtime.save(original),runtime.save(divergent));
+  let current=original,armed=false,reads=0;
+  const session=createLivePlateSession({
+    runtime,
+    readCurrentHistory:()=>{
+      // Reproduce a competing writer replacing the canonical history between
+      // currentStep() and the receipt's second synchronize(), while retaining
+      // the same project/revision. This must not leak the old verified STEP.
+      if(armed && ++reads===2) current=divergent;
+      return current;
+    },
+    publishHistory:h=>{current=h;},
+  });
+  await withHost(fakePinnedFactory([]),async host=>{
+    const evaluated=await session.evaluate({
+      url:host.url,token:host.token,requestId:'receipt.race.original',
+      exportStep:true,requiredBackend:'OCCT-cxx-8.0.1',
+    });
+    assert.equal(evaluated.kind,'experimental_plate_evaluated');
+    assert.ok(session.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'}));
+    armed=true;
+    assert.equal(session.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'}),null);
+    assert.equal(reads,2);
+    assert.equal(current,divergent);
+    assert.equal(session.currentStep(),null);
+    assert.equal(session.captureCurrentStepEvidence(),null);
+  });
+});
