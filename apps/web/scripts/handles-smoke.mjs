@@ -1066,7 +1066,19 @@ async function main() {
     const svg=document.querySelector('[data-testid=runtime-blank-sketch]');
     window.__offOriginClicks=[];
     svg.addEventListener('click',event=>{
-      window.__offOriginClicks.push({button:event.button,target:event.target.tagName});
+      // Capture the trusted click's actual screen-to-sketch inverse BEFORE the
+      // React onClick adds a vertex. A zoomed-out CSS pixel can represent
+      // several millimetres, so the hover's nominal X=500 is not a valid
+      // exact snapped-vertex oracle.
+      const inverse=svg.getScreenCTM()?.inverse();
+      const p=inverse?
+        new DOMPoint(event.clientX,event.clientY).matrixTransform(inverse):null;
+      const quantize=value=>Math.sign(value)*Math.round(Math.abs(value))||0;
+      window.__offOriginClicks.push({
+        button:event.button,isTrusted:event.isTrusted,target:event.target.tagName,
+        sketch:p?{x:quantize(p.x),y:quantize(120-p.y)}:null,
+        mmPerCssPixel:inverse?Math.hypot(inverse.a,inverse.b):null,
+      });
     },{capture:true});
   })()`);
   await mouse('mousePressed',farPoint.x,farPoint.y,1);
@@ -1078,10 +1090,22 @@ async function main() {
     readout:document.querySelector('[data-testid=runtime-contour-pointer-coordinate]')?.textContent
   }))()`);
   console.log('WORKBENCH_OFF_ORIGIN_CAPTURE '+JSON.stringify(clickObservation));
-  await eventually(()=>evaluate(`(() => {
-    const v=document.querySelector('[data-testid=runtime-draft-vertex-0]');
-    return v&&Math.abs(Number(v.getAttribute('cx'))-500)<2;
-  })()`),'the navigated canvas refused a pointer vertex outside its old viewBox');
+  // The actual trusted click is the oracle for source-local pointer
+  // quantization, not the earlier mousemove text at this coarse zoom.
+  // Preserve the stronger admission check: one genuine click, one exact
+  // snapped point, and location outside the old visible SVG extent.
+  check(clickObservation.clickEvents?.length===1 &&
+    clickObservation.clickEvents[0]?.button===0 &&
+    clickObservation.clickEvents[0]?.isTrusted===true &&
+    clickObservation.vertexCount==='1 / 12 vertices',
+    'off-origin pointer did not create precisely one trusted draft vertex');
+  const actual=clickObservation.vertices[0]?.map(Number);
+  const click=clickObservation.clickEvents[0];
+  check(actual?.length===2 && click?.sketch &&
+    actual[0]===click.sketch.x && actual[1]===click.sketch.y &&
+    actual[0]>220 && Number.isFinite(click.mmPerCssPixel) &&
+    Math.abs(actual[0]-500)<=click.mmPerCssPixel+0.5,
+    'the navigated canvas did not preserve its trusted click sketch-local coordinates');
   // The old fixed SVG labels and axis strokes disappeared when users panned
   // beyond 220 mm: keep current coordinate feedback and axes after navigation.
   await eventually(()=>evaluate(`(() => {
