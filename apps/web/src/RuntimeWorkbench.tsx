@@ -1739,6 +1739,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           {values?<ScalarInput key={'thickness:'+history.document.revision}
              field="thickness" value={values.thickness} onCommit={update}/>:plateActive?<p className="microcopy">
              Extrusion thickness is model-owned. This drawn contour has no seeded fixture dimensions; use the extrusion control and selected handles.
+           </p>:generalSolid?<p data-testid="runtime-general-solid-guidance" className="microcopy">
+             Named body {generalSelectedBody?.bodyId} has a {generalSelectedBody?.depthMm} mm
+             source-bound extrusion preview. Reconfigure its depth in Selected Profile → Named Body;
+             choose the target body explicitly for a cut. No native B-rep or STEP is certified.
            </p>:plateAuthored?<p
              data-testid="runtime-removed-extrusion" className="microcopy">
              Extrusion removed. Plate parameters remain authored in the journal;
