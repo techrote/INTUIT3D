@@ -1539,8 +1539,28 @@ async function main() {
     'reopened tab lost its retired source-edge identity');
   check(await evaluate("!document.querySelector('[data-testid=runtime-contour-edge-select]')"),
     'retired original edge was incorrectly offered for a new structural edit');
-  check(await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-tab-vertex-select]');const id="+JSON.stringify(persistedTabHandle)+";const o=[...s?.options||[]].find(item=>item.value===id);if(!o||!o.textContent.includes('Inserted tab vertex'))return false;s.value=id;s.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
-    'reopened SKETCH inventory did not preserve the original inserted semantic handle');
+  // Unlike the earlier DOM-driven selector check, this is a genuine physical
+  // pointer gesture on the returned SKETCH-owned vertex marker after Replace.
+  const reopenedMarker=await evaluate("(() => {const id="+JSON.stringify(persistedTabHandle)+";const sel=document.querySelector('[data-testid=runtime-tab-vertex-select]');const option=[...sel?.options||[]].find(o=>o.value===id);const marker=[...document.querySelectorAll('[data-testid=runtime-contour-vertex-marker]')].find(m=>m.getAttribute('data-handle-id')===id);if(!option?.textContent?.includes('Inserted tab vertex')||!marker)return null;const r=marker.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
+  check(reopenedMarker&&Number.isFinite(reopenedMarker.x)&&Number.isFinite(reopenedMarker.y),
+    'reopened source-owned inserted tab marker is missing from the rendered sketch');
+  const beforeMarkerSelection=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  await mouse('mouseMoved',reopenedMarker.x,reopenedMarker.y);
+  await mouse('mousePressed',reopenedMarker.x,reopenedMarker.y,1);
+  await mouse('mouseReleased',reopenedMarker.x,reopenedMarker.y);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-tab-vertex-select]')?.value==="+JSON.stringify(persistedTabHandle)),
+    'real pointer click did not select persisted inserted semantic handle');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===beforeMarkerSelection,
+    'selecting a source-owned handle unexpectedly changed the model revision');
+  // Clicking the selected amber drag marker without moving must also remain
+  // a selection, not dispatch a zero-distance geometry transaction.
+  const selectedMarker=await evaluate("(() => {const r=document.querySelector('[data-testid=runtime-profile-drag-handle]')?.getBoundingClientRect();return r?{x:r.x+r.width/2,y:r.y+r.height/2}:null})()");
+  check(selectedMarker,'selected source-owned drag marker was not visible');
+  await mouse('mouseMoved',selectedMarker.x,selectedMarker.y);
+  await mouse('mousePressed',selectedMarker.x,selectedMarker.y,1);
+  await mouse('mouseReleased',selectedMarker.x,selectedMarker.y);
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===beforeMarkerSelection,
+    'click without moving the selected handle must not issue a model edit');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-drawn-contour-vertex-editor]'))"),
     'reselected persisted tab handle has no working numeric editor');
   check(await evaluate("Number(document.querySelector('[data-testid=runtime-drawn-vertex-x]')?.value)===145&&Number(document.querySelector('[data-testid=runtime-drawn-vertex-y]')?.value)===20"),
@@ -1795,6 +1815,7 @@ async function main() {
     genuineContourEdgePointerOffsetUndoRedoArchiveReopen: true,
     actualTwoPointTabCancelCommitDimensionUndoRedoWorkerReopen: true,
     postImportSourceOwnedTabHandleReselectedDimensionEditedUndoRedoRetiredHandleRefused: true,
+    postImportPointerSelectedSemanticVertexWithoutJournalMutation: true,
     solvedSketchWheelMiddlePanFitNoJournalAndSubsequentEdgeEdit: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };

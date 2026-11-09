@@ -340,6 +340,22 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       [tabDraft.points[0],tabDraft.points[1]],tabDraft.expectedArchive);
   },[history,pointerSelection,tabDraft]);
   const pointerDragHandle=pointerHandles.find(h=>h.handleId===pointerHandleId)??null;
+  const contourVertexHandles=closedInventory?.handles??tabbedInventory?.handles??[];
+  const selectContourVertex=(handleId:string)=>{
+    // Each marker is sourced from a solved SKETCH inventory. Refuse selections
+    // carried over from a different archive or an intervening journal event.
+    if(!pointerSelection||!pointerSourceArchive||pendingImport||loadingFile||
+      liveHistory.current!==history||
+      pointerSourceArchive!==serializeModelSession(liveHistory.current)||
+      !contourVertexHandles.some(handle=>handle.handleId===handleId)){
+      setMessage('Vertex selection expired; reselect the current solved contour.');
+      return;
+    }
+    setPointerHandleId(handleId);
+    setSelectedContourEdgeId('');
+    setMessage('Selected solver-owned vertex '+handleId+
+      '. Edit exact X/Y or drag the amber handle; selection does not change the journal.');
+  };
   const canAuthorExtrusion=!plateAuthored && !!sketchProfile && !pendingImport;
   const canAuthorCut=plateActive && !cutAuthored && !!sketchProfile?.holes.length && !pendingImport;
   // Until an authored cut exists, show the extrusion WITHOUT through-holes.
@@ -1295,6 +1311,9 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               onProfilePick={profilePickMode&&circleDrawing.phase==='idle'?pickProfile:undefined}
               profileEditHandle={!profilePickMode&&circleDrawing.phase==='idle'&&!tabDraft
                  ?(closedHandle??tabbedHandle??pointerDragHandle):undefined}
+              contourVertexHandles={!profilePickMode&&circleDrawing.phase==='idle'&&!tabDraft&&
+                !pendingImport&&!loadingFile?contourVertexHandles:undefined}
+              onContourVertexPick={selectContourVertex}
               onProfileHandleDrag={(handleId,x,y)=>closedHandle?dragDrawnVertex(handleId,x,y):
                  tabbedHandle?editTabVertex(handleId,x,y):dragProfile(handleId,x,y)}
                tabPoints={tabDraft?.points}
@@ -1385,6 +1404,9 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                   </select>
                 </span>
               </label>
+              <p className="microcopy">Click a blue contour vertex in the sketch to
+                select its source-owned handle, or use the list for keyboard/overlapping vertices.
+                Selection does not edit the model.</p>
               {closedHandle&&<ClosedContourVertexEditor
                 key={pointerSourceArchive+':'+closedHandle.handleId}
                 handle={closedHandle} disabled={!!pendingImport||!!loadingFile}
@@ -1478,6 +1500,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                     </option>)}
                   </select></span>
                 </label>
+                <p className="microcopy">Click a blue tab vertex in Sketch XY to select
+                  its persisted semantic ID; use the list for overlapping vertices.</p>
                 {tabbedHandle&&<ClosedContourVertexEditor
                   key={pointerSourceArchive+':'+tabbedHandle.handleId}
                   handle={tabbedHandle} disabled={!!pendingImport||!!loadingFile}
