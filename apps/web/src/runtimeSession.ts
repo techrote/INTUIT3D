@@ -853,7 +853,7 @@ export function reopenModelSession(text: string): ModelSession {
   };
   if(!rows.some(t=>t.featureId==='sketch.plate'&&t.active) ||
       rows.some(t=>t.active&&!supported(t.featureId)))
-    throw Error('Archive contains unsupported sketch/feature history.');
+    throw Error('Archive does not contain the supported plate/sketch/cut history.');
   // Additional named INTENT parameters are safe semantic sources, not a new
   // unsupported solid/mesh. Keep the rest of this plate workbench's bounded
   // feature inventory while preserving genuine multi-row archive history.
