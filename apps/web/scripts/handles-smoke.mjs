@@ -1870,6 +1870,8 @@ async function main() {
     await screenshot('42-general-extrude-refusal.png');
     throw Error(String(error)+' diagnostics='+JSON.stringify(detail));
   }
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('8 mm extrude preview')"),
+    '#348 generalized body preview falsely says no solid yet');
   check(await evaluate("document.querySelector('[data-testid=runtime-general-target]')?.value===''"),
     '#348 UI inferred body target instead of asking the user');
   check(await evaluate("document.querySelector('[data-testid=runtime-general-create-cut]')?.disabled===true"),
@@ -1889,6 +1891,8 @@ async function main() {
   await clickControl('[data-testid="runtime-general-create-cut"]');
   await eventually(()=>evaluate("document.querySelector('[data-testid=\"runtime-status-cut.part\"]')?.textContent==='pending_exact_provider'"),
     '#348 named cut did not remain pending exact provider');
+  check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('Cut-intent preview')"),
+    '#348 generalized targeted cut caption must remain a truthful preview');
   await screenshot('43-general-explicit-body-cut-pending.png');
   const generalBeforeSave=await evaluate('window.__modelArchiveBlobs.length');
   await clickControl('[data-testid="runtime-save-archive"]');
@@ -1953,7 +1957,9 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','31c-solved-sketch-navigation.png','31a-edge-drag-admitted.png','31b-edge-undo-redo-archive-reopened.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png','38-actual-pointer-tab-draft.png','38b-source-refused-tab-preview.png','39-actual-pointer-tab-committed.png','40-actual-tab-semantic-dimension.png','41-actual-tab-worker-reopen.png','41a-reopened-tab-source-handle-selected.png','41b-reopened-tab-vertex-edited.png','41c-reopened-tab-vertex-undo-redo.png','41d-retired-tab-handle-not-selectable.png','41e-unselected-tab-vertex-direct-drag-preview.png','41f-unselected-tab-vertex-direct-drag-committed.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','31c-solved-sketch-navigation.png','31a-edge-drag-admitted.png','31b-edge-undo-redo-archive-reopened.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png','38-actual-pointer-tab-draft.png','38b-source-refused-tab-preview.png','39-actual-pointer-tab-committed.png','40-actual-tab-semantic-dimension.png','41-actual-tab-worker-reopen.png','41a-reopened-tab-source-handle-selected.png','41b-reopened-tab-vertex-edited.png','41c-reopened-tab-vertex-undo-redo.png','41d-retired-tab-handle-not-selectable.png','41e-unselected-tab-vertex-direct-drag-preview.png','41f-unselected-tab-vertex-direct-drag-committed.png',
+      '42-general-selected-profile-extruded.png','43-general-explicit-body-cut-pending.png',
+      '44-general-named-body-worker-reopened.png','45-general-post-import-depth-edited.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -1982,6 +1988,7 @@ async function main() {
     postImportPointerSelectedSemanticVertexWithoutJournalMutation: true,
     unselectedPersistedTabVertexDirectPointerDragEscapeUndoRedo: true,
     solvedSketchWheelMiddlePanFitNoJournalAndSubsequentEdgeEdit: true,
+    sourceSelectedNamedExtrusionExplicitBodyCutWorkerReopenReselectDepthUndoRedo: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
