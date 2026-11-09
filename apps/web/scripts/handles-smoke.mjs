@@ -1506,7 +1506,7 @@ async function main() {
   check(typeof persistedTabHandle==='string'&&persistedTabHandle.startsWith('tab.')&&
     persistedTabHandle.endsWith(':handle:0'),'no stable selected inserted tab handle before save');
   const persistedTabRevision=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
-  const retiredTabEdge=await evaluate("document.querySelector('[data-testid=runtime-tabbed-contour]')?.textContent?.match(/Retired edge ([^\s]+)/)?.[1]");
+  const retiredTabEdge=await evaluate("document.querySelector('[data-testid=runtime-tabbed-contour]')?.textContent?.split('Retired edge ')[1]?.split(' is not selectable')[0]");
   check(typeof retiredTabEdge==='string'&&retiredTabEdge.endsWith(':edge:1'),
     'retired original edge identity missing before archive save');
   const tabSaveCount=await evaluate("window.__modelArchiveBlobs.length");
