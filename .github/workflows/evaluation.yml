@@ -1,0 +1,147 @@
+name: INTUIT3D Windows evaluation bundle
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/evaluation.yml'
+      - 'evaluation/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'tooling/**'
+      - 'package.json'
+      - 'package-lock.json'
+  pull_request:
+    paths:
+      - '.github/workflows/evaluation.yml'
+      - 'evaluation/**'
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'tooling/**'
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: intuit3d-evaluation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: Actual Linux Chromium evaluation screenshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install exact locked sources
+        run: npm ci
+      - name: Build actual model-backed browser application
+        run: npm run build --workspace @intuit3d/web
+      - name: Capture actual Chromium application interactions
+        run: node tooling/browser-smoke.mjs
+      - name: Exercise real sketch handles and model-native UI
+        env:
+          INTUIT3D_HANDLE_ARTIFACTS: browser-evidence-handles
+        run: npm run test:browser:handles --workspace @intuit3d/web
+      - name: Preserve original same-source browser screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-browser-screenshots
+          path: |
+            browser-evidence/
+            apps/web/browser-evidence-handles/
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-bundle:
+    name: Windows x64 build, ZIP extraction and local startup
+    needs: browser
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install original locked source
+        run: npm ci
+      - name: Validate accepted workspace contracts and tests
+        run: npm run ci
+      - name: Baseline Windows loopback startup (no geometry)
+        run: npm run dev:local -- --smoke
+      - name: Stage documented source and launch files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'INTUIT3D-Evaluation'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          foreach ($entry in @('apps', 'packages', 'native', 'tooling', 'docs', 'platform', 'conformance', 'evaluation', 'README.md', 'AGENTS.md', 'package.json', 'package-lock.json')) {
+            Copy-Item -LiteralPath $entry -Destination $stage -Recurse -Force -ErrorAction Stop
+          }
+          Copy-Item -LiteralPath (Join-Path $stage 'evaluation/START-HERE.md') -Destination (Join-Path $stage 'START-HERE.md') -Force
+          Copy-Item -LiteralPath (Join-Path $stage 'evaluation/Start INTUIT3D.cmd') -Destination (Join-Path $stage 'Start INTUIT3D.cmd') -Force
+      - name: Download original Chromium screenshots into the evaluation folder
+        uses: actions/download-artifact@v4
+        with:
+          name: evaluation-browser-screenshots
+          path: ${{ runner.temp }}/INTUIT3D-Evaluation/Screenshots
+      - name: Install exact Windows dependencies inside the standalone folder
+        working-directory: ${{ runner.temp }}/INTUIT3D-Evaluation
+        run: npm ci
+      - name: Smoke standalone Windows folder before packaging
+        working-directory: ${{ runner.temp }}/INTUIT3D-Evaluation
+        run: npm run dev:local -- --smoke
+      - name: Seal and verify portable bundle contents
+        working-directory: ${{ runner.temp }}/INTUIT3D-Evaluation
+        run: |
+          node evaluation/pack.mjs seal . "${{ github.sha }}"
+          node evaluation/pack.mjs verify .
+      - name: Create source-pinned ZIP and independent ZIP checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'INTUIT3D-Evaluation'
+          $out = Join-Path $env:RUNNER_TEMP 'intuit3d-release'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $short = '${{ github.sha }}'.Substring(0, 12)
+          $zip = Join-Path $out ("INTUIT3D-Evaluation-Windows-x64-" + $short + '.zip')
+          & tar.exe -a -cf $zip -C $stage .
+          if ($LASTEXITCODE -ne 0) { throw 'tar.exe ZIP creation failed' }
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath ($zip + '.sha256') -Value ($hash + ' *' + (Split-Path $zip -Leaf)) -Encoding ascii
+          Write-Output ('ZIP_SHA256 ' + $hash)
+      - name: Extract released ZIP and prove its exact files and startup still work
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'intuit3d-release'
+          $zip = @(Get-ChildItem -LiteralPath $out -Filter '*.zip')
+          if ($zip.Count -ne 1) { throw 'Expected exactly one release ZIP' }
+          $extracted = Join-Path $env:RUNNER_TEMP 'INTUIT3D-Extracted-Check'
+          New-Item -ItemType Directory -Force -Path $extracted | Out-Null
+          Expand-Archive -LiteralPath $zip[0].FullName -DestinationPath $extracted -Force
+          Push-Location $extracted
+          try {
+            node evaluation/pack.mjs verify .
+            if ($LASTEXITCODE -ne 0) { throw 'Extracted manifest verification failed' }
+            node tooling/dev-local.mjs --smoke
+            if ($LASTEXITCODE -ne 0) { throw 'Extracted startup smoke failed' }
+          } finally { Pop-Location }
+      - name: Publish runnable candidate and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: INTUIT3D-evaluation-Windows-x64-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/intuit3d-release/*.zip
+            ${{ runner.temp }}/intuit3d-release/*.sha256
+            ${{ runner.temp }}/INTUIT3D-Evaluation/EVALUATION-MANIFEST.json
+          if-no-files-found: error
+          retention-days: 14
