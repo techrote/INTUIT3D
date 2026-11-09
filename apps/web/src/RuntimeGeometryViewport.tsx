@@ -74,8 +74,21 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   const dimensionMove=useRef<{id:SketchDimensionHandle;pointerId:number;source:PlateProfile;original:number}|null>(null);
   const [dimensionPreview,setDimensionPreview]=useState<{id:SketchDimensionHandle;value:number}|null>(null);
   const profileMove=useRef<{handleId:string;pointerId:number;source:PlateProfile;
-    startScreen:{x:number;y:number}}|null>(null);
+    startScreen:{x:number;y:number};startModel:{x:number;y:number};
+    inverse:DOMMatrix}|null>(null);
   const [profilePreview,setProfilePreview]=useState<{x:number;y:number}|null>(null);
+  // Freeze the SVG projection at pointerdown, just as sketch pan already does.
+  // Reflow/hover/preview may move the live SVG CTM during a gesture. Mapping
+  // each subsequent absolute screen position through that moving matrix can
+  // jump a semantic dimension far beyond the user's actual pointer delta.
+  const profileDragPoint=(gesture:NonNullable<typeof profileMove.current>,
+    clientX:number,clientY:number)=>{
+    const dx=clientX-gesture.startScreen.x,dy=clientY-gesture.startScreen.y;
+    const x=gesture.startModel.x+gesture.inverse.a*dx+gesture.inverse.c*dy;
+    // SVG Y grows down but the selected SKETCH profile uses model Y up.
+    const y=gesture.startModel.y-gesture.inverse.b*dx-gesture.inverse.d*dy;
+    return Number.isFinite(x)&&Number.isFinite(y)?{x,y}:null;
+  };
   // The pointer proposal stays ephemeral. Parent commits source-owned geometry via RUNTIME.
   const contourVertexMove=useRef<{handleId:string;pointerId:number;source:PlateProfile;
     startScreen:{x:number;y:number};capture:SVGCircleElement}|null>(null);
@@ -838,17 +851,23 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         style={{cursor:'move',touchAction:'none'}}
         onPointerDown={event=>{
           if(event.button!==0)return;
+          const matrix=event.currentTarget.ownerSVGElement?.getScreenCTM();
+          if(!matrix)return;
+          let inverse:DOMMatrix;
+          try{inverse=matrix.inverse();}catch{return;}
+          if(![inverse.a,inverse.b,inverse.c,inverse.d].every(Number.isFinite))return;
           event.preventDefault();event.stopPropagation();
           event.currentTarget.setPointerCapture(event.pointerId);
           profileMove.current={handleId:profileEditHandle.handleId,pointerId:event.pointerId,
-            source:profile,startScreen:{x:event.clientX,y:event.clientY}};
+            source:profile,startScreen:{x:event.clientX,y:event.clientY},
+            startModel:{...profileEditHandle.position},inverse};
           setProfilePreview(profileEditHandle.position);
         }}
         onPointerMove={event=>{
           const active=profileMove.current;
           if(!active||active.handleId!==profileEditHandle.handleId||
              active.pointerId!==event.pointerId||active.source!==profile)return;
-          const at=pointerPosition(event);
+          const at=profileDragPoint(active,event.clientX,event.clientY);
           if(at)setProfilePreview(at);
         }}
         onPointerUp={event=>{
@@ -861,7 +880,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
           // Screen-pixel threshold only; SKETCH still admits actual geometry.
           if(Math.hypot(event.clientX-active.startScreen.x,
             event.clientY-active.startScreen.y)<=3)return;
-          const at=pointerPosition(event);
+          const at=profileDragPoint(active,event.clientX,event.clientY);
           if(at)onProfileHandleDrag(active.handleId,at.x,at.y);
         }}
         onPointerCancel={()=>{profileMove.current=null;setProfilePreview(null);}}
