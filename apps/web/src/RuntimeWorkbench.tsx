@@ -591,7 +591,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       const result=authorGeneralProfileExtrusion(history,pointerSelection,pointerSourceArchive,
         generalDraft.extrudeId.trim(),generalDraft.bodyId.trim(),Number(generalDraft.depth));
       acceptHistory(result.history);setSelected(result.semanticIds.extrudeId);
-      setGeneralTargetId(result.semanticIds.extrudeId);setSketchMode(false);
+      setGeneralTargetId('');setSketchMode(false);
       setMessage('FEATUREOPS authored '+result.semanticIds.extrudeId+' → '+
         result.semanticIds.bodyId+' at revision '+result.history.document.revision+
         '. Status: preview_only; no native B-rep/STEP. Reselect source contour before the next edit.');
