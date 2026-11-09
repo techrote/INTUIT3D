@@ -24,7 +24,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        journey: [existing-plate, sketch-first-template, drawn-from-empty]
+        # Run one new source-current physical case on PR; dispatch allows full replay.
+        journey: ${{ fromJSON(github.event_name == 'pull_request' && '["drawn-edge-offset"]' || '["existing-plate","sketch-first-template","drawn-from-empty","drawn-edge-offset"]') }}
     steps:
       - name: Checkout exact candidate Integration and accepted consumer source
         uses: actions/checkout@v4
@@ -74,6 +75,7 @@ jobs:
           INTUIT3D_PINNED_BROWSER_ARTIFACTS: pinned-browser-evidence
           INTUIT3D_BROWSER_SKETCH_FIRST: ${{ matrix.journey == 'sketch-first-template' && '1' || '0' }}
           INTUIT3D_BROWSER_DRAWN_FROM_EMPTY: ${{ matrix.journey == 'drawn-from-empty' && '1' || '0' }}
+          INTUIT3D_BROWSER_EDGE_OFFSET: ${{ matrix.journey == 'drawn-edge-offset' && '1' || '0' }}
         run: node tooling/qualify-pinned-browser-step.mjs
       # Separate source-pinned non-OCCT Rust STEP importer already executed in
       # CI; no additional Rust build or OCCT build needed in this workflow.
@@ -92,9 +94,10 @@ jobs:
           import hashlib,json,math,pathlib,sys,zipfile
           root=pathlib.Path('pinned-browser-evidence')
           report=json.loads((root/'browser-receipt.json').read_text())
-          is_drawn=report['journey']=='drawn-from-empty'
+          is_drawn=report['journey'] in ('drawn-from-empty','drawn-edge-offset')
+          is_edge=report['journey']=='drawn-edge-offset'
           assert report['status']==('PINNED_OCCT8_BROWSER_DRAWN_FROM_EMPTY_TWO_REVISIONS_CAPTURED' if is_drawn else 'PINNED_OCCT8_BROWSER_TWO_REVISION_ZIPS_CAPTURED'),report
-          assert report['journey'] in ('preauthored-plate','sketch-first-template','drawn-from-empty'),report
+          assert report['journey'] in ('preauthored-plate','sketch-first-template','drawn-from-empty','drawn-edge-offset'),report
           if is_drawn:
               author=report['authoredFeatures']
               assert author['pointerDrawnClosedProfile'] is True,author
@@ -104,6 +107,14 @@ jobs:
               assert author['earlierFeatureEdit']=='second_solver_admitted_bore',author
               assert author['retrospectiveDimensionEdit']=='real_3d_thickness_grip_8_to_12mm_ArrowUp_Undo_Redo',author
               assert author['sourceRevocation'] is True,author
+              if is_edge:
+                  edit=author['wholeEdgeOffset']
+                  assert edit['kind']=='real_semantic_right_edge_pointer_drag',edit
+                  assert edit['offsetMm']==20 and edit['sourceRevocation'] is True,edit
+                  assert edit['gestureUndoRedo']=='real_browser_controls',edit
+                  assert abs(edit['rightAfterMm']-edit['rightBeforeMm']-20)<0.1,edit
+              else:
+                  assert author.get('wholeEdgeOffset') is None,author
           if report['journey']=='sketch-first-template':
               author=report['authoredFeatures']
               assert author['pointerDrawnClosedProfile'] is False,author
@@ -194,7 +205,8 @@ jobs:
               # upper bounds. Keep a bounded 1.5mm pointer envelope here;
               # the independent physical oracle BELOW uses the actual
               # canonical source and retains its tight numerical budgets.
-              assert 118.5<=width<=121.5 and 78.5<=height<=81.5,(width,height)
+              assert (138.5<=width<=141.5 if is_edge else 118.5<=width<=121.5),(width,is_edge)
+              assert 78.5<=height<=81.5,(width,height)
               assert abs(p1['x']-x1)<0.0001 and abs(p1['y']-y0)<0.0001
               assert abs(p3['x']-x0)<0.0001 and abs(p3['y']-y1)<0.0001
               centers={p['id']:(p['x'],p['y']) for p in source['points']}
@@ -252,11 +264,11 @@ jobs:
                 'RAY south.material 0 -20 4 0 0 1 material',
                 'RAY northwest.material -45 20 2 0 0 1 material',
                 'RAY southeast.material 45 -20 6 0 0 1 material',
-                'RAY left.bore -25 0 4 0 0 1 void',
-                'RAY right.bore 25 0 4 0 0 1 void',
-                'RAY left.bore.high -25 0 7 0 0 1 void',
-                'RAY right.bore.high 25 0 7 0 0 1 void',
-                'RAY exterior.right 70 0 4 1 0 0 void',
+                f'RAY left.bore {holes[0][0]:.6f} {holes[0][1]:.6f} 4 0 0 1 void',
+                f'RAY right.bore {holes[1][0]:.6f} {holes[1][1]:.6f} 4 0 0 1 void',
+                f'RAY left.bore.high {holes[0][0]:.6f} {holes[0][1]:.6f} 7 0 0 1 void',
+                f'RAY right.bore.high {holes[1][0]:.6f} {holes[1][1]:.6f} 7 0 0 1 void',
+                f'RAY exterior.right {width/2+10:.6f} 0 4 1 0 0 void',
                 'RAY exterior.north 0 45 4 0 1 0 void',
                 'RAY exterior.above 0 0 16 0 0 1 void',
                 'RAY exterior.below 0 0 -3 0 0 -1 void',
@@ -317,7 +329,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.journey == 'existing-plate' && 'real-browser-pinned-cxx-independent-step' || matrix.journey == 'sketch-first-template' && 'real-browser-sketch-first-pinned-cxx-independent-step' || 'real-browser-from-empty-pinned-cxx-independent-step' }}
+          name: ${{ matrix.journey == 'existing-plate' && 'real-browser-pinned-cxx-independent-step' || matrix.journey == 'sketch-first-template' && 'real-browser-sketch-first-pinned-cxx-independent-step' || matrix.journey == 'drawn-edge-offset' && 'real-browser-whole-edge-pinned-cxx-independent-step' || 'real-browser-from-empty-pinned-cxx-independent-step' }}
           path: |
             pinned-browser-evidence/
           if-no-files-found: warn
