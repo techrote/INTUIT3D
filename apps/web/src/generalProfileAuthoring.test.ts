@@ -19,7 +19,7 @@ function fromEmpty(points:readonly {x:number;y:number}[],projectId='general.user
   const command={
     kind:'create-closed-contour' as const,version:1 as const,
     sourceSignature:sketch.serializeSketch(source),contourId:'drawn.0',
-    vertices:points,
+    vertices:points.map(point=>({x:point.x,y:point.y})),
   };
   const acceptance=createClosedContour(source,command);
   assert.equal(acceptance.kind,'accepted');
@@ -34,7 +34,7 @@ function fromEmpty(points:readonly {x:number;y:number}[],projectId='general.user
     operation:'create',admission:'require_admissible',command,acceptance,
   });
   assert.equal(result.kind,'committed');
-  if(result.kind!=='committed')throw Error(result.reason);
+  if(result.kind!=='committed')throw Error('RUNTIME did not accept structurally authored contour');
   return {history:result.history,selection:result.selection};
 }
 
