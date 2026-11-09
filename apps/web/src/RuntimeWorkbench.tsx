@@ -299,6 +299,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const generalSolid=generalSolidReport?.status==='preview_only'&&
     generalSolidReport.profile?.status==='analytic_profile_only'&&generalSelectedBody
       ?{profile:generalSolidReport.profile,thickness:generalSelectedBody.depthMm}:null;
+  const generalCutActive=!!generalSelectedBody&&report.features.some(f=>f.kind==='cut' &&
+    f.bodyId===generalSelectedBody.bodyId && f.status==='pending_exact_provider');
   const renderSketch=sketchMode||(!plateActive&&!generalSolid);
   const selectedActive=featureRows.some(row=>row.featureId===selected&&row.active);
   const editableLifecycle=selected==='plate'||selected==='cut';
@@ -388,10 +390,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     // A generalized body is visualized only from the admitted RUNTIME
     // profile. Its tessellation is NOT a STEP or verified Boolean.
     if(generalSolid){
-      const generalCut=report.features.some(f=>f.kind==='cut' &&
-        f.bodyId===generalSelectedBody?.bodyId &&
-        f.status==='pending_exact_provider');
-      return {...generalSolid,profile:renderSketch||generalCut?generalSolid.profile:
+      return {...generalSolid,profile:renderSketch||generalCutActive?generalSolid.profile:
         {...generalSolid.profile,holes:[]}};
     }
     return solidProfile
@@ -399,7 +398,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         {...solidProfile.profile,holes:[]}}
       :!plateAuthored&&sketchProfile?{profile:sketchProfile,thickness:0}:null;
   },[solidProfile,sketchProfile,renderSketch,cutActive,plateAuthored,
-    generalSolid,generalSelectedBody,report]);
+    generalSolid,generalCutActive]);
   // RUNTIME, not a React success flag, owns STEP/source/backend provenance.
   // Read only when the journal or an attempt changes; never sample a stale
   // receipt merely because the model revision number still matches.
@@ -1379,7 +1378,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       </aside>
       <main className="editor-center" aria-label="Model-backed plate editor">
         <div className="viewport-header">
-          <div className="view-label"><strong>{renderSketch?'Sketch XY · solved profiles':cutActive?'3D cut preview':'3D uncut extrusion preview'}</strong>
+          <div className="view-label"><strong>{renderSketch?'Sketch XY · solved profiles':cutActive||generalCutActive?'3D cut-intent preview':'3D uncut extrusion preview'}</strong>
             <span>{geom?'Public SKETCH solver + profile admission':'Invalid or unresolved geometry'}</span></div>
           <span className={geom?'preview-tag':'preview-tag stale'}>{geom?'TESSELLATED PREVIEW · NOT EXACT':'NO CURRENT VALID MESH'}</span>
         </div>
@@ -1445,7 +1444,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                 return dragHoleDiameter(displayedActiveHole,diameter);
               }}/>}
           {geom&&<div className="runtime-mesh-caption" data-testid="runtime-boundary">
-            {renderSketch?'Admitted 2D sketch':cutActive?'Cut-intent preview':'Uncut extrusion preview'} · {geom.profile.outer.length} outline vertices · {geom.profile.holes.length} displayed circular holes · {plateActive?geom.thickness+' mm extrude':'no solid yet'} · no Boolean proof
+            {renderSketch?'Admitted 2D sketch':cutActive||generalCutActive?'Cut-intent preview':'Uncut extrusion preview'} · {geom.profile.outer.length} outline vertices · {geom.profile.holes.length} displayed circular holes · {plateActive||generalSolid?geom.thickness+' mm extrude preview':'no solid yet'} · no Boolean proof
           </div>}
           {sketchMode&&circleDrawing.phase!=='idle'&&<div className="runtime-mesh-caption" data-testid="runtime-circle-stage" role="status">
             {circleDrawing.phase==='centre'?'CIRCLE · Click a centre inside the plate':
