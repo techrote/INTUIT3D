@@ -1240,9 +1240,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               circleDrawing={circleDrawing}
               onCirclePick={circleDrawing.phase!=='idle'?pickCirclePoint:undefined}
               onProfilePick={profilePickMode&&circleDrawing.phase==='idle'?pickProfile:undefined}
-              profileEditHandle={!profilePickMode&&circleDrawing.phase==='idle'?(closedHandle??pointerDragHandle):undefined}
-              onProfileHandleDrag={(handleId,x,y)=>closedHandle?dragDrawnVertex(handleId,x,y):dragProfile(handleId,x,y)}
-              contourEdges={!profilePickMode&&circleDrawing.phase==='idle'&&!pendingImport&&!loadingFile
+              profileEditHandle={!profilePickMode&&circleDrawing.phase==='idle'&&!tabDraft
+                 ?(closedHandle??tabbedHandle??pointerDragHandle):undefined}
+              onProfileHandleDrag={(handleId,x,y)=>closedHandle?dragDrawnVertex(handleId,x,y):
+                 tabbedHandle?editTabVertex(handleId,x,y):dragProfile(handleId,x,y)}
+               tabPoints={tabDraft?.points}
+               tabEdge={tabSourceEdge??null}
+               onTabPoint={tabDraft?(x,y,precise)=>addTabPoint(x,y,precise):undefined}
+              contourEdges={!tabDraft&&!profilePickMode&&circleDrawing.phase==='idle'&&!pendingImport&&!loadingFile
                 ?closedEdges?.edges:undefined}
               selectedContourEdgeId={selectedContourEdgeId}
               onContourEdgePick={setSelectedContourEdgeId}
@@ -1358,10 +1363,44 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                   The source-owned SKETCH planner validates all vertices and associated holes;
                   RUNTIME journals one undoable edit. Tangential drag cannot translate the edge.
                   Focus an edge and use ArrowUp/Down for 1 mm (Shift 0.1 mm) nudges.</p>
-              </div>}
+              <button type="button" className="ribbon-button"
+                   data-testid="runtime-tab-start"
+                   disabled={!selectedContourEdgeId||!!pendingImport||!!loadingFile||!!tabDraft}
+                   onClick={beginTab}>Insert tab on selected edge</button>
+                 {tabDraft&&<div data-testid="runtime-tab-draft">
+                   <strong>Two-point tab draft · {tabDraft.points.length}/2</strong>
+                   <p className="microcopy">Click two positions in Sketch XY. Commit replaces the source edge.
+                     Escape or Cancel discards uncommitted points, without a revision.</p>
+                   <button type="button" className="ribbon-button" data-testid="runtime-tab-commit"
+                     disabled={tabDraft.points.length!==2} onClick={commitTab}>Commit tab</button>
+                   <button type="button" className="ribbon-button" data-testid="runtime-tab-cancel"
+                     onClick={()=>{setTabDraft(null);setMessage('Tab cancelled; no model revision.');}}>Cancel tab</button>
+                 </div>}
+               </div>}
               <p className="microcopy">Move a chosen original vertex with the amber sketch handle
                 or precise X/Y fields. Only source-fenced, full-SKETCH admitted edits
                 become an undoable RUNTIME revision; unsupported profiles remain preview-only.</p>
+            </>:tabbedInventory?<>
+              <div data-testid="runtime-tabbed-contour">
+                <strong>Source-owned tab · {tabbedInventory.tabId}</strong>
+                <p className="microcopy">Retired edge {tabbedInventory.retiredEdgeId} is not selectable.
+                  This six-vertex outline is SKETCH-admitted analytic geometry; pinned C++ STEP is unqualified for this topology.</p>
+                <label className="runtime-scalar"><span>Selected tabbed vertex</span>
+                  <span className="runtime-scalar-control"><select
+                    data-testid="runtime-tab-vertex-select" aria-label="Selected tabbed contour vertex"
+                    value={tabbedHandle?.handleId??''} onChange={event=>setPointerHandleId(event.target.value)}>
+                    <option value="">Choose a source vertex…</option>
+                    {tabbedInventory.handles.map((handle,i)=><option key={handle.handleId} value={handle.handleId}>
+                      {handle.kind==='inserted'?'Inserted tab vertex ':handle.kind==='origin'?'Origin ':'Original vertex '}
+                      {i+1} · {handle.handleId}
+                    </option>)}
+                  </select></span>
+                </label>
+                {tabbedHandle&&<ClosedContourVertexEditor
+                  key={pointerSourceArchive+':'+tabbedHandle.handleId}
+                  handle={tabbedHandle} disabled={!!pendingImport||!!loadingFile}
+                  onCommit={target=>editTabVertex(tabbedHandle.handleId,target.x,target.y)}/>}
+              </div>
             </>:pointerInventory?.kind==='pointer_editable_handles'?<>
               <label className="runtime-scalar"><span>Drag handle</span>
                 <span className="runtime-scalar-control">
@@ -1383,7 +1422,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               
             </>:<p className="microcopy">The sketch source changed or this contour is unsolved. Reselect the current solved contour; no stale drag is permitted.</p>}
             <button type="button" className="ribbon-button" data-testid="runtime-pointer-profile-clear"
-              onClick={()=>{setPointerSelection(null);setPointerSourceArchive(null);setPointerHandleId('');setProfilePickMode(false);}}>
+              onClick={()=>{setTabDraft(null);setPointerSelection(null);setPointerSourceArchive(null);setPointerHandleId('');setProfilePickMode(false);}}>
               Clear profile selection</button>
           </div>:<p className="microcopy">
             Choose “Select contour”, then click within a solved sketch face.
