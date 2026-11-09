@@ -340,13 +340,64 @@ test('explicit cancellation settles immediately even if the adapter ignores Abor
   ]);
   assert.equal(result.code,'stale_revision',JSON.stringify(result));
   assert.equal(session.refresh().inFlight,false);
+  assert.equal(session.refresh().providerState,'cancelled');
+  assert.equal(session.refresh().stepAvailability,'unavailable');
+  assert.equal(session.refresh().lastResultCode,'cancelled');
   release();
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(session.currentStep(),null);
-  assert.equal(session.refresh().lastResultKind,null);
+  assert.equal(session.refresh().providerState,'cancelled',
+    'a non-cooperative late response must not overwrite the cancellation');
   await assert.rejects(session.evaluate({deadlineMs:Infinity}),/deadlineMs/);
 });
 
+
+test('cancelled rebuild preserves same-source previous STEP as last-good but never current',async()=>{
+  let history=initialProject(),started,release;
+  const begun=new Promise(resolve=>{started=resolve;});
+  const gate=new Promise(resolve=>{release=resolve;});
+  const session=createLivePlateSession({runtime,
+    readCurrentHistory:()=>history,publishHistory:h=>{history=h;},
+    evaluateImpl:async options=>{
+      if(options.requestId==='cancel.seed') return {
+        kind:'experimental_plate_evaluated',exactAuthority:false,
+        independentInteroperability:false,
+        source:{projectId:history.document.projectId,revision:history.document.revision},
+        result:{requestId:options.requestId,cutFeatureId:options.cutFeatureId},
+        step:{filename:'synthetic.step',bytes:Uint8Array.of(7,8,9),sha256:'synthetic-only'},
+      };
+      started();
+      await gate;
+      return {kind:'unresolved',code:'cancelled',reason:'late aborted reply',
+        exactAuthority:false,independentInteroperability:false};
+    }});
+  assert.equal((await session.evaluate({requestId:'cancel.seed'})).kind,
+    'experimental_plate_evaluated');
+  assert.equal(session.refresh().stepAvailability,'current');
+  const running=session.evaluate({requestId:'cancel.rebuild',deadlineMs:10000});
+  await begun;
+  assert.equal(session.refresh().providerState,'pending');
+  assert.equal(session.refresh().stepAvailability,'last_good');
+  session.cancel();
+  const cancelled=session.refresh();
+  assert.equal(cancelled.providerState,'cancelled');
+  assert.equal(cancelled.lastResultCode,'cancelled');
+  assert.equal(cancelled.stepAvailability,'last_good');
+  assert.deepEqual([...session.currentStep().bytes],[7,8,9]);
+  assert.equal((await running).code,'stale_revision');
+  release();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(session.refresh().providerState,'cancelled',
+    'late provider reply must not erase an explicit cancellation');
+  const edit=session.applyEdit(h=>runtime.commit(h,[{
+    eventId:'cancel.verified.revision.edit',type:'feature.edit',featureId:'plate',
+    patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:12}},
+  }]));
+  assert.equal(edit.kind,'committed');
+  assert.equal(session.refresh().providerState,'idle');
+  assert.equal(session.refresh().stepAvailability,'unavailable');
+  assert.equal(session.currentStep(),null);
+});
 
 test('solver-backed preview does not mutate project or STEP; one-call commit rebuilds physical request',async()=>{
   let history=initialProject(),nativeRequests=0;

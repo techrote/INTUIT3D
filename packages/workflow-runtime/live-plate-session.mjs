@@ -600,7 +600,17 @@ export function createLivePlateSession({
         exactReuseAllowed:false};
     },
     save() {return synchronize().archive;},
-    cancel() {synchronize();retirePreview();discard({preserveCurrentStep:true});},
+    cancel() {
+      synchronize();
+      retirePreview();
+      // Explicit cancellation of a live request is a user-visible outcome.
+      // Preserve only source-valid previous STEP bytes as last-good evidence;
+      // an ordinary no-pending cleanup must not invent a cancelled attempt.
+      const wasPending=controller!==null;
+      discard({preserveCurrentStep:true});
+      if(wasPending)
+        recordOutcome(refuse('cancelled','native evaluation cancelled'));
+    },
     /** A download button must obtain bytes through this synchronously, at use time. */
     currentStep() {
       const current=synchronize();
