@@ -1872,6 +1872,8 @@ async function main() {
   }
   check(await evaluate("document.querySelector('[data-testid=runtime-boundary]')?.textContent.includes('8 mm extrude preview')"),
     '#348 generalized body preview falsely says no solid yet');
+  check(await evaluate("document.querySelector('[data-testid=runtime-general-solid-guidance]')?.textContent.includes('body.part')"),
+    '#348 inspector still wrongly says no active solid when named body is admitted');
   check(await evaluate("document.querySelector('[data-testid=runtime-general-target]')?.value===''"),
     '#348 UI inferred body target instead of asking the user');
   check(await evaluate("document.querySelector('[data-testid=runtime-general-create-cut]')?.disabled===true"),
