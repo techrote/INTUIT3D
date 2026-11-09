@@ -91,7 +91,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       return {x,y};
     }catch{return null;}
   };
-  const pointerPosition=(event:ReactPointerEvent<SVGCircleElement>)=>
+  const pointerPosition=(event:ReactPointerEvent<SVGElement>)=>
     pointFromScreen(event.currentTarget.ownerSVGElement,event.clientX,event.clientY);
   const ghost=onCirclePick&&circleDrawing&&circleHover
     ?circleDrawingPreview(circleDrawing,circleHover):null;
