@@ -891,7 +891,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       document.body.appendChild(link);link.click();link.remove();
     }finally{setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);}
     const pinned=!!nativeSession.current?.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'});
-    setNativeReport(`${pinned?'Pinned OCCT8 C++':'Experimental OCP'} STEP downloaded · revision ${current.document.revision} · ${step.bytes.byteLength} bytes · SHA-256 ${step.sha256}. Source-matched, same-engine verified bytes only; independent external CAD readback is not asserted.`);
+    setNativeReport(`${pinned?'Pinned OCCT8 C++ STEP downloaded':'Experimental STEP downloaded (OCP prototype)'} · revision ${current.document.revision} · ${step.bytes.byteLength} bytes · SHA-256 ${step.sha256}. Source-matched, same-engine verified bytes only; not independent STEP or production exactness; independent external CAD readback is not asserted.`);
   };
   /** One real user click => ONE atomic RUNTIME capture => one ZIP download.
    * A synthetic/OCP receipt cannot make this gate ready, and no payload is
@@ -956,7 +956,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       setPinnedEvidenceReady(pinned);
       if(action==='pinned-evidence') downloadPinnedEvidence();
       else if(action==='experimental-step') downloadCachedStep();
-      else setNativeReport(`${pinned?'Pinned OCCT8 C++':'Experimental OCP'} STEP prepared · revision ${outcome.source.revision} · SHA-256 ${step.sha256}. Use Download current STEP to publish these revision-fenced bytes. Same-engine readback only; not independent STEP.`);
+      else setNativeReport(`${pinned?'Pinned OCCT8 C++ STEP prepared':'Experimental STEP prepared (OCP prototype)'} · revision ${outcome.source.revision} · SHA-256 ${step.sha256}. Use Download current STEP to publish these revision-fenced bytes. Same-engine readback only; not independent STEP.`);
     }catch(error){
       if(id===nativeTicket.current)
         setNativeReport('No STEP published: '+(error instanceof Error?error.message:String(error)));
