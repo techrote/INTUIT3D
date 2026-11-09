@@ -624,7 +624,11 @@ export function createLivePlateSession({
       if(!step) return null;
       const source=latest?.source, producer=latest?.result;
       const current=synchronize();
-      if(!source||!producer||
+      // The source may change between currentStep() and this second journal
+      // read (for example through another writer). Matching project/revision
+      // alone does not establish the identity of the STEP-producing archive.
+      // synchronize() discards the old receipt when that exact archive changes.
+      if(latestArchive!==current.archive||!source||!producer||
           source.projectId!==current.report.projectId||
           source.revision!==current.report.revision||
           !/^[a-f0-9]{64}$/.test(source.archiveSha256||'')||
