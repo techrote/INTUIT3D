@@ -50,7 +50,10 @@ jobs:
         env:
           INTUIT3D_HANDLE_ARTIFACTS: browser-evidence-handles
         run: npm run test:browser:handles --workspace @intuit3d/web
+      # Keep original screenshots even when a later pointer regression fails.
+      # The failing test remains a required, red browser qualification gate.
       - name: Preserve original same-source browser screenshots
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: evaluation-browser-screenshots
@@ -63,6 +66,10 @@ jobs:
   windows-bundle:
     name: Windows x64 build, ZIP extraction and local startup
     needs: browser
+    # A Linux graphical regression must not suppress independently executable
+    # Windows ZIP/extraction evidence. The *workflow* remains red while browser
+    # qualification fails; never treat its artifact as a qualified release.
+    if: ${{ always() && (needs.browser.result == 'success' || needs.browser.result == 'failure') }}
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
