@@ -1253,6 +1253,34 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                 key={pointerSourceArchive+':'+closedHandle.handleId}
                 handle={closedHandle} disabled={!!pendingImport||!!loadingFile}
                 onCommit={target=>dragDrawnVertex(closedHandle.handleId,target.x,target.y)}/>}
+              {closedEdges&&<div className="runtime-hole-add" data-testid="runtime-contour-edge-editor">
+                <strong>Whole-edge normal offset · solver-owned</strong>
+                <label className="runtime-scalar"><span>Semantic edge</span>
+                  <span className="runtime-scalar-control"><select
+                    data-testid="runtime-contour-edge-select" aria-label="Select source contour edge"
+                    value={closedEdges.edges.some(e=>e.edgeId===selectedContourEdgeId)?selectedContourEdgeId:''}
+                    onChange={event=>setSelectedContourEdgeId(event.target.value)}>
+                    <option value="">Choose an edge…</option>
+                    {closedEdges.edges.map((edge,i)=><option key={edge.edgeId} value={edge.edgeId}>
+                      Edge {i+1} · {edge.edgeId} · {edge.lengthMm.toFixed(3)} mm
+                    </option>)}
+                  </select></span>
+                </label>
+                <label className="runtime-scalar"><span>Signed outward offset · mm</span>
+                  <span className="runtime-scalar-control"><input type="number" step="any"
+                    data-testid="runtime-contour-edge-distance" aria-label="Signed normal edge offset in millimetres"
+                    value={edgeOffsetDraft} onChange={event=>setEdgeOffsetDraft(event.target.value)}/></span>
+                </label>
+                <button type="button" className="ribbon-button"
+                  data-testid="runtime-contour-edge-commit"
+                  disabled={!closedEdges.edges.some(e=>e.edgeId===selectedContourEdgeId)||!!pendingImport||!!loadingFile}
+                  onClick={()=>editDrawnEdge(selectedContourEdgeId,undefined,undefined,
+                    edgeOffsetDraft.trim()?Number(edgeOffsetDraft):NaN)}>Offset selected edge</button>
+                <p className="microcopy">Drag an admitted edge normal to itself, or enter a signed distance.
+                  The source-owned SKETCH planner validates all vertices and associated holes;
+                  RUNTIME journals one undoable edit. Tangential drag cannot translate the edge.
+                  Focus an edge and use ArrowUp/Down for 1 mm (Shift 0.1 mm) nudges.</p>
+              </div>}
               <p className="microcopy">Move a chosen original vertex with the amber sketch handle
                 or precise X/Y fields. Only source-fenced, full-SKETCH admitted edits
                 become an undoable RUNTIME revision; unsupported profiles remain preview-only.</p>
