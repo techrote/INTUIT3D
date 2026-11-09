@@ -4,7 +4,7 @@
 
 INTUIT3D aims to deliver a serious Fusion-inspired CAD workbench without making a strictly chronological feature tree the sole authority. Users should be able to sketch and model directly, introduce dimensions and dependencies retrospectively, reorder independent operations, preserve temporarily unresolved intent, and recover from topology changes without silent loss of engineering meaning.
 
-**Development mode:** ambitious, predominantly agent-implemented, with eight independent permanent engineering lanes and serialized Integration-owned admission/merges. The repository is the authority, not an individual agent's prior chat.
+**Development mode:** ambitious, predominantly agent-implemented, with ten independent permanent engineering lanes and serialized Integration-owned admission/merges. The repository is the authority, not an individual agent's prior chat.
 
 ## North-star demonstration
 
@@ -28,7 +28,7 @@ Read in this order:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — source-of-truth, system and interfaces
 - [docs/ROADMAP.md](docs/ROADMAP.md) — executable milestone plan
 - [docs/OWNER-STEERING.md](docs/OWNER-STEERING.md) — accepted owner guidance, steering intake and programme assessment protocol
-- [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md) — five worker lanes and handoffs
+- [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md) — engineering lane ownership and handoffs
 - [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) — evidence and correctness gates
 - [docs/RESEARCH-INTAKE.md](docs/RESEARCH-INTAKE.md) — radiCADSAC reuse and tangent handling
 - [docs/STATUS.md](docs/STATUS.md) — integration-maintained live programme index
@@ -36,14 +36,28 @@ Read in this order:
 
 ## Run the local model-backed CAD workstation
 
+Requires Node.js 22 or newer. From the repository root:
+
 ```sh
 npm ci
-npm run dev:local
+npm run dev:local -- --smoke  # loopback startup check, no CAD or STEP execution
+npm run dev:local             # interactive workbench, experimental OCP companion
 ```
 
-This single command launches the React CAD workbench at `http://127.0.0.1:5173` **and** a separate loopback-only RUNTIME/native companion. In the workbench, select **MODEL-BACKED CAD** and paste the provider URL and one-session pairing token printed in the local terminal into the **Local native STEP** panel. `Ctrl+C` shuts down both processes. For a bounded startup check without a geometry request, run `npm run dev:local -- --smoke`.
+Open `http://127.0.0.1:5173`, select **MODEL-BACKED CAD**, and paste the terminal's `LOCAL_PROVIDER_URL` and `LOCAL_PAIRING_TOKEN` into the **Local native STEP** panel. Keep the session token private. `Ctrl+C` stops the processes. The smoke test proves only that the web and companion servers start. The default companion is **experimental OCP 7.9**, not the independently qualified pinned C++ provider.
 
-For *experimental* physical STEP execution on supported Linux configurations, install the pinned OCP prototype dependencies first (`python3 -m pip install -r native/requirements-prototype.txt`, or provision the corresponding `PYTHON` environment). The editor's mesh is a labelled preview; browser-native STEP uses experimental OCP 7.9.3.1 and same-engine readback. **This does not establish OCCT 8.0.1 C++ execution or independently validated STEP interoperability.** Saving a model archive preserves authored intent, not a native B-rep file.
+For the **genuine pinned OCCT 8.0.1 C++ path on Linux**, first install and verify the original offline worker bundle using [Platform's installer and pinned-source guide](platform/native-toolchain/README.md). Supply the installed canonical executable path and its independently verified **executable** SHA-256, not the archive SHA:
+
+```sh
+export INTUIT3D_OCCT8_WORKER=/absolute/canonical/path/to/installed/worker
+export INTUIT3D_OCCT8_WORKER_SHA256=<64-lowercase-hex-worker-digest>
+npm run dev:local -- --pinned --smoke
+npm run dev:local -- --pinned
+```
+
+The pinned launcher **fails closed** on a missing/noncanonical path or wrong worker digest, and has no silent OCP fallback. Its local startup and digest check alone do **not** constitute a native STEP or interoperability acceptance. The accepted [#74 source-matched physical evidence](https://github.com/techrote/INTUIT3D/issues/74) is from specified Linux Chromium sessions, installed C++ worker and independently compiled non-OCCT AnvilCAD verification, for the documented bounded plate/contour geometry only. Windows CI tests the workspace; it is **not** a Windows-native OCCT8 execution.
+
+**Human replay:** Start with **New sketch-first project**, use four actual sketch-plane clicks to create vertices and **Close** the contour; use the accepted Extrude and explicitly targeted Cut controls; edit the earlier extrusion thickness and Undo/Redo; save the model archive, select it through import review, confirm Replace, then request a fresh native STEP. Check that previously generated STEP is invalidated after a revision change, and retain the archive/receipt/STEP hashes. Export is independently trustworthy only when its original bytes are verified with a non-OCCT consumer and the same project/revision. For the separate [Windows Firefox #177](https://github.com/techrote/INTUIT3D/issues/177) import gate, the owner reported successful save/load on 9 November 2026 following the original-file replay instructions; the original archive identity, import-stage trace, post-import Undo/Redo and second reopen have not yet been explicitly recorded. Keep that private-file follow-up distinct from Chromium and native STEP qualification. Saving the model archive preserves design intent; a preview mesh is not an exact B-rep.
 
 ## Starting point
 
