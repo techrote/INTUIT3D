@@ -962,6 +962,20 @@ async function main(){
     'Invalid STEP SHA-256 hid failed provider / valid retained previous STEP');
   check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
     'bad-digest refresh incorrectly discarded earlier verified same-revision STEP');
+  // A failed native retry may retain original source-valid STEP bytes, but
+  // publishing them must never claim the retry succeeded.
+  const retainedBefore=await evaluate('window.__nativeStepBlobs.length');
+  const retainedRevision=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-native-download-cached]');if(!b||b.disabled||!b.textContent.includes('last-good'))return false;b.click();return true})()"),
+    'retained STEP download is not identified as last-good');
+  await eventually(()=>evaluate('window.__nativeStepBlobs.length==='+String(retainedBefore+1)),
+    'source-valid retained STEP was not downloaded');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('LAST GOOD') && document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('download requested')"),
+    'download report falsely promoted failed native retry to current success');
+  check(await evaluate("(async()=>{const text=await window.__nativeStepBlobs.at(-1).text();return text.includes('SYNTHETIC UI TEST, NOT OCCT')})()"),
+    'retained STEP bytes differ from the previously verified synthetic original');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===retainedRevision,
+    'last-good download changed the authoritative model revision');
   mockReplyMode='valid';
   // One actual user pointer click must traverse the native request and the
   // pinned custody fence. This is an OCP-shaped synthetic responder, so no

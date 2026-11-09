@@ -877,13 +877,21 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   // STEP stays in the RUNTIME live session until the very moment the user
   // downloads it. Edits, undo, archive replacement and provider changes revoke it.
   const downloadCachedStep=()=>{
-    const step=nativeSession.current?.currentStep();
-    const receipt=nativeSession.current?.currentStepReceipt();
-    if(!step||!receipt){
+    // Take one source-fenced receipt with its own defensive byte copy. A valid
+    // previous STEP may survive a failed native retry for the SAME archive:
+    // downloading those bytes must identify them as LAST GOOD, not latest.
+    const coordinator=nativeSession.current;
+    const state=coordinator?.refresh();
+    const receipt=coordinator?.currentStepReceipt();
+    const step=receipt?.step;
+    const availability=state?.stepAvailability;
+    if(!receipt||!step||!state||
+        (availability!=='current'&&availability!=='last_good')||
+        state.projectId!==receipt.source.projectId||
+        state.revision!==receipt.source.revision){
       setNativeReport('No current source-bound STEP receipt: build this exact journal revision again.');
       return;
     }
-    const current=liveHistory.current;
     const filename=sourceBoundStepFilename(receipt.source.projectId,receipt.source.revision,receipt.producer.backend);
     const objectUrl=URL.createObjectURL(new Blob([new Uint8Array(step.bytes)],{type:'model/step'}));
     try{
@@ -892,7 +900,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       document.body.appendChild(link);link.click();link.remove();
     }finally{setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);}
     const pinned=receipt.producer.backend==='OCCT-cxx-8.0.1';
-    setNativeReport(`${pinned?'Pinned OCCT8 C++ STEP downloaded':'Experimental STEP downloaded (OCP prototype)'} · revision ${current.document.revision} · ${step.bytes.byteLength} bytes · SHA-256 ${step.sha256}. Source-matched, same-engine verified bytes only; not independent STEP or production exactness; independent external CAD readback is not asserted.`);
+    const status=availability==='last_good'
+      ?'LAST GOOD — retained from a previous verified attempt, NOT the latest native result'
+      :'CURRENT — latest verified source-bound STEP';
+    setNativeReport(`${pinned?'Pinned OCCT8 C++':'Experimental OCP'} STEP download requested · ${status} · revision ${receipt.source.revision} · ${step.bytes.byteLength} bytes · SHA-256 ${step.sha256}. Verify that the file reached Downloads. Same-engine verified bytes only; independent external CAD readback is not asserted.`);
   };
   /** One real user click => ONE atomic RUNTIME capture => one ZIP download.
    * A synthetic/OCP receipt cannot make this gate ready, and no payload is
@@ -1628,7 +1639,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-download-cached"
             disabled={nativeBusy || !!pendingImport || !nativeSession.current?.currentStep()}
-            onClick={downloadCachedStep}>Download current STEP</button>
+            onClick={downloadCachedStep}>{nativeSession.current?.refresh().stepAvailability==='last_good'
+              ?'Download retained last-good STEP':'Download current STEP'}</button>
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-evidence-zip"
             disabled={nativeBusy || !!pendingImport || !pinnedEvidenceReady}
