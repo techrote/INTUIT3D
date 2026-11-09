@@ -11,7 +11,7 @@ import { BlankSketchCanvas } from './BlankSketchCanvas';
 import {appendBlankContourPoint,undoBlankContourVertex,placeBlankContourPointer,type BlankContourDraft,type SketchLocalPoint} from './blankContourDraft';
 import {commitModelBlankContour,startModelBlankContour,structuralContourRuntimeAvailable,inspectModelClosedContour,dragModelClosedContourVertex} from './closedContourBridge';
 import {ClosedContourVertexEditor} from './ClosedContourVertexEditor';
-import {insertModelContourTab,inspectModelTabbedContour,editModelTabbedVertex} from './tabbedContourBridge';
+import {insertModelContourTab,previewModelContourTab,inspectModelTabbedContour,editModelTabbedVertex} from './tabbedContourBridge';
 import {inspectModelContourEdges,dragModelClosedContourEdge,offsetModelClosedContourEdge}
   from './closedContourEdgeBridge';
 import { HistoricalEditInspector } from './HistoricalEditInspector';
@@ -333,6 +333,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const closedHandle=closedInventory?.handles.find(h=>h.handleId===pointerHandleId)??null;
   const tabbedHandle=tabbedInventory?.handles.find(h=>h.handleId===pointerHandleId)??null;
   const tabSourceEdge=tabDraft?closedEdges?.edges.find(edge=>edge.edgeId===tabDraft.edgeId):null;
+  // SKETCH-owned preflight is read-only, not a journal event or physical evidence.
+  const tabPreflight=useMemo(()=>{
+    if(!tabDraft||tabDraft.points.length!==2||!pointerSelection)return null;
+    return previewModelContourTab(history,pointerSelection,tabDraft.edgeId,
+      [tabDraft.points[0],tabDraft.points[1]],tabDraft.expectedArchive);
+  },[history,pointerSelection,tabDraft]);
   const pointerDragHandle=pointerHandles.find(h=>h.handleId===pointerHandleId)??null;
   const canAuthorExtrusion=!plateAuthored && !!sketchProfile && !pendingImport;
   const canAuthorCut=plateActive && !cutAuthored && !!sketchProfile?.holes.length && !pendingImport;
@@ -444,9 +450,28 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     setTabDraft({...tabDraft,points:[...tabDraft.points,point]});
     setMessage('Tab pointer vertices '+(tabDraft.points.length+1)+'/2. No model revision yet.');
   };
+  const editTabDraftCoordinate=(index:number,axis:'x'|'y',raw:string)=>{
+    if(!tabDraft||pendingImport||loadingFile)return;
+    if(tabDraft.expectedArchive!==serializeModelSession(liveHistory.current)){
+      setTabDraft(null);setMessage('Tab draft cancelled: authoritative source changed.');return;
+    }
+    const value=Number(raw);
+    if(!raw.trim()||!Number.isFinite(value)||Math.abs(value)>10000){
+      setMessage('Tab draft coordinate must be a finite number within ±10,000 mm.');
+      return;
+    }
+    if(!tabDraft.points[index])return;
+    setTabDraft({...tabDraft,points:tabDraft.points.map((point,i)=>
+      i===index?{...point,[axis]:value}:point)});
+    setMessage(null);
+  };
   const commitTab=()=>{
     if(!tabDraft||!pointerSelection||!pointerSourceArchive||pendingImport||loadingFile)return;
     if(tabDraft.points.length!==2){setMessage('Place both tab vertices before committing.');return;}
+    if(tabPreflight?.kind!=='admissible'){
+      setMessage('Tab cannot commit: '+(tabPreflight?.reason??'SKETCH admission preview not current.'));
+      return;
+    }
     try{
       if(liveHistory.current!==history||tabDraft.expectedArchive!==pointerSourceArchive)
         throw Error('Selected journal changed. Restart tab placement.');
@@ -1397,10 +1422,39 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                    onClick={beginTab}>Insert tab on selected edge</button>
                  {tabDraft&&<div data-testid="runtime-tab-draft">
                    <strong>Two-point tab draft · {tabDraft.points.length}/2</strong>
-                   <p className="microcopy">Click two positions in Sketch XY. Commit replaces the source edge.
-                     Escape or Cancel discards uncommitted points, without a revision.</p>
+                   <p className="microcopy">Click two positions in Sketch XY, then adjust their
+                     sketch-local X/Y values before committing. This is SKETCH-only, not native STEP.
+                     Escape or Cancel discards uncommitted points without a revision.</p>
+                   {tabDraft.points.map((point,i)=><div className="runtime-hole-add" key={i}
+                     data-testid={`runtime-tab-draft-fields-${i}`}>
+                     <strong>Tab vertex {i+1} · uncommitted</strong>
+                     {(['x','y'] as const).map(axis=><label className="runtime-scalar" key={axis}>
+                       <span>{axis.toUpperCase()} · mm</span>
+                       <span className="runtime-scalar-control"><input type="number" step="any"
+                         key={`${tabDraft.expectedArchive}:${i}:${axis}:${point[axis]}`}
+                         defaultValue={point[axis]} disabled={!!pendingImport||!!loadingFile}
+                         data-testid={`runtime-tab-draft-${i}-${axis}`}
+                         aria-label={`Tab vertex ${i+1} ${axis.toUpperCase()} in millimetres`}
+                         onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur();}}
+                         onBlur={event=>{
+                           const value=event.currentTarget.value;
+                           if(!value.trim()||!Number.isFinite(Number(value))||Math.abs(Number(value))>10000){
+                             event.currentTarget.value=String(point[axis]);
+                           }
+                           editTabDraftCoordinate(i,axis,value);
+                         }}/><small>mm</small></span>
+                     </label>)}
+                   </div>)}
+                   {tabDraft.points.length===2&&<p className="microcopy" role="status"
+                     data-testid="runtime-tab-preflight">
+                     {tabPreflight?.kind==='admissible'
+                       ?'SKETCH preview admissible for this source and edge; final RUNTIME re-admission required.'
+                       :'SKETCH preview refused: '+(tabPreflight?.reason??'source changed or preview unavailable')+
+                         '. Correct the draft dimensions or Cancel; no model revision was written.'}
+                   </p>}
                    <button type="button" className="ribbon-button" data-testid="runtime-tab-commit"
-                     disabled={tabDraft.points.length!==2} onClick={commitTab}>Commit tab</button>
+                     disabled={tabPreflight?.kind!=='admissible'||!!pendingImport||!!loadingFile}
+                     onClick={commitTab}>Commit tab</button>
                    <button type="button" className="ribbon-button" data-testid="runtime-tab-cancel"
                      onClick={()=>{setTabDraft(null);setMessage('Tab cancelled; no model revision.');}}>Cancel tab</button>
                  </div>}
