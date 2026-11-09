@@ -615,6 +615,70 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         onPointerCancel={()=>{profileMove.current=null;setProfilePreview(null);}}
         onLostPointerCapture={()=>{profileMove.current=null;setProfilePreview(null);}}
       />}
+      {contourEdges&&onContourEdgeDrag&&contourEdges.map(edge=>{
+        const selected=selectedContourEdgeId===edge.edgeId;
+        const offset=contourPreview?.edgeId===edge.edgeId?contourPreview.offsetMm:0;
+        return <g key={edge.edgeId}>
+          {offset!==0&&<line
+            data-testid="runtime-contour-edge-drag-preview"
+            x1={edge.start.x+edge.normal.x*offset} y1={edge.start.y+edge.normal.y*offset}
+            x2={edge.end.x+edge.normal.x*offset} y2={edge.end.y+edge.normal.y*offset}
+            stroke="#ffdb7c" strokeWidth="2" strokeDasharray="4 3"
+            vectorEffect="non-scaling-stroke" pointerEvents="none"/>}
+          <line data-testid={'runtime-contour-edge-'+edge.startIndex}
+            role="slider" tabIndex={0}
+            aria-label={'Drag source contour edge '+edge.edgeId+' normal to itself'}
+            aria-valuemin={-10000} aria-valuemax={10000} aria-valuenow={0}
+            x1={edge.start.x} y1={edge.start.y} x2={edge.end.x} y2={edge.end.y}
+            stroke={selected?'#ffdb7c':'#77e1e9'} opacity={selected?1:0.75}
+            strokeWidth="8" vectorEffect="non-scaling-stroke"
+            style={{cursor:'grab',touchAction:'none'}}
+            onPointerDown={event=>{
+              if(event.button!==0||contourMove.current)return;
+              const at=pointerPosition(event);
+              if(!at)return;
+              event.preventDefault();event.stopPropagation();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              contourMove.current={edgeId:edge.edgeId,pointerId:event.pointerId,
+                source:profile,start:at};
+              setContourPreview({edgeId:edge.edgeId,offsetMm:0});
+              onContourEdgePick?.(edge.edgeId);
+            }}
+            onPointerMove={event=>{
+              const active=contourMove.current;
+              if(!active||active.edgeId!==edge.edgeId||
+                  active.pointerId!==event.pointerId||active.source!==profile)return;
+              const at=pointerPosition(event);
+              if(!at)return;
+              const offsetMm=(at.x-active.start.x)*edge.normal.x+
+                (at.y-active.start.y)*edge.normal.y;
+              if(Number.isFinite(offsetMm)&&Math.abs(offsetMm)<=10000)
+                setContourPreview({edgeId:edge.edgeId,offsetMm});
+            }}
+            onPointerUp={event=>{
+              const active=contourMove.current;
+              if(!active||active.edgeId!==edge.edgeId||active.pointerId!==event.pointerId)return;
+              event.stopPropagation();
+              contourMove.current=null;setContourPreview(null);
+              if(active.source!==profile)return;
+              const at=pointerPosition(event);
+              if(at&&Math.hypot(at.x-active.start.x,at.y-active.start.y)>0.01)
+                onContourEdgeDrag(edge.edgeId,active.start,at);
+            }}
+            onPointerCancel={()=>{contourMove.current=null;setContourPreview(null);}}
+            onLostPointerCapture={()=>{contourMove.current=null;setContourPreview(null);}}
+            onKeyDown={event=>{
+              if(event.key==='Escape'){
+                contourMove.current=null;setContourPreview(null);event.preventDefault();return;
+              }
+              if((event.key==='ArrowUp'||event.key==='ArrowDown')&&onContourEdgeOffset){
+                event.preventDefault();onContourEdgePick?.(edge.edgeId);
+                onContourEdgeOffset(edge.edgeId,
+                  (event.key==='ArrowUp'?1:-1)*(event.shiftKey?0.1:1));
+              }
+            }}/>
+        </g>;
+      })}
     </g>
     <text x={minX+2} y={minY+8} fontSize={Math.max(2,width/30)} fill="#d1e5f1">
       SKETCH solver · analytic profile only
