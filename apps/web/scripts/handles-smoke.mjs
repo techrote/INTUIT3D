@@ -1595,11 +1595,22 @@ async function main() {
     'post-import edit Redo did not restore the edited inserted vertex');
   await screenshot('41c-reopened-tab-vertex-undo-redo.png');
 
+  // Undo/Redo invalidates the old semantic selection's source archive. A
+  // user must reselect the current solved contour before a different handle
+  // can legitimately be moved; don't reuse the pre-Undo source receipt.
+  await clickControl('[data-testid="runtime-profile-select-mode"]');
+  await mouse('mouseMoved',reopenedTabPick.x,reopenedTabPick.y);
+  await mouse('mousePressed',reopenedTabPick.x,reopenedTabPick.y,1);
+  await mouse('mouseReleased',reopenedTabPick.x,reopenedTabPick.y);
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-tabbed-contour]'))"),
+    'post-Redo user pointer could not refresh the source-owned contour selection');
   // A second, *unselected* persisted vertex must be draggable in one gesture,
   // without a preparatory inspector edit or synthesized source ownership.
   const directTabDrag=await evaluate("(() => {const marker=[...document.querySelectorAll('[data-testid=runtime-contour-vertex-marker]')].find(el=>el.getAttribute('data-handle-id')?.startsWith('tab.')&&el.getAttribute('data-handle-id')?.endsWith(':handle:1'));const matrix=marker?.getScreenCTM();if(!marker||!matrix)return null;const x=Number(marker.getAttribute('cx')),y=Number(marker.getAttribute('cy'));const from=new DOMPoint(x,y).matrixTransform(matrix);const to=new DOMPoint(145,65).matrixTransform(matrix);return {id:marker.getAttribute('data-handle-id'),source:{x,y},from:{x:from.x,y:from.y},to:{x:to.x,y:to.y}}})()");
-  check(directTabDrag&&Math.hypot(directTabDrag.source.x-140,directTabDrag.source.y-60)<0.05,
-    'second saved SKETCH tab vertex not independently selectable for direct drag');
+  if(!directTabDrag||Math.hypot(directTabDrag.source.x-140,directTabDrag.source.y-60)>=0.05){
+    const details=await evaluate("(() => ({revision:document.querySelector('[data-testid=runtime-revision]')?.textContent,selected:document.querySelector('[data-testid=runtime-tab-vertex-select]')?.value,markers:[...document.querySelectorAll('[data-testid=runtime-contour-vertex-marker]')].map(n=>({id:n.getAttribute('data-handle-id'),x:n.getAttribute('cx'),y:n.getAttribute('cy')})),tabbed:document.querySelector('[data-testid=runtime-tabbed-contour]')?.textContent?.slice(0,400),polygon:document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')}))()");
+    throw Error('second saved SKETCH tab vertex unavailable for direct drag: '+JSON.stringify(details));
+  }
   const directDragBefore=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
   // Cancel a real gesture after moving: neither the model nor its selection
   // acquires a new authoritative history entry.
