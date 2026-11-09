@@ -85,6 +85,10 @@ export function BlankSketchCanvas({
     if(point)onPoint(point);
   };
   const points=draft?.vertices??[];
+  // Keep ephemeral vertices and the snap ring visible at every navigable zoom.
+  // Their SVG-space radius follows viewBox width, yielding a constant apparent
+  // size without altering the stored sketch-local coordinates or hit testing.
+  const markerScale=view.width/DEFAULT_BLANK_CANVAS_VIEW.width;
   return <div className="runtime-blank-stage" data-testid="runtime-empty-sketch-stage">
     <div className="runtime-blank-toolbar" role="group" aria-label="Closed outline authoring">
       {!draft?<button type="button" className="ribbon-button" data-testid="runtime-begin-blank-contour"
@@ -137,15 +141,15 @@ export function BlankSketchCanvas({
           points={points.map(p=>p.x+','+p.y).join(' ')}
           fill="none" stroke="#7bdfec" strokeWidth="1.3" vectorEffect="non-scaling-stroke"/>}
         {points.map((p,i)=><circle key={i} data-testid={'runtime-draft-vertex-'+i}
-          cx={p.x} cy={p.y} r="1.5" fill={i===0?'#ffdb92':'#76e0e9'}
-          stroke="#183440" strokeWidth=".4"/> )}
+          cx={p.x} cy={p.y} r={1.5*markerScale} fill={i===0?'#ffdb92':'#76e0e9'}
+          stroke="#183440" strokeWidth={0.4*markerScale}/> )}
         {draft&&hover&&<>
           {points.length>0&&<line data-testid="runtime-contour-pointer-guide"
             x1={points[points.length-1].x} y1={points[points.length-1].y}
             x2={hover.x} y2={hover.y} stroke="#a2b8c8" strokeWidth=".65"
             strokeDasharray="2 2" vectorEffect="non-scaling-stroke"/>}
           <circle data-testid="runtime-contour-pointer-snap"
-            cx={hover.x} cy={hover.y} r="1.8" fill="none"
+            cx={hover.x} cy={hover.y} r={1.8*markerScale} fill="none"
             stroke="#ffdc8d" strokeWidth=".8" vectorEffect="non-scaling-stroke"/>
         </>}
       </g>
