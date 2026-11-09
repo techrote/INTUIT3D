@@ -469,20 +469,21 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
    Windows/Firefox widths instead of clipping them behind the fixed-height shell.
    Only the model-backed view changes; the optional preview sandbox is untouched. */
 .runtime-shell .titlebar {
-  height: auto; min-height: 58px; flex: 0 0 auto;
-  flex-wrap: wrap; gap: 7px 12px; padding-block: 7px;
+  height: 58px; min-height: 58px; flex: 0 0 58px;
+  flex-wrap: nowrap; gap: 10px; padding-block: 0;
 }
+.runtime-shell .identity { min-width: 145px; flex: 0 0 145px; }
 .runtime-shell .project-title {
-  flex: 0 1 215px; min-width: 125px; overflow: hidden;
+  flex: 0 1 155px; min-width: 90px; overflow: hidden;
   white-space: nowrap; text-overflow: ellipsis;
 }
 .runtime-shell .title-actions {
-  flex: 1 1 715px; min-width: 0; display: flex;
-  flex-wrap: wrap; justify-content: flex-end; gap: 4px 6px;
+  flex: 1 1 auto; min-width: 0; display: flex; align-content: center;
+  flex-wrap: wrap; justify-content: flex-end; gap: 2px 4px;
 }
 .runtime-shell .title-actions .ribbon-button {
-  min-width: 0; min-height: 30px; margin: 0; padding: 6px 8px;
-  font-size: 11px; line-height: 1.2;
+  min-width: 0; min-height: 25px; margin: 0; padding: 4px 7px;
+  font-size: 10px; line-height: 1.15;
 }
 .runtime-shell .toolstrip {
   min-width: 0; overflow-x: auto; overflow-y: hidden;
