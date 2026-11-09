@@ -6,7 +6,7 @@ This is an **evaluation snapshot**, not a production CAD release. The ZIP is bui
 
 1. Extract the **entire** Windows ZIP to a writable local directory, preferably a short path such as \`C:\INTUIT3D-Eval\`. Do not launch files directly from the ZIP.
 2. Install **Node.js 22 or later, x64**, if not already installed. npm is not needed for the initial bundled launch; the archive includes Windows npm dependencies.
-3. Double-click **Start INTUIT3D.cmd** in the extracted folder. Keep its console open. If another process already uses ports 5173 or the local companion port cannot bind, stop that process and retry.
+3. Double-click **Start INTUIT3D.cmd** in the extracted folder. On first launch it prepares npm workspace **junctions to the bundled local source**. This is an offline filesystem step (not an installation or network request); the extracted directory must be writable on NTFS. Keep its console open. If another process already uses ports 5173 or the local companion port cannot bind, stop that process and retry.
 4. Open **http://127.0.0.1:5173** in Firefox; enter **MODEL-BACKED CAD** if prompted. The companion runs on loopback and prints \`LOCAL_PROVIDER_URL\` and \`LOCAL_PAIRING_TOKEN\`. Copy those values into the **Local native STEP** connection panel only when you want the experimental provider. Do not post the pairing token online.
 5. Close the console with **Ctrl+C** when finished. Your model archive must be saved explicitly to keep it independently of the running session.
 
