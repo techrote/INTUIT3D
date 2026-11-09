@@ -145,6 +145,55 @@ test('existing tab edit refuses stale handle, invalid target, missing datum and 
   assert.equal(stamp(inserted.sketch),original);
 });
 
+
+test('tab insertion and later dimension edits refuse other contour crossings, contacts and nesting',()=>{
+  const base=created();
+  const withPeer=vertices=>{
+    const added=createClosedContour(base.sketch,{
+      kind:'create-closed-contour',version:1,
+      sourceSignature:stamp(base.sketch),contourId:'neighbor',vertices
+    });ok(added);
+    return {sketch:added.sketch,selection:{
+      candidateId:base.selection.candidateId,
+      sourceSignature:stamp(added.sketch)
+    }};
+  };
+  const rectangle=(left,right,bottom,top)=>[
+    {x:left,y:bottom},{x:right,y:bottom},
+    {x:right,y:top},{x:left,y:top}
+  ];
+  // Both independently solved cycles remain simple and their hole sets
+  // unchanged. The SKETCH transaction must still reject intersecting regions.
+  const crossing=withPeer(rectangle(150,210,0,80));
+  const signature=stamp(crossing.sketch);
+  const crossed=tab(crossing,{vertices:[{x:160,y:20},{x:160,y:60}]});
+  assert.equal(crossed.reason,'contour_conflicts_with_other_profile',
+    JSON.stringify(crossed));
+  assert.match(crossed.detail,/boundary_contact/);
+  assert.equal(stamp(crossing.sketch),signature,'refusal must be atomic');
+
+  const nested=withPeer(rectangle(130,170,25,55));
+  const surrounded=tab(nested,{vertices:[{x:180,y:20},{x:180,y:60}]});
+  assert.equal(surrounded.reason,'contour_conflicts_with_other_profile',
+    JSON.stringify(surrounded));
+  assert.match(surrounded.detail,/nested_contour/);
+  const touching=withPeer(rectangle(150,210,30,70));
+  const contacted=tab(touching,{vertices:[{x:150,y:20},{x:150,y:60}]});
+  assert.equal(contacted.reason,'contour_conflicts_with_other_profile',
+    JSON.stringify(contacted));
+
+  const disjoint=withPeer(rectangle(200,250,0,80));
+  const inserted=tab(disjoint);ok(inserted);
+  const beforeEdit=stamp(inserted.sketch);
+  const editing=edit(inserted,'panelTab:handle:0',{x:210,y:20});
+  assert.equal(editing.reason,'contour_conflicts_with_other_profile',
+    JSON.stringify(editing));
+  assert.equal(stamp(inserted.sketch),beforeEdit);
+  // A genuine edit away from the other contour remains valid.
+  const safe=edit(inserted,'panelTab:handle:0',{x:145,y:20});
+  ok(safe);
+});
+
 test('runnable consumer example replays a SKETCH-only tab, not a native STEP result',async()=>{
   await import('../examples/closed-contour-insertion.mjs');
 });

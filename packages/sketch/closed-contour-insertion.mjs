@@ -8,6 +8,7 @@
 import {createSketch,serializeSketch,solveSketch} from './index.mjs';
 import {discoverPlateProfiles} from './profile-discovery.mjs';
 import {proposeSelectedPlateProfile} from './selected-profile.mjs';
+import {assessSeparatedPolygonBoundaries} from './boundary-guard.mjs';
 import {inspectClosedContour,MAX_CLOSED_CONTOUR_VERTICES}
   from './closed-contour-authoring.mjs';
 
@@ -79,6 +80,14 @@ const recheck=(before,after,targetBefore,targetLines,movable=new Set())=>{
     const other=candidateFor(after,c.lineIds);
     if(!other||!same(other.holeIds,c.holeIds))
       return refuse(before.stamp,'other_profile_changed',c.id);
+    // Profile discovery validates each connected cycle independently.
+    // The edited boundary must also remain strictly separated from every
+    // other selected material region, including exact contact and nesting.
+    const separation=assessSeparatedPolygonBoundaries(
+      target.profile.outer,other.profile.outer);
+    if(separation.status!=='separated')
+      return refuse(before.stamp,'contour_conflicts_with_other_profile',
+        c.id+':'+separation.reason);
   }
   const previous=new Map(before.solved.geometry.points.map(p=>[p.id,p]));
   const next=new Map(after.solved.geometry.points.map(p=>[p.id,p]));
