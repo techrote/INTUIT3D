@@ -492,7 +492,7 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
 .runtime-shell .toolstrip > .toolstrip-right { flex: none; }
 .runtime-shell .toolstrip > .toolstrip-right { margin-left: auto; }
 .runtime-shell .runtime-evaluation-guide {
-  flex: 0 0 auto; min-width: 0; max-height: min(29vh, 195px);
+  flex: 0 0 auto; min-width: 0; max-height: min(48vh, 320px);
   overflow: auto; padding: 7px 15px; border-bottom: 1px solid #36566a;
   background: #162836; color: #b9d2dd; font-size: 11px;
 }
@@ -506,7 +506,7 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
   float: right; color: #9dc8d3; padding-left: 12px;
 }
 .runtime-shell .runtime-evaluation-guide ol {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: grid; grid-template-columns: minmax(0, 1fr);
   gap: 8px 22px; margin: 10px 0 8px; padding-left: 22px;
 }
 .runtime-shell .runtime-evaluation-guide li { line-height: 1.5; }
