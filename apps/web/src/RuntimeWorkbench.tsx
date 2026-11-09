@@ -123,7 +123,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   // draft or another body's dimensions. This draft is fenced to the exact
   // source archive and semantic extrusion ID; undo/reopen invalidates it.
   const [generalEditDraft,setGeneralEditDraft]=useState<{
-    extrudeId:string;archive:string;depth:string;
+    extrudeId:string;archive:string;source:ModelSession;depth:string;
   }|null>(null);
   // Presentation-only E combo: the actual feature is committed by RUNTIME/INTENT.
   const [featureCombo,setFeatureCombo]=useState<'extrude'|'cut'|null>(null);
@@ -302,6 +302,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const generalEditTarget=generalBodies.find(b=>b.extrudeId===generalTargetId)??null;
   const generalEditDepth=generalEditTarget
     ?generalEditDraft?.extrudeId===generalEditTarget.extrudeId&&
+      generalEditDraft.source===history&&
       generalEditDraft.archive===serializeModelSession(history)
       ?generalEditDraft.depth:String(generalEditTarget.depthMm)
     :'';
@@ -1549,7 +1550,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               disabled={!generalEditTarget} value={generalEditDepth}
               onChange={e=>setGeneralEditDraft({
                 extrudeId:generalTargetId,archive:serializeModelSession(history),
-                depth:e.target.value,
+                source:history,depth:e.target.value,
               })}/></span>
           </label>
           <label className="runtime-scalar"><span>New cut feature ID</span>
