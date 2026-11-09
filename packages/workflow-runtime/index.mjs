@@ -10,6 +10,8 @@ import {editSelectedProfileHoleLayout as authorProfileHoleLayout, inspectSelecte
 import {serializeSketch} from '@intuit3d/sketch';
 import {createClosedContour,editClosedContourVertices,dragClosedContourVertex,inspectClosedContour} from '@intuit3d/sketch/closed-contour-authoring/v1';
 import {proposeSelectedPlateProfile} from '@intuit3d/sketch/selected-profile/v1';
+import {insertClosedContourTab,editTabbedContourVertex,inspectTabbedClosedContour}
+  from '@intuit3d/sketch/closed-contour-insertion/v1';
 import {applyPlateHoleOperations,planRectangularHoleArray,planCircularHolePattern,planRigidHoleTransform,planHoleLayoutResize} from './hole-edit.mjs';
 export {WORKFLOW_INVALIDATION_FORMAT, WORKFLOW_INVALIDATION_VERSION, diffWorkflowPlans} from './invalidation.mjs';
 
@@ -17,6 +19,8 @@ export const WORKFLOW_RUNTIME_FORMAT = 'intuit3d.workflow-runtime-evaluation';
 export const WORKFLOW_RUNTIME_VERSION = 1;
 export const CLOSED_CONTOUR_TRANSACTION_FORMAT = 'intuit3d.runtime.closed-contour-transaction';
 export const CLOSED_CONTOUR_TRANSACTION_VERSION = 1;
+export const TABBED_CONTOUR_TRANSACTION_FORMAT = 'intuit3d.runtime.tabbed-contour-transaction';
+export const TABBED_CONTOUR_TRANSACTION_VERSION = 1;
 
 const required = {
   model: ['planProject'],
@@ -301,6 +305,137 @@ export function createWorkflowRuntime(services) {
       contourId:fresh.contourId,nextSketchSignature:fresh.nextSourceSignature,
       sourceRevision:previous.document.revision,revision:report.revision,
       exactAuthority:false};
+  }
+
+
+  /**
+   * One authoritative transaction for a SKETCH-owned tab insertion or vertex
+   * dimension edit. No consumer-supplied sketch, mesh, or guessed successor can
+   * enter the journal: replay the exact SKETCH operation from the current
+   * canonical project and compare the COMPLETE reviewed acceptance.
+   */
+  function commitTabbedContour(historyInput,request) {
+    const previous=transactions.parseUndoHistory(historyInput);
+    const refused=(code,reason,extra={})=>({
+      kind:'refused',code,notCommitted:true,reason,
+      sourceProjectId:previous.document.projectId,
+      sourceRevision:previous.document.revision,...extra,
+    });
+    if(!request||request.format!==TABBED_CONTOUR_TRANSACTION_FORMAT||
+       request.version!==TABBED_CONTOUR_TRANSACTION_VERSION||
+       !['insert','edit'].includes(request.operation)||
+       !['require_admissible','preserve_unresolved'].includes(
+         request.admission??'require_admissible')||
+       typeof request.sketchFeatureId!=='string'||!request.sketchFeatureId||
+       typeof request.eventId!=='string'||!request.eventId||
+       typeof request.expectedArchive!=='string'||
+       typeof request.expectedSketchSignature!=='string'||
+       !request.selection||typeof request.selection!=='object'||
+       !request.command||typeof request.command!=='object'||
+       !request.acceptance||typeof request.acceptance!=='object')
+      throw new TypeError('runtime tab: versioned source, command, selection and acceptance required');
+    if(request.expectedProjectId!==previous.document.projectId||
+       request.expectedRevision!==previous.document.revision)
+      return refused('stale_revision','project or revision changed since tab inspection');
+    if(request.expectedArchive!==save(previous))
+      return refused('stale_source','whole authoritative project archive changed since tab inspection');
+    const entries=model.planProject(previous.document).features;
+    const entry=entries.find(x=>x.feature.id===request.sketchFeatureId);
+    if(entry?.feature.kind!=='sketch'||!entry.feature.payload?.sketch)
+      return refused('missing_sketch','authoritative sketch feature is absent or inactive');
+    const source=sketch.validateSketch(entry.feature.payload.sketch);
+    const signature=serializeSketch(source);
+    if(signature!==request.expectedSketchSignature||
+       signature!==request.command.sourceSignature)
+      return refused('stale_sketch','source sketch differs from reviewed tab operation');
+    if(request.selection.sourceSignature!==signature||
+       typeof request.selection.candidateId!=='string')
+      return refused('invalid_selection','tab selection is not bound to current sketch signature');
+    if(request.command.kind!==
+         (request.operation==='insert'?'insert-closed-contour-tab':'edit-tabbed-contour-vertex')||
+       request.command.version!==1)
+      return refused('invalid_command','operation and SKETCH command disagree');
+    let accepted;
+    try {
+      accepted=request.operation==='insert'
+        ?insertClosedContourTab(source,request.selection,request.command)
+        :editTabbedContourVertex(source,request.selection,request.command);
+    } catch(error) {
+      return refused('sketch_refused',errorMessage(error));
+    }
+    if(accepted.kind!=='accepted')
+      return refused('sketch_refused',accepted.reason??'SKETCH refused tab authoring',
+        {sourceReason:accepted.reason??null,review:accepted});
+    if(JSON.stringify(accepted)!==JSON.stringify(request.acceptance))
+      return refused('changed_acceptance','reviewed tab acceptance differs from replayed SKETCH result');
+    const successor=sketch.validateSketch(accepted.sketch);
+    if(serializeSketch(successor)!==accepted.nextSourceSignature||
+       accepted.sourceSignature!==signature||
+       accepted.selection?.sourceSignature!==accepted.nextSourceSignature||
+       accepted.previewOnly!==true||accepted.nativeExact!==false||
+       accepted.exactBrepAvailable!==false||
+       accepted.independentStepQualified!==false)
+      return refused('invalid_successor','successor source or geometric authority is inconsistent');
+    const profile=proposeSelectedPlateProfile(successor,accepted.selection);
+    const inspection=inspectTabbedClosedContour(successor,accepted.selection,
+      accepted.contourId,accepted.tabId);
+    if(profile.kind!=='selected_analytic_profile'||
+       JSON.stringify(profile)!==JSON.stringify(accepted.profile)||
+       inspection.kind!=='tabbed_closed_contour'||
+       JSON.stringify(inspection.handles)!==JSON.stringify(accepted.handles))
+      return refused('invalid_successor','successor selection, handles or solved profile failed readmission');
+    const retired=request.operation==='insert'?accepted.retiredEntityIds:
+      [inspection.retiredEdgeId];
+    if(!Array.isArray(retired)||retired.length!==1||
+       typeof retired[0]!=='string'||
+       (request.operation==='insert'&&
+         (retired[0]!==request.command.edgeId||
+          accepted.previousCandidateId===accepted.nextCandidateId))||
+       successor.lines.some(line=>line.id===retired[0]))
+      return refused('invalid_successor','retired edge was silently rebound or not fully retired');
+    // A retired edge or prior profile may be referenced outside SKETCH.
+    // Without a qualified cross-feature repair mapping, fail closed rather
+    // than silently retargeting an existing authored feature.
+    const unsafeIds=new Set([retired[0]]);
+    if(request.operation==='insert')unsafeIds.add(accepted.previousCandidateId);
+    const contains=(value,seen=new Set())=>{
+      if(typeof value==='string')return unsafeIds.has(value);
+      if(value===null||typeof value!=='object'||seen.has(value))return false;
+      seen.add(value);
+      return Object.values(value).some(x=>contains(x,seen));
+    };
+    for(const other of entries) {
+      if(other.feature.id===request.sketchFeatureId)continue;
+      if(contains(other.feature))
+        return refused('retired_reference',
+          'another authored feature still references the retired edge or predecessor profile',
+          {dependentFeatureId:other.feature.id,retiredEdgeId:retired[0]});
+    }
+    const candidate=commit(previous,[{
+      eventId:request.eventId,type:'feature.edit',
+      featureId:request.sketchFeatureId,
+      patch:{payload:{...entry.feature.payload,sketch:successor}},
+    }],request.expectedRevision);
+    const report=inspect(candidate);
+    const state=report.features.find(x=>x.featureId===request.sketchFeatureId);
+    if(!state)return refused('invalid_successor','committed sketch is absent from evaluation plan');
+    if((request.admission??'require_admissible')==='require_admissible'&&
+       state.status!=='analytic_profile_only')
+      return refused('inadmissible_sketch',
+        'full-project source did not admit one analytic profile',
+        {candidateFeature:state,candidateRevision:report.revision});
+    return {kind:'committed',history:candidate,report,
+      sketchStatus:state.status,invalidation:diff(previous,candidate),
+      selection:structuredClone(accepted.selection),
+      contourId:accepted.contourId,tabId:accepted.tabId,
+      previousCandidateId:accepted.previousCandidateId,
+      nextCandidateId:accepted.nextCandidateId,
+      retiredEdgeIds:request.operation==='insert'?[...retired]:[],
+      createdEntityIds:request.operation==='insert'?
+        [...accepted.createdEntityIds]:[],
+      nextSketchSignature:accepted.nextSourceSignature,
+      sourceRevision:previous.document.revision,revision:report.revision,
+      exactAuthority:false,independentInteroperability:false};
   }
 
   function editSketchConstraints(history, request) {
@@ -800,5 +935,5 @@ export function createWorkflowRuntime(services) {
   function reopen(serialized) {
     return archive.deserializeModelArchive(serialized).history;
   }
-  return Object.freeze({inspect, diff, commit, editDimensions, commitClosedContour, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, editSelectedEdgeHoles, inspectSelectedEdgeHoles, inspectSelectedProfileHoles, editSelectedProfileHole, inspectSelectedProfileHoleLayout, editSelectedProfileHoleLayout, undo, redo, save, reopen});
+  return Object.freeze({inspect, diff, commit, editDimensions, commitClosedContour, commitTabbedContour, editSketchConstraints, editPlateHoles, patternPlateHoles, patternCircularHoles, transformPlateHoles, resizePlateHoleLayout, editSelectedEdgeHoles, inspectSelectedEdgeHoles, inspectSelectedProfileHoles, editSelectedProfileHole, inspectSelectedProfileHoleLayout, editSelectedProfileHoleLayout, undo, redo, save, reopen});
 }

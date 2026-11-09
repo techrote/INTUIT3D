@@ -1178,3 +1178,51 @@ browser-to-pinned-C++ and independent non-OCCT STEP.
 
 Executable regression: node --test
 packages/workflow-runtime/test/closed-contour-transaction.integration.test.mjs
+
+
+## Source-owned tab insertion journal — SKETCH #338 (stacked qualification)
+
+The optional `sketch.tabbed-contour/v1` command consumes reviewed SKETCH
+`@intuit3d/sketch/closed-contour-insertion/v1`. It is separate from the
+fixed-topology `sketch.contour/v1` create/edit/drag seam. The runtime accepts
+exactly one source-selected edge replacement with two new vertices, or one
+subsequent source-owned tab vertex dimension edit. Each transaction checks the
+**entire canonical project archive**, project ID/revision, previous sketch
+signature, source selection and the complete independently replayed SKETCH
+acceptance. It re-admits the successor profile/handles, explicitly retires the
+prior edge, refuses any other authored feature still referring to the old edge
+or predecessor profile, and commits one undoable INTENT event. A refusal
+publishes nothing and retains any still-current STEP bytes.
+
+Consumer request (see `test/tabbed-contour-session.integration.test.mjs` for the
+executable two-revision example):
+
+```js
+const sketchCommand={kind:'insert-closed-contour-tab',version:1,
+  sourceSignature:sketch.serializeSketch(currentSketch),
+  contourId:'panel',edgeId:'panel:edge:1',tabId:'panelTab',
+  vertices:[{x:140,y:20},{x:140,y:60}]};
+const accepted=insertClosedContourTab(currentSketch,selectedProfile,sketchCommand);
+if(accepted.kind!=='accepted')throw Error(accepted.reason);
+const snapshot=session.refresh();
+const receipt=session.applyCommand({
+  kind:'sketch.tabbed-contour/v1',projectId:snapshot.projectId,
+  expectedRevision:snapshot.revision,
+  request:{format:'intuit3d.runtime.tabbed-contour-transaction',version:1,
+    expectedArchive:session.save(),
+    expectedSketchSignature:sketchCommand.sourceSignature,
+    sketchFeatureId:'sketch.plate',eventId:'panel.tab.insert',
+    operation:'insert',selection:selectedProfile,
+    command:sketchCommand,acceptance:accepted},
+});
+// receipt.contourReceipt.retiredEdgeIds lists the original edge explicitly.
+// A second 'edit' command uses editTabbedContourVertex and its own fresh fence.
+```
+
+Run `node --test packages/workflow-runtime/test/tabbed-contour-session.integration.test.mjs`
+and `npm run typecheck --workspace @intuit3d/workflow-runtime` after
+installing locked workspace dependencies. This is authoritative **analytic
+SKETCH/INTENT replay**, not a new native STEP provider or multi-body capability.
+Native STEP for this newly inserted six-vertex outline remains **unqualified**
+until a pinned C++ and independent non-OCCT witness accept the exact edited
+source. WORKBENCH must separately implement the actual pointer gesture.

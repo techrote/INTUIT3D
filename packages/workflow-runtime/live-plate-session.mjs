@@ -136,6 +136,11 @@ export function createLivePlateSession({
       ? Object.freeze({format:'intuit3d.runtime.contour-receipt',version:1,
           projectId:after.report.projectId,revision:after.report.revision,
           contourId:outcome.contourId,selection:structuredClone(outcome.selection),
+          ...(outcome.tabId?{tabId:outcome.tabId,
+            previousCandidateId:outcome.previousCandidateId,
+            nextCandidateId:outcome.nextCandidateId,
+            retiredEdgeIds:[...outcome.retiredEdgeIds],
+            createdEntityIds:[...outcome.createdEntityIds]}:{}),
           nextSketchSignature:outcome.nextSketchSignature,exactAuthority:false})
       : null;
     return {kind:'candidate',before,after,next,invalidation,contourReceipt};
@@ -155,7 +160,7 @@ export function createLivePlateSession({
           ![
             'model.events','model.undo','model.redo',
             'model.feature.remove','model.feature.recover-closure','dimensions.batch',
-            'sketch.constraints','sketch.contour/v1','sketch.holes','sketch.holes.rectangular',
+            'sketch.constraints','sketch.contour/v1','sketch.tabbed-contour/v1','sketch.holes','sketch.holes.rectangular',
             'sketch.holes.circular','sketch.holes.transform',
             'sketch.holes.resize','sketch.holes.selected-edge',
              'sketch.holes.selected-profile','sketch.holes.selected-profile-layout',
@@ -258,6 +263,7 @@ export function createLivePlateSession({
           case 'dimensions.batch': return runtime.editDimensions(history,request);
           case 'sketch.constraints': return runtime.editSketchConstraints(history,request);
           case 'sketch.contour/v1': return runtime.commitClosedContour(history,{...request,expectedProjectId:command.projectId});
+          case 'sketch.tabbed-contour/v1': return runtime.commitTabbedContour(history,{...request,expectedProjectId:command.projectId});
           case 'sketch.holes': return runtime.editPlateHoles(history,request);
           case 'sketch.holes.rectangular': return runtime.patternPlateHoles(history,request);
           case 'sketch.holes.circular': return runtime.patternCircularHoles(history,request);
