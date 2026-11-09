@@ -463,3 +463,56 @@ kbd { font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; color: #829a
 }
 .runtime-solved-navigation button:hover {background:#315a6b;}
 .runtime-solved-navigation button:focus-visible {outline:2px solid #fbd28a;outline-offset:2px;}
+
+
+/* Evaluation-first ergonomics: keep real commands accessible at common
+   Windows/Firefox widths instead of clipping them behind the fixed-height shell.
+   Only the model-backed view changes; the optional preview sandbox is untouched. */
+.runtime-shell .titlebar {
+  height: auto; min-height: 58px; flex: 0 0 auto;
+  flex-wrap: wrap; gap: 7px 12px; padding-block: 7px;
+}
+.runtime-shell .project-title {
+  flex: 0 1 215px; min-width: 125px; overflow: hidden;
+  white-space: nowrap; text-overflow: ellipsis;
+}
+.runtime-shell .title-actions {
+  flex: 1 1 715px; min-width: 0; display: flex;
+  flex-wrap: wrap; justify-content: flex-end; gap: 4px 6px;
+}
+.runtime-shell .title-actions .ribbon-button {
+  min-width: 0; min-height: 30px; margin: 0; padding: 6px 8px;
+  font-size: 11px; line-height: 1.2;
+}
+.runtime-shell .toolstrip {
+  min-width: 0; overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: thin; scrollbar-color: #4c7186 #14202e;
+}
+.runtime-shell .toolstrip > .ribbon-group,
+.runtime-shell .toolstrip > .toolstrip-right { flex: none; }
+.runtime-shell .toolstrip > .toolstrip-right { margin-left: auto; }
+.runtime-shell .runtime-evaluation-guide {
+  flex: 0 0 auto; min-width: 0; max-height: min(29vh, 195px);
+  overflow: auto; padding: 7px 15px; border-bottom: 1px solid #36566a;
+  background: #162836; color: #b9d2dd; font-size: 11px;
+}
+.runtime-shell .runtime-evaluation-guide summary {
+  cursor: pointer; color: #c6e4eb; line-height: 1.5;
+}
+.runtime-shell .runtime-evaluation-guide summary strong {
+  color: #8ce2df; letter-spacing: .7px;
+}
+.runtime-shell .runtime-evaluation-guide summary span {
+  float: right; color: #9dc8d3; padding-left: 12px;
+}
+.runtime-shell .runtime-evaluation-guide ol {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 22px; margin: 10px 0 8px; padding-left: 22px;
+}
+.runtime-shell .runtime-evaluation-guide li { line-height: 1.5; }
+.runtime-shell .runtime-evaluation-guide p {
+  margin: 8px 0 3px; color: #a7c2cf; line-height: 1.4;
+}
+@media (max-width: 1060px) {
+  .runtime-shell .runtime-evaluation-guide ol { grid-template-columns: 1fr; }
+}
