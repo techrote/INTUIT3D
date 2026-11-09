@@ -580,41 +580,6 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         r={Math.max(2.5,Math.min(width,height)/30)}
         fill="#6af0cd55" stroke="#84f2d3" strokeDasharray="1 1"
         strokeWidth=".6" pointerEvents="none"/>}
-      {profileEditHandle&&onProfileHandleDrag&&<circle
-        data-testid="runtime-profile-drag-handle"
-        aria-label={'Drag selected semantic profile handle '+profileEditHandle.handleId}
-        role="slider" tabIndex={0}
-        cx={profilePreview?.x??profileEditHandle.position.x}
-        cy={profilePreview?.y??profileEditHandle.position.y}
-        r={Math.max(3,Math.min(width,height)/28)}
-        fill="#ffdb7c" stroke="#312913" strokeWidth=".9"
-        style={{cursor:'move',touchAction:'none'}}
-        onPointerDown={event=>{
-          if(event.button!==0)return;
-          event.preventDefault();event.stopPropagation();
-          event.currentTarget.setPointerCapture(event.pointerId);
-          profileMove.current={handleId:profileEditHandle.handleId,pointerId:event.pointerId,source:profile};
-          setProfilePreview(profileEditHandle.position);
-        }}
-        onPointerMove={event=>{
-          const active=profileMove.current;
-          if(!active||active.handleId!==profileEditHandle.handleId||
-             active.pointerId!==event.pointerId||active.source!==profile)return;
-          const at=pointerPosition(event);
-          if(at)setProfilePreview(at);
-        }}
-        onPointerUp={event=>{
-          const active=profileMove.current;
-          if(!active||active.pointerId!==event.pointerId)return;
-          event.stopPropagation();
-          profileMove.current=null;setProfilePreview(null);
-          if(active.source!==profile)return;
-          const at=pointerPosition(event);
-          if(at)onProfileHandleDrag(active.handleId,at.x,at.y);
-        }}
-        onPointerCancel={()=>{profileMove.current=null;setProfilePreview(null);}}
-        onLostPointerCapture={()=>{profileMove.current=null;setProfilePreview(null);}}
-      />}
       {contourEdges&&onContourEdgeDrag&&contourEdges.map(edge=>{
         const selected=selectedContourEdgeId===edge.edgeId;
         const offset=contourPreview?.edgeId===edge.edgeId?contourPreview.offsetMm:0;
@@ -679,6 +644,41 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
             }}/>
         </g>;
       })}
+      {profileEditHandle&&onProfileHandleDrag&&<circle
+        data-testid="runtime-profile-drag-handle"
+        aria-label={'Drag selected semantic profile handle '+profileEditHandle.handleId}
+        role="slider" tabIndex={0}
+        cx={profilePreview?.x??profileEditHandle.position.x}
+        cy={profilePreview?.y??profileEditHandle.position.y}
+        r={Math.max(3,Math.min(width,height)/28)}
+        fill="#ffdb7c" stroke="#312913" strokeWidth=".9"
+        style={{cursor:'move',touchAction:'none'}}
+        onPointerDown={event=>{
+          if(event.button!==0)return;
+          event.preventDefault();event.stopPropagation();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          profileMove.current={handleId:profileEditHandle.handleId,pointerId:event.pointerId,source:profile};
+          setProfilePreview(profileEditHandle.position);
+        }}
+        onPointerMove={event=>{
+          const active=profileMove.current;
+          if(!active||active.handleId!==profileEditHandle.handleId||
+             active.pointerId!==event.pointerId||active.source!==profile)return;
+          const at=pointerPosition(event);
+          if(at)setProfilePreview(at);
+        }}
+        onPointerUp={event=>{
+          const active=profileMove.current;
+          if(!active||active.pointerId!==event.pointerId)return;
+          event.stopPropagation();
+          profileMove.current=null;setProfilePreview(null);
+          if(active.source!==profile)return;
+          const at=pointerPosition(event);
+          if(at)onProfileHandleDrag(active.handleId,at.x,at.y);
+        }}
+        onPointerCancel={()=>{profileMove.current=null;setProfilePreview(null);}}
+        onLostPointerCapture={()=>{profileMove.current=null;setProfilePreview(null);}}
+      />}
     </g>
     <text x={minX+2} y={minY+8} fontSize={Math.max(2,width/30)} fill="#d1e5f1">
       SKETCH solver · analytic profile only
