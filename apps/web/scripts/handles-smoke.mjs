@@ -107,49 +107,6 @@ async function main() {
   check(await evaluate("document.querySelector('[data-testid=enter-model-runtime]')===null"), 'Legacy preview mounted alongside the model authority');
   await screenshot('00-model-first-start.png');
 
-  // Real narrow-window rendering: all title commands must remain on-screen,
-  // the long ribbon must be horizontally reachable, and the guide must expand
-  // without inserting synthetic modelling history or replacing the document.
-  await send('Emulation.setDeviceMetricsOverride',{
-    width:1024,height:800,deviceScaleFactor:1,mobile:false
-  });
-  await pause(180);
-  const narrow=await evaluate(`(() => {
-    const shell=document.querySelector('[data-testid="runtime-panel"]');
-    const actions=[...document.querySelectorAll('.runtime-shell .title-actions > button')];
-    const ribbon=shell?.querySelector('.toolstrip');
-    const last=document.querySelector('[data-testid="runtime-native-step-state"]');
-    const guide=document.querySelector('[data-testid="runtime-evaluation-guide"]');
-    if(!shell||!ribbon||!last||!guide||!actions.length)return null;
-    const visible=actions.every(el=>{
-      const box=el.getBoundingClientRect();
-      return box.left>=-1&&box.right<=innerWidth+1&&box.top>=0&&box.bottom<=innerHeight;
-    });
-    const scrollable=ribbon.scrollWidth>ribbon.clientWidth+10;
-    ribbon.scrollLeft=ribbon.scrollWidth;
-    const lastBox=last.getBoundingClientRect();
-    const navBox=ribbon.getBoundingClientRect();
-    const lastReached=lastBox.right<=navBox.right+1&&lastBox.left>=navBox.left-1;
-    ribbon.scrollLeft=0;
-    const revision=document.querySelector('[data-testid="runtime-revision"]')?.textContent;
-    guide.querySelector('summary')?.click();
-    const expanded=guide.open;
-    return {visible,scrollable,lastReached,expanded,revision,width:innerWidth};
-  })()`);
-  check(narrow?.visible&&narrow?.scrollable&&narrow?.lastReached&&narrow?.expanded,
-    'Evaluation controls inaccessible at 1024px: '+JSON.stringify(narrow));
-  await screenshot('00-evaluation-guide-1024.png');
-  check(await evaluate(`(() => {
-    const guide=document.querySelector('[data-testid="runtime-evaluation-guide"]');
-    guide.querySelector('summary').click();
-    return !guide.open&&document.querySelector('[data-testid="runtime-revision"]')?.textContent===${JSON.stringify(narrow.revision)};
-  })()`),'Guide disclosure must not change authoritative revision');
-  await send('Emulation.setDeviceMetricsOverride',{
-    width:1360,height:900,deviceScaleFactor:1,mobile:false
-  });
-  await pause(180);
-
-
   // Real React model-backed user path: select an admitted sketch contour by
   // pointer, explicitly choose its solver-owned width handle, type a precise
   // dimension, submit, then undo. No mock document or renderer authority.
@@ -2075,6 +2032,50 @@ async function main() {
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-edit-depth-value]')?.value==='4'"),
     'stale uncommitted 7 mm body draft resurrected after Undo/Redo');
   await screenshot('49-general-depth-draft-refused-after-undo-redo.png');
+
+  // Real narrow-window rendering: all title commands must remain on-screen,
+  // the long ribbon must be horizontally reachable, and the guide must expand
+  // without inserting synthetic modelling history or replacing the document.
+  await send('Emulation.setDeviceMetricsOverride',{
+    width:1024,height:800,deviceScaleFactor:1,mobile:false
+  });
+  await pause(180);
+  const narrow=await evaluate(`(() => {
+    const shell=document.querySelector('[data-testid="runtime-panel"]');
+    const actions=[...document.querySelectorAll('.runtime-shell .title-actions > button')];
+    const ribbon=shell?.querySelector('.toolstrip');
+    const last=document.querySelector('[data-testid="runtime-native-step-state"]');
+    const guide=document.querySelector('[data-testid="runtime-evaluation-guide"]');
+    if(!shell||!ribbon||!last||!guide||!actions.length)return null;
+    const visible=actions.every(el=>{
+      const box=el.getBoundingClientRect();
+      return box.left>=-1&&box.right<=innerWidth+1&&box.top>=0&&box.bottom<=innerHeight;
+    });
+    const scrollable=ribbon.scrollWidth>ribbon.clientWidth+10;
+    ribbon.scrollLeft=ribbon.scrollWidth;
+    const lastBox=last.getBoundingClientRect();
+    const navBox=ribbon.getBoundingClientRect();
+    const lastReached=lastBox.right<=navBox.right+1&&lastBox.left>=navBox.left-1;
+    ribbon.scrollLeft=0;
+    const revision=document.querySelector('[data-testid="runtime-revision"]')?.textContent;
+    guide.querySelector('summary')?.click();
+    const expanded=guide.open;
+    return {visible,scrollable,lastReached,expanded,revision,width:innerWidth};
+  })()`);
+  check(narrow?.visible&&narrow?.scrollable&&narrow?.lastReached&&narrow?.expanded,
+    'Evaluation controls inaccessible at 1024px: '+JSON.stringify(narrow));
+  await screenshot('00-evaluation-guide-1024.png');
+  check(await evaluate(`(() => {
+    const guide=document.querySelector('[data-testid="runtime-evaluation-guide"]');
+    guide.querySelector('summary').click();
+    return !guide.open&&document.querySelector('[data-testid="runtime-revision"]')?.textContent===${JSON.stringify(narrow.revision)};
+  })()`),'Guide disclosure must not change authoritative revision');
+  await send('Emulation.setDeviceMetricsOverride',{
+    width:1360,height:900,deviceScaleFactor:1,mobile:false
+  });
+  await pause(180);
+
+
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -2091,7 +2092,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','31c-solved-sketch-navigation.png','31a-edge-drag-admitted.png','31b-edge-undo-redo-archive-reopened.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png','38-actual-pointer-tab-draft.png','38b-source-refused-tab-preview.png','39-actual-pointer-tab-committed.png','40-actual-tab-semantic-dimension.png','41-actual-tab-worker-reopen.png','41a-reopened-tab-source-handle-selected.png','41b-reopened-tab-vertex-edited.png','41c-reopened-tab-vertex-undo-redo.png','41d-retired-tab-handle-not-selectable.png','41e-unselected-tab-vertex-direct-drag-preview.png','41f-unselected-tab-vertex-direct-drag-committed.png',
+    screenshots: ['00-model-first-start.png', '00-evaluation-guide-1024.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','31c-solved-sketch-navigation.png','31a-edge-drag-admitted.png','31b-edge-undo-redo-archive-reopened.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png','38-actual-pointer-tab-draft.png','38b-source-refused-tab-preview.png','39-actual-pointer-tab-committed.png','40-actual-tab-semantic-dimension.png','41-actual-tab-worker-reopen.png','41a-reopened-tab-source-handle-selected.png','41b-reopened-tab-vertex-edited.png','41c-reopened-tab-vertex-undo-redo.png','41d-retired-tab-handle-not-selectable.png','41e-unselected-tab-vertex-direct-drag-preview.png','41f-unselected-tab-vertex-direct-drag-committed.png',
       '42-general-selected-profile-extruded.png','43-general-explicit-body-cut-pending.png',
       '44-general-named-body-worker-reopened.png','45-general-post-import-depth-edited.png',
       '46-general-multi-body-original-target.png','47-general-multi-body-secondary-target.png',
