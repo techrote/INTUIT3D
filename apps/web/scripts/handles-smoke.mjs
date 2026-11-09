@@ -1595,6 +1595,54 @@ async function main() {
     'post-import edit Redo did not restore the edited inserted vertex');
   await screenshot('41c-reopened-tab-vertex-undo-redo.png');
 
+  // A second, *unselected* persisted vertex must be draggable in one gesture,
+  // without a preparatory inspector edit or synthesized source ownership.
+  const directTabDrag=await evaluate("(() => {const marker=[...document.querySelectorAll('[data-testid=runtime-contour-vertex-marker]')].find(el=>el.getAttribute('data-handle-id')?.startsWith('tab.')&&el.getAttribute('data-handle-id')?.endsWith(':handle:1'));const matrix=marker?.getScreenCTM();if(!marker||!matrix)return null;const x=Number(marker.getAttribute('cx')),y=Number(marker.getAttribute('cy'));const from=new DOMPoint(x,y).matrixTransform(matrix);const to=new DOMPoint(145,65).matrixTransform(matrix);return {id:marker.getAttribute('data-handle-id'),source:{x,y},from:{x:from.x,y:from.y},to:{x:to.x,y:to.y}}})()");
+  check(directTabDrag&&Math.hypot(directTabDrag.source.x-140,directTabDrag.source.y-60)<0.05,
+    'second saved SKETCH tab vertex not independently selectable for direct drag');
+  const directDragBefore=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  // Cancel a real gesture after moving: neither the model nor its selection
+  // acquires a new authoritative history entry.
+  await mouse('mouseMoved',directTabDrag.from.x,directTabDrag.from.y);
+  await mouse('mousePressed',directTabDrag.from.x,directTabDrag.from.y,1);
+  await mouse('mouseMoved',directTabDrag.to.x,directTabDrag.to.y,1);
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-contour-vertex-drag-preview]'))"),
+    'unselected source vertex did not show an ephemeral drag preview');
+  await key('Escape','Escape',27);
+  await mouse('mouseReleased',directTabDrag.to.x,directTabDrag.to.y);
+  check(await evaluate("!document.querySelector('[data-testid=runtime-contour-vertex-drag-preview]')"),
+    'Escape left an uncommitted source vertex preview');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===directDragBefore,
+    'Escape from direct source vertex drag changed the CAD journal');
+  check(await reopenedTabVertexAt(140,60),'cancelled direct vertex drag mutated its original coordinates');
+  // Commit via a second actual pointer press/move/release. The blue marker
+  // calls exactly the existing source-fenced SKETCH/RUNTIME tab editor.
+  await mouse('mouseMoved',directTabDrag.from.x,directTabDrag.from.y);
+  await mouse('mousePressed',directTabDrag.from.x,directTabDrag.from.y,1);
+  await mouse('mouseMoved',directTabDrag.to.x,directTabDrag.to.y,1);
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-contour-vertex-drag-preview]'))"),
+    'direct selected-source vertex proposal not rendered');
+  await screenshot('41e-unselected-tab-vertex-direct-drag-preview.png');
+  await mouse('mouseReleased',directTabDrag.to.x,directTabDrag.to.y);
+  await eventually(()=>reopenedTabVertexAt(145,65),
+    'actual blue-marker drag did not commit via SKETCH/RUNTIME');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")!==directDragBefore,
+    'direct source vertex drag did not create one authoritative revision');
+  check(!await reopenedTabVertexAt(140,60),
+    'direct source vertex drag retained the old vertex coordinates');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-tab-vertex-select]')?.value==="+JSON.stringify(directTabDrag.id)),
+    'directly dragged source vertex did not remain selected by exact semantic ID');
+  await screenshot('41f-unselected-tab-vertex-direct-drag-committed.png');
+  check(await edgeUndo(),'direct source vertex edit Undo unavailable');
+  await eventually(()=>reopenedTabVertexAt(140,60),
+    'Undo did not restore original unselected tab vertex coordinates');
+  check(await edgeRedo(),'direct source vertex edit Redo unavailable');
+  await eventually(()=>reopenedTabVertexAt(145,65),
+    'Redo did not restore directly dragged tab vertex coordinates');
+  check(await edgeUndo(),'restore prior source before retirement tests unavailable');
+  await eventually(()=>reopenedTabVertexAt(140,60),
+    'undo direct drag did not restore the saved post-import topology');
+
   // Three authoritative Undo events: the NEW post-import edit, the original
   // pre-save numeric edit and the structural insertion. The retired tab
   // handle must not survive as an editable option on the restored rectangle.
@@ -1789,7 +1837,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','31c-solved-sketch-navigation.png','31a-edge-drag-admitted.png','31b-edge-undo-redo-archive-reopened.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png','38-actual-pointer-tab-draft.png','38b-source-refused-tab-preview.png','39-actual-pointer-tab-committed.png','40-actual-tab-semantic-dimension.png','41-actual-tab-worker-reopen.png','41a-reopened-tab-source-handle-selected.png','41b-reopened-tab-vertex-edited.png','41c-reopened-tab-vertex-undo-redo.png','41d-retired-tab-handle-not-selectable.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','31c-solved-sketch-navigation.png','31a-edge-drag-admitted.png','31b-edge-undo-redo-archive-reopened.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png','38-actual-pointer-tab-draft.png','38b-source-refused-tab-preview.png','39-actual-pointer-tab-committed.png','40-actual-tab-semantic-dimension.png','41-actual-tab-worker-reopen.png','41a-reopened-tab-source-handle-selected.png','41b-reopened-tab-vertex-edited.png','41c-reopened-tab-vertex-undo-redo.png','41d-retired-tab-handle-not-selectable.png','41e-unselected-tab-vertex-direct-drag-preview.png','41f-unselected-tab-vertex-direct-drag-committed.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -1816,6 +1864,7 @@ async function main() {
     actualTwoPointTabCancelCommitDimensionUndoRedoWorkerReopen: true,
     postImportSourceOwnedTabHandleReselectedDimensionEditedUndoRedoRetiredHandleRefused: true,
     postImportPointerSelectedSemanticVertexWithoutJournalMutation: true,
+    unselectedPersistedTabVertexDirectPointerDragEscapeUndoRedo: true,
     solvedSketchWheelMiddlePanFitNoJournalAndSubsequentEdgeEdit: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
