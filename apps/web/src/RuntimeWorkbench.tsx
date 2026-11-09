@@ -119,6 +119,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   // A cut cannot silently choose the first/only body: this is an explicit
   // engineer decision which is discarded on a failed source fence.
   const [generalTargetId,setGeneralTargetId]=useState('');
+  // Editing an existing body's depth must never reuse the new-extrusion
+  // draft or another body's dimensions. This draft is fenced to the exact
+  // source archive and semantic extrusion ID; undo/reopen invalidates it.
+  const [generalEditDraft,setGeneralEditDraft]=useState<{
+    extrudeId:string;archive:string;depth:string;
+  }|null>(null);
   // Presentation-only E combo: the actual feature is committed by RUNTIME/INTENT.
   const [featureCombo,setFeatureCombo]=useState<'extrude'|'cut'|null>(null);
   const [selected,setSelected]=useState('plate');
@@ -293,6 +299,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const plateAuthored=featureRows.some(row=>row.featureId==='plate');
   const cutAuthored=featureRows.some(row=>row.featureId==='cut');
   const generalBodies=useMemo(()=>generalProfileBodies(history),[history]);
+  const generalEditTarget=generalBodies.find(b=>b.extrudeId===generalTargetId)??null;
+  const generalEditDepth=generalEditTarget
+    ?generalEditDraft?.extrudeId===generalEditTarget.extrudeId&&
+      generalEditDraft.archive===serializeModelSession(history)
+      ?generalEditDraft.depth:String(generalEditTarget.depthMm)
+    :'';
   // The explicit target-body choice also determines the displayed analytic
   // solid. Otherwise a multi-body project can label a cut on body A while
   // still rendering body B from the feature-browser selection.
@@ -625,9 +637,9 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       if(liveHistory.current!==history)throw Error('Displayed source changed. Reselect the contour.');
       const body=generalBodies.find(b=>b.extrudeId===generalTargetId);
       if(!body)throw Error('Select the exact named extrusion/body to reconfigure.');
-      if(!generalDraft.depth.trim())throw Error('Enter a positive depth.');
+      if(!generalEditDepth.trim())throw Error('Enter a positive selected-body depth.');
       const result=redimensionGeneralProfileExtrusion(history,pointerSelection,pointerSourceArchive,
-        body.extrudeId,body.bodyId,Number(generalDraft.depth));
+        body.extrudeId,body.bodyId,Number(generalEditDepth));
       acceptHistory(result.history);setSelected(body.extrudeId);setSketchMode(false);
       setMessage('Reconfigured '+body.extrudeId+' to '+result.depthMm+' mm at revision '+
         result.history.document.revision+'; dependent cuts invalidated. Preview only; STEP revoked.');
@@ -1531,6 +1543,15 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               </select>
             </span>
           </label>
+          <label className="runtime-scalar"><span>Selected body depth · mm</span>
+            <span className="runtime-scalar-control"><input type="number" step="any"
+              data-testid="runtime-general-edit-depth-value" min="0.001" max="10000"
+              disabled={!generalEditTarget} value={generalEditDepth}
+              onChange={e=>setGeneralEditDraft({
+                extrudeId:generalTargetId,archive:serializeModelSession(history),
+                depth:e.target.value,
+              })}/></span>
+          </label>
           <label className="runtime-scalar"><span>New cut feature ID</span>
             <span className="runtime-scalar-control"><input type="text"
               data-testid="runtime-general-cut-id" value={generalDraft.cutId}
@@ -1542,7 +1563,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
             onClick={authorNamedCut}>Cut explicitly selected named body</button>
           <button type="button" className="ribbon-button"
             data-testid="runtime-general-edit-depth"
-            disabled={!canGeneralCommit||!generalBodies.some(b=>b.extrudeId===generalTargetId)}
+            disabled={!canGeneralCommit||!generalEditTarget||!generalEditDepth.trim()||
+              Number(generalEditDepth)===generalEditTarget.depthMm}
             onClick={redimensionNamedExtrusion}>Reconfigure selected body depth</button>
           <div data-testid="runtime-general-body-status">
             {generalBodies.map(b=><p className="microcopy" key={b.extrudeId}>
