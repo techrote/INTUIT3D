@@ -1356,6 +1356,133 @@ async function main() {
   await clickControl('[data-testid="runtime-import-review-confirm"]');
   await eventually(()=>realRightEdgeAt(originalRightX),'reopened edge history lost original analytic geometry');
   await screenshot('31b-edge-undo-redo-archive-reopened.png');
+
+  // #338: actual browser pointer tab authoring. This is deliberately inserted
+  // on the same from-empty, 4-vertex model before its existing vertex journey,
+  // then undone so all older from-empty acceptance remains independent.
+  await clickControl('[data-testid="runtime-profile-select-mode"]');
+  const tabPick=await evaluate(`(() => {
+    const polygon=document.querySelector('[data-testid=runtime-sketch] polygon');
+    const matrix=polygon?.getScreenCTM();if(!matrix)return null;
+    const p=new DOMPoint(45,35).matrixTransform(matrix);
+    return {x:p.x,y:p.y};
+  })()`);
+  check(tabPick,'tab insertion has no real SVG source contour');
+  await mouse('mouseMoved',tabPick.x,tabPick.y);
+  await mouse('mousePressed',tabPick.x,tabPick.y,1);
+  await mouse('mouseReleased',tabPick.x,tabPick.y);
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-contour-edge-editor]'))"),
+    'tab source contour did not expose original solver-owned edge inventory');
+  check(await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-contour-edge-select]');
+    const match=[...s?.options||[]].find(o=>o.value.endsWith(':edge:1'));
+    if(!match)return false;
+    s.value=match.value;s.dispatchEvent(new Event('change',{bubbles:true}));return true;
+  })()`),'original right edge unavailable for tab insertion');
+  const tabOriginalRevision=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  await clickControl('[data-testid="runtime-solved-zoom-out"]');
+  await clickControl('[data-testid="runtime-tab-start"]');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-tab-draft]'))"),
+    'two-point tab draft not available');
+  const tabPointClick=async(x,y)=>{
+    const pos=await evaluate(`(() => {
+      const polygon=document.querySelector('[data-testid=runtime-sketch] polygon');
+      const matrix=polygon?.getScreenCTM();if(!matrix)return null;
+      const p=new DOMPoint(${x},${y}).matrixTransform(matrix);
+      return {x:p.x,y:p.y};
+    })()`);
+    check(pos&&Number.isFinite(pos.x),'real tab pointer projection unavailable');
+    await mouse('mouseMoved',pos.x,pos.y);
+    await mouse('mousePressed',pos.x,pos.y,1);
+    await mouse('mouseReleased',pos.x,pos.y);
+  };
+  // Cancel from one real pointer vertex: no RUNTIME event, no retained draft.
+  await tabPointClick(140,20);
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-tab-draft]')?.textContent?.includes('1/2')"),
+    'first tab vertex was not placed by an actual browser pointer');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===tabOriginalRevision,
+    'an uncommitted tab pointer click changed the CAD revision');
+  await clickControl('[data-testid="runtime-tab-cancel"]');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-tab-draft]')"),
+    'tab cancellation retained the abandoned pointer draft');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===tabOriginalRevision,
+    'Cancel committed an unreviewed structural sketch change');
+  await clickControl('[data-testid="runtime-tab-start"]');
+  await tabPointClick(140,20);
+  await tabPointClick(140,60);
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid=runtime-tab-draft-vertex]').length===2"),
+    'two actual tab pointer vertices did not render on the solved sketch');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===tabOriginalRevision,
+    'uncommitted tab vertices bypassed authoritative RUNTIME admission');
+  await screenshot('38-actual-pointer-tab-draft.png');
+  await clickControl('[data-testid="runtime-tab-commit"]');
+  const tabSixVertices=()=>evaluate(`(() => {
+    const data=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
+    return data.trim().split(/\\s+/).length===6;
+  })()`);
+  try{await eventually(tabSixVertices,'two-pointer tab failed RUNTIME/SKETCH admission');}
+  catch(err){
+    const details=await evaluate(`(() => ({
+      polygon:document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points'),
+      message:[...document.querySelectorAll('.runtime-message')].map(x=>x.textContent),
+      editor:document.querySelector('[data-testid=runtime-tabbed-contour]')?.textContent
+    }))()`);
+    await screenshot('39-tab-admission-failed.png');
+    throw Error(String(err)+' source tab diagnostics='+JSON.stringify(details));
+  }
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")!==tabOriginalRevision,
+    'tab insertion did not journal one real revision');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-tabbed-contour]'))"),
+    'inserted tab did not yield SKETCH-owned successor semantic handles');
+  await screenshot('39-actual-pointer-tab-committed.png');
+  check(await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-tab-vertex-select]');
+    const match=[...s?.options||[]].find(o=>o.value.startsWith('tab.')&&o.value.endsWith(':handle:0'));
+    if(!match)return false;
+    s.value=match.value;s.dispatchEvent(new Event('change',{bubbles:true}));return true;
+  })()`),'inserted tab handle is absent from the successor selection');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-drawn-contour-vertex-editor]'))"),
+    'inserted tab vertex did not expose numeric dimensions');
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-drawn-vertex-x]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'inserted tab X handle is not keyboard focusable');
+  await send('Input.insertText',{text:'145'});
+  await clickControl('[data-testid="runtime-drawn-vertex-commit"]');
+  await eventually(()=>evaluate(`(() => {
+    const data=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
+    return data.trim().split(/\\s+/).some(v=>{
+      const [x,y]=v.split(',').map(Number);return Math.abs(x-145)<0.05&&Math.abs(y-20)<0.05;
+    });
+  })()`),'precise tab vertex numeric edit failed authoritative replay');
+  await screenshot('40-actual-tab-semantic-dimension.png');
+  check(await edgeUndo(),'tab vertex undo unavailable');
+  await eventually(tabSixVertices,'tab edit Undo destroyed contour topology');
+  check(await edgeRedo(),'tab vertex redo unavailable');
+  await eventually(()=>evaluate(`(() => {
+    const data=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
+    return data.trim().split(/\\s+/).some(v=>{
+      const [x,y]=v.split(',').map(Number);return Math.abs(x-145)<0.05&&Math.abs(y-20)<0.05;
+    });
+  })()`),'tab edit redo lost solver-owned inserted vertex');
+  const tabSaveCount=await evaluate("window.__modelArchiveBlobs.length");
+  await clickControl('[data-testid="runtime-save-archive"]');
+  await eventually(()=>evaluate('window.__modelArchiveBlobs.length==='+ (tabSaveCount+1)),
+    'edited six-vertex tab archive not saved');
+  check(await evaluate("((async()=>{const text=await window.__modelArchiveBlobs.at(-1).text();const dt=new DataTransfer();dt.items.add(new File([text],'tabbed-sketched.i3d-model.json',{type:'application/json'}));const el=document.querySelector('.runtime-file-input');el.files=dt.files;el.dispatchEvent(new Event('change',{bubbles:true}));return true})())"),
+    'tabbed model archive could not be selected for Worker review');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'tabbed archive failed to reach real Worker confirmation');
+  await clickControl('[data-testid="runtime-import-review-confirm"]');
+  await eventually(tabSixVertices,'tabbed archive lost its six-vertex outline on reopen');
+  await screenshot('41-actual-tab-worker-reopen.png');
+  // Reversing two journal entries restores the existing four-vertex acceptance
+  // fixture without deleting or silently rebinding its semantic edge IDs.
+  check(await edgeUndo(),'reopened tab numeric Undo unavailable');
+  check(await edgeUndo(),'reopened tab insertion Undo unavailable');
+  await eventually(()=>evaluate(`(() => {
+    const data=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
+    return data.trim().split(/\\s+/).length===4;
+  })()`),'tab insertion Undo did not recover the original four-edge contour');
+
   const originalDrawnVertex=await evaluate(`(() => {
     const text=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
     const pair=text.trim().split(/\\s+/)[2]?.split(',').map(Number);
@@ -1549,6 +1676,7 @@ async function main() {
     genuineDrawnContourExtrusionHoleCutUndoRedoSaveReopen: true,
     genuinelyDrawnVertexNumericAndPointerEditUndoRedoReopen: true,
     genuineContourEdgePointerOffsetUndoRedoArchiveReopen: true,
+    actualTwoPointTabCancelCommitDimensionUndoRedoWorkerReopen: true,
     solvedSketchWheelMiddlePanFitNoJournalAndSubsequentEdgeEdit: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
