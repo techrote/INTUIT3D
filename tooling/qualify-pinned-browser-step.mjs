@@ -208,6 +208,69 @@ async function drawnFromEmptyPhysical(expected){
   await until(()=>evalInPage('document.querySelector("[data-testid=runtime-hole-inspector] .section-head")?.textContent?.includes("2")'),'real browser redo second bore');
   await until(()=>evalInPage('document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled===true'),'redo still revokes stale STEP');
   await screenshot('drawn-05-redo.png');
+  // Retrospectively edit the earlier extrusion through actual 3D keyboard
+  // interaction, after the dependent cut and second bore already exist. This
+  // is an authored physical dimension change, not a direct RUNTIME call.
+  // The selected thickness grip commits four separate 1 mm, revision-fenced
+  // edits. Undo and Redo must revoke the previous original C++ STEP bytes.
+  const beforeThicknessRevision=await evalInPage(
+    'document.querySelector("[data-testid=runtime-revision]")?.textContent');
+  // Adding/editing a sketch hole deliberately leaves the workbench in XY
+  // sketch mode. The 3D extrusion grip is not rendered there. Use the real
+  // Solid ribbon button, not direct React state manipulation, to return to
+  // the physical 3D edit surface before exercising the grip.
+  await click('runtime-mode-solid');
+  await until(()=>evalInPage(
+    'Boolean(document.querySelector("[data-testid=runtime-thickness-handle]"))'),
+    'actual 3D thickness grip after real Solid ribbon navigation');
+  requireValid(await evalInPage(
+    'document.querySelector("[data-testid=runtime-thickness-handle]")?.getAttribute("aria-valuenow")==="8"'),
+    'Drawn cut has no actual 8 mm solid thickness handle');
+  // Accessible keyboard navigation: focus the preceding real camera FIT
+  // button, then press Tab to enter the following native thickness slider.
+  // A pointer-down on the grip currently prevents default focus to support
+  // drag capture; do not pretend an unfocused ArrowUp will edit the model.
+  await click('runtime-camera-fit');
+  await send('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',
+    code:'Tab',windowsVirtualKeyCode:9});
+  await send('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',
+    code:'Tab',windowsVirtualKeyCode:9});
+  requireValid(await evalInPage(
+    'document.activeElement?.getAttribute("data-testid")==="runtime-thickness-handle"'),
+    'Real keyboard Tab did not focus the accessible 3D thickness slider');
+  for(let step=9;step<=12;step++){
+    await send('Input.dispatchKeyEvent',{type:'keyDown',key:'ArrowUp',
+      code:'ArrowUp',windowsVirtualKeyCode:38});
+    await send('Input.dispatchKeyEvent',{type:'keyUp',key:'ArrowUp',
+      code:'ArrowUp',windowsVirtualKeyCode:38});
+    await until(()=>evalInPage(
+      'document.querySelector("[data-testid=runtime-thickness-handle]")?.getAttribute("aria-valuenow")==='+JSON.stringify(String(step))),
+      'actual 3D thickness keyboard handle at '+step+' mm');
+  }
+  await until(()=>evalInPage(
+    'document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled===true'),
+    'retrospective extrusion edit did not revoke stale STEP');
+  const revisionThicknessEdited=await evalInPage(
+    'document.querySelector("[data-testid=runtime-revision]")?.textContent');
+  requireValid(revisionThicknessEdited!==beforeThicknessRevision,
+    '3D keyboard dimension change did not journal');
+  await screenshot('drawn-05b-3d-thickness-edited-12mm.png');
+  await clickHistoryAction('Undo');
+  await until(()=>evalInPage(
+    'document.querySelector("[data-testid=runtime-thickness-handle]")?.getAttribute("aria-valuenow")==="11"'),
+    'real Undo did not restore preceding 11 mm extrusion');
+  await until(()=>evalInPage(
+    'document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled===true'),
+    'thickness Undo retained stale STEP');
+  await screenshot('drawn-05c-thickness-undo-11mm.png');
+  await clickHistoryAction('Redo');
+  await until(()=>evalInPage(
+    'document.querySelector("[data-testid=runtime-thickness-handle]")?.getAttribute("aria-valuenow")==="12"'),
+    'real Redo did not restore revised 12 mm extrusion');
+  await until(()=>evalInPage(
+    'document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled===true'),
+    'thickness Redo retained stale STEP');
+  await screenshot('drawn-05d-thickness-redo-12mm.png');
   const currentRevision=await evalInPage('document.querySelector("[data-testid=runtime-revision]")?.textContent');
   const before=await evalInPage('window.__capturedPinned.length');
   await click('runtime-save-archive');
@@ -231,11 +294,12 @@ async function drawnFromEmptyPhysical(expected){
     provider:'actual installed Linux OCCT8 C++ worker via browser and persistent RUNTIME',
     nativeWorkerSha256:expected,independentCadInteroperability:false,
     journey:'drawn-from-empty',revisionEarlier:earlierRevision,revisionEdited:editedRevision,
-    revisionCurrent:currentRevision,earlier,current,
+    revisionCurrent:currentRevision,revisionThicknessEdited,earlier,current,
     reopened:{file:'drawn-user-reopened.i3d-model.json',sha256:hash(saved)},
     authoredFeatures:{sketchSource:'four_real_pointer_clicks_from_zero_entities',
       pointerDrawnClosedProfile:true,extrusion:'actual_browser_control',
       cut:'actual_browser_control',earlierFeatureEdit:'second_solver_admitted_bore',
+      retrospectiveDimensionEdit:'real_3d_thickness_grip_8_to_12mm_ArrowUp_Undo_Redo',
       undoRedo:'real_browser_controls',sourceRevocation:true},
     caveat:'Current original STEP must pass the separately compiled non-OCCT AnvilCAD volume, material and wrong-one-bore witness'};
   writeFileSync(join(output,'browser-receipt.json'),JSON.stringify(report,null,2)+'\n');
