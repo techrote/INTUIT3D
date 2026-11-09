@@ -107,6 +107,49 @@ async function main() {
   check(await evaluate("document.querySelector('[data-testid=enter-model-runtime]')===null"), 'Legacy preview mounted alongside the model authority');
   await screenshot('00-model-first-start.png');
 
+  // Real narrow-window rendering: all title commands must remain on-screen,
+  // the long ribbon must be horizontally reachable, and the guide must expand
+  // without inserting synthetic modelling history or replacing the document.
+  await send('Emulation.setDeviceMetricsOverride',{
+    width:1024,height:800,deviceScaleFactor:1,mobile:false
+  });
+  await pause(180);
+  const narrow=await evaluate(`(() => {
+    const shell=document.querySelector('[data-testid="runtime-panel"]');
+    const actions=[...document.querySelectorAll('.runtime-shell .title-actions > button')];
+    const ribbon=shell?.querySelector('.toolstrip');
+    const last=document.querySelector('[data-testid="runtime-native-step-state"]');
+    const guide=document.querySelector('[data-testid="runtime-evaluation-guide"]');
+    if(!shell||!ribbon||!last||!guide||!actions.length)return null;
+    const visible=actions.every(el=>{
+      const box=el.getBoundingClientRect();
+      return box.left>=-1&&box.right<=innerWidth+1&&box.top>=0&&box.bottom<=innerHeight;
+    });
+    const scrollable=ribbon.scrollWidth>ribbon.clientWidth+10;
+    ribbon.scrollLeft=ribbon.scrollWidth;
+    const lastBox=last.getBoundingClientRect();
+    const navBox=ribbon.getBoundingClientRect();
+    const lastReached=lastBox.right<=navBox.right+1&&lastBox.left>=navBox.left-1;
+    ribbon.scrollLeft=0;
+    const revision=document.querySelector('[data-testid="runtime-revision"]')?.textContent;
+    guide.querySelector('summary')?.click();
+    const expanded=guide.open;
+    return {visible,scrollable,lastReached,expanded,revision,width:innerWidth};
+  })()`);
+  check(narrow?.visible&&narrow?.scrollable&&narrow?.lastReached&&narrow?.expanded,
+    'Evaluation controls inaccessible at 1024px: '+JSON.stringify(narrow));
+  await screenshot('00-evaluation-guide-1024.png');
+  check(await evaluate(`(() => {
+    const guide=document.querySelector('[data-testid="runtime-evaluation-guide"]');
+    guide.querySelector('summary').click();
+    return !guide.open&&document.querySelector('[data-testid="runtime-revision"]')?.textContent===${JSON.stringify(narrow.revision)};
+  })()`),'Guide disclosure must not change authoritative revision');
+  await send('Emulation.setDeviceMetricsOverride',{
+    width:1360,height:900,deviceScaleFactor:1,mobile:false
+  });
+  await pause(180);
+
+
   // Real React model-backed user path: select an admitted sketch contour by
   // pointer, explicitly choose its solver-owned width handle, type a precise
   // dimension, submit, then undo. No mock document or renderer authority.
