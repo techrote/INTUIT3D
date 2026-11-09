@@ -441,8 +441,10 @@ async function main() {
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-plate]')?.textContent==='preview_only'"),'model-backed plate evaluated');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
     'Unimplemented native cut was incorrectly reported exact');
-  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent?.includes('NO EXACT KERNEL')"),
+  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent?.includes('VIEWPORT IS PREVIEW')"),
     'Model-backed exactness warning absent');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-step-state]')?.textContent?.includes('NATIVE STEP UNAVAILABLE')"),
+    'Workbench advertised a native STEP before an evaluated source-matched provider');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-3d-viewport] canvas'))"),'real profile 3D preview');
   await screenshot('10-model-runtime-solid.png');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(x=>x.textContent?.trim()==='Sketch');b?.click();return !!b})()"),
@@ -929,7 +931,7 @@ async function main() {
     'real selected-edge hole did not become authored SKETCH constraints');
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")!==edgeBefore,
     'selected-edge edit did not advance the authoritative model revision');
-  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent?.toLowerCase().includes('exact')"),
+  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent?.includes('VIEWPORT IS PREVIEW')"),
     'exactness state disappeared after anchored-hole authoring');
   await screenshot('27-model-edge-anchored-hole.png');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
