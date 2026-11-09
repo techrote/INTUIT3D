@@ -1,13 +1,14 @@
 import {useState} from 'react';
 import type {FormEvent} from 'react';
 import type {ClosedContourHandle} from '@intuit3d/sketch/closed-contour-authoring/v1';
+import type {TabbedContourHandle} from '@intuit3d/sketch/closed-contour-insertion/v1';
 
 /** Ephemeral numeric coordinates for one explicitly chosen solver-owned vertex.
  * The parent keys this form by source revision, archive and semantic handle.
  * RUNTIME still owns all admission, revision changes and undo history.
  */
 export function ClosedContourVertexEditor({handle,disabled,onCommit}:{
-  handle:ClosedContourHandle;disabled:boolean;
+  handle:ClosedContourHandle|TabbedContourHandle;disabled:boolean;
   onCommit:(position:{x:number;y:number})=>void;
 }) {
   const [x,setX]=useState(String(handle.position.x));
@@ -29,7 +30,8 @@ export function ClosedContourVertexEditor({handle,disabled,onCommit}:{
   };
   return <form className="runtime-hole-add" onSubmit={commit}
     data-testid="runtime-drawn-contour-vertex-editor">
-    <strong>{handle.kind==='origin'?'Origin':'Vertex '+handle.index} · {handle.handleId}</strong>
+    <strong>{handle.kind==='origin'?'Origin':handle.kind==='inserted'?'Inserted tab vertex':
+      'index' in handle?'Vertex '+handle.index:'Original vertex'} · {handle.handleId}</strong>
     <label className="runtime-scalar"><span>Vertex X · mm</span>
       <span className="runtime-scalar-control"><input type="number" step="any"
         data-testid="runtime-drawn-vertex-x" aria-label="Selected drawn vertex X in millimetres"

@@ -16,7 +16,8 @@ import { panBlankCanvas, zoomBlankCanvas, type BlankCanvasView } from './blankCa
  * profile. Never used as document state, a STEP source, or geometric proof. */
 type HoleId = string;
 export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick, onThicknessEdit, onProfilePick, profileEditHandle, onProfileHandleDrag,
-  contourEdges, selectedContourEdgeId, onContourEdgePick, onContourEdgeDrag, onContourEdgeOffset, sketchProjectKey }: {
+  contourEdges, selectedContourEdgeId, onContourEdgePick, onContourEdgeDrag, onContourEdgeOffset,
+  tabPoints,tabEdge,onTabPoint,sketchProjectKey }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
   /** Clear ephemeral navigation on project replacement; never on a CAD edit. */
   sketchProjectKey?: string;
@@ -42,6 +43,10 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   onContourEdgePick?:(edgeId:string)=>void;
   onContourEdgeDrag?:(edgeId:string,start:{x:number;y:number},target:{x:number;y:number})=>void;
   onContourEdgeOffset?:(edgeId:string,offsetMm:number)=>void;
+  /** Uncommitted, entirely ephemeral two-point tab overlay. */
+  tabPoints?:readonly {x:number;y:number}[];
+  tabEdge?:ContourOffsetEdge|null;
+  onTabPoint?:(x:number,y:number,precise:boolean)=>void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   // A long-lived Three.js canvas must always call the latest React selection callback.
@@ -473,7 +478,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   return sketchMode ? <>
     <svg ref={sketchSvg} data-testid="runtime-sketch" className="runtime-sketch-svg"
     viewBox={sketchViewBox} aria-label="Solved SKETCH boundary and circular holes in millimetres"
-    style={onCirclePick||onProfilePick?{cursor:'crosshair'}:undefined}
+    style={onCirclePick||onProfilePick||onTabPoint?{cursor:'crosshair'}:undefined}
     onPointerDown={startSketchPan}
     onPointerMove={event=>{
       if(moveSketchPan(event))return;
@@ -484,20 +489,29 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
     onLostPointerCapture={()=>{sketchPan.current=null;}}
     onPointerLeave={()=>setCircleHover(null)}
     onClick={event=>{
-      if(event.button!==0||(!onCirclePick&&!onProfilePick))return;
+      if(event.button!==0||(!onCirclePick&&!onProfilePick&&!onTabPoint))return;
       const point=pointFromScreen(event.currentTarget,event.clientX,event.clientY);
       if(point){
-        if(onCirclePick)onCirclePick(point.x,point.y);
+        if(onTabPoint)onTabPoint(point.x,point.y,event.shiftKey);
+         else if(onCirclePick)onCirclePick(point.x,point.y);
         else onProfilePick?.(point.x,point.y);
       }
     }}>
-    {onCirclePick&&<rect x={minX-width*.12} y={minY-height*.12}
-      width={width*1.24} height={height*1.24}
+    {(onCirclePick||onTabPoint)&&<rect x={activeSketchView.x} y={activeSketchView.y}
+      width={activeSketchView.width} height={activeSketchView.height}
       fill="transparent" pointerEvents="all" data-testid="runtime-circle-hit-surface"/>}
     <g transform={`translate(0 ${minY+maxY}) scale(1 -1)`}
-       pointerEvents={onCirclePick?'none':undefined}>
+       pointerEvents={onCirclePick||onTabPoint?'none':undefined}>
       <polygon points={profile.outer.map(p=>`${p.x},${p.y}`).join(' ')}
         fill="#34758b22" stroke="#76d1e5" strokeWidth=".5" vectorEffect="non-scaling-stroke"/>
+       {tabEdge&&tabPoints&&tabPoints.length>0&&<polyline data-testid="runtime-tab-outline-preview"
+         pointerEvents="none" points={[tabEdge.start,...tabPoints,tabEdge.end].map(p=>`${p.x},${p.y}`).join(' ')}
+         fill="none" stroke="#ffdb7c" strokeDasharray="4 2" strokeWidth="2"
+         vectorEffect="non-scaling-stroke"/>}
+       {tabPoints?.map((p,i)=><circle key={i} data-testid="runtime-tab-draft-vertex"
+         pointerEvents="none" cx={p.x} cy={p.y}
+         r={Math.max(2,Math.min(width,height)/36)*sketchMarkerScale}
+         stroke="#332a10" fill="#ffdb7c" strokeWidth="1" vectorEffect="non-scaling-stroke"/>)}
       {profile.holes.map(h=><g key={h.id}>
         <circle data-testid={`runtime-sketch-outline-hole-${h.id}`} cx={h.x} cy={h.y} r={h.radius} fill="#152332"
           stroke={(selectedHoleIds?selectedHoleIds.includes(h.id):selectedHoleId===h.id)?'#6af0cd':'#e4be81'}
