@@ -8,7 +8,8 @@
 import {createSketch,serializeSketch,solveSketch} from './index.mjs';
 import {discoverPlateProfiles} from './profile-discovery.mjs';
 import {proposeSelectedPlateProfile} from './selected-profile.mjs';
-import {assessSeparatedPolygonBoundaries} from './boundary-guard.mjs';
+import {assessPolygonBoundary,assessSeparatedPolygonBoundaries}
+  from './boundary-guard.mjs';
 import {inspectClosedContour,MAX_CLOSED_CONTOUR_VERTICES}
   from './closed-contour-authoring.mjs';
 
@@ -168,6 +169,17 @@ export function insertClosedContourTab(source,selection,command){
      before.doc.constraints.some(c=>c.line===command.edgeId))
     return refuse(before.stamp,'selected_edge_has_external_constraints',
       command.edgeId);
+  // A topological tab must change the silhouette. Two points placed exactly
+  // on the retired edge are merely a destructive semantic subdivision.
+  // Reuse the exact dyadic triangle predicate; no floating epsilon or
+  // tolerance-dependent signed cross product.
+  const solvedPoints=new Map(before.solved.geometry.points.map(p=>[p.id,p]));
+  const edgeStart=solvedPoints.get(sourceEdge.start);
+  const edgeEnd=solvedPoints.get(sourceEdge.end);
+  if(!command.vertices.some(p=>assessPolygonBoundary(
+    [edgeStart,edgeEnd,p]).status==='verified'))
+    return refuse(before.stamp,'inserted_vertices_collinear_with_edge',
+      sourceEdge.id);
   const newIds=[
     ...[0,1].flatMap(i=>Object.values(inserted(command.tabId,i))),
     ...[0,1,2].map(i=>tabEdge(command.tabId,i))

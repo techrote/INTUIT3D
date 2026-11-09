@@ -27,7 +27,8 @@ WORKBENCH must source-pick an edge, collect two sketch-local vertices, show reti
 ## Safety / limitations
 
 - Only one two-vertex insertion into an existing **v1 drawn contour** is supported. The inspector/edit contract is for that one tab; repeated insertion, arbitrary trim/delete, nested loops, chamfers and topology-identity remapping are not implied.
-- Insertion refuses under/overconstrained, contradictory, invalid-hole, touching/crossing, ambiguous predecessor edge, external line constraint, stale source, ID collision, budget and unsupported source topology. Geometry is rechecked after dimension edit, not just at insertion.
+- Insertion refuses under/overconstrained, contradictory, invalid-hole, touching/crossing, ambiguous predecessor edge, external line constraint, stale source, ID collision, budget and unsupported source topology. The two inserted points cannot both be collinear with the retired edge (exact encoded-binary64 predicate): a visually unchanged outline is not a tab.
+- On insertion and dimension edit, the successor contour is checked against every other discovered material contour for exact intersection, contact or nesting, with a distinct `contour_conflicts_with_other_profile` diagnostic. Geometry is rechecked after dimension edit, not just at insertion.
 - Existing sketch-local point references remain stable, but **cross-lane body/face/edge references require explicit RUNTIME/INTENT invalidation**. Retired source-edge references must not be rebound.
 - The current polygon guards are binary64 analytic predicates, not a general exact-predicate planar arrangement system.
 - The exported `previewOnly:true`, `nativeExact:false` and `independentStepQualified:false` are intentional. A fresh pinned OCCT8 C++ + independent STEP witness is mandatory before describing an inserted tab as physically qualified.

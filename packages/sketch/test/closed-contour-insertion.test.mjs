@@ -89,6 +89,9 @@ test('stale signatures, existing edge constraints, collisions and unadmitted sou
   assert.equal(tab(a,{sourceSignature:'obsolete'}).reason,'stale_source');
   assert.equal(tab(a,{edgeId:'unselected'}).reason,'edge_not_in_selected_contour');
   assert.equal(tab(a,{tabId:'panel'}).reason,'invalid_insert_command');
+  const invisible=tab(a,{vertices:[{x:120,y:20},{x:120,y:60}]});
+  assert.equal(invisible.reason,'inserted_vertices_collinear_with_edge',
+    JSON.stringify(invisible));
   const reversed=tab(a,{vertices:[{x:140,y:70},{x:140,y:10}]});
   assert.equal(reversed.kind,'refused',JSON.stringify(reversed));
   const constrained=structuredClone(a.sketch);
