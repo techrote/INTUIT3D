@@ -1202,18 +1202,65 @@ async function main(){
     const handle=document.querySelector('[data-testid=runtime-profile-drag-handle]');
     if(!svg||!handle)return null;
     const rect=handle.getBoundingClientRect(),matrix=svg.getScreenCTM();
-    return matrix?{x:rect.x+rect.width/2,y:rect.y+rect.height/2,dx:10*matrix.a}:null;
+    return matrix?{x:rect.x+rect.width/2,y:rect.y+rect.height/2,
+      dx:10*matrix.a, startCx:Number(handle.getAttribute('cx'))}:null;
   })()`);
-  check(dragStart&&dragStart.dx>0,'Cannot project semantic X handle in browser');
+  check(dragStart&&dragStart.dx>0&&Number.isFinite(dragStart.startCx),
+    'Cannot project semantic X handle in browser');
+  // Capture the actual native pointer route before initiating a user drag.
+  // This distinguishes a hit-test overlay from loss of SVG pointer capture
+  // and a missing preview. It NEVER invokes a React/model command directly.
+  const dragHit=await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=runtime-sketch]');
+    const handle=document.querySelector('[data-testid=runtime-profile-drag-handle]');
+    const hit=document.elementFromPoint(${dragStart.x},${dragStart.y});
+    const events=[];
+    const kinds=['pointerdown','gotpointercapture','pointermove','pointerup',
+      'pointercancel','lostpointercapture'];
+    const observe=event=>{
+      if(event.pointerType!=='mouse')return;
+      const active=document.querySelector('[data-testid=runtime-profile-drag-handle]');
+      events.push({type:event.type,pointerId:event.pointerId,
+        target:event.target?.getAttribute?.('data-testid')??event.target?.tagName,
+        captured:Boolean(active?.hasPointerCapture(event.pointerId)),
+        clientX:event.clientX,clientY:event.clientY});
+    };
+    kinds.forEach(kind=>svg?.addEventListener(kind,observe,true));
+    window.__intuit3dProfileDragProbe={events,
+      cleanup:()=>kinds.forEach(kind=>svg?.removeEventListener(kind,observe,true))};
+    return {hitsHandle:hit===handle||Boolean(handle?.contains(hit)),
+      hitTag:hit?.tagName,hitTestId:hit?.getAttribute?.('data-testid')??null};
+  })()`);
+  check(dragHit?.hitsHandle,
+    'Semantic pointer hit-test obscured by another element: '+JSON.stringify(dragHit));
   const contourRevision=Number((await evaluate(
     "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0]);
-  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:dragStart.x,y:dragStart.y});
-  await send('Input.dispatchMouseEvent',{type:'mousePressed',x:dragStart.x,y:dragStart.y,button:'left',clickCount:1});
-  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:dragStart.x+dragStart.dx,y:dragStart.y,
-    button:'left',buttons:1});
-  await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:dragStart.x+dragStart.dx,y:dragStart.y,
-    button:'left',clickCount:1});
   try {
+    await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:dragStart.x,y:dragStart.y});
+    await send('Input.dispatchMouseEvent',{type:'mousePressed',x:dragStart.x,y:dragStart.y,button:'left',clickCount:1});
+    // A real pointerdown must reach the selected semantic handle and acquire
+    // native capture before we move; do not race rendering with back-to-back
+    // CDP events and then misdiagnose a missing model revision.
+    await eventually(()=>evaluate(`(() => {
+      const h=document.querySelector('[data-testid=runtime-profile-drag-handle]');
+      const events=window.__intuit3dProfileDragProbe?.events??[];
+      const down=events.find(e=>e.type==='pointerdown');
+      return Boolean(down&&down.target==='runtime-profile-drag-handle'&&
+        h?.hasPointerCapture(down.pointerId));
+    })()`),'Semantic handle did not receive pointerdown plus capture',12);
+    await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:dragStart.x+dragStart.dx,y:dragStart.y,
+      button:'left',buttons:1});
+    // The moving amber SVG handle is the *actual* ephemeral proposal. Verify
+    // that it responds and keeps capture before releasing, as a human drag does.
+    await eventually(()=>evaluate(`(() => {
+      const h=document.querySelector('[data-testid=runtime-profile-drag-handle]');
+      const events=window.__intuit3dProfileDragProbe?.events??[];
+      const down=events.find(e=>e.type==='pointerdown');
+      return Boolean(down&&h?.hasPointerCapture(down.pointerId)&&
+        Math.abs(Number(h.getAttribute('cx'))-${dragStart.startCx})>0.5);
+    })()`),'Semantic pointer move did not update captured drag preview',20);
+    await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:dragStart.x+dragStart.dx,y:dragStart.y,
+      button:'left',clickCount:1});
     await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-130)<0.001"),
       'Pointer-released semantic profile handle failed to commit width 120 -> 130');
   }catch(error){
@@ -1224,10 +1271,15 @@ async function main(){
       selected:document.querySelector('[data-testid=runtime-pointer-profile-selected]')?.textContent,
       message:document.querySelector('.runtime-message')?.textContent,
       status:[...document.querySelectorAll('[role=status]')].map(x=>x.textContent?.slice(0,250)),
+      pointerRoute:window.__intuit3dProfileDragProbe?.events??[],
+      atStart:document.elementFromPoint(${dragStart.x},${dragStart.y})?.getAttribute?.('data-testid'),
+      atEnd:document.elementFromPoint(${dragStart.x+dragStart.dx},${dragStart.y})?.getAttribute?.('data-testid'),
     }))()`);
     await screenshot('native-12-semantic-drag-failure.png').catch(()=>{});
     throw Error('Pointer width drag refused: '+String(error)+' observed='+observed+
       ' dragStart='+JSON.stringify(dragStart));
+  }finally {
+    await evaluate("window.__intuit3dProfileDragProbe?.cleanup?.()");
   }
   check(Number((await evaluate(
     "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0])===contourRevision+1,
