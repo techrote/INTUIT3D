@@ -27,9 +27,6 @@ function fixture(project='workbench.edge.direct') {
   if(closed.kind!=='committed')throw Error('No admitted rectangle');
   return {get history(){return history;},session,selection:closed.selection};
 }
-const coordinates=(h:ReturnType<typeof newModelEmptySketchSession>)=>
-  modelCurrentSketch(h).points.map(p=>({id:p.id,x:p.x,y:p.y}));
-
 test('selected actual right edge moves both endpoints through one RUNTIME event and durable archive',()=>{
   const f=fixture();
   const original=f.history,signature=sketch.serializeSketch(modelCurrentSketch(original));
