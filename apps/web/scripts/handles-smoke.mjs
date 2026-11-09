@@ -1106,6 +1106,20 @@ async function main() {
     actual[0]>220 && Number.isFinite(click.mmPerCssPixel) &&
     Math.abs(actual[0]-500)<=click.mmPerCssPixel+0.5,
     'the navigated canvas did not preserve its trusted click sketch-local coordinates');
+  // Navigation must keep actual draft markers legible in screen pixels.
+  // A fixed 1.5 mm SVG radius previously shrank below one CSS pixel when
+  // zoomed far out, making successful off-origin clicks appear to do nothing.
+  const visibleMarker=await evaluate(`(() => {
+    const vertex=document.querySelector('[data-testid=runtime-draft-vertex-0]');
+    const snap=document.querySelector('[data-testid=runtime-contour-pointer-snap]');
+    if(!vertex||!snap)return null;
+    return {vertexPx:vertex.getBoundingClientRect().width,
+      snapPx:snap.getBoundingClientRect().width};
+  })()`);
+  check(visibleMarker&&visibleMarker.vertexPx>=3&&visibleMarker.vertexPx<=24&&
+    visibleMarker.snapPx>=3&&visibleMarker.snapPx<=24,
+    'off-origin sketch draft vertices or snap ring became subpixel/invisible after zoom');
+  await screenshot('29b-blank-sketch-off-origin-visible-marker.png');
   // The old fixed SVG labels and axis strokes disappeared when users panned
   // beyond 220 mm: keep current coordinate feedback and axes after navigation.
   await eventually(()=>evaluate(`(() => {
