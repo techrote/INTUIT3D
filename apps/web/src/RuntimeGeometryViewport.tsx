@@ -10,13 +10,16 @@ import { handleDimensionAtPoint, nudgeSketchHandle, type SketchDimensionHandle }
 import { circleDrawingPreview, type CircleDrawingState } from './circleDrawing';
 import { radialHoleDiameter, nudgeHoleDiameter } from './holeDiameterDrag';
 import { projectThicknessAxis, proposeThicknessDrag, nudgeThickness, type ScreenPoint, type ThicknessDrag } from './thicknessDrag';
+import { panBlankCanvas, zoomBlankCanvas, type BlankCanvasView } from './blankCanvasView';
 
 /** A visually useful, disposable tessellation of the ACTUAL admitted SKETCH
  * profile. Never used as document state, a STEP source, or geometric proof. */
 type HoleId = string;
 export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick, onThicknessEdit, onProfilePick, profileEditHandle, onProfileHandleDrag,
-  contourEdges, selectedContourEdgeId, onContourEdgePick, onContourEdgeDrag, onContourEdgeOffset }: {
+  contourEdges, selectedContourEdgeId, onContourEdgePick, onContourEdgeDrag, onContourEdgeOffset, sketchProjectKey }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
+  /** Clear ephemeral navigation on project replacement; never on a CAD edit. */
+  sketchProjectKey?: string;
   onHoleMove?: (id: HoleId,x:number,y:number,selectedIds?:readonly HoleId[])=>void;
   onDimensionEdit?: (id: SketchDimensionHandle, millimetres:number)=>void;
   /** Commits only after SKETCH/RUNTIME has admitted the edited circle. */
@@ -48,6 +51,10 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   const thicknessAxis = useRef<ScreenPoint|null>(null);
   const thicknessMove = useRef<(ThicknessDrag & { pointerId:number })|null>(null);
   const [thicknessPreview,setThicknessPreview] = useState<number|null>(null);
+  const [sketchView,setSketchView] = useState<BlankCanvasView|null>(null);
+  const sketchSvg=useRef<SVGSVGElement|null>(null);
+  const sketchPan=useRef<{pointerId:number;startX:number;startY:number;
+    inverse:DOMMatrix;origin:BlankCanvasView}|null>(null);
   const moving = useRef<{id:HoleId;pointerId:number;groupIds:readonly HoleId[]}|null>(null);
   const [dragPreview,setDragPreview] = useState<{id:HoleId;x:number;y:number}|null>(null);
   const radialMove=useRef<{id:HoleId;pointerId:number;source:PlateProfile;original:number}|null>(null);
@@ -64,7 +71,18 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
   const width = Math.max(1, maxX-minX), height = Math.max(1,maxY-minY);
-  const frame = `${minX-width*.12} ${minY-height*.12} ${width*1.24} ${height*1.24}`;
+  const fittedSketchView:BlankCanvasView={
+    x:minX-width*.12,y:minY-height*.12,width:width*1.24,height:height*1.24,
+  };
+  const activeSketchView=sketchView??fittedSketchView;
+  const sketchViewBox=`${activeSketchView.x} ${activeSketchView.y} ${activeSketchView.width} ${activeSketchView.height}`;
+  // Sketch handles remain display-legible while zooming; geometry, constraints
+  // and the solver's millimetre coordinate system never change.
+  const sketchMarkerScale=activeSketchView.width/fittedSketchView.width;
+  const zoomSketchAtCenter=(factor:number)=>setSketchView(previous=>{
+    const view=previous??fittedSketchView;
+    return zoomBlankCanvas(view,{x:view.x+view.width/2,y:view.y+view.height/2},factor);
+  });
   const bounds={minX,minY,maxX,maxY};
   const holeA=profile.holes.find(h=>h.id==='holeA');
   const holeB=profile.holes.find(h=>h.id==='holeB');
@@ -95,6 +113,31 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
     pointFromScreen(event.currentTarget.ownerSVGElement,event.clientX,event.clientY);
   const ghost=onCirclePick&&circleDrawing&&circleHover
     ?circleDrawingPreview(circleDrawing,circleHover):null;
+  // The admitted sketch has the same ordinary wheel/middle-pan controls as
+  // the empty drawing. The gesture's original inverse must be frozen: using a
+  // moving viewBox's inverse would introduce pan drift or alter selection.
+  useEffect(()=>{
+    const svg=sketchSvg.current;
+    if(!sketchMode||!svg)return;
+    const onWheel=(event:WheelEvent)=>{
+      const matrix=svg.getScreenCTM();
+      if(!matrix)return;
+      try{
+        const anchor=new DOMPoint(event.clientX,event.clientY)
+          .matrixTransform(matrix.inverse());
+        event.preventDefault();
+        setSketchView(previous=>zoomBlankCanvas(previous??{
+          x:minX-width*.12,y:minY-height*.12,width:width*1.24,height:height*1.24,
+        },anchor,Math.exp(Math.sign(event.deltaY)*.25)));
+      }catch{/* No SVG matrix: do not invent a zoom origin. */}
+    };
+    svg.addEventListener('wheel',onWheel,{passive:false});
+    return()=>svg.removeEventListener('wheel',onWheel);
+  },[sketchMode,minX,minY,width,height]);
+  useEffect(()=>{
+    sketchPan.current=null;
+    setSketchView(null);
+  },[sketchProjectKey]);
 
   // A CAD revision changes the mesh, not the camera, OrbitControls, canvas or
   // WebGL context. These are browser presentation resources, never CAD state.
@@ -399,12 +442,46 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
     if(!sketchMode)previewScene.current?.update(profile,thickness);
   },[profile,thickness,sketchMode]);
 
-  return sketchMode ? <svg data-testid="runtime-sketch" className="runtime-sketch-svg"
-    viewBox={frame} aria-label="Solved SKETCH boundary and circular holes in millimetres"
+  const startSketchPan=(event:ReactPointerEvent<SVGSVGElement>)=>{
+    if(event.button!==1)return;
+    const matrix=event.currentTarget.getScreenCTM();
+    if(!matrix)return;
+    try{
+      sketchPan.current={pointerId:event.pointerId,startX:event.clientX,
+        startY:event.clientY,inverse:matrix.inverse(),origin:activeSketchView};
+      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      setCircleHover(null);
+    }catch{sketchPan.current=null;}
+  };
+  const moveSketchPan=(event:ReactPointerEvent<SVGSVGElement>)=>{
+    const gesture=sketchPan.current;
+    if(!gesture||gesture.pointerId!==event.pointerId)return false;
+    const dx=event.clientX-gesture.startX,dy=event.clientY-gesture.startY;
+    setSketchView(panBlankCanvas(gesture.origin,{
+      x:gesture.inverse.a*dx+gesture.inverse.c*dy,
+      y:gesture.inverse.b*dx+gesture.inverse.d*dy,
+    }));
+    return true;
+  };
+  const endSketchPan=(event:ReactPointerEvent<SVGSVGElement>)=>{
+    if(sketchPan.current?.pointerId!==event.pointerId)return;
+    sketchPan.current=null;
+    if(event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  return sketchMode ? <>
+    <svg ref={sketchSvg} data-testid="runtime-sketch" className="runtime-sketch-svg"
+    viewBox={sketchViewBox} aria-label="Solved SKETCH boundary and circular holes in millimetres"
     style={onCirclePick||onProfilePick?{cursor:'crosshair'}:undefined}
+    onPointerDown={startSketchPan}
     onPointerMove={event=>{
+      if(moveSketchPan(event))return;
       if(onCirclePick)setCircleHover(pointFromScreen(event.currentTarget,event.clientX,event.clientY));
     }}
+    onPointerUp={endSketchPan}
+    onPointerCancel={endSketchPan}
+    onLostPointerCapture={()=>{sketchPan.current=null;}}
     onPointerLeave={()=>setCircleHover(null)}
     onClick={event=>{
       if(event.button!==0||(!onCirclePick&&!onProfilePick))return;
@@ -429,7 +506,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         {onHoleMove&&
           <circle data-testid={`runtime-sketch-hole-${h.id}`}
             aria-label={`Drag ${h.id} center`}
-            cx={h.x} cy={h.y} r={Math.max(2,Math.min(width,height)/35)}
+            cx={h.x} cy={h.y} r={Math.max(2,Math.min(width,height)/35)*sketchMarkerScale}
             fill="#eef6ed" stroke="#174d69" strokeWidth=".7"
             style={{cursor:'grab',touchAction:'none'}}
             onPointerDown={event=>{
@@ -469,7 +546,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
           role="slider" tabIndex={0}
           aria-label={`Resize ${h.id} circular cut diameter in millimetres`}
           aria-valuemin={0.5} aria-valuemax={10000} aria-valuenow={2*h.radius}
-          cx={h.x} cy={h.y-h.radius} r={Math.max(2.1,Math.min(width,height)/43)}
+          cx={h.x} cy={h.y-h.radius} r={Math.max(2.1,Math.min(width,height)/43)*sketchMarkerScale}
           fill="#fed792" stroke="#4b3122" strokeWidth=".7"
           style={{cursor:'nwse-resize',touchAction:'none'}}
           onPointerDown={event=>{
@@ -516,7 +593,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
           return <circle key={id} data-testid={`runtime-sketch-dimension-${id}`}
             role="slider" tabIndex={0} aria-label={`Edit ${id.replace('.', ' ')} in millimetres`}
             aria-valuemin={0.1} aria-valuemax={10000} aria-valuenow={current}
-            cx={at.x} cy={at.y} r={Math.max(2.2,Math.min(width,height)/40)}
+            cx={at.x} cy={at.y} r={Math.max(2.2,Math.min(width,height)/40)*sketchMarkerScale}
             fill="#6af0cd" stroke="#103d4a" strokeWidth=".8"
             style={{cursor:id==='depth'?'ns-resize':'ew-resize',touchAction:'none'}}
             onPointerDown={event=>{
@@ -577,7 +654,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
           fill="none" stroke="#fed792" strokeDasharray="2 1"
           strokeWidth=".65" pointerEvents="none"/>)}
       {dragPreview&&<circle cx={dragPreview.x} cy={dragPreview.y}
-        r={Math.max(2.5,Math.min(width,height)/30)}
+        r={Math.max(2.5,Math.min(width,height)/30)*sketchMarkerScale}
         fill="#6af0cd55" stroke="#84f2d3" strokeDasharray="1 1"
         strokeWidth=".6" pointerEvents="none"/>}
       {contourEdges&&onContourEdgeDrag&&contourEdges.map(edge=>{
@@ -650,7 +727,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         role="slider" tabIndex={0}
         cx={profilePreview?.x??profileEditHandle.position.x}
         cy={profilePreview?.y??profileEditHandle.position.y}
-        r={Math.max(3,Math.min(width,height)/28)}
+        r={Math.max(3,Math.min(width,height)/28)*sketchMarkerScale}
         fill="#ffdb7c" stroke="#312913" strokeWidth=".9"
         style={{cursor:'move',touchAction:'none'}}
         onPointerDown={event=>{
@@ -691,7 +768,16 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       fontSize={Math.max(2,width/43)} fill="#a5f2de" pointerEvents="none">
       D {dimensionPreview?.id==='depth'?dimensionPreview.value:height} mm
     </text>}
-  </svg> : <div ref={host} className="runtime-3d-canvas" data-testid="runtime-3d-viewport">
+    </svg>
+    <nav className="runtime-solved-navigation" aria-label="Solved sketch navigation">
+      <button type="button" data-testid="runtime-solved-zoom-in"
+        onClick={()=>zoomSketchAtCenter(1/1.4)} title="Zoom in about the view centre">+</button>
+      <button type="button" data-testid="runtime-solved-zoom-out"
+        onClick={()=>zoomSketchAtCenter(1.4)} title="Zoom out about the view centre">−</button>
+      <button type="button" data-testid="runtime-solved-view-fit"
+        onClick={()=>setSketchView(null)} title="Fit the current solved profile">FIT</button>
+    </nav>
+  </> : <div ref={host} className="runtime-3d-canvas" data-testid="runtime-3d-viewport">
     <div className="runtime-solid-selection-hint" data-testid="runtime-solid-selected-hole" role="status">
       {selectedHoleIds?.length ? `Selected sketch holes: ${selectedHoleIds.join(', ')}`
         : 'ISO/TOP: click a visible hole opening to select; drag to orbit.'}
