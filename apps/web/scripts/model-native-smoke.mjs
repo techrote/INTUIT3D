@@ -1197,7 +1197,7 @@ async function main(){
   await key('Tab','Tab',9);
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-profile-drag-handle]'))"),
     'Explicit keyboard choice did not expose an authentic solver handle');
-  const dragStart=await evaluate(`(() => {
+  let dragStart=await evaluate(`(() => {
     const svg=document.querySelector('[data-testid=runtime-sketch]');
     const handle=document.querySelector('[data-testid=runtime-profile-drag-handle]');
     if(!svg||!handle)return null;
@@ -1237,6 +1237,49 @@ async function main(){
     "document.querySelector('[data-testid=runtime-revision]')?.textContent"))?.match(/[0-9]+/)?.[0]);
   try {
     await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:dragStart.x,y:dragStart.y});
+    // The initial projection precedes a genuine browser hover. React may
+    // render after that event, invalidating a sampled centre. Press the
+    // currently displayed semantic handle, not its pre-hover coordinate.
+    // This remains a physical CDP pointer gesture: no synthetic events or
+    // direct RUNTIME/model mutation. A permanently obscured or moving handle
+    // still fails rather than silently bypassing user interaction.
+    const hoverReprojections=[];
+    let stableHover=false;
+    for(let attempt=0;attempt<3;attempt++){
+      const live=await evaluate(`(async()=>{
+        // Allow React hover/layout effects to settle before recomputing the
+        // current SVG CTM and real on-screen hit. A fixed sleep is not evidence.
+        await new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)));
+        const svg=document.querySelector('[data-testid=runtime-sketch]');
+        const handle=document.querySelector('[data-testid=runtime-profile-drag-handle]');
+        const matrix=svg?.getScreenCTM();
+        if(!svg||!handle||!matrix)return null;
+        const rect=handle.getBoundingClientRect();
+        const x=rect.left+rect.width/2,y=rect.top+rect.height/2;
+        const hit=document.elementFromPoint(x,y);
+        return {x,y,dx:10*matrix.a,startCx:Number(handle.getAttribute('cx')),
+          hitHandle:hit===handle||Boolean(handle.contains(hit)),
+          hitId:hit?.getAttribute?.('data-testid')??hit?.tagName??null,
+          svgPointerEvents:getComputedStyle(svg).pointerEvents,
+          handlePointerEvents:getComputedStyle(handle).pointerEvents,
+          rect:{x:rect.x,y:rect.y,width:rect.width,height:rect.height}};
+      })()`);
+      check(live&&live.hitHandle&&Number.isFinite(live.dx)&&live.dx>0,
+        'Selected semantic handle is obscured after genuine hover: '+
+        JSON.stringify({attempt,live,hoverReprojections}));
+      const drift=Math.hypot(live.x-dragStart.x,live.y-dragStart.y);
+      hoverReprojections.push({attempt,driftPx:drift,live});
+      dragStart={x:live.x,y:live.y,dx:live.dx,startCx:live.startCx};
+      if(drift<=0.75){stableHover=true;break;}
+      // An actual human has to follow a moving handle. Test that route with
+      // another genuine move; fail if it never stabilizes within three tries.
+      await send('Input.dispatchMouseEvent',{type:'mouseMoved',
+        x:dragStart.x,y:dragStart.y});
+    }
+    check(stableHover,'Semantic handle continued moving under hover: '+
+      JSON.stringify(hoverReprojections));
+    if(hoverReprojections.some(item=>item.driftPx>0.75))
+      console.log('WORKBENCH_SEMANTIC_HOVER_REPROJECTION '+JSON.stringify(hoverReprojections));
     await send('Input.dispatchMouseEvent',{type:'mousePressed',x:dragStart.x,y:dragStart.y,button:'left',clickCount:1});
     // A real pointerdown must reach the selected semantic handle and acquire
     // native capture before we move; do not race rendering with back-to-back
