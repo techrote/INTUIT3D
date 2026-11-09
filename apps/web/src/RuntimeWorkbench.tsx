@@ -11,6 +11,8 @@ import { BlankSketchCanvas } from './BlankSketchCanvas';
 import {appendBlankContourPoint,undoBlankContourVertex,type BlankContourDraft,type SketchLocalPoint} from './blankContourDraft';
 import {commitModelBlankContour,startModelBlankContour,structuralContourRuntimeAvailable,inspectModelClosedContour,dragModelClosedContourVertex} from './closedContourBridge';
 import {ClosedContourVertexEditor} from './ClosedContourVertexEditor';
+import {inspectModelContourEdges,dragModelClosedContourEdge,offsetModelClosedContourEdge}
+  from './closedContourEdgeBridge';
 import { HistoricalEditInspector } from './HistoricalEditInspector';
 import { ProfileNumericEditor } from './ProfileNumericEditor';
 import { SelectedEdgeHoleEditor } from './SelectedEdgeHoleEditor';
@@ -112,6 +114,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [profilePickMode,setProfilePickMode]=useState(false);
   const [pointerSelection,setPointerSelection]=useState<SelectedProfileSelection|null>(null);
   const [pointerHandleId,setPointerHandleId]=useState('');
+  const [selectedContourEdgeId,setSelectedContourEdgeId]=useState('');
+  const [edgeOffsetDraft,setEdgeOffsetDraft]=useState('10');
   // Whole canonical archive at semantic selection. Reject divergent histories
   // even when their numeric revision and sketch signature happen to agree.
   const [pointerSourceArchive,setPointerSourceArchive]=useState<string|null>(null);
@@ -297,6 +301,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     try{return inspectModelClosedContour(history,pointerSelection);}
     catch{return null;}
   },[history,pointerSelection,pointerSourceArchive]);
+  const closedEdges=useMemo(()=>{
+    if(!closedInventory||!pointerSelection)return null;
+    try{return inspectModelContourEdges(history,pointerSelection);}
+    catch{return null;}
+  },[history,pointerSelection,closedInventory]);
   const closedHandle=closedInventory?.handles.find(h=>h.handleId===pointerHandleId)??null;
   const pointerDragHandle=pointerHandles.find(h=>h.handleId===pointerHandleId)??null;
   const canAuthorExtrusion=!plateAuthored && !!sketchProfile && !pendingImport;
@@ -322,6 +331,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       setPointerSelection(result.selection);
       setPointerSourceArchive(serializeModelSession(liveHistory.current));
       setPointerHandleId('');
+      setSelectedContourEdgeId('');
       setProfilePickMode(false);
       setMessage('Selected solver-owned profile '+result.profile.semanticProfileId+
         '. Choose a semantic dimension/centre handle in the inspector before dragging it. Analytic preview only.');
@@ -354,6 +364,29 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         '; invalidated '+(result.invalidatedFeatureIds.join(' → ')||'no downstream features')+
         '. Native STEP revoked.');
     }catch(e){setMessage('Drawn vertex refused; journal unchanged: '+String(e));}
+  };
+  const editDrawnEdge=(edgeId:string,start?:SketchLocalPoint,target?:SketchLocalPoint,offsetMm?:number)=>{
+    if(!pointerSelection||!pointerSourceArchive||pendingImport||loadingFile)return;
+    try{
+      if(liveHistory.current!==history)throw Error('The displayed journal changed; reselect the contour.');
+      const result=offsetMm!==undefined
+        ?offsetModelClosedContourEdge(liveHistory.current,nativeSession.current!,
+          pointerSelection,edgeId,offsetMm,pointerSourceArchive)
+        :start&&target
+          ?dragModelClosedContourEdge(liveHistory.current,nativeSession.current!,
+            pointerSelection,edgeId,start,target,pointerSourceArchive)
+          :{kind:'refused' as const,reason:'No valid edge gesture.',code:'invalid_gesture'};
+      if(result.kind==='refused'){setMessage('Whole edge refused: '+result.reason);return;}
+      acceptHistory(result.history);
+      setPointerSelection(result.selection);
+      setPointerSourceArchive(serializeModelSession(result.history));
+      setSelectedContourEdgeId(edgeId);
+      setMessage('Moved semantic contour edge '+edgeId+' by '+result.appliedOffsetMm+
+        ' mm outward-normal in ONE source-fenced RUNTIME revision '+
+        result.history.document.revision+'; invalidated '+
+        (result.invalidatedFeatureIds.join(' → ')||'no downstream features')+
+        '. Original STEP revoked; preview is analytic only.');
+    }catch(e){setMessage('Whole edge refused; journal unchanged: '+String(e));}
   };
   const createExtrusion=():boolean=>{
     try{
@@ -1130,7 +1163,13 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               onCirclePick={circleDrawing.phase!=='idle'?pickCirclePoint:undefined}
               onProfilePick={profilePickMode&&circleDrawing.phase==='idle'?pickProfile:undefined}
               profileEditHandle={!profilePickMode&&circleDrawing.phase==='idle'?(closedHandle??pointerDragHandle):undefined}
-              onProfileHandleDrag={(handleId,x,y)=>closedHandle?dragDrawnVertex(handleId,x,y):dragProfile(handleId,x,y)}/>:
+              onProfileHandleDrag={(handleId,x,y)=>closedHandle?dragDrawnVertex(handleId,x,y):dragProfile(handleId,x,y)}
+              contourEdges={!profilePickMode&&circleDrawing.phase==='idle'&&!pendingImport&&!loadingFile
+                ?closedEdges?.edges:undefined}
+              selectedContourEdgeId={selectedContourEdgeId}
+              onContourEdgePick={setSelectedContourEdgeId}
+              onContourEdgeDrag={(id,start,target)=>editDrawnEdge(id,start,target)}
+              onContourEdgeOffset={(id,amount)=>editDrawnEdge(id,undefined,undefined,amount)}/>:
             <div className="empty-overlay" data-testid="runtime-empty">Current dimensions cannot produce an admitted sketch profile. No previous mesh is represented as current.</div>}
           {geom&&!renderSketch&&displayedActiveHole&&layoutIds.length===1&&
             layoutIds[0]===displayedActiveHole&&
@@ -1163,7 +1202,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           </div>}
           <div className="viewport-hint">{renderSketch?(circleDrawing.phase!=='idle'?
             'Circle tool: centre click → radius click; profile admission rejects overlaps or outside holes':
-            'Drag edge/diameter handles or hole centres. Focus a dimension and press arrows (Shift: 0.1 mm); click a hole then press arrows to nudge 1 mm (Shift: 10 mm), Ctrl-select for a group.'):
+            'Drag chosen semantic contour edges, vertex/diameter handles or hole centres. Focus an edge or dimension and press arrows (Shift: 0.1 mm); click a hole then press arrows to nudge 1 mm (Shift: 10 mm), Ctrl-select for a group.'):
             'Drag extrusion-thickness grip or use ↑/↓ · Drag background to orbit · Wheel to zoom · Right-drag to pan'}</div>
         </div>
         <section className="timeline" aria-label="Authoritative history versus dependency schedule">
@@ -1214,6 +1253,34 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                 key={pointerSourceArchive+':'+closedHandle.handleId}
                 handle={closedHandle} disabled={!!pendingImport||!!loadingFile}
                 onCommit={target=>dragDrawnVertex(closedHandle.handleId,target.x,target.y)}/>}
+              {closedEdges&&<div className="runtime-hole-add" data-testid="runtime-contour-edge-editor">
+                <strong>Whole-edge normal offset · solver-owned</strong>
+                <label className="runtime-scalar"><span>Semantic edge</span>
+                  <span className="runtime-scalar-control"><select
+                    data-testid="runtime-contour-edge-select" aria-label="Select source contour edge"
+                    value={closedEdges.edges.some(e=>e.edgeId===selectedContourEdgeId)?selectedContourEdgeId:''}
+                    onChange={event=>setSelectedContourEdgeId(event.target.value)}>
+                    <option value="">Choose an edge…</option>
+                    {closedEdges.edges.map((edge,i)=><option key={edge.edgeId} value={edge.edgeId}>
+                      Edge {i+1} · {edge.edgeId} · {edge.lengthMm.toFixed(3)} mm
+                    </option>)}
+                  </select></span>
+                </label>
+                <label className="runtime-scalar"><span>Signed outward offset · mm</span>
+                  <span className="runtime-scalar-control"><input type="number" step="any"
+                    data-testid="runtime-contour-edge-distance" aria-label="Signed normal edge offset in millimetres"
+                    value={edgeOffsetDraft} onChange={event=>setEdgeOffsetDraft(event.target.value)}/></span>
+                </label>
+                <button type="button" className="ribbon-button"
+                  data-testid="runtime-contour-edge-commit"
+                  disabled={!closedEdges.edges.some(e=>e.edgeId===selectedContourEdgeId)||!!pendingImport||!!loadingFile}
+                  onClick={()=>editDrawnEdge(selectedContourEdgeId,undefined,undefined,
+                    edgeOffsetDraft.trim()?Number(edgeOffsetDraft):NaN)}>Offset selected edge</button>
+                <p className="microcopy">Drag an admitted edge normal to itself, or enter a signed distance.
+                  The source-owned SKETCH planner validates all vertices and associated holes;
+                  RUNTIME journals one undoable edit. Tangential drag cannot translate the edge.
+                  Focus an edge and use ArrowUp/Down for 1 mm (Shift 0.1 mm) nudges.</p>
+              </div>}
               <p className="microcopy">Move a chosen original vertex with the amber sketch handle
                 or precise X/Y fields. Only source-fenced, full-SKETCH admitted edits
                 become an undoable RUNTIME revision; unsupported profiles remain preview-only.</p>

@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { frameCadCamera, type CameraViewPreset } from './cameraViews';
 import { pickTopFaceHole } from './solidHolePick';
 import type { PlateProfile } from '@intuit3d/sketch';
+import type {ContourOffsetEdge} from '@intuit3d/sketch/contour-edge-offset/v1';
 import { handleDimensionAtPoint, nudgeSketchHandle, type SketchDimensionHandle } from './runtimeSketchHandles';
 import { circleDrawingPreview, type CircleDrawingState } from './circleDrawing';
 import { radialHoleDiameter, nudgeHoleDiameter } from './holeDiameterDrag';
@@ -13,7 +14,8 @@ import { projectThicknessAxis, proposeThicknessDrag, nudgeThickness, type Screen
 /** A visually useful, disposable tessellation of the ACTUAL admitted SKETCH
  * profile. Never used as document state, a STEP source, or geometric proof. */
 type HoleId = string;
-export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick, onThicknessEdit, onProfilePick, profileEditHandle, onProfileHandleDrag }: {
+export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick, onThicknessEdit, onProfilePick, profileEditHandle, onProfileHandleDrag,
+  contourEdges, selectedContourEdgeId, onContourEdgePick, onContourEdgeDrag, onContourEdgeOffset }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
   onHoleMove?: (id: HoleId,x:number,y:number,selectedIds?:readonly HoleId[])=>void;
   onDimensionEdit?: (id: SketchDimensionHandle, millimetres:number)=>void;
@@ -31,6 +33,12 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   /** One explicitly chosen semantic handle; colocated handles require user choice. */
   profileEditHandle?: {handleId:string;position:{x:number;y:number}}|null;
   onProfileHandleDrag?: (handleId:string,x:number,y:number)=>void;
+  /** Only current SKETCH-inspected source-owned edges may render manipulators. */
+  contourEdges?:readonly ContourOffsetEdge[];
+  selectedContourEdgeId?:string;
+  onContourEdgePick?:(edgeId:string)=>void;
+  onContourEdgeDrag?:(edgeId:string,start:{x:number;y:number},target:{x:number;y:number})=>void;
+  onContourEdgeOffset?:(edgeId:string,offsetMm:number)=>void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   // A long-lived Three.js canvas must always call the latest React selection callback.
@@ -49,6 +57,9 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   const [dimensionPreview,setDimensionPreview]=useState<{id:SketchDimensionHandle;value:number}|null>(null);
   const profileMove=useRef<{handleId:string;pointerId:number;source:PlateProfile}|null>(null);
   const [profilePreview,setProfilePreview]=useState<{x:number;y:number}|null>(null);
+  const contourMove=useRef<{edgeId:string;pointerId:number;source:PlateProfile;
+    start:{x:number;y:number}}|null>(null);
+  const [contourPreview,setContourPreview]=useState<{edgeId:string;offsetMm:number}|null>(null);
   const xs = profile.outer.map(p => p.x), ys = profile.outer.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
@@ -80,7 +91,7 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
       return {x,y};
     }catch{return null;}
   };
-  const pointerPosition=(event:ReactPointerEvent<SVGCircleElement>)=>
+  const pointerPosition=(event:ReactPointerEvent<SVGElement>)=>
     pointFromScreen(event.currentTarget.ownerSVGElement,event.clientX,event.clientY);
   const ghost=onCirclePick&&circleDrawing&&circleHover
     ?circleDrawingPreview(circleDrawing,circleHover):null;
@@ -569,6 +580,70 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         r={Math.max(2.5,Math.min(width,height)/30)}
         fill="#6af0cd55" stroke="#84f2d3" strokeDasharray="1 1"
         strokeWidth=".6" pointerEvents="none"/>}
+      {contourEdges&&onContourEdgeDrag&&contourEdges.map(edge=>{
+        const selected=selectedContourEdgeId===edge.edgeId;
+        const offset=contourPreview?.edgeId===edge.edgeId?contourPreview.offsetMm:0;
+        return <g key={edge.edgeId}>
+          {offset!==0&&<line
+            data-testid="runtime-contour-edge-drag-preview"
+            x1={edge.start.x+edge.normal.x*offset} y1={edge.start.y+edge.normal.y*offset}
+            x2={edge.end.x+edge.normal.x*offset} y2={edge.end.y+edge.normal.y*offset}
+            stroke="#ffdb7c" strokeWidth="2" strokeDasharray="4 3"
+            vectorEffect="non-scaling-stroke" pointerEvents="none"/>}
+          <line data-testid={'runtime-contour-edge-'+edge.startIndex}
+            role="slider" tabIndex={0}
+            aria-label={'Drag source contour edge '+edge.edgeId+' normal to itself'}
+            aria-valuemin={-10000} aria-valuemax={10000} aria-valuenow={0}
+            x1={edge.start.x} y1={edge.start.y} x2={edge.end.x} y2={edge.end.y}
+            stroke={selected?'#ffdb7c':'#77e1e9'} opacity={selected?1:0.75}
+            strokeWidth="8" vectorEffect="non-scaling-stroke"
+            style={{cursor:'grab',touchAction:'none'}}
+            onPointerDown={event=>{
+              if(event.button!==0||contourMove.current)return;
+              const at=pointerPosition(event);
+              if(!at)return;
+              event.preventDefault();event.stopPropagation();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              contourMove.current={edgeId:edge.edgeId,pointerId:event.pointerId,
+                source:profile,start:at};
+              setContourPreview({edgeId:edge.edgeId,offsetMm:0});
+              onContourEdgePick?.(edge.edgeId);
+            }}
+            onPointerMove={event=>{
+              const active=contourMove.current;
+              if(!active||active.edgeId!==edge.edgeId||
+                  active.pointerId!==event.pointerId||active.source!==profile)return;
+              const at=pointerPosition(event);
+              if(!at)return;
+              const offsetMm=(at.x-active.start.x)*edge.normal.x+
+                (at.y-active.start.y)*edge.normal.y;
+              if(Number.isFinite(offsetMm)&&Math.abs(offsetMm)<=10000)
+                setContourPreview({edgeId:edge.edgeId,offsetMm});
+            }}
+            onPointerUp={event=>{
+              const active=contourMove.current;
+              if(!active||active.edgeId!==edge.edgeId||active.pointerId!==event.pointerId)return;
+              event.stopPropagation();
+              contourMove.current=null;setContourPreview(null);
+              if(active.source!==profile)return;
+              const at=pointerPosition(event);
+              if(at&&Math.hypot(at.x-active.start.x,at.y-active.start.y)>0.01)
+                onContourEdgeDrag(edge.edgeId,active.start,at);
+            }}
+            onPointerCancel={()=>{contourMove.current=null;setContourPreview(null);}}
+            onLostPointerCapture={()=>{contourMove.current=null;setContourPreview(null);}}
+            onKeyDown={event=>{
+              if(event.key==='Escape'){
+                contourMove.current=null;setContourPreview(null);event.preventDefault();return;
+              }
+              if((event.key==='ArrowUp'||event.key==='ArrowDown')&&onContourEdgeOffset){
+                event.preventDefault();onContourEdgePick?.(edge.edgeId);
+                onContourEdgeOffset(edge.edgeId,
+                  (event.key==='ArrowUp'?1:-1)*(event.shiftKey?0.1:1));
+              }
+            }}/>
+        </g>;
+      })}
       {profileEditHandle&&onProfileHandleDrag&&<circle
         data-testid="runtime-profile-drag-handle"
         aria-label={'Drag selected semantic profile handle '+profileEditHandle.handleId}
