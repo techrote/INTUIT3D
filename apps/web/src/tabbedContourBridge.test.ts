@@ -8,7 +8,7 @@ import {newModelEmptySketchSession,modelCurrentSketch,
 import {startModelBlankContour,commitModelBlankContour} from './closedContourBridge.ts';
 import {inspectModelContourEdges} from './closedContourEdgeBridge.ts';
 import {appendBlankContourPoint} from './blankContourDraft.ts';
-import {insertModelContourTab,editModelTabbedVertex,inspectModelTabbedContour}
+import {insertModelContourTab,editModelTabbedVertex,inspectModelTabbedContour,previewModelContourTab}
   from './tabbedContourBridge.ts';
 
 function fixture(project='workbench.tab.pointer') {
@@ -85,4 +85,34 @@ test('stale canonical archive, wrong edge and crossing insertion refuse without 
     'forged.handle',{x:145,y:20},serializeModelSession(f.current)).kind,'refused');
   assert.equal(editModelTabbedVertex(f.current,f.session,good.selection,
     'forged.handle',{x:145,y:20},serializeModelSession(f.current)).kind,'refused');
+});
+
+test('precommit preview is SKETCH-owned, rejects crossings, and never journals an event',()=>{
+  const f=fixture('workbench.tab.preflight'),source=serializeModelSession(f.current);
+  const originalRevision=f.current.document.revision;
+  const good=previewModelContourTab(f.current,f.selection,f.edgeId,
+    [{x:140,y:20},{x:140,y:60}],source);
+  assert.equal(good.kind,'admissible',JSON.stringify(good));
+  if(good.kind==='admissible') {
+    assert.equal(good.retiredEdgeId,f.edgeId);
+    assert.notEqual(good.nextSketchSignature,f.selection.sourceSignature);
+  }
+  const crossing=previewModelContourTab(f.current,f.selection,f.edgeId,
+    [{x:60,y:95},{x:60,y:-20}],source);
+  assert.equal(crossing.kind,'refused',JSON.stringify(crossing));
+  const wrongEdge=previewModelContourTab(f.current,f.selection,'wrong:edge',
+    [{x:140,y:20},{x:140,y:60}],source);
+  assert.equal(wrongEdge.kind,'refused');
+  const stale=previewModelContourTab(f.current,f.selection,f.edgeId,
+    [{x:140,y:20},{x:140,y:60}],source+' ');
+  assert.equal(stale.kind,'refused');
+  assert.equal(f.current.document.revision,originalRevision);
+  assert.equal(serializeModelSession(f.current),source);
+  // Preview is not permission to commit a different source. RUNTIME still
+  // rechecks the full canonical archive and source-selected semantic edge.
+  const committed=insertModelContourTab(f.current,f.session,f.selection,f.edgeId,
+    [{x:140,y:20},{x:140,y:60}],source);
+  assert.equal(committed.kind,'committed',JSON.stringify(committed));
+  assert.equal(previewModelContourTab(f.current,f.selection,f.edgeId,
+    [{x:140,y:20},{x:140,y:60}],source).kind,'refused');
 });
