@@ -124,6 +124,14 @@ export function planClosedContourEdgeOffset(source,selection,request){
     return refuse(stamp,'post_offset_inspection_failed',next.reason??null);
   const successor=next.edges.find(e=>e.edgeId===edge.edgeId);
   if(!successor)return refuse(stamp,'successor_edge_missing',edge.edgeId);
+  // A large normal move can pass through a zero-area contour and leave a
+  // *different*, fully solved polygon on the other side. Its winding (and
+  // therefore the meaning of the same semantic edge's outward normal) flips.
+  // Do not silently admit that topological inversion as an ordinary edge drag.
+  // A translated edge keeps its original tangent, so its normal changes sign
+  // exactly when the source/successor polygon orientation changes.
+  if(dot(edge.normal,successor.normal)<=0)
+    return refuse(stamp,'contour_winding_changed',edge.edgeId);
   const applied= sub(successor.midpoint,edge.midpoint);
   const appliedOffsetMm=dot(applied,edge.normal);
   const residualMm=Math.hypot(applied.x-delta.x,applied.y-delta.y);
