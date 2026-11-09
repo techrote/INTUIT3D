@@ -107,6 +107,30 @@ test('native cut remains pending even if upstream preview looks healthy',()=>{
   assert.equal(result.exactGeometryAvailable,false);
 });
 
+test('cut status refuses wrong-body, orphaned and ambiguous body-writer lineage',()=>{
+  const source=[sketchFeature(),extrude()];
+  const bad=[
+    feature('cut','cut',['plate'],{targetBodyId:'body.other'},['body.plate']),
+    feature('cut','cut',['plate'],{targetBodyId:'body.other'},['body.other']),
+    feature('cut','cut',['sketch.plate'],{targetBodyId:'body.plate'},['body.plate']),
+    feature('cut','cut',[],{targetBodyId:'body.plate'},['body.plate']),
+    feature('cut','cut',['plate'],{},['body.plate']),
+    feature('cut','cut',['plate'],{targetBodyId:'body.plate'},[]),
+  ];
+  for(const cut of bad) {
+    const result=rig(plan([...source,cut])).inspect(history);
+    assert.equal(result.features[2].status,'invalid_feature');
+    assert.match(result.features[2].diagnostics[0],/target body/);
+    assert.equal(result.exactGeometryAvailable,false);
+  }
+  const extraWriter=feature('plate.other','extrude',['sketch.plate'],
+    {sourceSketchId:'sketch.plate',thicknessMm:4},['body.plate']);
+  const ambiguous=feature('cut','cut',['plate','plate.other'],
+    {targetBodyId:'body.plate'},['body.plate']);
+  assert.equal(rig(plan([...source,extraWriter,ambiguous])).inspect(history)
+    .features[3].status,'invalid_feature');
+});
+
 test('mismatched binding revision is rejected rather than consuming stale payload',()=>{
   const p=plan([sketchFeature()]);
   assert.throws(()=>rig(p,{services:{bindings:{evaluateDimensionBindingPlan:()=>({

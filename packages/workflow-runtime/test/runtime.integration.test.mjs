@@ -45,6 +45,24 @@ test('real INTENT plan + real SKETCH solver/admission + archive preserves identi
   assert.deepEqual(runtime.inspect(redone).authoredOrder,report.authoredOrder);
 });
 
+test('reopened real INTENT cut with edited wrong target is invalid, not awaiting native STEP',()=>{
+  const original=start();
+  const altered=runtime.commit(original,[{
+    eventId:'edit.cut.wrong.body',type:'feature.edit',featureId:'cut',
+    patch:{payload:{sourceSketchId:'sketch.plate',targetBodyId:'body.other'}},
+  }]);
+  const bad=runtime.inspect(altered);
+  assert.equal(item(bad,'plate').status,'preview_only');
+  assert.equal(item(bad,'cut').status,'invalid_feature');
+  assert.equal(bad.exactGeometryAvailable,false);
+  const restored=runtime.reopen(runtime.save(altered));
+  assert.equal(item(runtime.inspect(restored),'cut').status,'invalid_feature');
+  const undone=runtime.undo(restored,['undo.cut.wrong.body']);
+  assert.equal(item(runtime.inspect(undone),'cut').status,'pending_exact_provider');
+  const redone=runtime.redo(undone,['redo.cut.wrong.body']);
+  assert.equal(item(runtime.inspect(redone),'cut').status,'invalid_feature');
+});
+
 test('retrospective binding changes intended thickness, not authored fallback; undo/reopen replays',()=>{
   let h=start();
   h=runtime.commit(h,[created('create.parameter',{id:'parameter.t',kind:'parameter',
