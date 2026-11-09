@@ -1235,6 +1235,75 @@ async function main() {
   check(await evaluate("!document.querySelector('[data-testid=runtime-blank-sketch]')"),
     'reopened authoritative contour was discarded or replaced by empty sketch');
   await screenshot('31-from-empty-authoritative-save-reopen.png');
+  // Genuine existing-source edge hit, immutable grab point, SKETCH normal
+  // projection and structural RUNTIME edit. Do this on the still-rectangular
+  // authored project, before the later independent vertex editing journey.
+  await clickControl('[data-testid="runtime-profile-select-mode"]');
+  const edgePick=await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=runtime-sketch]');
+    if(!svg?.getScreenCTM())return null;
+    const p=new DOMPoint(45,35).matrixTransform(svg.getScreenCTM());
+    return {x:p.x,y:p.y};
+  })()`);
+  check(edgePick,'no source-bound contour pick for edge-offset acceptance');
+  await mouse('mouseMoved',edgePick.x,edgePick.y);
+  await mouse('mousePressed',edgePick.x,edgePick.y,1);
+  await mouse('mouseReleased',edgePick.x,edgePick.y);
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-contour-edge-editor]'))"),
+    'source-owned edge inventory did not appear after real contour selection');
+  const edgeGesture=await evaluate(`(() => {
+    const line=document.querySelector('[data-testid=runtime-contour-edge-1]');
+    const matrix=line?.getScreenCTM();
+    if(!matrix)return null;
+    const x=(Number(line.getAttribute('x1'))+Number(line.getAttribute('x2')))/2;
+    const y=(Number(line.getAttribute('y1'))+Number(line.getAttribute('y2')))/2;
+    const from=new DOMPoint(x,y).matrixTransform(matrix);
+    const to=new DOMPoint(x+20,y+10).matrixTransform(matrix);
+    return {from:{x:from.x,y:from.y},to:{x:to.x,y:to.y}};
+  })()`);
+  check(edgeGesture&&Number.isFinite(edgeGesture.from.x),'real semantic edge has no SVG geometry');
+  const originalEdgeRevision=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  await mouse('mouseMoved',edgeGesture.from.x,edgeGesture.from.y);
+  await mouse('mousePressed',edgeGesture.from.x,edgeGesture.from.y,1);
+  await mouse('mouseMoved',edgeGesture.to.x,edgeGesture.to.y,1);
+  await mouse('mouseReleased',edgeGesture.to.x,edgeGesture.to.y);
+  const realRightEdgeAt=x=>evaluate(`(() => {
+    const pairs=(document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'')
+      .trim().split(/\\s+/).map(item=>item.split(',').map(Number));
+    return pairs.length===4&&pairs.filter(p=>Math.abs(p[0]-${x})<0.05).length===2;
+  })()`);
+  try{await eventually(()=>realRightEdgeAt(140),'real edge drag did not move the two right vertices');}
+  catch(err){
+    const detail=await evaluate(`(() => ({
+      polygon:document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points'),
+      error:[...document.querySelectorAll('.runtime-message')].map(n=>n.textContent),
+      inventory:[...document.querySelectorAll('[data-testid^=runtime-contour-edge-]')].map(n=>n.getAttribute('data-testid'))
+    }))()`);
+    await screenshot('31a-edge-drag-failed.png');
+    throw Error(String(err)+' edge-drag diagnostics='+JSON.stringify(detail));
+  }
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")!==originalEdgeRevision,
+    'edge drag did not create one authoritative structural revision');
+  await screenshot('31a-edge-drag-admitted.png');
+  const edgeUndo=()=>evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(n=>n.textContent?.trim()==='Undo');b?.click();return !!b})()");
+  const edgeRedo=()=>evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(n=>n.textContent?.trim()==='Redo');b?.click();return !!b})()");
+  check(await edgeUndo(),'whole-edge undo not available');
+  await eventually(()=>realRightEdgeAt(120),'whole-edge undo did not restore both original endpoints');
+  check(await edgeRedo(),'whole-edge redo not available');
+  await eventually(()=>realRightEdgeAt(140),'whole-edge redo did not reapply selected semantic edge offset');
+  check(await edgeUndo(),'second whole-edge undo not available');
+  await eventually(()=>realRightEdgeAt(120),'recovery to original contour after edge edit failed');
+  const edgeSaveBefore=await evaluate('window.__modelArchiveBlobs.length');
+  await clickControl('[data-testid="runtime-save-archive"]');
+  await eventually(()=>evaluate('window.__modelArchiveBlobs.length==='+ (edgeSaveBefore+1)),
+    'edge-edit journal failed to save');
+  check(await evaluate("((async()=>{const text=await window.__modelArchiveBlobs.at(-1).text();const dt=new DataTransfer();dt.items.add(new File([text],'edge-reverted.i3d-model.json',{type:'application/json'}));const input=document.querySelector('.runtime-file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));return true})())"),
+    'edge edit archive did not reach real file selection');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
+    'Worker did not validate the edge-edited archive');
+  await clickControl('[data-testid="runtime-import-review-confirm"]');
+  await eventually(()=>realRightEdgeAt(120),'reopened edge history lost original analytic geometry');
+  await screenshot('31b-edge-undo-redo-archive-reopened.png');
   const originalDrawnVertex=await evaluate(`(() => {
     const text=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
     const pair=text.trim().split(/\\s+/)[2]?.split(',').map(Number);
@@ -1404,7 +1473,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','31a-edge-drag-admitted.png','31b-edge-undo-redo-archive-reopened.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -1427,6 +1496,7 @@ async function main() {
     genuineEmptySketchFourPointerVerticesAuthoritativeContourUndoRedoSaveReopen: true,
     genuineDrawnContourExtrusionHoleCutUndoRedoSaveReopen: true,
     genuinelyDrawnVertexNumericAndPointerEditUndoRedoReopen: true,
+    genuineContourEdgePointerOffsetUndoRedoArchiveReopen: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
