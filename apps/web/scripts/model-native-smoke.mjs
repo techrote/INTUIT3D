@@ -729,11 +729,13 @@ async function main(){
   await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-native-export]').disabled"),'enabled STEP action');
   await screenshot('native-01-paired.png');
 
-  check(await evaluate("(() => {window.__nativeStepBlobs=[];const previous=URL.createObjectURL.bind(URL);URL.createObjectURL=(blob)=>{window.__nativeStepBlobs.push(blob);return previous(blob)};return true})()"),
+  check(await evaluate("(() => {window.__nativeStepBlobs=[];window.__nativeStepNames=[];const previous=URL.createObjectURL.bind(URL);URL.createObjectURL=(blob)=>{window.__nativeStepBlobs.push(blob);return previous(blob)};const click=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){if(this.download.endsWith('.step'))window.__nativeStepNames.push(this.download);return click.call(this)};return true})()"),
     'cannot inspect actual browser file publication');
   check(await evaluate("(() => {document.querySelector('[data-testid=runtime-native-export]').click();return true})()"),
     'cannot request STEP');
   await eventually(()=>evaluate("window.__nativeStepBlobs.length===1"),'verified binary file download');
+  check(await evaluate("window.__nativeStepNames.length===1 && window.__nativeStepNames[0].endsWith('-experimental.step')"),
+    'actual OCP browser download filename incorrectly claimed pinned C++ provenance');
   check(await evaluate("(async()=>{const a=await window.__nativeStepBlobs[0].text();return a.includes('SYNTHETIC UI TEST, NOT OCCT')})()"),
     'downloaded STEP byte stream differs from verified synthetic HTTP fixture');
   check(await evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent.includes('independent external CAD readback is not asserted')"),

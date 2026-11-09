@@ -27,7 +27,7 @@ import { patternModelCircularHoles } from './circularHolePattern';
 import { transformSelectedModelHoles } from './rigidHoleTransform';
 import { stampSelectedModelHoles, removeSelectedModelHoles } from './selectedHoleStamp';
 import { createLivePlateSession } from '@intuit3d/workflow-runtime/live-plate-session';
-import { experimentalStepFilename } from './localNativeStep';
+import { sourceBoundStepFilename } from './localNativeStep';
 import { buildPinnedStepEvidenceZip, pinnedStepEvidenceFilename } from './stepEvidenceBundle';
 import { MAX_MODEL_ARCHIVE_BYTES, validateModelFileInWorker, type ModelImportStage } from './modelArchiveImport';
 import { checkedModelArchiveSize, modelArchiveDownloadName, modelArchiveSummary } from './modelFileLifecycle';
@@ -878,19 +878,20 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   // downloads it. Edits, undo, archive replacement and provider changes revoke it.
   const downloadCachedStep=()=>{
     const step=nativeSession.current?.currentStep();
-    if(!step){
-      setNativeReport('No current STEP: build this exact journal revision again.');
+    const receipt=nativeSession.current?.currentStepReceipt();
+    if(!step||!receipt){
+      setNativeReport('No current source-bound STEP receipt: build this exact journal revision again.');
       return;
     }
     const current=liveHistory.current;
-    const filename=experimentalStepFilename(current.document.projectId,current.document.revision);
+    const filename=sourceBoundStepFilename(receipt.source.projectId,receipt.source.revision,receipt.producer.backend);
     const objectUrl=URL.createObjectURL(new Blob([new Uint8Array(step.bytes)],{type:'model/step'}));
     try{
       const link=document.createElement('a');
       link.href=objectUrl;link.download=filename;
       document.body.appendChild(link);link.click();link.remove();
     }finally{setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);}
-    const pinned=!!nativeSession.current?.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'});
+    const pinned=receipt.producer.backend==='OCCT-cxx-8.0.1';
     setNativeReport(`${pinned?'Pinned OCCT8 C++ STEP downloaded':'Experimental STEP downloaded (OCP prototype)'} · revision ${current.document.revision} · ${step.bytes.byteLength} bytes · SHA-256 ${step.sha256}. Source-matched, same-engine verified bytes only; not independent STEP or production exactness; independent external CAD readback is not asserted.`);
   };
   /** One real user click => ONE atomic RUNTIME capture => one ZIP download.
@@ -1612,17 +1613,17 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                 if(!e.target.checked && autoNativeTimer.current!==null){
                   clearTimeout(autoNativeTimer.current);autoNativeTimer.current=null;
                 }
-              }}/> Live rebuild after each accepted edit (experimental, 250 ms coalescing)</span>
+              }}/> Live native rebuild after each accepted edit (250 ms coalescing)</span>
           </label>
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-build" onClick={()=>void rebuildNative('prepare')}
             disabled={!geom || !cutActive || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}>
-            {nativeBusy?'Rebuilding experimental solid…':'Rebuild experimental solid + STEP'}
+            {nativeBusy?'Rebuilding local solid…':'Rebuild local solid + STEP'}
           </button>
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-export" onClick={()=>void rebuildNative('experimental-step')}
             disabled={!geom || !cutActive || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}>
-            {nativeBusy?'Building verified STEP…':'Build and download experimental STEP'}
+            {nativeBusy?'Building source-bound STEP…':'Build and download current STEP'}
           </button>
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-download-cached"
