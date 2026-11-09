@@ -1262,6 +1262,13 @@ async function main() {
     return {from:{x:from.x,y:from.y},to:{x:to.x,y:to.y}};
   })()`);
   check(edgeGesture&&Number.isFinite(edgeGesture.from.x),'real semantic edge has no SVG geometry');
+  // The actual trusted pointer coordinates and initial 1 mm snapping, not
+  // nominal requested cursor coordinates, determine source-owned geometry.
+  const originalRightX=await evaluate(`(() => {
+    const line=document.querySelector('[data-testid=runtime-contour-edge-1]');
+    return line ? Number(line.getAttribute('x1')) : null;
+  })()`);
+  check(Number.isFinite(originalRightX),'source-bound right edge has no finite X');
   const originalEdgeRevision=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
   await mouse('mouseMoved',edgeGesture.from.x,edgeGesture.from.y);
   await mouse('mousePressed',edgeGesture.from.x,edgeGesture.from.y,1);
@@ -1272,7 +1279,7 @@ async function main() {
       .trim().split(/\\s+/).map(item=>item.split(',').map(Number));
     return pairs.length===4&&pairs.filter(p=>Math.abs(p[0]-${x})<0.05).length===2;
   })()`);
-  try{await eventually(()=>realRightEdgeAt(140),'real edge drag did not move the two right vertices');}
+  try{await eventually(()=>realRightEdgeAt(originalRightX+20),'real edge drag did not move the two right vertices');}
   catch(err){
     const detail=await evaluate(`(() => ({
       polygon:document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points'),
@@ -1288,11 +1295,11 @@ async function main() {
   const edgeUndo=()=>evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(n=>n.textContent?.trim()==='Undo');b?.click();return !!b})()");
   const edgeRedo=()=>evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(n=>n.textContent?.trim()==='Redo');b?.click();return !!b})()");
   check(await edgeUndo(),'whole-edge undo not available');
-  await eventually(()=>realRightEdgeAt(120),'whole-edge undo did not restore both original endpoints');
+  await eventually(()=>realRightEdgeAt(originalRightX),'whole-edge undo did not restore both original endpoints');
   check(await edgeRedo(),'whole-edge redo not available');
-  await eventually(()=>realRightEdgeAt(140),'whole-edge redo did not reapply selected semantic edge offset');
+  await eventually(()=>realRightEdgeAt(originalRightX+20),'whole-edge redo did not reapply selected semantic edge offset');
   check(await edgeUndo(),'second whole-edge undo not available');
-  await eventually(()=>realRightEdgeAt(120),'recovery to original contour after edge edit failed');
+  await eventually(()=>realRightEdgeAt(originalRightX),'recovery to original contour after edge edit failed');
   const edgeSaveBefore=await evaluate('window.__modelArchiveBlobs.length');
   await clickControl('[data-testid="runtime-save-archive"]');
   await eventually(()=>evaluate('window.__modelArchiveBlobs.length==='+ (edgeSaveBefore+1)),
@@ -1302,7 +1309,7 @@ async function main() {
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
     'Worker did not validate the edge-edited archive');
   await clickControl('[data-testid="runtime-import-review-confirm"]');
-  await eventually(()=>realRightEdgeAt(120),'reopened edge history lost original analytic geometry');
+  await eventually(()=>realRightEdgeAt(originalRightX),'reopened edge history lost original analytic geometry');
   await screenshot('31b-edge-undo-redo-archive-reopened.png');
   const originalDrawnVertex=await evaluate(`(() => {
     const text=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
