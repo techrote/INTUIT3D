@@ -1491,6 +1491,15 @@ async function main() {
     });
   })()`),'precise tab vertex numeric edit failed authoritative replay');
   await screenshot('40-actual-tab-semantic-dimension.png');
+  // Cache source-selected identity while its successor selection is current.
+  // Undo/Redo deliberately expires prior source fences until a user reselects.
+  const persistedTabHandle=await evaluate("document.querySelector('[data-testid=runtime-tab-vertex-select]')?.value");
+  check(typeof persistedTabHandle==='string'&&persistedTabHandle.startsWith('tab.')&&
+    persistedTabHandle.endsWith(':handle:0'),'no stable selected inserted tab handle before save');
+  const retiredTabEdge=await evaluate("document.querySelector('[data-testid=runtime-tabbed-contour]')?.textContent?.split('Retired edge ')[1]?.split(' is not selectable')[0]");
+  check(typeof retiredTabEdge==='string'&&retiredTabEdge.endsWith(':edge:1'),
+    'retired original edge identity missing before archive save');
+
   check(await edgeUndo(),'tab vertex undo unavailable');
   await eventually(tabSixVertices,'tab edit Undo destroyed contour topology');
   check(await edgeRedo(),'tab vertex redo unavailable');
@@ -1500,15 +1509,7 @@ async function main() {
       const [x,y]=v.split(',').map(Number);return Math.abs(x-145)<0.05&&Math.abs(y-20)<0.05;
     });
   })()`),'tab edit redo lost solver-owned inserted vertex');
-  // Snapshot the exact source-owned inserted handle before the archive leaves
-  // this browser session. Post-import appearance alone cannot prove editability.
-  const persistedTabHandle=await evaluate("document.querySelector('[data-testid=runtime-tab-vertex-select]')?.value");
-  check(typeof persistedTabHandle==='string'&&persistedTabHandle.startsWith('tab.')&&
-    persistedTabHandle.endsWith(':handle:0'),'no stable selected inserted tab handle before save');
   const persistedTabRevision=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
-  const retiredTabEdge=await evaluate("document.querySelector('[data-testid=runtime-tabbed-contour]')?.textContent?.split('Retired edge ')[1]?.split(' is not selectable')[0]");
-  check(typeof retiredTabEdge==='string'&&retiredTabEdge.endsWith(':edge:1'),
-    'retired original edge identity missing before archive save');
   const tabSaveCount=await evaluate("window.__modelArchiveBlobs.length");
   await clickControl('[data-testid="runtime-save-archive"]');
   await eventually(()=>evaluate('window.__modelArchiveBlobs.length==='+ (tabSaveCount+1)),
