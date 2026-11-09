@@ -1417,6 +1417,41 @@ async function main() {
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===tabOriginalRevision,
     'uncommitted tab vertices bypassed authoritative RUNTIME admission');
   await screenshot('38-actual-pointer-tab-draft.png');
+  await eventually(()=>evaluate(
+    "document.querySelector('[data-testid=runtime-tab-preflight]')?.textContent?.includes('admissible')"),
+    'two real tab points did not produce a SKETCH-owned admissible preflight');
+  // Editable dimension inputs revise only an ephemeral tab. Deliberately cross
+  // the original contour and require SKETCH to disable Commit before any event.
+  const setTabDraftNumber=async(index,axis,value)=>{
+    const selector='[data-testid=runtime-tab-draft-'+index+'-'+axis+']';
+    check(await evaluate(`(() => {
+      const el=document.querySelector(${JSON.stringify(selector)});
+      el?.focus();el?.select();return document.activeElement===el;
+    })()`),'tab draft numeric input not focusable: '+selector);
+    await send('Input.insertText',{text:String(value)});
+    await clickControl('[data-testid="runtime-tab-draft"] strong');
+    await eventually(()=>evaluate(`Number(document.querySelector(${JSON.stringify(selector)})?.value)===${value}`),
+      'tab draft coordinate was not accepted: '+selector);
+  };
+  await setTabDraftNumber(0,'x',60);
+  await setTabDraftNumber(0,'y',95);
+  await eventually(()=>evaluate(`(() => {
+    const text=document.querySelector('[data-testid=runtime-tab-preflight]')?.textContent||'';
+    const button=document.querySelector('[data-testid=runtime-tab-commit]');
+    return text.includes('refused')&&Boolean(button?.disabled);
+  })()`),'crossing tab draft incorrectly allowed an authoritative commit');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===tabOriginalRevision,
+    'SKETCH preflight changed the model journal');
+  await screenshot('38b-source-refused-tab-preview.png');
+  await setTabDraftNumber(0,'x',140);
+  await setTabDraftNumber(0,'y',20);
+  await eventually(()=>evaluate(`(() => {
+    const text=document.querySelector('[data-testid=runtime-tab-preflight]')?.textContent||'';
+    const button=document.querySelector('[data-testid=runtime-tab-commit]');
+    return text.includes('admissible')&&!button?.disabled;
+  })()`),'numeric correction did not recover SKETCH tab preflight');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===tabOriginalRevision,
+    'numeric precommit tab repair wrote a model revision');
   await clickControl('[data-testid="runtime-tab-commit"]');
   const tabSixVertices=()=>evaluate(`(() => {
     const data=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
