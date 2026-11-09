@@ -1863,7 +1863,7 @@ async function main() {
     '#348 selected profile does not enable named extrusion');
   await clickControl('[data-testid="runtime-general-create-extrude"]');
   try {
-    await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-extrude.part]')?.textContent==='preview_only'"),
+    await eventually(()=>evaluate("document.querySelector('[data-testid=\"runtime-status-extrude.part\"]')?.textContent==='preview_only'"),
       '#348 named FEATUREOPS extrusion did not become a preview-only RUNTIME feature');
   }catch(error){
     const detail=await evaluate("(() => ({message:document.querySelector('.runtime-message')?.textContent,source:document.querySelector('[data-testid=runtime-general-source]')?.textContent,revision:document.querySelector('[data-testid=runtime-revision]')?.textContent,features:[...document.querySelectorAll('.feature-item')].map(n=>n.textContent),button:document.querySelector('[data-testid=runtime-general-create-extrude]')?.outerHTML.slice(0,350)}))()");
@@ -1887,7 +1887,7 @@ async function main() {
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-create-cut]')?.disabled===false"),
     '#348 explicit selected body not accepted');
   await clickControl('[data-testid="runtime-general-create-cut"]');
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-cut.part]')?.textContent==='pending_exact_provider'"),
+  await eventually(()=>evaluate("document.querySelector('[data-testid=\"runtime-status-cut.part\"]')?.textContent==='pending_exact_provider'"),
     '#348 named cut did not remain pending exact provider');
   await screenshot('43-general-explicit-body-cut-pending.png');
   const generalBeforeSave=await evaluate('window.__modelArchiveBlobs.length');
@@ -1899,7 +1899,7 @@ async function main() {
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-import-review]'))"),
     '#348 Worker refused persisted named solid or did not reach review');
   await clickControl('[data-testid="runtime-import-review-confirm"]');
-  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-status-cut.part]')?.textContent==='pending_exact_provider'"),
+  await eventually(()=>evaluate("document.querySelector('[data-testid=\"runtime-status-cut.part\"]')?.textContent==='pending_exact_provider'"),
     '#348 Worker reopen lost named cut or falsely certified exact native');
   await screenshot('44-general-named-body-worker-reopened.png');
   await clickControl('[data-testid="runtime-mode-sketch"]');
@@ -1926,7 +1926,7 @@ async function main() {
   await clickControl('[data-testid="runtime-general-edit-depth"]');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-body-status]')?.textContent.includes('14 mm')"),
     '#348 resumed user editing did not commit new exact depth');
-  check(await evaluate("document.querySelector('[data-testid=runtime-status-cut.part]')?.textContent==='pending_exact_provider'"),
+  check(await evaluate("document.querySelector('[data-testid=\"runtime-status-cut.part\"]')?.textContent==='pending_exact_provider'"),
     '#348 depth edit falsely turned cut into native proof');
   await screenshot('45-general-post-import-depth-edited.png');
   check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
