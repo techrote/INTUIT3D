@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import * as model from '@intuit3d/model';
 import type { ChangeEvent } from 'react';
 import {
   addModelHole, createModelExtrusion, createModelThroughCut, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelSketchDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, modelHoleIsCartesian, moveModelFeature, moveModelHoleCenter, moveModelHoleGroup, nudgeModelHoleSelection, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
@@ -299,8 +300,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const generalSolid=generalSolidReport?.status==='preview_only'&&
     generalSolidReport.profile?.status==='analytic_profile_only'&&generalSelectedBody
       ?{profile:generalSolidReport.profile,thickness:generalSelectedBody.depthMm}:null;
-  const generalCutActive=!!generalSelectedBody&&report.features.some(f=>f.kind==='cut' &&
-    f.bodyId===generalSelectedBody.bodyId && f.status==='pending_exact_provider');
+  // A pending cut's RUNTIME report need not expose bodyId. Match its
+  // authoritative INTENT write target to the exact selected body instead.
+  const generalCutActive=!!generalSelectedBody&&model.featuresOf(history.document).some(f=>
+    f.kind==='cut'&&f.writeTargets.length===1&&
+    f.writeTargets[0]===generalSelectedBody.bodyId&&
+    report.features.some(r=>r.featureId===f.id&&r.status==='pending_exact_provider'));
   const renderSketch=sketchMode||(!plateActive&&!generalSolid);
   const selectedActive=featureRows.some(row=>row.featureId===selected&&row.active);
   const editableLifecycle=selected==='plate'||selected==='cut';
