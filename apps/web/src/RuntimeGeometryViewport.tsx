@@ -774,7 +774,6 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         r={Math.max(3,Math.min(width,height)/28)*sketchMarkerScale}
         fill="#73c5d6" stroke="#162c39" strokeWidth="1"
         style={{cursor:onContourVertexDrag?'grab':'pointer',touchAction:'none'}}
-        title="Click to select exact source vertex; drag to move via SKETCH. Escape cancels."
         onPointerDown={event=>{
           if(!onContourVertexDrag||event.button!==0||contourVertexMove.current)return;
           event.preventDefault();event.stopPropagation();
