@@ -132,6 +132,8 @@ jobs:
           try {
             node evaluation/pack.mjs verify .
             if ($LASTEXITCODE -ne 0) { throw 'Extracted manifest verification failed' }
+            node evaluation/link-workspaces.mjs
+            if ($LASTEXITCODE -ne 0) { throw 'Extracted Windows workspace junction preparation failed' }
             node tooling/dev-local.mjs --smoke
             if ($LASTEXITCODE -ne 0) { throw 'Extracted startup smoke failed' }
           } finally { Pop-Location }
