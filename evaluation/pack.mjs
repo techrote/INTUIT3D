@@ -10,11 +10,11 @@
  * junctions; materialize those links before making a portable ZIP archive.
  */
 import {
-  copySync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync,
-  readdirSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync
+  cpSync, existsSync, lstatSync, readFileSync,
+  readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync
 } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { basename, join, relative, resolve, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 
 const [mode, folder, sourceSha] = process.argv.slice(2);
 const base = folder ? resolve(folder) : null;
