@@ -8,9 +8,10 @@ import {
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
 import { BlankSketchCanvas } from './BlankSketchCanvas';
-import {appendBlankContourPoint,undoBlankContourVertex,type BlankContourDraft,type SketchLocalPoint} from './blankContourDraft';
+import {appendBlankContourPoint,undoBlankContourVertex,placeBlankContourPointer,type BlankContourDraft,type SketchLocalPoint} from './blankContourDraft';
 import {commitModelBlankContour,startModelBlankContour,structuralContourRuntimeAvailable,inspectModelClosedContour,dragModelClosedContourVertex} from './closedContourBridge';
 import {ClosedContourVertexEditor} from './ClosedContourVertexEditor';
+import {insertModelContourTab,inspectModelTabbedContour,editModelTabbedVertex} from './tabbedContourBridge';
 import {inspectModelContourEdges,dragModelClosedContourEdge,offsetModelClosedContourEdge}
   from './closedContourEdgeBridge';
 import { HistoricalEditInspector } from './HistoricalEditInspector';
@@ -116,6 +117,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [pointerHandleId,setPointerHandleId]=useState('');
   const [selectedContourEdgeId,setSelectedContourEdgeId]=useState('');
   const [edgeOffsetDraft,setEdgeOffsetDraft]=useState('10');
+  // Uncommitted pointer vertices are ephemeral; no model/solver write until Commit.
+  const [tabDraft,setTabDraft]=useState<{
+    edgeId:string;expectedArchive:string;points:SketchLocalPoint[];
+  }|null>(null);
   // Whole canonical archive at semantic selection. Reject divergent histories
   // even when their numeric revision and sketch signature happen to agree.
   const [pointerSourceArchive,setPointerSourceArchive]=useState<string|null>(null);
@@ -127,6 +132,17 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [cascadeConfirmation,setCascadeConfirmation]=useState<string|null>(null);
   const [timeline,setTimeline]=useState<'authored'|'evaluated'>('authored');
   const [message,setMessage]=useState<string|null>(null);
+  useEffect(()=>{
+    if(!tabDraft)return;
+    const cancel=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'){
+        event.preventDefault();setTabDraft(null);
+        setMessage('Uncommitted tab cancelled; no CAD revision created.');
+      }
+    };
+    window.addEventListener('keydown',cancel);
+    return()=>window.removeEventListener('keydown',cancel);
+  },[tabDraft]);
   const [pendingImport,setPendingImport]=useState<{file:string;history:ModelSession;origin:'file'|'new'|'recovery'}|null>(null);
   // The browser cannot prove that a requested file download reached the OS.
   const [needsArchiveExport,setNeedsArchiveExport]=useState(true);
@@ -233,6 +249,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     setCascadeConfirmation(null);
     setCircleDrawing({phase:'idle'});
     setBlankDraft(null);
+    setTabDraft(null);
     setFeatureCombo(null);
     setHistory(next);
     setRecoveryActivated(true);
@@ -306,7 +323,15 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     try{return inspectModelContourEdges(history,pointerSelection);}
     catch{return null;}
   },[history,pointerSelection,closedInventory]);
+  const tabbedInventory=useMemo(()=>{
+    if(!pointerSelection||!pointerSourceArchive||
+      pointerSourceArchive!==serializeModelSession(history))return null;
+    try{return inspectModelTabbedContour(history,pointerSelection);}
+    catch{return null;}
+  },[history,pointerSelection,pointerSourceArchive]);
   const closedHandle=closedInventory?.handles.find(h=>h.handleId===pointerHandleId)??null;
+  const tabbedHandle=tabbedInventory?.handles.find(h=>h.handleId===pointerHandleId)??null;
+  const tabSourceEdge=tabDraft?closedEdges?.edges.find(edge=>edge.edgeId===tabDraft.edgeId):null;
   const pointerDragHandle=pointerHandles.find(h=>h.handleId===pointerHandleId)??null;
   const canAuthorExtrusion=!plateAuthored && !!sketchProfile && !pendingImport;
   const canAuthorCut=plateActive && !cutAuthored && !!sketchProfile?.holes.length && !pendingImport;
@@ -387,6 +412,58 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         (result.invalidatedFeatureIds.join(' → ')||'no downstream features')+
         '. Original STEP revoked; preview is analytic only.');
     }catch(e){setMessage('Whole edge refused; journal unchanged: '+String(e));}
+  };
+  const beginTab=()=>{
+    if(!pointerSelection||!pointerSourceArchive||pendingImport||loadingFile)return;
+    if(!closedInventory||!closedEdges?.edges.some(edge=>edge.edgeId===selectedContourEdgeId)){
+      setMessage('Select one SKETCH-owned contour edge before inserting a tab.');return;
+    }
+    setTabDraft({edgeId:selectedContourEdgeId,expectedArchive:pointerSourceArchive,points:[]});
+    setMessage('Insert tab: click two sketch-local positions in order. Shift gives fine snap. Commit creates one undoable revision; Escape cancels.');
+  };
+  const addTabPoint=(x:number,y:number,precise:boolean)=>{
+    if(!tabDraft||pendingImport||loadingFile)return;
+    if(tabDraft.expectedArchive!==serializeModelSession(liveHistory.current)){
+      setTabDraft(null);setMessage('Tab draft cancelled: authoritative source changed.');return;
+    }
+    const point=placeBlankContourPointer({x,y},precise);
+    if(!point){setMessage('Tab vertex outside bounded sketch coordinates.');return;}
+    if(tabDraft.points.length>=2){setMessage('Two points placed. Commit or cancel.');return;}
+    setTabDraft({...tabDraft,points:[...tabDraft.points,point]});
+    setMessage('Tab pointer vertices '+(tabDraft.points.length+1)+'/2. No model revision yet.');
+  };
+  const commitTab=()=>{
+    if(!tabDraft||!pointerSelection||!pointerSourceArchive||pendingImport||loadingFile)return;
+    if(tabDraft.points.length!==2){setMessage('Place both tab vertices before committing.');return;}
+    try{
+      if(liveHistory.current!==history||tabDraft.expectedArchive!==pointerSourceArchive)
+        throw Error('Selected journal changed. Restart tab placement.');
+      const result=insertModelContourTab(liveHistory.current,nativeSession.current!,
+        pointerSelection,tabDraft.edgeId,
+        [tabDraft.points[0],tabDraft.points[1]],tabDraft.expectedArchive);
+      if(result.kind==='refused'){setMessage('Tab refused: '+result.reason);return;}
+      acceptHistory(result.history);
+      setPointerSelection(result.selection);
+      setPointerSourceArchive(serializeModelSession(result.history));
+      setPointerHandleId('');setSelectedContourEdgeId('');
+      setMessage('Inserted tab in ONE source-fenced RUNTIME revision '+
+        result.history.document.revision+'. Retired '+result.retiredEdgeIds.join(', ')+
+        '. Native STEP pending independent qualification.');
+    }catch(error){setMessage('Tab insertion refused; journal unchanged: '+String(error));}
+  };
+  const editTabVertex=(handleId:string,x:number,y:number)=>{
+    if(!pointerSelection||!pointerSourceArchive||pendingImport||loadingFile)return;
+    try{
+      if(liveHistory.current!==history)throw Error('Displayed journal changed; reselect.');
+      const result=editModelTabbedVertex(liveHistory.current,nativeSession.current!,
+        pointerSelection,handleId,{x,y},pointerSourceArchive);
+      if(result.kind==='refused'){setMessage('Tab vertex refused: '+result.reason);return;}
+      acceptHistory(result.history);
+      setPointerSelection(result.selection);
+      setPointerSourceArchive(serializeModelSession(result.history));
+      setMessage('Edited solver-owned tab vertex '+handleId+' in one undoable revision '+
+        result.history.document.revision+'. Native STEP stale/pending; analytic preview only.');
+    }catch(error){setMessage('Tab vertex edit refused; journal unchanged: '+String(error));}
   };
   const createExtrusion=():boolean=>{
     try{
