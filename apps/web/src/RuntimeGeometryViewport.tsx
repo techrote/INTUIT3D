@@ -17,7 +17,7 @@ import { panBlankCanvas, zoomBlankCanvas, type BlankCanvasView } from './blankCa
 type HoleId = string;
 export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick, onThicknessEdit, onProfilePick, profileEditHandle, onProfileHandleDrag,
   contourEdges, selectedContourEdgeId, onContourEdgePick, onContourEdgeDrag, onContourEdgeOffset,
-  tabPoints,tabEdge,onTabPoint,sketchProjectKey,contourVertexHandles,onContourVertexPick }: {
+  tabPoints,tabEdge,onTabPoint,sketchProjectKey,contourVertexHandles,onContourVertexPick,onContourVertexDrag }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
   /** Clear ephemeral navigation on project replacement; never on a CAD edit. */
   sketchProjectKey?: string;
@@ -41,6 +41,8 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
    * never a nearest inferred vertex; coincident points retain the inspector fallback. */
   contourVertexHandles?:readonly {handleId:string;position:{x:number;y:number}}[];
   onContourVertexPick?:(handleId:string)=>void;
+  /** Direct drag commits only through the selected SKETCH/RUNTIME structural editor. */
+  onContourVertexDrag?:(handleId:string,x:number,y:number)=>void;
   /** Only current SKETCH-inspected source-owned edges may render manipulators. */
   contourEdges?:readonly ContourOffsetEdge[];
   selectedContourEdgeId?:string;
@@ -74,6 +76,23 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   const profileMove=useRef<{handleId:string;pointerId:number;source:PlateProfile;
     startScreen:{x:number;y:number}}|null>(null);
   const [profilePreview,setProfilePreview]=useState<{x:number;y:number}|null>(null);
+  // The pointer proposal stays ephemeral. Parent commits source-owned geometry via RUNTIME.
+  const contourVertexMove=useRef<{handleId:string;pointerId:number;source:PlateProfile;
+    startScreen:{x:number;y:number};capture:SVGCircleElement}|null>(null);
+  const [contourVertexPreview,setContourVertexPreview]=useState<
+    {handleId:string;x:number;y:number}|null>(null);
+  useEffect(()=>{
+    const cancel=(event:KeyboardEvent)=>{
+      if(event.key!=='Escape'||!contourVertexMove.current)return;
+      const active=contourVertexMove.current;
+      contourVertexMove.current=null;setContourVertexPreview(null);
+      if(active.capture.hasPointerCapture(active.pointerId))
+        active.capture.releasePointerCapture(active.pointerId);
+      event.preventDefault();
+    };
+    window.addEventListener('keydown',cancel);
+    return()=>window.removeEventListener('keydown',cancel);
+  },[]);
   const contourMove=useRef<{edgeId:string;pointerId:number;source:PlateProfile;
     start:{x:number;y:number}}|null>(null);
   const [contourPreview,setContourPreview]=useState<{edgeId:string;offsetMm:number}|null>(null);
@@ -754,15 +773,60 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
         cx={handle.position.x} cy={handle.position.y}
         r={Math.max(3,Math.min(width,height)/28)*sketchMarkerScale}
         fill="#73c5d6" stroke="#162c39" strokeWidth="1"
-        style={{cursor:'pointer',touchAction:'none'}}
+        style={{cursor:onContourVertexDrag?'grab':'pointer',touchAction:'none'}}
+        onPointerDown={event=>{
+          if(!onContourVertexDrag||event.button!==0||contourVertexMove.current)return;
+          event.preventDefault();event.stopPropagation();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          contourVertexMove.current={handleId:handle.handleId,pointerId:event.pointerId,
+            source:profile,startScreen:{x:event.clientX,y:event.clientY},
+            capture:event.currentTarget};
+          setContourVertexPreview({handleId:handle.handleId,...handle.position});
+        }}
+        onPointerMove={event=>{
+          const active=contourVertexMove.current;
+          if(!active||active.handleId!==handle.handleId||
+              active.pointerId!==event.pointerId||active.source!==profile)return;
+          const at=pointerPosition(event);
+          if(at)setContourVertexPreview({handleId:handle.handleId,...at});
+        }}
+        onPointerUp={event=>{
+          const active=contourVertexMove.current;
+          if(!active||active.handleId!==handle.handleId||active.pointerId!==event.pointerId)return;
+          event.preventDefault();event.stopPropagation();
+          contourVertexMove.current=null;setContourVertexPreview(null);
+          if(active.source!==profile)return;
+          if(Math.hypot(event.clientX-active.startScreen.x,
+            event.clientY-active.startScreen.y)<=3){
+            onContourVertexPick(handle.handleId);return;
+          }
+          const at=pointerPosition(event);
+          if(at)onContourVertexDrag?.(handle.handleId,at.x,at.y);
+        }}
+        onPointerCancel={()=>{contourVertexMove.current=null;setContourVertexPreview(null);}}
+        onLostPointerCapture={()=>{contourVertexMove.current=null;setContourVertexPreview(null);}}
         onClick={event=>{event.preventDefault();event.stopPropagation();
-          onContourVertexPick(handle.handleId);}}
+          if(!onContourVertexDrag)onContourVertexPick(handle.handleId);
+        }}
         onKeyDown={event=>{
+          if(event.key==='Escape'){
+            const active=contourVertexMove.current;
+            contourVertexMove.current=null;setContourVertexPreview(null);
+            if(active&&event.currentTarget.hasPointerCapture(active.pointerId))
+              event.currentTarget.releasePointerCapture(active.pointerId);
+            event.preventDefault();return;
+          }
           if(event.key==='Enter'||event.key===' '){
             event.preventDefault();event.stopPropagation();
             onContourVertexPick(handle.handleId);
           }
         }}/>)}
+      {contourVertexPreview&&<circle
+        data-testid="runtime-contour-vertex-drag-preview"
+        cx={contourVertexPreview.x} cy={contourVertexPreview.y}
+        r={Math.max(3,Math.min(width,height)/28)*sketchMarkerScale}
+        fill="#ffdb7c55" stroke="#ffdb7c" strokeDasharray="3 2"
+        strokeWidth="1" pointerEvents="none"/>}
       {profileEditHandle&&onProfileHandleDrag&&<circle
         data-testid="runtime-profile-drag-handle"
         aria-label={'Drag selected semantic profile handle '+profileEditHandle.handleId}
