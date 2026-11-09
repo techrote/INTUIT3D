@@ -82,6 +82,37 @@ test('offsetting an edge incident to the fixed datum does not translate other ve
     {x:-5,y:0},{x:120,y:0},{x:120,y:80},{x:-5,y:80}]);
 });
 
+test('overshooting the opposite edge must not silently reverse a solved contour winding',()=>{
+  const a=make(),stamp=serializeSketch(a.sketch);
+  // Crossing the left side by 40 mm produces an otherwise solved, valid
+  // rectangle whose directed loop is CLOCKWISE instead of counterclockwise.
+  // The ordinary vertex editor can represent that end state, but a normal
+  // edge drag must not silently invert the outward side of the same edge ID.
+  const reversed=editClosedContourVertices(a.sketch,a.selection,{
+    kind:'edit-closed-contour-vertices',version:1,
+    sourceSignature:stamp,contourId:'panel',
+    changes:[{index:1,xMm:-40,yMm:0},{index:2,xMm:-40,yMm:80}]
+  });
+  assert.equal(reversed.kind,'accepted',JSON.stringify(reversed));
+  assert.equal(solveSketch(reversed.sketch).status,'solved');
+  const from=inspect(a),to=inspectClosedContourEdges(
+    reversed.sketch,reversed.selection,'panel');
+  assert.equal(from.kind,'contour_edges');
+  assert.equal(to.kind,'contour_edges');
+  assert.deepEqual(from.edges[1].normal,{x:1,y:0});
+  assert.deepEqual(to.edges[1].normal,{x:-1,y:0});
+  const proposal=offset(a,'panel:edge:1',-160);
+  assert.equal(proposal.kind,'refused',JSON.stringify(proposal));
+  assert.equal(proposal.reason,'contour_winding_changed');
+  const pointer=dragClosedContourEdge(a.sketch,a.selection,{
+    version:1,sourceSignature:stamp,contourId:'panel',
+    edgeId:'panel:edge:1',start:{x:120,y:40},target:{x:-40,y:40}
+  });
+  assert.equal(pointer.kind,'refused',JSON.stringify(pointer));
+  assert.equal(pointer.reason,'contour_winding_changed');
+  assert.equal(serializeSketch(a.sketch),stamp,'invalid gesture does not mutate source');
+});
+
 test('clockwise contours use the physical outward normal rather than screen-space sidedness',()=>{
   const a=make([{x:0,y:0},{x:0,y:80},{x:120,y:80},{x:120,y:0}]);
   const v=inspect(a);
