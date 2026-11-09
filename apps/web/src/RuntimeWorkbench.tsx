@@ -321,12 +321,14 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   // RUNTIME, not a React success flag, owns STEP/source/backend provenance.
   // Read only when the journal or an attempt changes; never sample a stale
   // receipt merely because the model revision number still matches.
-  const nativeIndicator=useMemo(()=>{
+  const nativeSnapshot=useMemo(()=>{
     const state=nativeSession.current!.refresh();
     const backend=state.stepAvailability==='unavailable'?null:
       nativeSession.current!.currentStepReceipt()?.producer.backend??null;
-    return describeNativeStep(state,backend,Boolean(geom&&cutActive));
+    return {stepAvailability:state.stepAvailability,
+      indicator:describeNativeStep(state,backend,Boolean(geom&&cutActive))};
   },[history,geom,cutActive,nativeBusy,nativeReport,nativeEvidence,pinnedEvidenceReady,nativeUrl,nativeToken]);
+  const nativeIndicator=nativeSnapshot.indicator;
   const faults=useMemo(()=>modelDiagnostics(report),[report]);
   const plate=report.features.find(f=>f.featureId==='plate');
   const cut=report.features.find(f=>f.featureId==='cut');
@@ -1639,7 +1641,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-download-cached"
             disabled={nativeBusy || !!pendingImport || !nativeSession.current?.currentStep()}
-            onClick={downloadCachedStep}>{nativeSession.current?.refresh().stepAvailability==='last_good'
+            onClick={downloadCachedStep}>{nativeSnapshot.stepAvailability==='last_good'
               ?'Download retained last-good STEP':'Download current STEP'}</button>
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-evidence-zip"
