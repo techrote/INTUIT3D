@@ -148,6 +148,13 @@ async function pointerOffsetDrawnRightEdge(){
   await click('runtime-mode-sketch');
   await until(()=>evalInPage('Boolean(document.querySelector("[data-testid=runtime-sketch]"))'),
     '2D solved sketch after 3D earlier-feature edit');
+  // Require the accepted #335 solved-sketch navigation on the composed
+  // source and operate the real FIT control before selecting the contour.
+  // A PR test against the earlier Workbench source must fail rather than
+  // falsely qualifying a source combination not yet exercised physically.
+  await until(()=>evalInPage('Boolean(document.querySelector("[data-testid=runtime-solved-view-fit]"))'),
+    'source-current #335 solved-sketch navigation absent from physical browser');
+  await click('runtime-solved-view-fit');
   await click('runtime-profile-select-mode');
   const pick=await evalInPage('(()=>{const svg=document.querySelector("[data-testid=runtime-sketch]");'+
     'const matrix=svg?.getScreenCTM();if(!matrix)return null;'+
