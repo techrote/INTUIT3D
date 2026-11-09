@@ -192,25 +192,50 @@ jobs:
                   if event.get('featureId')=='sketch.plate'
                   and 'sketch' in event.get('patch',{}).get('payload',{})),None)
               assert source is not None,'no authored SKETCH source in current archive'
-              contour={int(p['id'].rsplit(':vertex:',1)[1]):p for p in source['points']
-                       if ':vertex:' in p['id']}
+              # Seed point coordinates are deliberately NOT authoritative
+              # after a structural contour edit: SKETCH preserves the initial
+              # point seeds and changes source-owned driving constraints.
+              # Independently interpret the bounded fixed-anchor/distanceX/Y
+              # constraint equations, not a runtime solver, STEP or mesh.
+              contour={int(p['id'].rsplit(':vertex:',1)[1]):p['id']
+                       for p in source['points'] if ':vertex:' in p['id']}
               assert set(contour)==set(range(4)),contour
-              p0,p1,p2,p3=(contour[i] for i in range(4))
-              x0,y0=p0['x'],p0['y']
-              x1,y1=p2['x'],p2['y']
+              constraints=source['constraints']
+              def one(items,description):
+                  assert len(items)==1,(description,items)
+                  return items[0]
+              anchor=one([c for c in constraints if c.get('kind')=='fixed'
+                          and c.get('point')==contour[0]],'fixed contour anchor')
+              x0,y0=anchor['x'],anchor['y']
+              def location(index):
+                  if index==0:return x0,y0
+                  def d(axis):
+                      kind='distance'+axis.upper()
+                      return one([c for c in constraints if c.get('kind')==kind
+                                  and c.get('a')==contour[0]
+                                  and c.get('b')==contour[index]],kind)['value']
+                  return x0+d('x'),y0+d('y')
+              (ax,ay),(bx,by),(x1,y1),(dx,dy)=[location(i) for i in range(4)]
+              assert abs(ax-x0)<1e-9 and abs(ay-y0)<1e-9
+              assert abs(bx-x1)<1e-5 and abs(by-y0)<1e-5
+              assert abs(dx-x0)<1e-5 and abs(dy-y1)<1e-5
               width,height=x1-x0,y1-y0
               # Pixel-to-SVG projection followed by 1mm snapping yields
-              # source-authoritative integer spans. Recent real Chromium
+              # source-authoritative constrained spans. Recent real Chromium
               # pointer replay admitted 121x81, exactly at the old strict
               # upper bounds. Keep a bounded 1.5mm pointer envelope here;
               # the independent physical oracle BELOW uses the actual
               # canonical source and retains its tight numerical budgets.
               assert (138.5<=width<=141.5 if is_edge else 118.5<=width<=121.5),(width,is_edge)
               assert 78.5<=height<=81.5,(width,height)
-              assert abs(p1['x']-x1)<0.0001 and abs(p1['y']-y0)<0.0001
-              assert abs(p3['x']-x0)<0.0001 and abs(p3['y']-y1)<0.0001
-              centers={p['id']:(p['x'],p['y']) for p in source['points']}
-              circles=sorted([(centers[c['center']][0],centers[c['center']][1],c['radius'])
+              if is_edge:
+                  # Source constraint truth must agree with the actual
+                  # user-observed screen gesture, not merely a pixel preview.
+                  edit=report['authoredFeatures']['wholeEdgeOffset']
+                  assert abs(x1-edit['rightAfterMm'])<0.06,(x1,edit)
+              fixed={c['point']:(c['x'],c['y']) for c in constraints if c.get('kind')=='fixed'}
+              radii={c['circle']:c['value'] for c in constraints if c.get('kind')=='radius'}
+              circles=sorted([(fixed[c['center']][0],fixed[c['center']][1],radii[c['id']])
                               for c in source['circles']],key=lambda v:v[0])
               assert len(circles)==2,circles
               assert all(abs(actual[0]-x)<0.001 and abs(actual[1]-40)<0.001
