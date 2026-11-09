@@ -1,6 +1,6 @@
 # INTUIT3D — Owner Steering & Programme Assessment
 
-**Status:** Live project authority and intake protocol. **Maintainer:** INTEGRATION & QA. **Readers:** all ten owner-approved permanent hourly lanes at the start of every run.
+**Status:** Live project authority and intake protocol. **Maintainer:** INTEGRATION & QA. **Current operating mode (9 Nov 2026):** two active evaluation-finishing schedules; the historical ten engineering lane scopes remain documented but their inactive workers must not be restarted automatically.
 
 ## Purpose
 
@@ -42,8 +42,17 @@ Owner input can be committed here by a repository maintainer acting on explicit 
 | ST-008 | **Accepted owner decision, 2026-11-07** | Add independent eighth PLATFORM lane for reproducible pinned OCCT 8.0.1 C++ and truly independent non-OCCT STEP readback. | [#81](https://github.com/techrote/INTUIT3D/issues/81); exclusive `platform/native-toolchain/**` and `conformance/external-cad/**` |
 | ST-009 | **Accepted owner decision, 2026-11-07** | Add independent ninth SKETCH INTERCHANGE lane for tested DXF import/export of analytic sketches with units and no parallel solver. | [#134](https://github.com/techrote/INTUIT3D/issues/134); exclusive `packages/interchange/**`, accepted SKETCH consumer/round-trip and typed API |
 | ST-010 | **Accepted owner decision, 2026-11-07** | Add independent tenth ENGINEERING lane for model-derived measurements and deterministic dimensioned SVG drawings, without false physical-mass/STEP authority. | [#135](https://github.com/techrote/INTUIT3D/issues/135); exclusive `packages/engineering/**`, editable project/reopen/drawing fixture and accepted-main evidence |
+| ST-011 | **Accepted owner evaluation reset, 2026-11-09** | Temporarily focus INTUIT3D on a polished **downloadable, runnable evaluation build of already accepted features**, suitable for Windows/Firefox owner review; consolidate to **two** active schedules: Evaluation Workbench (presentation/UX, `apps/web/**`) and Evaluation Release & QA (independent integration, packaging, launch, screenshots, qualified source/limitations). Preserve paused workers and accepted code; stop speculative feature expansion and do not auto-create replacements. | [Evaluation candidate PR #353](https://github.com/techrote/INTUIT3D/pull/353); acceptance requires executable Windows bundle extraction/startup smoke and separately labelled source CI, Chromium, native/STEP and human Firefox gates. |
 
 These entries record the owner's already stated project objectives; they do **not** claim any feature is implemented, tested or released. Newly accepted decisions receive a new stable ID, date and issue/ADR reference when available.
+
+### ST-011 — Evaluation build delivery reset (9 November 2026)
+
+- **Owner requirement:** Deliver a well-presented working build of **current** INTUIT3D features for hands-on evaluation and steering. The objective is not to restore the ten-lane expansion plan or to increase the issue backlog.
+- **Current operating team:** Workbench may refine only `apps/web/**`; Evaluation Release & QA independently reviews and qualifies the candidate, owns shared packaging/CI/docs, merges guarded qualified work and supplies one downloadable Windows x64 ZIP with a simple launcher and precise evidence. All other existing source boundaries are preserved, including for paused workers.
+- **Exit criterion:** Exact checked-out source identity, Windows-based `npm ci` and `dev:local --smoke`, actual extracted ZIP verification/relaunch, manifest and ZIP SHA-256, original Chromium screenshots, clear `START-HERE.md` and capability limitations, plus an explicit **Windows Firefox owner acceptance still pending** designation until performed. A smoke only proves launch; no implied OCCT8/AnvilCAD, general Booleans or physical Windows STEP.
+- **Resumption:** Do not recreate/enable schedules or open speculative feature work without new owner direction; protect unfinished and accepted branches. Once evaluation-ready, preserve source-custody baseline and stop.
+- **Tracking:** [Draft evaluation release PR #353](https://github.com/techrote/INTUIT3D/pull/353), whose CI and artifacts are evidence only after actual execution. This entry supersedes the *current scheduling and development emphasis* of ST-002/ST-005/ST-007–ST-010, not their historical approval, geometry safety rules, source ownership or prior accepted technical results.
 
 ### ST-005 — Sixth permanent Workflow Runtime lane
 

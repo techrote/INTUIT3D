@@ -4,7 +4,7 @@
 
 INTUIT3D aims to deliver a serious Fusion-inspired CAD workbench without making a strictly chronological feature tree the sole authority. Users should be able to sketch and model directly, introduce dimensions and dependencies retrospectively, reorder independent operations, preserve temporarily unresolved intent, and recover from topology changes without silent loss of engineering meaning.
 
-**Development mode:** ambitious, predominantly agent-implemented, with ten independent permanent engineering lanes and serialized Integration-owned admission/merges. The repository is the authority, not an individual agent's prior chat.
+**Evaluation delivery mode (9 Nov 2026):** two active workers concentrate on a well-presented build of accepted features; other engineering lanes are temporarily paused. Source qualification and guarded Integration admission remain in force. [Windows evaluation guide](evaluation/START-HERE.md) · [Evaluation bundle workflow](.github/workflows/evaluation.yml). Until its Windows ZIP/extracted-startup job passes, this is a **release candidate under qualification**, not an already downloadable, Windows-tested release.
 
 ## North-star demonstration
 
