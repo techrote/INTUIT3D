@@ -144,7 +144,10 @@ test('equal-revision divergent source, wrong edge, forged acceptance and invalid
   // The distinct empty source here also shows project/revision alone is insufficient.
   const different=runtime.commit(other,[
     {eventId:'alternate.contour',type:'feature.edit',featureId:'sketch.plate',
-     patch:{payload:{sketch:source(user.history)}}}],other.document.revision);
+     patch:{payload:{sketch:source(user.history)}}},
+    {eventId:'alternate.thickness',type:'feature.edit',featureId:'plate',
+     patch:{payload:{sourceSketchId:'sketch.plate',thicknessMm:9}}},
+  ],other.document.revision);
   assert.equal(different.document.revision,user.history.document.revision);
   assert.equal(runtime.commitTabbedContour(different,positive.request).code,'stale_source');
 
