@@ -150,6 +150,8 @@ async function main(){
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-export]'))"),'model-first native panel');
   check(await evaluate("document.querySelector('[data-testid=runtime-panel]')!==null && document.querySelector('[data-testid=enter-model-runtime]')===null"),
     'Default startup did not mount only the authoritative CAD editor');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-step-state]')?.textContent?.includes('NATIVE STEP UNAVAILABLE')"),
+    'Unbuilt source falsely advertises current native STEP');
   // Real Chromium click/keyboard + archive roundtrip of authoritative
   // INTENT feature tombstones. No retired solid may remain on screen as current.
   const pointerClick=async(testid)=>{
@@ -734,10 +736,12 @@ async function main(){
   await eventually(()=>evaluate("window.__nativeStepBlobs.length===1"),'verified binary file download');
   check(await evaluate("(async()=>{const a=await window.__nativeStepBlobs[0].text();return a.includes('SYNTHETIC UI TEST, NOT OCCT')})()"),
     'downloaded STEP byte stream differs from verified synthetic HTTP fixture');
-  check(await evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent.includes('not independent STEP')"),
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent.includes('independent external CAD readback is not asserted')"),
     'STEP result lacks experimental and independent status');
   check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]').disabled"),
     'RUNTIME did not retain current, verified STEP for explicit download');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-step-state]')?.textContent?.includes('OCP STEP · CURRENT')"),
+    'Source-bound OCP browser result falsely promoted to pinned C++ or unavailable');
   check(await evaluate("document.querySelector('[data-testid=runtime-native-evidence-zip]')?.disabled"),
     'synthetic/OCP browser fixture was offered as pinned OCCT8 independent-CAD custody');
   check(await evaluate("document.querySelector('[data-testid=runtime-native-evidence]')?.textContent.includes('Through-holes:')"),
@@ -759,6 +763,8 @@ async function main(){
     'stale STEP was downloaded following model change');
   check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
     'retrospective edit left a stale RUNTIME STEP receipt downloadable');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-step-state]')?.textContent?.includes('NATIVE STEP UNAVAILABLE')"),
+    'Retrospective source edit left old native STEP shown as current');
   check(await evaluate("!document.querySelector('[data-testid=runtime-native-evidence]')"),
     'old native physical receipt survived a journal revision edit');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
@@ -942,12 +948,16 @@ async function main(){
   await pointerClick('runtime-native-build');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('invalid_host_reply')"),
     'RUNTIME did not refuse the unrecognized provider');
+  check(await evaluate("(() => {const el=document.querySelector('[data-testid=runtime-native-step-state]');return el?.textContent?.includes('NATIVE PROVIDER FAILED')&&el.title.includes('LAST GOOD')})()"),
+    'Actual provider failure did not show error plus retained same-source LAST GOOD status');
   check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
     'failed provider refresh incorrectly discarded earlier verified same-revision STEP');
   mockReplyMode='bad-step-digest';
   await pointerClick('runtime-native-build');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('invalid_step')"),
     'RUNTIME did not refuse mismatched STEP SHA-256');
+  check(await evaluate("(() => {const el=document.querySelector('[data-testid=runtime-native-step-state]');return el?.textContent?.includes('NATIVE PROVIDER FAILED')&&el.title.includes('LAST GOOD')})()"),
+    'Invalid STEP SHA-256 hid failed provider / valid retained previous STEP');
   check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
     'bad-digest refresh incorrectly discarded earlier verified same-revision STEP');
   mockReplyMode='valid';
