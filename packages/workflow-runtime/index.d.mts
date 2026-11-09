@@ -11,6 +11,9 @@ import type {ProfileDiscoveryResponse} from '@intuit3d/sketch/profile-discovery/
 import type {CreateClosedContourCommand,EditClosedContourCommand,
   DragClosedContourGesture,ClosedContourAccepted,ClosedContourDragged}
   from '@intuit3d/sketch/closed-contour-authoring/v1';
+import type {InsertContourTabCommand,EditTabbedContourCommand,
+  InsertContourTabAccepted,EditTabbedContourAccepted}
+  from '@intuit3d/sketch/closed-contour-insertion/v1';
 
 
 export const WORKFLOW_INVALIDATION_FORMAT: 'intuit3d.workflow-invalidation';
@@ -63,6 +66,34 @@ export type ClosedContourRuntimeResult =
       'changed_acceptance'|'invalid_successor'|'inadmissible_sketch';
       notCommitted:true;reason:string;sourceProjectId:string;sourceRevision:number;
       sourceReason?:string|null;detail?:string|null;
+      candidateFeature?:RuntimeFeature;candidateRevision?:number}>;
+/** Exact-archive, solved-SKETCH replay of topology-changing tab insertion. */
+export const TABBED_CONTOUR_TRANSACTION_FORMAT:'intuit3d.runtime.tabbed-contour-transaction';
+export const TABBED_CONTOUR_TRANSACTION_VERSION:1;
+export interface TabbedContourRuntimeRequest {
+  format:typeof TABBED_CONTOUR_TRANSACTION_FORMAT;
+  version:typeof TABBED_CONTOUR_TRANSACTION_VERSION;
+  expectedProjectId:string;expectedRevision:number;
+  expectedArchive:string;expectedSketchSignature:string;
+  sketchFeatureId:string;eventId:string;
+  admission?:'require_admissible'|'preserve_unresolved';
+  operation:'insert'|'edit';
+  selection:SelectedProfileSelection;
+  command:InsertContourTabCommand|EditTabbedContourCommand;
+  acceptance:InsertContourTabAccepted|EditTabbedContourAccepted;
+}
+export type TabbedContourRuntimeResult =
+  | Readonly<{kind:'committed';history:UndoHistory;report:RuntimeReport;
+      sketchStatus:RuntimeStatus;invalidation:WorkflowInvalidation;
+      selection:SelectedProfileSelection;contourId:string;tabId:string;
+      previousCandidateId:string;nextCandidateId:string;
+      retiredEdgeIds:string[];createdEntityIds:string[];
+      nextSketchSignature:string;sourceRevision:number;revision:number;
+      exactAuthority:false;independentInteroperability:false}>
+  | Readonly<{kind:'refused';code:string;notCommitted:true;reason:string;
+      sourceProjectId:string;sourceRevision:number;
+      dependentFeatureId?:string;retiredEdgeId?:string;
+      sourceReason?:string|null;review?:unknown;
       candidateFeature?:RuntimeFeature;candidateRevision?:number}>;
 export const WORKFLOW_RUNTIME_FORMAT: 'intuit3d.workflow-runtime-evaluation';
 export const WORKFLOW_RUNTIME_VERSION: 1;
@@ -333,6 +364,8 @@ export interface WorkflowRuntime {
   editDimensions(history: UndoHistory, request: DimensionBatchEditRequest): UndoHistory;
   /** Exact-source structural contour authoring in one INTENT undo frame. */
   commitClosedContour(history: UndoHistory, request: ClosedContourRuntimeRequest): ClosedContourRuntimeResult;
+  /** Replays SKETCH v1 insertion/dimensioning; source-bound, one INTENT undo event. */
+  commitTabbedContour(history:UndoHistory,request:TabbedContourRuntimeRequest):TabbedContourRuntimeResult;
   /** One revision-fenced, undoable model event; optional refusal before commit. */
   editSketchConstraints(history: UndoHistory, request: SketchConstraintBatchRequest): SketchConstraintBatchResult;
   /** One authoritative edit of the number, centres and radii of circular holes. */
