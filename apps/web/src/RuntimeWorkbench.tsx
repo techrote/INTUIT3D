@@ -27,12 +27,13 @@ import { patternModelCircularHoles } from './circularHolePattern';
 import { transformSelectedModelHoles } from './rigidHoleTransform';
 import { stampSelectedModelHoles, removeSelectedModelHoles } from './selectedHoleStamp';
 import { createLivePlateSession } from '@intuit3d/workflow-runtime/live-plate-session';
-import { experimentalStepFilename } from './localNativeStep';
+import { sourceBoundStepFilename } from './localNativeStep';
 import { buildPinnedStepEvidenceZip, pinnedStepEvidenceFilename } from './stepEvidenceBundle';
 import { MAX_MODEL_ARCHIVE_BYTES, validateModelFileInWorker, type ModelImportStage } from './modelArchiveImport';
 import { checkedModelArchiveSize, modelArchiveDownloadName, modelArchiveSummary } from './modelFileLifecycle';
 import { deleteLocalRecovery, listLocalRecoveries, readLocalRecovery, storeLocalRecovery, type LocalRecoverySummary } from './modelRecovery';
 import { appendImportTrace, serializeImportTrace, type ImportTraceEntry, type ImportTraceStage } from './importTrace';
+import { describeNativeStep } from './nativeStepStatus';
 
 const LABEL: Record<ModelDimension,string> = {
   width:'Plate width', depth:'Plate depth', holeDiameter:'Hole diameter',
@@ -317,6 +318,17 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       {...solidProfile.profile,holes:[]}}
     :!plateAuthored&&sketchProfile?{profile:sketchProfile,thickness:0}:null,
     [solidProfile,sketchProfile,renderSketch,cutActive,plateAuthored]);
+  // RUNTIME, not a React success flag, owns STEP/source/backend provenance.
+  // Read only when the journal or an attempt changes; never sample a stale
+  // receipt merely because the model revision number still matches.
+  const nativeSnapshot=useMemo(()=>{
+    const state=nativeSession.current!.refresh();
+    const backend=state.stepAvailability==='unavailable'?null:
+      nativeSession.current!.currentStepReceipt()?.producer.backend??null;
+    return {stepAvailability:state.stepAvailability,
+      indicator:describeNativeStep(state,backend,Boolean(geom&&cutActive))};
+  },[history,geom,cutActive,nativeBusy,nativeReport,nativeEvidence,pinnedEvidenceReady,nativeUrl,nativeToken]);
+  const nativeIndicator=nativeSnapshot.indicator;
   const faults=useMemo(()=>modelDiagnostics(report),[report]);
   const plate=report.features.find(f=>f.featureId==='plate');
   const cut=report.features.find(f=>f.featureId==='cut');
@@ -867,20 +879,33 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   // STEP stays in the RUNTIME live session until the very moment the user
   // downloads it. Edits, undo, archive replacement and provider changes revoke it.
   const downloadCachedStep=()=>{
-    const step=nativeSession.current?.currentStep();
-    if(!step){
-      setNativeReport('No current STEP: build this exact journal revision again.');
+    // Take one source-fenced receipt with its own defensive byte copy. A valid
+    // previous STEP may survive a failed native retry for the SAME archive:
+    // downloading those bytes must identify them as LAST GOOD, not latest.
+    const coordinator=nativeSession.current;
+    const state=coordinator?.refresh();
+    const receipt=coordinator?.currentStepReceipt();
+    const step=receipt?.step;
+    const availability=state?.stepAvailability;
+    if(!receipt||!step||!state||
+        (availability!=='current'&&availability!=='last_good')||
+        state.projectId!==receipt.source.projectId||
+        state.revision!==receipt.source.revision){
+      setNativeReport('No current source-bound STEP receipt: build this exact journal revision again.');
       return;
     }
-    const current=liveHistory.current;
-    const filename=experimentalStepFilename(current.document.projectId,current.document.revision);
+    const filename=sourceBoundStepFilename(receipt.source.projectId,receipt.source.revision,receipt.producer.backend);
     const objectUrl=URL.createObjectURL(new Blob([new Uint8Array(step.bytes)],{type:'model/step'}));
     try{
       const link=document.createElement('a');
       link.href=objectUrl;link.download=filename;
       document.body.appendChild(link);link.click();link.remove();
     }finally{setTimeout(()=>URL.revokeObjectURL(objectUrl),1000);}
-    setNativeReport(`Experimental STEP downloaded · revision ${current.document.revision} · ${step.bytes.byteLength} bytes · SHA-256 ${step.sha256}. Same-engine readback only; not independent STEP or production exactness.`);
+    const pinned=receipt.producer.backend==='OCCT-cxx-8.0.1';
+    const status=availability==='last_good'
+      ?'LAST GOOD — retained from a previous verified attempt, NOT the latest native result'
+      :'CURRENT — latest verified source-bound STEP';
+    setNativeReport(`${pinned?'Pinned OCCT8 C++':'Experimental OCP'} STEP download requested · ${status} · revision ${receipt.source.revision} · ${step.bytes.byteLength} bytes · SHA-256 ${step.sha256}. Verify that the file reached Downloads. Same-engine verified bytes only; not independent STEP geometry verification; independent external CAD readback is not asserted.`);
   };
   /** One real user click => ONE atomic RUNTIME capture => one ZIP download.
    * A synthetic/OCP receipt cannot make this gate ready, and no payload is
@@ -941,10 +966,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         Number.isFinite(source.volumeMm3) && source.volumeMm3>0 ? source.volumeMm3:null;
       setNativeEvidence({revision:outcome.source.revision,solidCount,volumeMm3,
         holeCount:outcome.result.intendedPlate?.holes?.length??0});
-      setPinnedEvidenceReady(Boolean(nativeSession.current?.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'})));
+      const pinned=!!nativeSession.current?.currentStepReceipt({requiredBackend:'OCCT-cxx-8.0.1'});
+      setPinnedEvidenceReady(pinned);
       if(action==='pinned-evidence') downloadPinnedEvidence();
       else if(action==='experimental-step') downloadCachedStep();
-      else setNativeReport(`Experimental STEP prepared · revision ${outcome.source.revision} · SHA-256 ${step.sha256}. Use Download current STEP to publish these revision-fenced bytes. Same-engine readback only; not independent STEP.`);
+      else setNativeReport(`${pinned?'Pinned OCCT8 C++ STEP prepared':'Experimental STEP prepared (OCP prototype)'} · revision ${outcome.source.revision} · SHA-256 ${step.sha256}. Use Download current STEP to publish these revision-fenced bytes. Same-engine readback only; not independent STEP.`);
     }catch(error){
       if(id===nativeTicket.current)
         setNativeReport('No STEP published: '+(error instanceof Error?error.message:String(error)));
@@ -1113,7 +1139,9 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       <div className="toolstrip-right"><span className="stage-chip" data-testid="runtime-archive-state">
         {needsArchiveExport?'UNEXPORTED MODEL CHANGES':'ARCHIVE DOWNLOAD REQUESTED / FILE OPENED'}</span>
         <span className="stage-chip" data-testid="runtime-exact-state">
-        REAL INTENT + SKETCH · NO EXACT KERNEL</span></div>
+        REAL INTENT + SKETCH · VIEWPORT IS PREVIEW · NO EXACT KERNEL IN VIEWPORT</span>
+        <span className="stage-chip" data-testid="runtime-native-step-state"
+          title={nativeIndicator.detail}>{nativeIndicator.label}</span></div>
     </nav>
     <div className="workspace-grid">
       <aside className="sidepanel browser-panel" aria-label="Authoritative feature browser">
@@ -1574,7 +1602,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           <p className="microcopy">Every added circle has a stable authored ID and fixed-centre/radius constraints. Drag its centre or amber diameter handle, edit its diameter here, undo/redo, or save and reopen the authoritative model. The base A/B diameter handles also drag. Add/remove requires SKETCH admission; preview and native STEP must rebuild after edits.</p>
         </div>
         <div className="inspector-section runtime-native" data-testid="runtime-native-panel">
-          <div className="section-head">LOCAL NATIVE STEP · EXPERIMENTAL</div>
+          <div className="section-head">LOCAL NATIVE STEP · SOURCE-FENCED</div>
+          <p className="microcopy" data-testid="runtime-native-provider-state" role="status">
+            <strong>{nativeIndicator.label}</strong> · {nativeIndicator.detail}
+          </p>
           <p className="microcopy">Start the separate trusted local provider using <code>node apps/web/scripts/local-native-host.mjs</code>. Copy its one-session loopback URL and pairing token from your terminal. No cloud connection; neither value is saved with the model.</p>
           <label className="runtime-native-field">
             <span>Local provider URL</span>
@@ -1595,22 +1626,23 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                 if(!e.target.checked && autoNativeTimer.current!==null){
                   clearTimeout(autoNativeTimer.current);autoNativeTimer.current=null;
                 }
-              }}/> Live rebuild after each accepted edit (experimental, 250 ms coalescing)</span>
+              }}/> Live native rebuild after each accepted edit (250 ms coalescing)</span>
           </label>
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-build" onClick={()=>void rebuildNative('prepare')}
             disabled={!geom || !cutActive || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}>
-            {nativeBusy?'Rebuilding experimental solid…':'Rebuild experimental solid + STEP'}
+            {nativeBusy?'Rebuilding local solid…':'Rebuild local solid + STEP'}
           </button>
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-export" onClick={()=>void rebuildNative('experimental-step')}
             disabled={!geom || !cutActive || !!pendingImport || nativeBusy || !nativeUrl.trim() || !/^[a-f0-9]{64}$/.test(nativeToken.trim())}>
-            {nativeBusy?'Building verified STEP…':'Build and download experimental STEP'}
+            {nativeBusy?'Building source-bound STEP…':'Build and download current STEP'}
           </button>
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-download-cached"
             disabled={nativeBusy || !!pendingImport || !nativeSession.current?.currentStep()}
-            onClick={downloadCachedStep}>Download current STEP</button>
+            onClick={downloadCachedStep}>{nativeSnapshot.stepAvailability==='last_good'
+              ?'Download retained last-good STEP':'Download current STEP'}</button>
           <button type="button" className="ribbon-button runtime-native-export"
             data-testid="runtime-native-evidence-zip"
             disabled={nativeBusy || !!pendingImport || !pinnedEvidenceReady}
@@ -1626,7 +1658,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           {nativeBusy&&<button type="button" className="ribbon-button"
             data-testid="runtime-native-cancel" onClick={()=>{invalidateNative();setNativeReport('Native evaluation cancelled; no STEP published.');}}>Cancel native evaluation</button>}
           {nativeEvidence&&<div className="runtime-native-evidence" data-testid="runtime-native-evidence" role="status">
-            <strong>Experimental provider result · revision {nativeEvidence.revision}</strong>
+            <strong>Native provider result · revision {nativeEvidence.revision}</strong>
             <span>Through-holes: {nativeEvidence.holeCount} · Solids: {nativeEvidence.solidCount??'not reported'} · Volume: {nativeEvidence.volumeMm3===null?'not reported':nativeEvidence.volumeMm3.toFixed(3)+' mm³'}</span>
             <small>Provider-reported metrics when available; host STEP readback is same-engine only. Not production exactness or independent external CAD verification.</small>
           </div>}
@@ -1644,8 +1676,8 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         {message&&<div className="runtime-message" role="status">{message}</div>}
       </aside>
     </div>
-    <footer className="statusbar">LOCAL MODEL + SKETCH · INTENT JOURNAL · PREVIEW ONLY · DROP MODEL JSON TO OPEN
-      <span className="status-spacer"/> {report.revision} accepted journal events · Exact geometry: unavailable</footer>
+    <footer className="statusbar">LOCAL MODEL + SKETCH · INTENT JOURNAL · VIEWPORT PREVIEW ONLY · DROP MODEL JSON TO OPEN
+      <span className="status-spacer"/> {report.revision} accepted journal events · {nativeIndicator.label}</footer>
     {featureCombo&&!pendingImport&&<div className="recovery-backdrop"><form
       className="recovery-dialog runtime-feature-combo" role="dialog" aria-modal="true"
       aria-label="Extrude or cut feature" data-testid="runtime-feature-combo"

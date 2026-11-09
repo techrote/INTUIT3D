@@ -150,6 +150,8 @@ async function main(){
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-native-export]'))"),'model-first native panel');
   check(await evaluate("document.querySelector('[data-testid=runtime-panel]')!==null && document.querySelector('[data-testid=enter-model-runtime]')===null"),
     'Default startup did not mount only the authoritative CAD editor');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-step-state]')?.textContent?.includes('NATIVE STEP UNAVAILABLE')"),
+    'Unbuilt source falsely advertises current native STEP');
   // Real Chromium click/keyboard + archive roundtrip of authoritative
   // INTENT feature tombstones. No retired solid may remain on screen as current.
   const pointerClick=async(testid)=>{
@@ -712,7 +714,7 @@ async function main(){
   check(await evaluate("(() => {document.querySelector('[data-testid=runtime-mode-solid]').click();return true})()"),'cannot return to solid viewport');
   await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-3d-viewport]'))"),'3D preview after sketch drag');
 
-  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent.includes('NO EXACT KERNEL')"),
+  check(await evaluate("document.querySelector('[data-testid=runtime-exact-state]')?.textContent.includes('VIEWPORT IS PREVIEW')"),
     'experimental bridge promoted to exact');
   check(await evaluate(`(() => {
     const update=(testid,value)=>{
@@ -727,17 +729,21 @@ async function main(){
   await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-native-export]').disabled"),'enabled STEP action');
   await screenshot('native-01-paired.png');
 
-  check(await evaluate("(() => {window.__nativeStepBlobs=[];const previous=URL.createObjectURL.bind(URL);URL.createObjectURL=(blob)=>{window.__nativeStepBlobs.push(blob);return previous(blob)};return true})()"),
+  check(await evaluate("(() => {window.__nativeStepBlobs=[];window.__nativeStepNames=[];const previous=URL.createObjectURL.bind(URL);URL.createObjectURL=(blob)=>{window.__nativeStepBlobs.push(blob);return previous(blob)};const click=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){if(this.download.endsWith('.step'))window.__nativeStepNames.push(this.download);return click.call(this)};return true})()"),
     'cannot inspect actual browser file publication');
   check(await evaluate("(() => {document.querySelector('[data-testid=runtime-native-export]').click();return true})()"),
     'cannot request STEP');
   await eventually(()=>evaluate("window.__nativeStepBlobs.length===1"),'verified binary file download');
+  check(await evaluate("window.__nativeStepNames.length===1 && window.__nativeStepNames[0].endsWith('-experimental.step')"),
+    'actual OCP browser download filename incorrectly claimed pinned C++ provenance');
   check(await evaluate("(async()=>{const a=await window.__nativeStepBlobs[0].text();return a.includes('SYNTHETIC UI TEST, NOT OCCT')})()"),
     'downloaded STEP byte stream differs from verified synthetic HTTP fixture');
-  check(await evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent.includes('not independent STEP')"),
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent.includes('independent external CAD readback is not asserted')"),
     'STEP result lacks experimental and independent status');
   check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]').disabled"),
     'RUNTIME did not retain current, verified STEP for explicit download');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-step-state]')?.textContent?.includes('OCP STEP · CURRENT')"),
+    'Source-bound OCP browser result falsely promoted to pinned C++ or unavailable');
   check(await evaluate("document.querySelector('[data-testid=runtime-native-evidence-zip]')?.disabled"),
     'synthetic/OCP browser fixture was offered as pinned OCCT8 independent-CAD custody');
   check(await evaluate("document.querySelector('[data-testid=runtime-native-evidence]')?.textContent.includes('Through-holes:')"),
@@ -759,6 +765,8 @@ async function main(){
     'stale STEP was downloaded following model change');
   check(await evaluate("document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
     'retrospective edit left a stale RUNTIME STEP receipt downloadable');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-step-state]')?.textContent?.includes('NATIVE STEP UNAVAILABLE')"),
+    'Retrospective source edit left old native STEP shown as current');
   check(await evaluate("!document.querySelector('[data-testid=runtime-native-evidence]')"),
     'old native physical receipt survived a journal revision edit');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut]')?.textContent==='pending_exact_provider'"),
@@ -942,14 +950,32 @@ async function main(){
   await pointerClick('runtime-native-build');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('invalid_host_reply')"),
     'RUNTIME did not refuse the unrecognized provider');
+  check(await evaluate("(() => {const el=document.querySelector('[data-testid=runtime-native-step-state]');return el?.textContent?.includes('NATIVE PROVIDER FAILED')&&el.title.includes('LAST GOOD')})()"),
+    'Actual provider failure did not show error plus retained same-source LAST GOOD status');
   check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
     'failed provider refresh incorrectly discarded earlier verified same-revision STEP');
   mockReplyMode='bad-step-digest';
   await pointerClick('runtime-native-build');
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('invalid_step')"),
     'RUNTIME did not refuse mismatched STEP SHA-256');
+  check(await evaluate("(() => {const el=document.querySelector('[data-testid=runtime-native-step-state]');return el?.textContent?.includes('NATIVE PROVIDER FAILED')&&el.title.includes('LAST GOOD')})()"),
+    'Invalid STEP SHA-256 hid failed provider / valid retained previous STEP');
   check(await evaluate("!document.querySelector('[data-testid=runtime-native-download-cached]')?.disabled"),
     'bad-digest refresh incorrectly discarded earlier verified same-revision STEP');
+  // A failed native retry may retain original source-valid STEP bytes, but
+  // publishing them must never claim the retry succeeded.
+  const retainedBefore=await evaluate('window.__nativeStepBlobs.length');
+  const retainedRevision=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  check(await evaluate("(() => {const b=document.querySelector('[data-testid=runtime-native-download-cached]');if(!b||b.disabled||!b.textContent.includes('last-good'))return false;b.click();return true})()"),
+    'retained STEP download is not identified as last-good');
+  await eventually(()=>evaluate('window.__nativeStepBlobs.length==='+String(retainedBefore+1)),
+    'source-valid retained STEP was not downloaded');
+  check(await evaluate("document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('LAST GOOD') && document.querySelector('[data-testid=runtime-native-result]')?.textContent?.includes('download requested')"),
+    'download report falsely promoted failed native retry to current success');
+  check(await evaluate("(async()=>{const text=await window.__nativeStepBlobs.at(-1).text();return text.includes('SYNTHETIC UI TEST, NOT OCCT')})()"),
+    'retained STEP bytes differ from the previously verified synthetic original');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===retainedRevision,
+    'last-good download changed the authoritative model revision');
   mockReplyMode='valid';
   // One actual user pointer click must traverse the native request and the
   // pinned custody fence. This is an OCP-shaped synthetic responder, so no
