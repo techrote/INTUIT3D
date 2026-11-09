@@ -1235,6 +1235,51 @@ async function main() {
   check(await evaluate("!document.querySelector('[data-testid=runtime-blank-sketch]')"),
     'reopened authoritative contour was discarded or replaced by empty sketch');
   await screenshot('31-from-empty-authoritative-save-reopen.png');
+  // The admitted sketch must remain navigable after Close and Worker reopen.
+  // This is the SAME source-owned SVG later used for the real semantic edge
+  // gesture, not the ephemeral blank-draft canvas. Navigation is UI state.
+  const solvedRevision=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  const solvedBefore=await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-sketch]');
+    if(!s?.getScreenCTM())return null;
+    const b=s.getBoundingClientRect(),x=b.left+b.width/2,y=b.top+b.height/2;
+    const p=new DOMPoint(x,y).matrixTransform(s.getScreenCTM().inverse());
+    return {x,y,p:{x:p.x,y:p.y},view:s.getAttribute('viewBox')};
+  })()`);
+  check(solvedBefore&&Number.isFinite(solvedBefore.p.x),'admitted solved sketch has no valid pointer projection');
+  await send('Input.dispatchMouseEvent',{type:'mouseWheel',x:solvedBefore.x,
+    y:solvedBefore.y,deltaX:0,deltaY:-220});
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-sketch]')?.getAttribute('viewBox')!==${JSON.stringify(solvedBefore.view)}`),
+    'real wheel failed to zoom admitted sketch');
+  const solvedAfterWheel=await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-sketch]');
+    const p=new DOMPoint(${solvedBefore.x},${solvedBefore.y})
+      .matrixTransform(s.getScreenCTM().inverse());
+    return {x:p.x,y:p.y};
+  })()`);
+  check(Math.hypot(solvedAfterWheel.x-solvedBefore.p.x,solvedAfterWheel.y-solvedBefore.p.y)<0.01,
+    'solved sketch zoom shifted the actual cursor-anchored CAD coordinate');
+  const solvedBeforePan=await evaluate("document.querySelector('[data-testid=runtime-sketch]')?.getAttribute('viewBox')");
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',
+    x:solvedBefore.x,y:solvedBefore.y,buttons:0});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',
+    x:solvedBefore.x,y:solvedBefore.y,button:'middle',buttons:4,clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',
+    x:solvedBefore.x+39,y:solvedBefore.y+21,button:'middle',buttons:4});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',
+    x:solvedBefore.x+39,y:solvedBefore.y+21,button:'middle',buttons:0,clickCount:1});
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-sketch]')?.getAttribute('viewBox')!==${JSON.stringify(solvedBeforePan)}`),
+    'real middle drag did not pan admitted sketch');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===solvedRevision,
+    'admitted sketch wheel/pan accidentally journaled a CAD edit');
+  await screenshot('31c-solved-sketch-navigation.png');
+  await clickControl('[data-testid="runtime-solved-zoom-out"]');
+  await clickControl('[data-testid="runtime-solved-zoom-in"]');
+  await clickControl('[data-testid="runtime-solved-view-fit"]');
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-sketch]')?.getAttribute('viewBox')===${JSON.stringify(solvedBefore.view)}`),
+    'Fit failed to restore source-owned solved profile bounds');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===solvedRevision,
+    'admitted sketch zoom/fit modified authoritative model history');
   // Genuine existing-source edge hit, immutable grab point, SKETCH normal
   // projection and structural RUNTIME edit. Do this on the still-rectangular
   // authored project, before the later independent vertex editing journey.
@@ -1480,7 +1525,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','31a-edge-drag-admitted.png','31b-edge-undo-redo-archive-reopened.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','31c-solved-sketch-navigation.png','31a-edge-drag-admitted.png','31b-edge-undo-redo-archive-reopened.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -1504,6 +1549,7 @@ async function main() {
     genuineDrawnContourExtrusionHoleCutUndoRedoSaveReopen: true,
     genuinelyDrawnVertexNumericAndPointerEditUndoRedoReopen: true,
     genuineContourEdgePointerOffsetUndoRedoArchiveReopen: true,
+    solvedSketchWheelMiddlePanFitNoJournalAndSubsequentEdgeEdit: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
