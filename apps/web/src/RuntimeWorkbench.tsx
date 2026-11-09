@@ -1125,7 +1125,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       <div className="toolstrip-right"><span className="stage-chip" data-testid="runtime-archive-state">
         {needsArchiveExport?'UNEXPORTED MODEL CHANGES':'ARCHIVE DOWNLOAD REQUESTED / FILE OPENED'}</span>
         <span className="stage-chip" data-testid="runtime-exact-state">
-        REAL INTENT + SKETCH · VIEWPORT IS PREVIEW</span>
+        REAL INTENT + SKETCH · VIEWPORT IS PREVIEW · NO EXACT KERNEL IN VIEWPORT</span>
         <span className="stage-chip" data-testid="runtime-native-step-state"
           title={nativeIndicator.detail}>{nativeIndicator.label}</span></div>
     </nav>
