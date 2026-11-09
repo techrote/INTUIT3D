@@ -2019,6 +2019,19 @@ async function main() {
     'editing drafts or switching explicitly targeted bodies mutated the model journal');
   await screenshot('47-general-multi-body-secondary-target.png');
   await screenshot('48-general-target-bound-depth-draft.png');
+  // Undo then Redo can restore identical canonical archive bytes, but the
+  // discarded session's uncommitted 7 mm edit must not resurrect.
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    'secondary body authoring undo unavailable');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid=runtime-general-body-status] p').length===1"),
+    'undo did not retire the second named body');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    'secondary body authoring redo unavailable');
+  await eventually(()=>evaluate("document.querySelectorAll('[data-testid=runtime-general-body-status] p').length===2"),
+    'redo did not restore the exact second named body');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-edit-depth-value]')?.value==='4'"),
+    'stale uncommitted 7 mm body draft resurrected after Undo/Redo');
+  await screenshot('49-general-depth-draft-refused-after-undo-redo.png');
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
@@ -2039,7 +2052,8 @@ async function main() {
       '42-general-selected-profile-extruded.png','43-general-explicit-body-cut-pending.png',
       '44-general-named-body-worker-reopened.png','45-general-post-import-depth-edited.png',
       '46-general-multi-body-original-target.png','47-general-multi-body-secondary-target.png',
-      '48-general-target-bound-depth-draft.png'],
+      '48-general-target-bound-depth-draft.png',
+      '49-general-depth-draft-refused-after-undo-redo.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -2071,6 +2085,7 @@ async function main() {
     sourceSelectedNamedExtrusionExplicitBodyCutWorkerReopenReselectDepthUndoRedo: true,
     explicitMultiBodyTargetSelectsMatchingAnalyticSolidAndCutStatusWithoutRevision: true,
     namedBodyDepthEditorSourceAndSemanticTargetFenced: true,
+    staleNamedBodyDraftRefusedAfterUndoRedo: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
   writeFileSync(join(artifactDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
