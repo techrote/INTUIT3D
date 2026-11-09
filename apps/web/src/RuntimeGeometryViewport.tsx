@@ -78,9 +78,21 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   const [profilePreview,setProfilePreview]=useState<{x:number;y:number}|null>(null);
   // The pointer proposal stays ephemeral. Parent commits source-owned geometry via RUNTIME.
   const contourVertexMove=useRef<{handleId:string;pointerId:number;source:PlateProfile;
-    startScreen:{x:number;y:number}}|null>(null);
+    startScreen:{x:number;y:number};capture:SVGCircleElement}|null>(null);
   const [contourVertexPreview,setContourVertexPreview]=useState<
     {handleId:string;x:number;y:number}|null>(null);
+  useEffect(()=>{
+    const cancel=(event:KeyboardEvent)=>{
+      if(event.key!=='Escape'||!contourVertexMove.current)return;
+      const active=contourVertexMove.current;
+      contourVertexMove.current=null;setContourVertexPreview(null);
+      if(active.capture.hasPointerCapture(active.pointerId))
+        active.capture.releasePointerCapture(active.pointerId);
+      event.preventDefault();
+    };
+    window.addEventListener('keydown',cancel);
+    return()=>window.removeEventListener('keydown',cancel);
+  },[]);
   const contourMove=useRef<{edgeId:string;pointerId:number;source:PlateProfile;
     start:{x:number;y:number}}|null>(null);
   const [contourPreview,setContourPreview]=useState<{edgeId:string;offsetMm:number}|null>(null);
@@ -768,7 +780,8 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
           event.preventDefault();event.stopPropagation();
           event.currentTarget.setPointerCapture(event.pointerId);
           contourVertexMove.current={handleId:handle.handleId,pointerId:event.pointerId,
-            source:profile,startScreen:{x:event.clientX,y:event.clientY}};
+            source:profile,startScreen:{x:event.clientX,y:event.clientY},
+            capture:event.currentTarget};
           setContourVertexPreview({handleId:handle.handleId,...handle.position});
         }}
         onPointerMove={event=>{
