@@ -88,10 +88,16 @@ function makeEditCommand(signature:string,contourId:string,tabId:string,
   return {kind:'edit-tabbed-contour-vertex' as const,version:1 as const,
     sourceSignature:signature,contourId,tabId,handleId,target:{...target}};
 }
-export function insertModelContourTab(
-  h:ModelSession,session:LivePlateSession,selection:SelectedProfileSelection,
+type AcceptedTabInsert=Extract<ReturnType<typeof insertClosedContourTab>,{kind:'accepted'}>;
+type PlannedTabInsert=Readonly<{kind:'planned';command:ReturnType<typeof makeInsertCommand>;
+  accepted:AcceptedTabInsert}>;
+
+/** Read-only SKETCH admission plan; an ephemeral UI preview is NEVER an INTENT event,
+ * a native B-rep or a source-bound STEP receipt. Recomputed at commit time. */
+function planModelContourTab(
+  h:ModelSession,selection:SelectedProfileSelection,
   edgeId:string,vertices:readonly [SketchLocalPoint,SketchLocalPoint],expectedArchive:string,
-):TabbedContourEdit {
+):PlannedTabInsert|Refusal {
   const source=sourceOf(h,selection,expectedArchive);
   if(!source)return refuse('stale_source','The canonical model or selected SKETCH changed. Reselect.');
   const inspected=inspectModelClosedContour(h,selection);
@@ -106,7 +112,31 @@ export function insertModelContourTab(
   if(accepted.kind!=='accepted')
     return refuse('sketch_refused','SKETCH refused tab insertion: '+accepted.reason+
       (accepted.detail?' ('+accepted.detail+')':''));
-  return commitTab(h,session,selection,expectedArchive,'insert',command,accepted);
+  return {kind:'planned',command,accepted};
+}
+
+/** Preview the same source-fenced SKETCH proposal that RUNTIME must re-admit on
+ * Commit. No browser-owned geometry authority, receipt or journal mutation. */
+export function previewModelContourTab(
+  h:ModelSession,selection:SelectedProfileSelection,
+  edgeId:string,vertices:readonly [SketchLocalPoint,SketchLocalPoint],expectedArchive:string,
+):Readonly<{kind:'admissible';nextSketchSignature:string;retiredEdgeId:string}>|Refusal {
+  const plan=planModelContourTab(h,selection,edgeId,vertices,expectedArchive);
+  if(plan.kind==='refused')return plan;
+  return {kind:'admissible',nextSketchSignature:plan.accepted.nextSourceSignature,
+    retiredEdgeId:edgeId};
+}
+
+export function insertModelContourTab(
+  h:ModelSession,session:LivePlateSession,selection:SelectedProfileSelection,
+  edgeId:string,vertices:readonly [SketchLocalPoint,SketchLocalPoint],expectedArchive:string,
+):TabbedContourEdit {
+  const plan=planModelContourTab(h,selection,edgeId,vertices,expectedArchive);
+  if(plan.kind==='refused')return plan;
+  // The preview never authorizes a commit. The plan is checked again against
+  // the actual current journal and RUNTIME performs its own source/revision
+  // admission before appending precisely one transaction.
+  return commitTab(h,session,selection,expectedArchive,'insert',plan.command,plan.accepted);
 }
 export function editModelTabbedVertex(
   h:ModelSession,session:LivePlateSession,selection:SelectedProfileSelection,
