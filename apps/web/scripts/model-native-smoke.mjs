@@ -1293,15 +1293,17 @@ async function main(){
     })()`),'Semantic handle did not receive pointerdown plus capture',12);
     await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:dragStart.x+dragStart.dx,y:dragStart.y,
       button:'left',buttons:1});
-    // The moving amber SVG handle is the *actual* ephemeral proposal. Verify
-    // that it responds and keeps capture before releasing, as a human drag does.
+    // The moving amber SVG handle is the *actual* ephemeral proposal.
+    // Verify its EXACT intended +10 mm movement, not merely a visual change:
+    // the previous live-CTM implementation occasionally previewed +29.2 mm
+    // after a genuine +10 mm screen delta, then committed the wrong geometry.
     await eventually(()=>evaluate(`(() => {
       const h=document.querySelector('[data-testid=runtime-profile-drag-handle]');
       const events=window.__intuit3dProfileDragProbe?.events??[];
       const down=events.find(e=>e.type==='pointerdown');
       return Boolean(down&&h?.hasPointerCapture(down.pointerId)&&
-        Math.abs(Number(h.getAttribute('cx'))-${dragStart.startCx})>0.5);
-    })()`),'Semantic pointer move did not update captured drag preview',20);
+        Math.abs(Number(h.getAttribute('cx'))-(${dragStart.startCx}+10))<0.1);
+    })()`),'Captured semantic preview did not track frozen +10 mm pointer delta',20);
     await send('Input.dispatchMouseEvent',{type:'mouseReleased',x:dragStart.x+dragStart.dx,y:dragStart.y,
       button:'left',clickCount:1});
     await eventually(()=>evaluate("Math.abs(Number(document.querySelector('[data-testid=runtime-dimension-width]')?.value)-130)<0.001"),
