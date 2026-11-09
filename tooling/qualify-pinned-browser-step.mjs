@@ -139,11 +139,80 @@ async function saveReopen(){
   return {file:'edited-user-reopened.i3d-model.json',sha256:hash(archive)};
 }
 
+/** #74 physical acceptance extension: source-owned, whole-edge normal offset.
+ * Drive actual trusted Chromium pointer input and authoritative Undo/Redo,
+ * never mutate the model or hand the native host a synthetic geometry shape.
+ * This new variant runs on the existing source-matched pinned native session.
+ */
+async function pointerOffsetDrawnRightEdge(){
+  await click('runtime-mode-sketch');
+  await until(()=>evalInPage('Boolean(document.querySelector("[data-testid=runtime-sketch]"))'),
+    '2D solved sketch after 3D earlier-feature edit');
+  // Require the accepted #335 solved-sketch navigation on the composed
+  // source and operate the real FIT control before selecting the contour.
+  // A PR test against the earlier Workbench source must fail rather than
+  // falsely qualifying a source combination not yet exercised physically.
+  await until(()=>evalInPage('Boolean(document.querySelector("[data-testid=runtime-solved-view-fit]"))'),
+    'source-current #335 solved-sketch navigation absent from physical browser');
+  await click('runtime-solved-view-fit');
+  await click('runtime-profile-select-mode');
+  const pick=await evalInPage('(()=>{const svg=document.querySelector("[data-testid=runtime-sketch]");'+
+    'const matrix=svg?.getScreenCTM();if(!matrix)return null;'+
+    'const p=new DOMPoint(45,35).matrixTransform(matrix);return {x:p.x,y:p.y}})()');
+  requireValid(pick&&pick.x>0&&pick.x<1360&&pick.y>0&&pick.y<900,
+    'Real interior profile pick has no on-screen projection');
+  for(const type of ['mouseMoved','mousePressed','mouseReleased'])
+    await send('Input.dispatchMouseEvent',{type,x:pick.x,y:pick.y,button:'left',clickCount:1});
+  await until(()=>evalInPage(
+    'Boolean(document.querySelector("[data-testid=runtime-contour-edge-editor]"))'),
+    'real SKETCH semantic edge inventory following pointer selection');
+  const edge=await evalInPage('(()=>{const l=document.querySelector("[data-testid=runtime-contour-edge-1]");'+
+    'const m=l?.getScreenCTM();if(!m)return null;'+
+    'const x=Number(l.getAttribute("x1")),x2=Number(l.getAttribute("x2"));'+
+    'const y=(Number(l.getAttribute("y1"))+Number(l.getAttribute("y2")))/2;'+
+    'if(!Number.isFinite(x)||Math.abs(x-x2)>0.001)return null;'+
+    'const a=new DOMPoint(x,y).matrixTransform(m),b=new DOMPoint(x+20,y+10).matrixTransform(m);'+
+    'return {rightX:x,from:{x:a.x,y:a.y},to:{x:b.x,y:b.y}}})()');
+  requireValid(edge&&edge.from.x>0&&edge.from.x<1360&&
+    edge.from.y>0&&edge.from.y<900&&edge.to.x<1360&&edge.to.y<900,
+    'Current source-owned right edge is not a bounded drawable line');
+  const rightAt=x=>evalInPage('(()=>{const text=document.querySelector("[data-testid=runtime-sketch] polygon")?.getAttribute("points")||"";'+
+    'const pairs=text.trim().split(/\\s+/).map(v=>v.split(",").map(Number));'+
+    'return pairs.length===4&&pairs.filter(p=>Math.abs(p[0]-'+x+')<0.06).length===2})()');
+  requireValid(await rightAt(edge.rightX),'Original two source-owned right endpoints missing');
+  const beforeRevision=await evalInPage(
+    'document.querySelector("[data-testid=runtime-revision]")?.textContent');
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',...edge.from,button:'left'});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',...edge.from,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',...edge.to,button:'left',buttons:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',...edge.to,button:'left',clickCount:1});
+  await until(()=>rightAt(edge.rightX+20),'actual drag did not offset both semantic endpoints');
+  const committedRevision=await evalInPage(
+    'document.querySelector("[data-testid=runtime-revision]")?.textContent');
+  requireValid(committedRevision!==beforeRevision,'Whole-edge offset created no structural RUNTIME revision');
+  await until(()=>evalInPage(
+    'document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled===true'),
+    'whole-edge structural change failed to revoke previous STEP');
+  await screenshot('drawn-05e-physical-whole-edge-pointer-offset.png');
+  await clickHistoryAction('Undo');
+  await until(()=>rightAt(edge.rightX),'Undo did not restore both earlier right endpoints');
+  await clickHistoryAction('Redo');
+  await until(()=>rightAt(edge.rightX+20),'Redo did not replay source-owned whole-edge offset');
+  await until(()=>evalInPage(
+    'document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled===true'),
+    'whole-edge Redo incorrectly retained old native STEP');
+  await screenshot('drawn-05f-whole-edge-undo-redo.png');
+  return {kind:'real_semantic_right_edge_pointer_drag',offsetMm:20,
+    rightBeforeMm:edge.rightX,rightAfterMm:edge.rightX+20,
+    committedRevision,gestureUndoRedo:'real_browser_controls',sourceRevocation:true};
+}
+
 /** One browser-operated, genuinely drawn from-zero profile with original C++
  * evidence before and after a structural SKETCH hole edit. The source model,
  * cut target and project persist; this does not borrow the seeded plate.
  */
 async function drawnFromEmptyPhysical(expected){
+  const edgeVariant=process.env.INTUIT3D_BROWSER_EDGE_OFFSET==='1';
   const fill=async(id,value)=>{
     const ok=await evalInPage('(()=>{const e=document.querySelector('+JSON.stringify('[data-testid='+id+']')+');if(!e||e.disabled)return false;e.focus();e.select();return document.activeElement===e})()');
     requireValid(ok,'Required keyboard input unavailable: '+id);
@@ -271,6 +340,7 @@ async function drawnFromEmptyPhysical(expected){
     'document.querySelector("[data-testid=runtime-native-evidence-zip]")?.disabled===true'),
     'thickness Redo retained stale STEP');
   await screenshot('drawn-05d-thickness-redo-12mm.png');
+  const wholeEdgeOffset=edgeVariant?await pointerOffsetDrawnRightEdge():null;
   const currentRevision=await evalInPage('document.querySelector("[data-testid=runtime-revision]")?.textContent');
   const before=await evalInPage('window.__capturedPinned.length');
   await click('runtime-save-archive');
@@ -293,14 +363,14 @@ async function drawnFromEmptyPhysical(expected){
   const report={status:'PINNED_OCCT8_BROWSER_DRAWN_FROM_EMPTY_TWO_REVISIONS_CAPTURED',
     provider:'actual installed Linux OCCT8 C++ worker via browser and persistent RUNTIME',
     nativeWorkerSha256:expected,independentCadInteroperability:false,
-    journey:'drawn-from-empty',revisionEarlier:earlierRevision,revisionEdited:editedRevision,
+    journey:edgeVariant?'drawn-edge-offset':'drawn-from-empty',revisionEarlier:earlierRevision,revisionEdited:editedRevision,
     revisionCurrent:currentRevision,revisionThicknessEdited,earlier,current,
     reopened:{file:'drawn-user-reopened.i3d-model.json',sha256:hash(saved)},
     authoredFeatures:{sketchSource:'four_real_pointer_clicks_from_zero_entities',
       pointerDrawnClosedProfile:true,extrusion:'actual_browser_control',
       cut:'actual_browser_control',earlierFeatureEdit:'second_solver_admitted_bore',
       retrospectiveDimensionEdit:'real_3d_thickness_grip_8_to_12mm_ArrowUp_Undo_Redo',
-      undoRedo:'real_browser_controls',sourceRevocation:true},
+      undoRedo:'real_browser_controls',sourceRevocation:true,wholeEdgeOffset},
     caveat:'Current original STEP must pass the separately compiled non-OCCT AnvilCAD volume, material and wrong-one-bore witness'};
   writeFileSync(join(output,'browser-receipt.json'),JSON.stringify(report,null,2)+'\n');
   console.log('PINNED_OCCT8_BROWSER_DRAWN_FROM_EMPTY_TWO_REVISIONS_CAPTURED '+JSON.stringify({
@@ -371,7 +441,8 @@ async function execute(){
     'CAD not in authoritative model mode');
   await evalInPage('(()=>{window.__capturedPinned=[];const old=URL.createObjectURL.bind(URL);'+
     'URL.createObjectURL=blob=>{window.__capturedPinned.push(blob);return old(blob)};return true})()');
-  if(process.env.INTUIT3D_BROWSER_DRAWN_FROM_EMPTY==='1'){
+  if(process.env.INTUIT3D_BROWSER_DRAWN_FROM_EMPTY==='1'||
+     process.env.INTUIT3D_BROWSER_EDGE_OFFSET==='1'){
     await drawnFromEmptyPhysical(expected);
     return;
   }
