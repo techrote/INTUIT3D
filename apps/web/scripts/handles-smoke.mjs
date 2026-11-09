@@ -1910,7 +1910,7 @@ async function main() {
   await mouse('mouseReleased',generalReopenPick.x,generalReopenPick.y);
   await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-source]')?.textContent.includes('cycle:')"),
     '#348 post-import source-owned cycle could not be reselected');
-  check(await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-general-target]');if(!s)return false;s.value='extrude.part';s.dispatchEvent(new Event('change',{bubbles:true}));const d=document.querySelector('[data-testid=runtime-general-depth]');d.value='14';d.dispatchEvent(new Event('input',{bubbles:true}));return true})()"),
+  check(await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-general-target]');if(!s)return false;s.value='extrude.part';s.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
     '#348 reopened named depth editor missing');
   // React numeric input requires a native value setter to update controlled
   // state, rather than merely overwriting the DOM property.
@@ -1922,8 +1922,15 @@ async function main() {
     '#348 resumed user editing did not commit new exact depth');
   check(await evaluate("document.querySelector('[data-testid=runtime-status-cut.part]')?.textContent==='pending_exact_provider'"),
     '#348 depth edit falsely turned cut into native proof');
-  await clickControl('.toolstrip button:not([disabled]):has(+ button)');
   await screenshot('45-general-post-import-depth-edited.png');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Undo');b?.click();return !!b})()"),
+    '#348 undo unavailable after resumed user edit');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-body-status]')?.textContent.includes('8 mm')"),
+    '#348 undo did not restore prior saved generalized body depth');
+  check(await evaluate("(() => {const b=[...document.querySelectorAll('.runtime-shell button')].find(e=>e.textContent?.trim()==='Redo');b?.click();return !!b})()"),
+    '#348 redo unavailable after resumed user edit');
+  await eventually(()=>evaluate("document.querySelector('[data-testid=runtime-general-body-status]')?.textContent.includes('14 mm')"),
+    '#348 redo did not preserve semantic body identity and depth');
   check(exceptions.length === 0, 'Browser exceptions: ' + exceptions.join('; '));
   const report = {
     actualThreeDimensionalThicknessManipulation: true,
