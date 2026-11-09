@@ -1378,6 +1378,19 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         <span className="stage-chip" data-testid="runtime-native-step-state"
           title={nativeIndicator.detail}>{nativeIndicator.label}</span></div>
     </nav>
+
+    {/* Discoverable evaluation route over the existing authoritative session.
+        This does not create a second project, duplicate commands or imply STEP qualification. */}
+    <details className="runtime-evaluation-guide" data-testid="runtime-evaluation-guide">
+      <summary><strong>START HERE</strong> · New empty sketch → edit → solid preview → save/reopen <span>Evaluation guide</span></summary>
+      <ol>
+        <li><strong>Start from empty.</strong> Choose <em>New empty sketch</em> above and confirm replacement. In Sketch, select <em>Draw outline</em>, click four vertices, then <em>Close outline</em>.</li>
+        <li><strong>Make a feature.</strong> Use <em>Select contour</em>, click inside the admitted profile, enter a depth in millimetres and choose <em>Extrude sketch</em>. Named-body operations and explicit-target cuts are in the right Inspector.</li>
+        <li><strong>Change the design.</strong> Select a semantic feature in the left browser, edit a dimension or selected contour handle, then try Undo and Redo. The lower rail switches between authored chronology and dependency order.</li>
+        <li><strong>Prove persistence.</strong> Download <em>Save model archive</em>, choose <em>Open model archive</em>, confirm Replace, reselect the saved feature/handle and edit it again. Browser recovery is not a substitute for a downloaded file.</li>
+      </ol>
+      <p>Viewport solids are tessellated previews. A pending or unsupported native operation is <strong>not</strong> a validated STEP result. Scroll the tools ribbon horizontally to reach controls beyond the window width.</p>
+    </details>
     <div className="workspace-grid">
       <aside className="sidepanel browser-panel" aria-label="Authoritative feature browser">
         <div className="panel-heading">SEMANTIC MODEL <span className="panel-count">{report.features.length}</span></div>
