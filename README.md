@@ -28,7 +28,7 @@ Read in this order:
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — source-of-truth, system and interfaces
 - [docs/ROADMAP.md](docs/ROADMAP.md) — executable milestone plan
 - [docs/OWNER-STEERING.md](docs/OWNER-STEERING.md) — accepted owner guidance, steering intake and programme assessment protocol
-- [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md) — five worker lanes and handoffs
+- [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md) — engineering lane ownership and handoffs
 - [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) — evidence and correctness gates
 - [docs/RESEARCH-INTAKE.md](docs/RESEARCH-INTAKE.md) — radiCADSAC reuse and tangent handling
 - [docs/STATUS.md](docs/STATUS.md) — integration-maintained live programme index
@@ -57,7 +57,7 @@ npm run dev:local -- --pinned
 
 The pinned launcher **fails closed** on a missing/noncanonical path or wrong worker digest, and has no silent OCP fallback. Its local startup and digest check alone do **not** constitute a native STEP or interoperability acceptance. The accepted [#74 source-matched physical evidence](https://github.com/techrote/INTUIT3D/issues/74) is from specified Linux Chromium sessions, installed C++ worker and independently compiled non-OCCT AnvilCAD verification, for the documented bounded plate/contour geometry only. Windows CI tests the workspace; it is **not** a Windows-native OCCT8 execution.
 
-**Human replay:** Start with **New sketch-first project**, use four actual sketch-plane clicks to create vertices and **Close** the contour; use the accepted Extrude and explicitly targeted Cut controls; edit the earlier extrusion thickness and Undo/Redo; save the model archive, select it through import review, confirm Replace, then request a fresh native STEP. Check that previously generated STEP is invalidated after a revision change, and retain the archive/receipt/STEP hashes. Export is independently trustworthy only when its original bytes are verified with a non-OCCT consumer and the same project/revision. The original private Windows Firefox archive-selection hang [#177](https://github.com/techrote/INTUIT3D/issues/177) is a separate unresolved human gate. Saving the model archive preserves design intent; a preview mesh is not an exact B-rep.
+**Human replay:** Start with **New sketch-first project**, use four actual sketch-plane clicks to create vertices and **Close** the contour; use the accepted Extrude and explicitly targeted Cut controls; edit the earlier extrusion thickness and Undo/Redo; save the model archive, select it through import review, confirm Replace, then request a fresh native STEP. Check that previously generated STEP is invalidated after a revision change, and retain the archive/receipt/STEP hashes. Export is independently trustworthy only when its original bytes are verified with a non-OCCT consumer and the same project/revision. For the separate [Windows Firefox #177](https://github.com/techrote/INTUIT3D/issues/177) import gate, the owner reported successful save/load on 9 November 2026 following the original-file replay instructions; the original archive identity, import-stage trace, post-import Undo/Redo and second reopen have not yet been explicitly recorded. Keep that private-file follow-up distinct from Chromium and native STEP qualification. Saving the model archive preserves design intent; a preview mesh is not an exact B-rep.
 
 ## Starting point
 
