@@ -34,6 +34,16 @@ function commitPlannedEdge(
   if(plan.kind!=='planned_edge_offset'||plan.edgeId!==edgeId||
       plan.sourceSignature!==sketch.serializeSketch(modelCurrentSketch(h)))
     return {kind:'refused',code:'stale_plan',reason:'SKETCH edge plan does not match current source.'};
+  // Fail closed on a known pre-#332 SKETCH admission hole: a very large
+  // normal offset can reflect an otherwise solvable rectangle across its
+  // opposite side and invert polygon winding. This is an invariant on the
+  // source-owned before/after *edge normal*, not a browser geometry solver.
+  // The SKETCH #332 source guard will additionally reject it at the producer.
+  const normalAgreement=plan.from.normal.x*plan.to.normal.x+
+    plan.from.normal.y*plan.to.normal.y;
+  if(!Number.isFinite(normalAgreement)||normalAgreement<=0)
+    return {kind:'refused',code:'orientation_inversion',
+      reason:'Offset would reverse the source-owned contour winding/edge normal; choose a smaller signed distance.'};
   const edit=session.applyCommand({
     kind:'sketch.contour/v1',
     projectId:h.document.projectId,expectedRevision:h.document.revision,
