@@ -905,7 +905,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     const status=availability==='last_good'
       ?'LAST GOOD — retained from a previous verified attempt, NOT the latest native result'
       :'CURRENT — latest verified source-bound STEP';
-    setNativeReport(`${pinned?'Pinned OCCT8 C++':'Experimental OCP'} STEP download requested · ${status} · revision ${receipt.source.revision} · ${step.bytes.byteLength} bytes · SHA-256 ${step.sha256}. Verify that the file reached Downloads. Same-engine verified bytes only; independent external CAD readback is not asserted.`);
+    setNativeReport(`${pinned?'Pinned OCCT8 C++':'Experimental OCP'} STEP download requested · ${status} · revision ${receipt.source.revision} · ${step.bytes.byteLength} bytes · SHA-256 ${step.sha256}. Verify that the file reached Downloads. Same-engine verified bytes only; not independent STEP geometry verification; independent external CAD readback is not asserted.`);
   };
   /** One real user click => ONE atomic RUNTIME capture => one ZIP download.
    * A synthetic/OCP receipt cannot make this gate ready, and no payload is
