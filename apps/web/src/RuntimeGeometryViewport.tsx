@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { frameCadCamera, type CameraViewPreset } from './cameraViews';
 import { pickTopFaceHole } from './solidHolePick';
 import type { PlateProfile } from '@intuit3d/sketch';
+import type {ContourOffsetEdge} from '@intuit3d/sketch/contour-edge-offset/v1';
 import { handleDimensionAtPoint, nudgeSketchHandle, type SketchDimensionHandle } from './runtimeSketchHandles';
 import { circleDrawingPreview, type CircleDrawingState } from './circleDrawing';
 import { radialHoleDiameter, nudgeHoleDiameter } from './holeDiameterDrag';
@@ -13,7 +14,8 @@ import { projectThicknessAxis, proposeThicknessDrag, nudgeThickness, type Screen
 /** A visually useful, disposable tessellation of the ACTUAL admitted SKETCH
  * profile. Never used as document state, a STEP source, or geometric proof. */
 type HoleId = string;
-export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick, onThicknessEdit, onProfilePick, profileEditHandle, onProfileHandleDrag }: {
+export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick, onThicknessEdit, onProfilePick, profileEditHandle, onProfileHandleDrag,
+  contourEdges, selectedContourEdgeId, onContourEdgePick, onContourEdgeDrag, onContourEdgeOffset }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
   onHoleMove?: (id: HoleId,x:number,y:number,selectedIds?:readonly HoleId[])=>void;
   onDimensionEdit?: (id: SketchDimensionHandle, millimetres:number)=>void;
@@ -31,6 +33,12 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   /** One explicitly chosen semantic handle; colocated handles require user choice. */
   profileEditHandle?: {handleId:string;position:{x:number;y:number}}|null;
   onProfileHandleDrag?: (handleId:string,x:number,y:number)=>void;
+  /** Only current SKETCH-inspected source-owned edges may render manipulators. */
+  contourEdges?:readonly ContourOffsetEdge[];
+  selectedContourEdgeId?:string;
+  onContourEdgePick?:(edgeId:string)=>void;
+  onContourEdgeDrag?:(edgeId:string,start:{x:number;y:number},target:{x:number;y:number})=>void;
+  onContourEdgeOffset?:(edgeId:string,offsetMm:number)=>void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   // A long-lived Three.js canvas must always call the latest React selection callback.
@@ -49,6 +57,9 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   const [dimensionPreview,setDimensionPreview]=useState<{id:SketchDimensionHandle;value:number}|null>(null);
   const profileMove=useRef<{handleId:string;pointerId:number;source:PlateProfile}|null>(null);
   const [profilePreview,setProfilePreview]=useState<{x:number;y:number}|null>(null);
+  const contourMove=useRef<{edgeId:string;pointerId:number;source:PlateProfile;
+    start:{x:number;y:number}}|null>(null);
+  const [contourPreview,setContourPreview]=useState<{edgeId:string;offsetMm:number}|null>(null);
   const xs = profile.outer.map(p => p.x), ys = profile.outer.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
