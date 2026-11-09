@@ -824,11 +824,35 @@ export function reopenModelSession(text: string): ModelSession {
   // Accept a genuine authored plate/cut tombstone archive without
   // resurrecting deleted geometry; unrelated document formats are refused.
   const rows=model.featureTimelineOf(h.document);
-  const living=new Map(model.featuresOf(h.document).map(f=>[f.id,f.kind]));
+  const active=model.featuresOf(h.document);
+  const living=new Map(active.map(f=>[f.id,f]));
+  const supported=(id:string):boolean=>{
+    if(['sketch.plate','plate','cut'].includes(id))return true;
+    const f=living.get(id);
+    if(f?.kind==='parameter')return true;
+    // The Workbench accepts only FEATUREOPS-authored local_xy profile solids
+    // anchored to its one source sketch. RUNTIME still validates the journal
+    // and sketch on Worker import; no mesh or STEP is imported as authority.
+    if(!f||f.payload.units!=='mm'||f.payload.frame!=='local_xy'||
+       f.writeTargets.length!==1||f.payload.sourceSketchId!=='sketch.plate')
+      return false;
+    if(f.kind==='extrude')
+      return f.dependsOn.length===1&&f.dependsOn[0]==='sketch.plate'&&
+        typeof f.payload.thicknessMm==='number'&&
+        Number.isFinite(f.payload.thicknessMm)&&f.payload.thicknessMm>0;
+    if(f.kind==='cut'){
+      if(typeof f.payload.targetBodyId!=='string'||
+         f.payload.targetBodyId!==f.writeTargets[0])return false;
+      return f.dependsOn.some(parent=>{
+        const writer=living.get(parent);
+        return writer?.kind==='extrude'&&writer.writeTargets.length===1&&
+          writer.writeTargets[0]===f.writeTargets[0];
+      });
+    }
+    return false;
+  };
   if(!rows.some(t=>t.featureId==='sketch.plate'&&t.active) ||
-      rows.some(t=>t.active&&
-        !['sketch.plate','plate','cut'].includes(t.featureId)&&
-        living.get(t.featureId)!=='parameter'))
+      rows.some(t=>t.active&&!supported(t.featureId)))
     throw Error('Archive does not contain the supported plate/sketch/cut history.');
   // Additional named INTENT parameters are safe semantic sources, not a new
   // unsupported solid/mesh. Keep the rest of this plate workbench's bounded

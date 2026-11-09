@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import * as model from '@intuit3d/model';
 import type { ChangeEvent } from 'react';
 import {
   addModelHole, createModelExtrusion, createModelThroughCut, editModelDimension, editModelHole, editModelSketchHandle, inspectModelSession, modelDiagnostics, modelDimensionValues, modelSketchDimensionValues, modelFeatureRemovalImpact, modelFeatureTimeline, modelHoleValues, modelHoleIsCartesian, moveModelFeature, moveModelHoleCenter, moveModelHoleGroup, nudgeModelHoleSelection, patternModelHoles, removeModelFeature, removeModelHole, resizeModelHoleLayout, restoreModelFeature,
@@ -7,6 +8,10 @@ import {
   type ModelDimension, type ModelHole, type ModelHoleField, type ModelSession,
 } from './runtimeSession';
 import { RuntimeGeometryViewport } from './RuntimeGeometryViewport';
+import {
+  selectedGeneralProfile, generalProfileBodies, authorGeneralProfileExtrusion,
+  authorGeneralProfileCut, redimensionGeneralProfileExtrusion,
+} from './generalProfileAuthoring';
 import { BlankSketchCanvas } from './BlankSketchCanvas';
 import {appendBlankContourPoint,undoBlankContourVertex,placeBlankContourPointer,type BlankContourDraft,type SketchLocalPoint} from './blankContourDraft';
 import {commitModelBlankContour,startModelBlankContour,structuralContourRuntimeAvailable,inspectModelClosedContour,dragModelClosedContourVertex} from './closedContourBridge';
@@ -108,6 +113,12 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const [arrayDraft,setArrayDraft]=useState({sourceHoleId:'holeA',rows:'2',columns:'2',pitchXmm:'20',pitchYmm:'20'});
   const [orbitDraft,setOrbitDraft]=useState({sourceHoleId:'holeA',instances:'3',pivotXmm:'60',pivotYmm:'40',sweepDegrees:'360'});
   const [extrudeDraft,setExtrudeDraft]=useState('8');
+  const [generalDraft,setGeneralDraft]=useState({
+    extrudeId:'extrude.part',bodyId:'body.part',cutId:'cut.part',depth:'8',
+  });
+  // A cut cannot silently choose the first/only body: this is an explicit
+  // engineer decision which is discarded on a failed source fence.
+  const [generalTargetId,setGeneralTargetId]=useState('');
   // Presentation-only E combo: the actual feature is committed by RUNTIME/INTENT.
   const [featureCombo,setFeatureCombo]=useState<'extrude'|'cut'|null>(null);
   const [selected,setSelected]=useState('plate');
@@ -281,7 +292,25 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const cutActive=featureRows.some(row=>row.featureId==='cut'&&row.active);
   const plateAuthored=featureRows.some(row=>row.featureId==='plate');
   const cutAuthored=featureRows.some(row=>row.featureId==='cut');
-  const renderSketch=sketchMode||!plateActive;
+  const generalBodies=useMemo(()=>generalProfileBodies(history),[history]);
+  // The explicit target-body choice also determines the displayed analytic
+  // solid. Otherwise a multi-body project can label a cut on body A while
+  // still rendering body B from the feature-browser selection.
+  const generalSelectedBody=generalBodies.find(b=>b.extrudeId===generalTargetId) ??
+    generalBodies.find(b=>b.extrudeId===selected) ??
+    (!plateActive?generalBodies[0]??null:null);
+  const generalSolidReport=generalSelectedBody
+    ?report.features.find(f=>f.featureId===generalSelectedBody.extrudeId):null;
+  const generalSolid=generalSolidReport?.status==='preview_only'&&
+    generalSolidReport.profile?.status==='analytic_profile_only'&&generalSelectedBody
+      ?{profile:generalSolidReport.profile,thickness:generalSelectedBody.depthMm}:null;
+  // A pending cut's RUNTIME report need not expose bodyId. Match its
+  // authoritative INTENT write target to the exact selected body instead.
+  const generalCutActive=!!generalSelectedBody&&model.featuresOf(history.document).some(f=>
+    f.kind==='cut'&&f.writeTargets.length===1&&
+    f.writeTargets[0]===generalSelectedBody.bodyId&&
+    report.features.some(r=>r.featureId===f.id&&r.status==='pending_exact_provider'));
+  const renderSketch=sketchMode||(!plateActive&&!generalSolid);
   const selectedActive=featureRows.some(row=>row.featureId===selected&&row.active);
   const editableLifecycle=selected==='plate'||selected==='cut';
   const removalImpact=selectedActive&&editableLifecycle
@@ -356,15 +385,29 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     setMessage('Selected solver-owned vertex '+handleId+
       '. Edit exact X/Y or drag the amber handle; selection does not change the journal.');
   };
-  const canAuthorExtrusion=!plateAuthored && !!sketchProfile && !pendingImport;
+  const generalCandidate=useMemo(()=>{
+    if(!pointerSelection||!pointerSourceArchive)return null;
+    try{return selectedGeneralProfile(history,pointerSelection,pointerSourceArchive);}
+    catch{return null;}
+  },[history,pointerSelection,pointerSourceArchive]);
+  const canGeneralCommit=!!generalCandidate&&!pendingImport&&!loadingFile;
+  const canAuthorExtrusion=!plateAuthored && !generalBodies.length && !!sketchProfile && !pendingImport;
   const canAuthorCut=plateActive && !cutAuthored && !!sketchProfile?.holes.length && !pendingImport;
   // Until an authored cut exists, show the extrusion WITHOUT through-holes.
   // This is disposable tessellation; derived profiles never become CAD authority.
-  const geom=useMemo(()=>solidProfile
-    ?{...solidProfile,profile:renderSketch||cutActive?solidProfile.profile:
-      {...solidProfile.profile,holes:[]}}
-    :!plateAuthored&&sketchProfile?{profile:sketchProfile,thickness:0}:null,
-    [solidProfile,sketchProfile,renderSketch,cutActive,plateAuthored]);
+  const geom=useMemo(()=>{
+    // A generalized body is visualized only from the admitted RUNTIME
+    // profile. Its tessellation is NOT a STEP or verified Boolean.
+    if(generalSolid){
+      return {...generalSolid,profile:renderSketch||generalCutActive?generalSolid.profile:
+        {...generalSolid.profile,holes:[]}};
+    }
+    return solidProfile
+      ?{...solidProfile,profile:renderSketch||cutActive?solidProfile.profile:
+        {...solidProfile.profile,holes:[]}}
+      :!plateAuthored&&sketchProfile?{profile:sketchProfile,thickness:0}:null;
+  },[solidProfile,sketchProfile,renderSketch,cutActive,plateAuthored,
+    generalSolid,generalCutActive]);
   // RUNTIME, not a React success flag, owns STEP/source/backend provenance.
   // Read only when the journal or an attempt changes; never sample a stale
   // receipt merely because the model revision number still matches.
@@ -373,7 +416,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
     const backend=state.stepAvailability==='unavailable'?null:
       nativeSession.current!.currentStepReceipt()?.producer.backend??null;
     return {stepAvailability:state.stepAvailability,
-      indicator:describeNativeStep(state,backend,Boolean(geom&&cutActive))};
+      indicator:describeNativeStep(state,backend,Boolean(geom&&cutActive&&!generalSolid))};
   },[history,geom,cutActive,nativeBusy,nativeReport,nativeEvidence,pinnedEvidenceReady,nativeUrl,nativeToken]);
   const nativeIndicator=nativeSnapshot.indicator;
   const faults=useMemo(()=>modelDiagnostics(report),[report]);
@@ -547,6 +590,48 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       setMessage(`Authored body.plate extrusion (${extrudeDraft} mm) at revision ${next.document.revision}; invalidated ${changes.invalidatedFeatureIds.join(' → ')||'none'}. Tessellated preview only; not exact.`);
       return true;
     }catch(e){setMessage('Extrude refused: '+(e instanceof Error?e.message:String(e)));return false;}
+  };
+  const authorNamedExtrusion=()=>{
+    if(!pointerSelection||!pointerSourceArchive||pendingImport||loadingFile)return;
+    try{
+      if(liveHistory.current!==history)throw Error('Displayed source changed. Reselect the contour.');
+      if(!generalDraft.depth.trim())throw Error('Enter a positive depth.');
+      const result=authorGeneralProfileExtrusion(history,pointerSelection,pointerSourceArchive,
+        generalDraft.extrudeId.trim(),generalDraft.bodyId.trim(),Number(generalDraft.depth));
+      acceptHistory(result.history);setSelected(result.semanticIds.extrudeId);
+      setGeneralTargetId('');setSketchMode(false);
+      setMessage('FEATUREOPS authored '+result.semanticIds.extrudeId+' → '+
+        result.semanticIds.bodyId+' at revision '+result.history.document.revision+
+        '. Status: preview_only; no native B-rep/STEP. Reselect source contour before the next edit.');
+    }catch(e){setMessage('Named extrusion refused; journal retained: '+String(e));}
+  };
+  const authorNamedCut=()=>{
+    if(!pointerSelection||!pointerSourceArchive||pendingImport||loadingFile)return;
+    try{
+      if(liveHistory.current!==history)throw Error('Displayed source changed. Reselect the contour.');
+      const body=generalBodies.find(b=>b.extrudeId===generalTargetId);
+      if(!body)throw Error('Choose an explicit current named target body.');
+      const result=authorGeneralProfileCut(history,pointerSelection,pointerSourceArchive,
+        body.extrudeId,body.bodyId,generalDraft.cutId.trim());
+      acceptHistory(result.history);setSelected(result.semanticIds.cutId);setSketchMode(false);
+      setMessage('FEATUREOPS authored '+result.semanticIds.cutId+' on '+body.bodyId+
+        ' at revision '+result.history.document.revision+
+        '. pending_exact_provider: no qualified Boolean or STEP. Reselect contour to edit further.');
+    }catch(e){setMessage('Named body cut refused; journal retained: '+String(e));}
+  };
+  const redimensionNamedExtrusion=()=>{
+    if(!pointerSelection||!pointerSourceArchive||pendingImport||loadingFile)return;
+    try{
+      if(liveHistory.current!==history)throw Error('Displayed source changed. Reselect the contour.');
+      const body=generalBodies.find(b=>b.extrudeId===generalTargetId);
+      if(!body)throw Error('Select the exact named extrusion/body to reconfigure.');
+      if(!generalDraft.depth.trim())throw Error('Enter a positive depth.');
+      const result=redimensionGeneralProfileExtrusion(history,pointerSelection,pointerSourceArchive,
+        body.extrudeId,body.bodyId,Number(generalDraft.depth));
+      acceptHistory(result.history);setSelected(body.extrudeId);setSketchMode(false);
+      setMessage('Reconfigured '+body.extrudeId+' to '+result.depthMm+' mm at revision '+
+        result.history.document.revision+'; dependent cuts invalidated. Preview only; STEP revoked.');
+    }catch(e){setMessage('Named extrusion edit refused; journal retained: '+String(e));}
   };
   const createCut=():boolean=>{
     try{
@@ -1302,7 +1387,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
       </aside>
       <main className="editor-center" aria-label="Model-backed plate editor">
         <div className="viewport-header">
-          <div className="view-label"><strong>{renderSketch?'Sketch XY · solved profiles':cutActive?'3D cut preview':'3D uncut extrusion preview'}</strong>
+          <div className="view-label"><strong>{renderSketch?'Sketch XY · solved profiles':cutActive||generalCutActive?'3D cut-intent preview':'3D uncut extrusion preview'}</strong>
             <span>{geom?'Public SKETCH solver + profile admission':'Invalid or unresolved geometry'}</span></div>
           <span className={geom?'preview-tag':'preview-tag stale'}>{geom?'TESSELLATED PREVIEW · NOT EXACT':'NO CURRENT VALID MESH'}</span>
         </div>
@@ -1368,7 +1453,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
                 return dragHoleDiameter(displayedActiveHole,diameter);
               }}/>}
           {geom&&<div className="runtime-mesh-caption" data-testid="runtime-boundary">
-            {renderSketch?'Admitted 2D sketch':cutActive?'Cut-intent preview':'Uncut extrusion preview'} · {geom.profile.outer.length} outline vertices · {geom.profile.holes.length} displayed circular holes · {plateActive?geom.thickness+' mm extrude':'no solid yet'} · no Boolean proof
+            {renderSketch?'Admitted 2D sketch':cutActive||generalCutActive?'Cut-intent preview':'Uncut extrusion preview'} · {geom.profile.outer.length} outline vertices · {geom.profile.holes.length} displayed circular holes · {plateActive||generalSolid?geom.thickness+' mm extrude preview':'no solid yet'} · no Boolean proof
           </div>}
           {sketchMode&&circleDrawing.phase!=='idle'&&<div className="runtime-mesh-caption" data-testid="runtime-circle-stage" role="status">
             {circleDrawing.phase==='centre'?'CIRCLE · Click a centre inside the plate':
@@ -1405,6 +1490,70 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         <div className="panel-heading">PARAMETRIC INSPECTOR <span className="panel-count">mm</span></div>
         <div className="inspector-feature"><small>SELECTED SEMANTIC FEATURE</small><strong>{selected}</strong>
           <span>{report.features.find(f=>f.featureId===selected)?.status ?? 'Missing'}</span></div>
+        <div className="inspector-section" data-testid="runtime-general-profile-authoring">
+          <div className="section-head">SELECTED PROFILE → NAMED BODY · FEATUREOPS v1</div>
+          <p className="microcopy" data-testid="runtime-general-source">
+            {generalCandidate
+              ?'Selected SKETCH cycle: '+generalCandidate
+              :'Select the actual solved contour in Sketch XY. Source must be current and unambiguous.'}
+            {' '}Only a real FEATUREOPS/RUNTIME journal commit produces a feature; generalized
+            geometry is analytic preview, not pinned-C++ STEP.
+          </p>
+          <label className="runtime-scalar"><span>New extrusion feature ID</span>
+            <span className="runtime-scalar-control"><input type="text"
+              data-testid="runtime-general-extrude-id" value={generalDraft.extrudeId}
+              onChange={e=>setGeneralDraft(p=>({...p,extrudeId:e.target.value}))}/></span>
+          </label>
+          <label className="runtime-scalar"><span>New output body ID</span>
+            <span className="runtime-scalar-control"><input type="text"
+              data-testid="runtime-general-body-id" value={generalDraft.bodyId}
+              onChange={e=>setGeneralDraft(p=>({...p,bodyId:e.target.value}))}/></span>
+          </label>
+          <label className="runtime-scalar"><span>Extrusion depth · mm</span>
+            <span className="runtime-scalar-control"><input type="number" step="any"
+              data-testid="runtime-general-depth" min="0.001" max="10000"
+              value={generalDraft.depth}
+              onChange={e=>setGeneralDraft(p=>({...p,depth:e.target.value}))}/></span>
+          </label>
+          <button type="button" className="ribbon-button"
+            data-testid="runtime-general-create-extrude"
+            disabled={!canGeneralCommit} onClick={authorNamedExtrusion}>
+            Extrude selected profile into named body</button>
+          <label className="runtime-scalar"><span>Existing target body · explicit</span>
+            <span className="runtime-scalar-control">
+              <select data-testid="runtime-general-target" value={generalBodies.some(
+                  b=>b.extrudeId===generalTargetId)?generalTargetId:''}
+                onChange={e=>setGeneralTargetId(e.target.value)}>
+                <option value="">Choose target body…</option>
+                {generalBodies.map(b=><option key={b.extrudeId} value={b.extrudeId}>
+                  {b.bodyId} · {b.extrudeId} · {b.depthMm} mm
+                </option>)}
+              </select>
+            </span>
+          </label>
+          <label className="runtime-scalar"><span>New cut feature ID</span>
+            <span className="runtime-scalar-control"><input type="text"
+              data-testid="runtime-general-cut-id" value={generalDraft.cutId}
+              onChange={e=>setGeneralDraft(p=>({...p,cutId:e.target.value}))}/></span>
+          </label>
+          <button type="button" className="ribbon-button"
+            data-testid="runtime-general-create-cut"
+            disabled={!canGeneralCommit||!generalBodies.some(b=>b.extrudeId===generalTargetId)}
+            onClick={authorNamedCut}>Cut explicitly selected named body</button>
+          <button type="button" className="ribbon-button"
+            data-testid="runtime-general-edit-depth"
+            disabled={!canGeneralCommit||!generalBodies.some(b=>b.extrudeId===generalTargetId)}
+            onClick={redimensionNamedExtrusion}>Reconfigure selected body depth</button>
+          <div data-testid="runtime-general-body-status">
+            {generalBodies.map(b=><p className="microcopy" key={b.extrudeId}>
+              <strong>{b.bodyId}</strong> · {b.extrudeId} · {b.depthMm} mm ·
+              {' '}{report.features.find(f=>f.featureId===b.extrudeId)?.status}
+            </p>)}
+          </div>
+          <p className="microcopy">New profile cuts remain pending_exact_provider; downstream
+            Boolean/STEP is unsupported until an independent pinned native qualification.
+            Edits, Undo/Redo and Worker save/reopen retain the authoritative semantic IDs.</p>
+        </div>
         <div className="inspector-section" data-testid="runtime-pointer-profile-editor">
           <div className="section-head">SOLVED CONTOUR · SEMANTIC DIRECT EDIT</div>
           {pointerSelection?<div className="runtime-hole-add">
@@ -1599,6 +1748,10 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
           {values?<ScalarInput key={'thickness:'+history.document.revision}
              field="thickness" value={values.thickness} onCommit={update}/>:plateActive?<p className="microcopy">
              Extrusion thickness is model-owned. This drawn contour has no seeded fixture dimensions; use the extrusion control and selected handles.
+           </p>:generalSolid?<p data-testid="runtime-general-solid-guidance" className="microcopy">
+             Named body {generalSelectedBody?.bodyId} has a {generalSelectedBody?.depthMm} mm
+             source-bound extrusion preview. Reconfigure its depth in Selected Profile → Named Body;
+             choose the target body explicitly for a cut. No native B-rep or STEP is certified.
            </p>:plateAuthored?<p
              data-testid="runtime-removed-extrusion" className="microcopy">
              Extrusion removed. Plate parameters remain authored in the journal;
