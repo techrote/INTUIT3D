@@ -1417,6 +1417,41 @@ async function main() {
   check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===tabOriginalRevision,
     'uncommitted tab vertices bypassed authoritative RUNTIME admission');
   await screenshot('38-actual-pointer-tab-draft.png');
+  await eventually(()=>evaluate(
+    "document.querySelector('[data-testid=runtime-tab-preflight]')?.textContent?.includes('admissible')"),
+    'two real tab points did not produce a SKETCH-owned admissible preflight');
+  // Editable dimension inputs revise only an ephemeral tab. Deliberately cross
+  // the original contour and require SKETCH to disable Commit before any event.
+  const setTabDraftNumber=async(index,axis,value)=>{
+    const selector='[data-testid=runtime-tab-draft-'+index+'-'+axis+']';
+    check(await evaluate(`(() => {
+      const el=document.querySelector(${JSON.stringify(selector)});
+      el?.focus();el?.select();return document.activeElement===el;
+    })()`),'tab draft numeric input not focusable: '+selector);
+    await send('Input.insertText',{text:String(value)});
+    await clickControl('[data-testid="runtime-tab-draft"] strong');
+    await eventually(()=>evaluate(`Number(document.querySelector(${JSON.stringify(selector)})?.value)===${value}`),
+      'tab draft coordinate was not accepted: '+selector);
+  };
+  await setTabDraftNumber(0,'x',60);
+  await setTabDraftNumber(0,'y',95);
+  await eventually(()=>evaluate(`(() => {
+    const text=document.querySelector('[data-testid=runtime-tab-preflight]')?.textContent||'';
+    const button=document.querySelector('[data-testid=runtime-tab-commit]');
+    return text.includes('refused')&&Boolean(button?.disabled);
+  })()`),'crossing tab draft incorrectly allowed an authoritative commit');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===tabOriginalRevision,
+    'SKETCH preflight changed the model journal');
+  await screenshot('38b-source-refused-tab-preview.png');
+  await setTabDraftNumber(0,'x',140);
+  await setTabDraftNumber(0,'y',20);
+  await eventually(()=>evaluate(`(() => {
+    const text=document.querySelector('[data-testid=runtime-tab-preflight]')?.textContent||'';
+    const button=document.querySelector('[data-testid=runtime-tab-commit]');
+    return text.includes('admissible')&&!button?.disabled;
+  })()`),'numeric correction did not recover SKETCH tab preflight');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===tabOriginalRevision,
+    'numeric precommit tab repair wrote a model revision');
   await clickControl('[data-testid="runtime-tab-commit"]');
   const tabSixVertices=()=>evaluate(`(() => {
     const data=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
@@ -1456,6 +1491,15 @@ async function main() {
     });
   })()`),'precise tab vertex numeric edit failed authoritative replay');
   await screenshot('40-actual-tab-semantic-dimension.png');
+  // Cache source-selected identity while its successor selection is current.
+  // Undo/Redo deliberately expires prior source fences until a user reselects.
+  const persistedTabHandle=await evaluate("document.querySelector('[data-testid=runtime-tab-vertex-select]')?.value");
+  check(typeof persistedTabHandle==='string'&&persistedTabHandle.startsWith('tab.')&&
+    persistedTabHandle.endsWith(':handle:0'),'no stable selected inserted tab handle before save');
+  const retiredTabEdge=await evaluate("document.querySelector('[data-testid=runtime-tabbed-contour]')?.textContent?.split('Retired edge ')[1]?.split(' is not selectable')[0]");
+  check(typeof retiredTabEdge==='string'&&retiredTabEdge.endsWith(':edge:1'),
+    'retired original edge identity missing before archive save');
+
   check(await edgeUndo(),'tab vertex undo unavailable');
   await eventually(tabSixVertices,'tab edit Undo destroyed contour topology');
   check(await edgeRedo(),'tab vertex redo unavailable');
@@ -1465,6 +1509,7 @@ async function main() {
       const [x,y]=v.split(',').map(Number);return Math.abs(x-145)<0.05&&Math.abs(y-20)<0.05;
     });
   })()`),'tab edit redo lost solver-owned inserted vertex');
+  const persistedTabRevision=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
   const tabSaveCount=await evaluate("window.__modelArchiveBlobs.length");
   await clickControl('[data-testid="runtime-save-archive"]');
   await eventually(()=>evaluate('window.__modelArchiveBlobs.length==='+ (tabSaveCount+1)),
@@ -1476,14 +1521,84 @@ async function main() {
   await clickControl('[data-testid="runtime-import-review-confirm"]');
   await eventually(tabSixVertices,'tabbed archive lost its six-vertex outline on reopen');
   await screenshot('41-actual-tab-worker-reopen.png');
-  // Reversing two journal entries restores the existing four-vertex acceptance
-  // fixture without deleting or silently rebinding its semantic edge IDs.
-  check(await edgeUndo(),'reopened tab numeric Undo unavailable');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===
+    persistedTabRevision,'Worker Replace did not restore the saved tab revision');
+  // Integration #338 acceptance: actual reopened user gesture, not just visible
+  // polygon pixels. Pick the persisted profile and explicitly choose its
+  // original source-owned tab handle from the rebuilt SKETCH inventory.
+  await clickControl('[data-testid="runtime-profile-select-mode"]');
+  const reopenedTabPick=await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-sketch]');const m=s?.getScreenCTM();if(!m)return null;const p=new DOMPoint(45,35).matrixTransform(m);return {x:p.x,y:p.y}})()");
+  check(reopenedTabPick&&Number.isFinite(reopenedTabPick.x),
+    'reopened tab profile has no screen projection for actual pointer selection');
+  await mouse('mouseMoved',reopenedTabPick.x,reopenedTabPick.y);
+  await mouse('mousePressed',reopenedTabPick.x,reopenedTabPick.y,1);
+  await mouse('mouseReleased',reopenedTabPick.x,reopenedTabPick.y);
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-tabbed-contour]'))"),
+    'Worker-reopened six-vertex profile cannot be reselected for source-owned editing');
+  check(await evaluate("document.querySelector('[data-testid=runtime-tabbed-contour]')?.textContent?.includes("+JSON.stringify(retiredTabEdge)+")"),
+    'reopened tab lost its retired source-edge identity');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-contour-edge-select]')"),
+    'retired original edge was incorrectly offered for a new structural edit');
+  check(await evaluate("(() => {const s=document.querySelector('[data-testid=runtime-tab-vertex-select]');const id="+JSON.stringify(persistedTabHandle)+";const o=[...s?.options||[]].find(item=>item.value===id);if(!o||!o.textContent.includes('Inserted tab vertex'))return false;s.value=id;s.dispatchEvent(new Event('change',{bubbles:true}));return true})()"),
+    'reopened SKETCH inventory did not preserve the original inserted semantic handle');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-drawn-contour-vertex-editor]'))"),
+    'reselected persisted tab handle has no working numeric editor');
+  check(await evaluate("Number(document.querySelector('[data-testid=runtime-drawn-vertex-x]')?.value)===145&&Number(document.querySelector('[data-testid=runtime-drawn-vertex-y]')?.value)===20"),
+    'persisted tab handle identity mapped to wrong sketch-local coordinates');
+  await screenshot('41a-reopened-tab-source-handle-selected.png');
+
+  const reopenedTabEditBefore=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-drawn-vertex-x]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'persisted inserted handle X coordinate cannot receive keyboard focus');
+  await send('Input.insertText',{text:'150'});
+  check(await evaluate("(() => {const e=document.querySelector('[data-testid=runtime-drawn-vertex-y]');e?.focus();e?.select();return document.activeElement===e})()"),
+    'persisted inserted handle Y coordinate cannot receive keyboard focus');
+  await send('Input.insertText',{text:'25'});
+  check(await evaluate("document.querySelector('[data-testid=runtime-drawn-vertex-x]')?.value==='150'&&document.querySelector('[data-testid=runtime-drawn-vertex-y]')?.value==='25'"),
+    'post-Replace precise X/Y values were not entered through real Chromium keyboard events');
+  const reopenedTabVertexAt=(x,y)=>evaluate("(() => {const p=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';return p.trim().split(/\\s+/).some(pair=>{const [px,py]=pair.split(',').map(Number);return Number.isFinite(px)&&Number.isFinite(py)&&Math.hypot(px-"+x+",py-"+y+")<0.05})})()");
+  await clickControl('[data-testid="runtime-drawn-vertex-commit"]');
+  await eventually(()=>reopenedTabVertexAt(150,25),
+    'reselected post-import inserted handle did not commit a new authoritative edit');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")!==reopenedTabEditBefore,
+    'post-import tab edit did not advance authoritative journal revision');
+  check(!await reopenedTabVertexAt(145,20),
+    'post-import tab vertex geometry stayed at its archived coordinates');
+  await screenshot('41b-reopened-tab-vertex-edited.png');
+  check(await edgeUndo(),'post-import inserted-vertex Undo unavailable');
+  await eventually(()=>reopenedTabVertexAt(145,20),
+    'post-import edit Undo did not restore the saved inserted vertex');
+  check(!await reopenedTabVertexAt(150,25),
+    'post-import edit Undo retained the newer coordinates');
+  check(await edgeRedo(),'post-import inserted-vertex Redo unavailable');
+  await eventually(()=>reopenedTabVertexAt(150,25),
+    'post-import edit Redo did not restore the edited inserted vertex');
+  await screenshot('41c-reopened-tab-vertex-undo-redo.png');
+
+  // Three authoritative Undo events: the NEW post-import edit, the original
+  // pre-save numeric edit and the structural insertion. The retired tab
+  // handle must not survive as an editable option on the restored rectangle.
+  check(await edgeUndo(),'reopened post-import vertex edit Undo unavailable');
+  await eventually(()=>reopenedTabVertexAt(145,20),
+    'reopened post-import edit Undo failed to restore saved geometry');
+  check(await edgeUndo(),'reopened original tab numeric Undo unavailable');
+  await eventually(()=>reopenedTabVertexAt(140,20),
+    'original pre-save tab dimension Undo failed to restore insertion geometry');
   check(await edgeUndo(),'reopened tab insertion Undo unavailable');
-  await eventually(()=>evaluate(`(() => {
-    const data=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
-    return data.trim().split(/\\s+/).length===4;
-  })()`),'tab insertion Undo did not recover the original four-edge contour');
+  await eventually(()=>evaluate("(() => {const p=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';return p.trim().split(/\\s+/).length===4})()"),
+    'tab insertion Undo did not recover original four-edge contour');
+  await clickControl('[data-testid="runtime-profile-select-mode"]');
+  const restoredPick=await evaluate("(() => {const m=document.querySelector('[data-testid=runtime-sketch]')?.getScreenCTM();if(!m)return null;const p=new DOMPoint(45,35).matrixTransform(m);return {x:p.x,y:p.y}})()");
+  check(restoredPick&&Number.isFinite(restoredPick.x),
+    'restored rectangle unavailable for source-owned profile selection');
+  await mouse('mouseMoved',restoredPick.x,restoredPick.y);
+  await mouse('mousePressed',restoredPick.x,restoredPick.y,1);
+  await mouse('mouseReleased',restoredPick.x,restoredPick.y);
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-contour-edge-editor]'))"),
+    'restored original four-edge profile could not be reselected');
+  check(await evaluate("!document.querySelector('[data-testid=runtime-tab-vertex-select]')&&![...document.querySelectorAll('[data-testid=runtime-drawn-vertex-select] option')].some(o=>o.value==="+JSON.stringify(persistedTabHandle)+")"),
+    'retired inserted handle was still exposed as editable after undoing insertion');
+  await screenshot('41d-retired-tab-handle-not-selectable.png');
 
   const originalDrawnVertex=await evaluate(`(() => {
     const text=document.querySelector('[data-testid=runtime-sketch] polygon')?.getAttribute('points')||'';
@@ -1654,7 +1769,7 @@ async function main() {
     evidence: 'actual Chromium software-WebGL React preview and CDP pointer/keyboard/recovery interactions',
     initialWidthMm: 120, draggedWidthMm: 128, recoveredWidthMm: 128,
     keyboardHoleDiameterMm: 13, recoveredHoleDiameterMm: 13,
-    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','31c-solved-sketch-navigation.png','31a-edge-drag-admitted.png','31b-edge-undo-redo-archive-reopened.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png'],
+    screenshots: ['00-model-first-start.png', '01-solid.png', '02-sketch.png', '02a-invalid-expression.png', '02b-precision-loss.png', '02-cursor-snap.png', '03-width-drag.png', '04-keyboard-edit.png', '05-recovered.png', '06-solid-thickness-drag.png', '07-solid-thickness-keyboard.png', '08-import-review.png', '09-imported-invalid-preview.png', '10-model-runtime-solid.png', '11-model-runtime-sketch.png', '12-model-runtime-blocked.png', '13-model-runtime-reopened.png', '14-model-runtime-new-plate.png', '15-sketch-first-solved.png', '15a-e-combo-extrusion.png', '16-sketch-extruded-uncut.png', '16a-e-combo-cut.png', '17-sketch-through-cut-pending-native.png', '18-sketch-cut-archive-reopened.png','19-multi-hole-selected.png','20-multi-hole-atomic-drag.png','21-multi-hole-archive-reopened.png','22-ctrl-n-new-sketch.png','23-worker-import-confirmation.png','24-worker-import-reopened.png','25-model-selected-hole-stamp.png','26-model-batch-delete-undo.png','27-model-edge-anchored-hole.png','28-model-edge-hole-archive-reopened.png','29a-crossing-outline-refused.png','29b-crossing-outline-escape.png','29-from-empty-pointer-four-vertices.png','30-from-empty-authoritative-closed-contour.png','31-from-empty-authoritative-save-reopen.png','31c-solved-sketch-navigation.png','31a-edge-drag-admitted.png','31b-edge-undo-redo-archive-reopened.png','32-from-empty-extrusion-hole-cut.png','33-from-empty-extrusion-cut-reopened.png','34-drawn-vertex-numeric-edit.png','35-drawn-vertex-pointer-drag.png','36-drawn-vertex-undo-redo.png','37-drawn-vertex-edit-reopened.png','38-actual-pointer-tab-draft.png','38b-source-refused-tab-preview.png','39-actual-pointer-tab-committed.png','40-actual-tab-semantic-dimension.png','41-actual-tab-worker-reopen.png','41a-reopened-tab-source-handle-selected.png','41b-reopened-tab-vertex-edited.png','41c-reopened-tab-vertex-undo-redo.png','41d-retired-tab-handle-not-selectable.png'],
     modelBackedJournalSketchRuntimeBrowserEvidence: true,
     modelBackedSaveOpenInvalidIntentPreserved: true,
     ctrlSScopeIsolatedToModelArchive: true,
@@ -1679,6 +1794,7 @@ async function main() {
     genuinelyDrawnVertexNumericAndPointerEditUndoRedoReopen: true,
     genuineContourEdgePointerOffsetUndoRedoArchiveReopen: true,
     actualTwoPointTabCancelCommitDimensionUndoRedoWorkerReopen: true,
+    postImportSourceOwnedTabHandleReselectedDimensionEditedUndoRedoRetiredHandleRefused: true,
     solvedSketchWheelMiddlePanFitNoJournalAndSubsequentEdgeEdit: true,
     limits: 'Legacy mode is preview only; model-backed mode uses INTENT/SKETCH/RUNTIME but does not establish exact OCCT, independent STEP or human acceptance.'
   };
