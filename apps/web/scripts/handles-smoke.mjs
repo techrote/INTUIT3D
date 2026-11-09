@@ -967,6 +967,179 @@ async function main() {
   const blankBefore=await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent");
   check(await evaluate("!document.querySelector('[data-testid=runtime-sketch]') && Boolean(document.querySelector('[data-testid=runtime-structural-sketch-dimensions]'))"),
     'empty sketch was replaced with a fabricated seeded profile');
+  // A fixed 240 x 160 SVG used to trap actual from-empty authoring at one
+  // scale. Exercise native DOM/CDP wheel + middle-pointer navigation BEFORE
+  // any profile exists. Neither changes INTENT nor an unfinished sketch draft.
+  const blankCanvasBox=await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-blank-sketch]');
+    const b=s.getBoundingClientRect();
+    return {x:b.left+b.width/2,y:b.top+b.height/2};
+  })()`);
+  check(blankCanvasBox&&Number.isFinite(blankCanvasBox.x),'blank SVG has no screen bounds');
+  const anchorBefore=await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-blank-sketch]');
+    const p=new DOMPoint(${blankCanvasBox.x},${blankCanvasBox.y}).matrixTransform(s.getScreenCTM().inverse());
+    return {x:p.x,y:p.y};
+  })()`);
+  await send('Input.dispatchMouseEvent',{type:'mouseWheel',x:blankCanvasBox.x,
+    y:blankCanvasBox.y,deltaX:0,deltaY:-260});
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox').split(' ')[2])<240`),
+    'actual browser wheel failed to zoom the first empty sketch');
+  const anchorAfter=await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-blank-sketch]');
+    const p=new DOMPoint(${blankCanvasBox.x},${blankCanvasBox.y}).matrixTransform(s.getScreenCTM().inverse());
+    return {x:p.x,y:p.y};
+  })()`);
+  check(Math.hypot(anchorAfter.x-anchorBefore.x,anchorAfter.y-anchorBefore.y)<0.01,
+    'wheel zoom moved the sketch coordinate beneath the pointer');
+  const beforePan=await evaluate(`document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox')`);
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',
+    x:blankCanvasBox.x,y:blankCanvasBox.y,buttons:0});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',
+    x:blankCanvasBox.x,y:blankCanvasBox.y,button:'middle',buttons:4,clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',
+    x:blankCanvasBox.x+42,y:blankCanvasBox.y+24,button:'middle',buttons:4});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',
+    x:blankCanvasBox.x+42,y:blankCanvasBox.y+24,button:'middle',buttons:0,clickCount:1});
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox')!==${JSON.stringify(beforePan)}`),
+    'actual middle-button pointer drag did not pan the empty sketch');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore,
+    'wheel or middle-pan mutated the authoritative empty sketch revision');
+  await screenshot('29-blank-sketch-wheel-middle-pan.png');
+  await clickControl('[data-testid="runtime-blank-view-reset"]');
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox')==='-20 -20 240 160'`),
+    'Reset view failed to restore the original pointer drawing extent');
+  await clickControl('[data-testid="runtime-blank-zoom-in"]');
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox').split(' ')[2])<240`),
+    'Zoom in button failed on blank canvas');
+  await clickControl('[data-testid="runtime-blank-view-reset"]');
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox')==='-20 -20 240 160'`),
+    'Zoom/reset controls did not restore the real pointer mapping');
+  // Prove the new navigation actually enables authoring *outside* the
+  // original 220 mm right-hand limit, rather than only changing a viewBox.
+  for(let i=0;i<5;i++)await clickControl('[data-testid="runtime-blank-zoom-out"]');
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox').split(' ')[2])>1000`),
+    'zoom-out navigation did not expose a larger drawable workspace');
+  // Pan enough that the *original* fixed label at x=-16 exits the viewBox.
+  // Without a screen-fixed readout the operator loses precise coordinates.
+  const farPan=await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-blank-sketch]');
+    const b=s.getBoundingClientRect(),m=s.getScreenCTM();
+    const startX=b.left+b.width/2;
+    // Move exactly 600 sketch millimetres to the right in viewBox space.
+    // The 600 mm offset leaves X=500 visibly inside while hiding x=-16.
+    return {startX,endX:startX-600*m.a,y:b.top+b.height/2};
+  })()`);
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',
+    x:farPan.startX,y:farPan.y,buttons:0});
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',
+    x:farPan.startX,y:farPan.y,button:'middle',buttons:4,clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',
+    x:farPan.endX,y:farPan.y,button:'middle',buttons:4});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',
+    x:farPan.endX,y:farPan.y,button:'middle',buttons:0,clickCount:1});
+  await eventually(()=>evaluate(`Number(document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox').split(' ')[0])>0`),
+    'large middle pan did not move original SVG-space readout off-screen');
+  // Clicking Draw outline may scroll its toolbar into view and alter the
+  // flex layout. Resolve the SVG screen transform AFTER the real button click,
+  // never reuse a pre-scroll pointer position for a sketch-local vertex.
+  await clickControl('[data-testid="runtime-outline-tool"]');
+  await eventually(()=>evaluate("Boolean(document.querySelector('[data-testid=runtime-contour-vertex-count]'))"),
+    'real outline button click did not open a draft after sketch navigation');
+  const farPoint=await evaluate(`(() => {
+    const s=document.querySelector('[data-testid=runtime-blank-sketch]');
+    const m=s?.getScreenCTM();
+    if(!m)return null;
+    const p=new DOMPoint(500,20).matrixTransform(m);
+    const b=s.getBoundingClientRect(),target=document.elementFromPoint(p.x,p.y);
+    return {x:p.x,y:p.y,
+      inside:p.x>=b.left&&p.x<=b.right&&p.y>=b.top&&p.y<=b.bottom,
+      hittable:Boolean(target&&s.contains(target))};
+  })()`);
+  check(farPoint?.inside&&farPoint.hittable,
+    'off-origin vertex lies outside the live sketch pointer target after tool activation');
+  await mouse('mouseMoved',farPoint.x,farPoint.y);
+  await eventually(()=>evaluate(
+    "document.querySelector('[data-testid=runtime-contour-pointer-coordinate]')?.textContent.includes('NEXT X 500.000')"),
+    'current SVG pointer transform did not deliver a 500 mm hover after middle pan');
+  await evaluate(`(() => {
+    const svg=document.querySelector('[data-testid=runtime-blank-sketch]');
+    window.__offOriginClicks=[];
+    svg.addEventListener('click',event=>{
+      // Capture the trusted click's actual screen-to-sketch inverse BEFORE the
+      // React onClick adds a vertex. A zoomed-out CSS pixel can represent
+      // several millimetres, so the hover's nominal X=500 is not a valid
+      // exact snapped-vertex oracle.
+      const inverse=svg.getScreenCTM()?.inverse();
+      const p=inverse?
+        new DOMPoint(event.clientX,event.clientY).matrixTransform(inverse):null;
+      const quantize=value=>Math.sign(value)*Math.round(Math.abs(value))||0;
+      window.__offOriginClicks.push({
+        button:event.button,isTrusted:event.isTrusted,target:event.target.tagName,
+        sketch:p?{x:quantize(p.x),y:quantize(120-p.y)}:null,
+        mmPerCssPixel:inverse?Math.hypot(inverse.a,inverse.b):null,
+      });
+    },{capture:true});
+  })()`);
+  await mouse('mousePressed',farPoint.x,farPoint.y,1);
+  await mouse('mouseReleased',farPoint.x,farPoint.y);
+  const clickObservation=await evaluate(`(() => ({
+    clickEvents:window.__offOriginClicks,
+    vertexCount:document.querySelector('[data-testid=runtime-contour-vertex-count]')?.textContent,
+    vertices:[...document.querySelectorAll('[data-testid^=runtime-draft-vertex-]')].map(v=>[v.getAttribute('cx'),v.getAttribute('cy')]),
+    readout:document.querySelector('[data-testid=runtime-contour-pointer-coordinate]')?.textContent
+  }))()`);
+  console.log('WORKBENCH_OFF_ORIGIN_CAPTURE '+JSON.stringify(clickObservation));
+  // The actual trusted click is the oracle for source-local pointer
+  // quantization, not the earlier mousemove text at this coarse zoom.
+  // Preserve the stronger admission check: one genuine click, one exact
+  // snapped point, and location outside the old visible SVG extent.
+  check(clickObservation.clickEvents?.length===1 &&
+    clickObservation.clickEvents[0]?.button===0 &&
+    clickObservation.clickEvents[0]?.isTrusted===true &&
+    clickObservation.vertexCount==='1 / 12 vertices',
+    'off-origin pointer did not create precisely one trusted draft vertex');
+  const actual=clickObservation.vertices[0]?.map(Number);
+  const click=clickObservation.clickEvents[0];
+  check(actual?.length===2 && click?.sketch &&
+    actual[0]===click.sketch.x && actual[1]===click.sketch.y &&
+    actual[0]>220 && Number.isFinite(click.mmPerCssPixel) &&
+    Math.abs(actual[0]-500)<=click.mmPerCssPixel+0.5,
+    'the navigated canvas did not preserve its trusted click sketch-local coordinates');
+  // Navigation must keep actual draft markers legible in screen pixels.
+  // A fixed 1.5 mm SVG radius previously shrank below one CSS pixel when
+  // zoomed far out, making successful off-origin clicks appear to do nothing.
+  const visibleMarker=await evaluate(`(() => {
+    const vertex=document.querySelector('[data-testid=runtime-draft-vertex-0]');
+    const snap=document.querySelector('[data-testid=runtime-contour-pointer-snap]');
+    if(!vertex||!snap)return null;
+    return {vertexPx:vertex.getBoundingClientRect().width,
+      snapPx:snap.getBoundingClientRect().width};
+  })()`);
+  check(visibleMarker&&visibleMarker.vertexPx>=3&&visibleMarker.vertexPx<=24&&
+    visibleMarker.snapPx>=3&&visibleMarker.snapPx<=24,
+    'off-origin sketch draft vertices or snap ring became subpixel/invisible after zoom');
+  await screenshot('29b-blank-sketch-off-origin-visible-marker.png');
+  // The old fixed SVG labels and axis strokes disappeared when users panned
+  // beyond 220 mm: keep current coordinate feedback and axes after navigation.
+  await eventually(()=>evaluate(`(() => {
+    const readout=document.querySelector('[data-testid=runtime-blank-cursor-readout]');
+    const coordinates=document.querySelector('[data-testid=runtime-contour-pointer-coordinate]');
+    const svg=document.querySelector('[data-testid=runtime-blank-sketch]');
+    const axis=document.querySelector('[data-testid=runtime-blank-axes]');
+    if(!readout||!coordinates||!svg||!axis)return false;
+    const b=readout.getBoundingClientRect(),[x,y,w,h]=svg.getAttribute('viewBox').split(' ').map(Number);
+    return b.width>0&&b.height>0&&coordinates.textContent.includes('NEXT X 500.000')&&
+      axis.getAttribute('d')===('M '+x+' 120 H '+(x+w)+' M 0 '+y+' V '+(y+h));
+  })()`),'off-origin navigation hid pointer coordinates or clipped the model axes');
+  check(await evaluate("document.querySelector('[data-testid=runtime-revision]')?.textContent")===blankBefore,
+    'off-extent drafting unexpectedly committed a CAD revision');
+  await clickControl('[data-testid="runtime-cancel-contour"]');
+  await eventually(()=>evaluate("!document.querySelector('[data-testid=runtime-contour-vertex-count]')"),
+    'navigated draft could not be cancelled without admission');
+  await clickControl('[data-testid="runtime-blank-view-reset"]');
+  await eventually(()=>evaluate(`document.querySelector('[data-testid=runtime-blank-sketch]').getAttribute('viewBox')==='-20 -20 240 160'`),
+    'Reset view failed after off-extent authoring');
   // Adversarial *real pointer* admission before the successful journey:
   // a bow-tie's four legitimate clicks must never silently author a profile.
   // Escape after SKETCH's refusal must discard only ephemeral draft vertices.
