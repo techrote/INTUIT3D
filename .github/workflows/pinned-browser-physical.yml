@@ -350,6 +350,74 @@ jobs:
           # original custody ZIPs, and source-matched native host receipts.
           print('CONNECTED_PINNED_CHROMIUM_CXX_STEP_INDEPENDENT_ANVIL_PHYSICAL_PASS')
           PY
+      # Bind the physical result to the actual tested PR merge-tree, rather
+      # than calling a prior native artifact or the PR tip the executed source.
+      # No new OCCT or AnvilCAD builds; this is custody of the above real run.
+      - name: Seal exact checked-out source and original physical evidence
+        shell: bash
+        env:
+          PHYSICAL_TESTED_SHA: ${{ github.sha }}
+          PHYSICAL_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PHYSICAL_BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          root=pathlib.Path('pinned-browser-evidence')
+          sha=lambda b: hashlib.sha256(b).hexdigest()
+          tested=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          assert tested==os.environ['PHYSICAL_TESTED_SHA'],(tested,os.environ['PHYSICAL_TESTED_SHA'])
+          assert len(tested)==40 and all(ch in '0123456789abcdef' for ch in tested)
+          # Verify executed source bytes, not merely commit identity: this
+          # fails if a build/setup step silently rewrote the source under test.
+          paths=[
+              '.github/workflows/pinned-browser-physical.yml',
+              'tooling/qualify-pinned-browser-step.mjs',
+              'packages/workflow-runtime/live-plate-session.mjs',
+              'apps/web/src/RuntimeWorkbench.tsx',
+              'apps/web/src/RuntimeGeometryViewport.tsx',
+              'conformance/external-cad/session_step.py',
+          ]
+          sources={}
+          for path in paths:
+              working=pathlib.Path(path).read_bytes()
+              committed=subprocess.check_output(['git','show','HEAD:'+path])
+              assert working==committed,'Executed source was modified after checkout: '+path
+              sources[path]=sha(working)
+          browser=json.loads((root/'browser-receipt.json').read_text())
+          physical_file=root/'independent-physical/qualification.json'
+          physical=json.loads(physical_file.read_text())
+          assert browser['journey']=='drawn-edge-offset',browser.get('journey')
+          assert browser['provider'].startswith('actual installed Linux OCCT8 C++')
+          assert physical['independentCadPhysicalPass'] is True,physical
+          assert physical['status']=='INDEPENDENT_CAD_PASS_SESSION_CUSTODY_UNATTESTED'
+          assert browser['nativeWorkerSha256']=='a346489f79e49c1eb81a1bebe5987d31fbd6e92814c2f5a7028c1ecf4d3dbbc1'
+          original={}
+          for stage,name in [('earlier','earlier-one-bore.zip'),('current','current-two-bores.zip')]:
+              data=(root/name).read_bytes()
+              digest=sha(data)
+              assert digest==browser[stage]['sha256'],stage
+              original[stage]={'file':name,'sha256':digest}
+          assert original['earlier']['sha256']!=original['current']['sha256']
+          custody={
+              'schema':'intuit3d.integration.executed-physical-source-custody/v1',
+              'testedCheckoutCommit':tested,
+              'candidateHeadCommit':os.environ['PHYSICAL_CANDIDATE_SHA'],
+              'baseCommitAtTrigger':os.environ['PHYSICAL_BASE_SHA'],
+              'sourceFilesSha256':sources,
+              'nativeWorkerSha256':browser['nativeWorkerSha256'],
+              'originalBrowserZips':original,
+              'independentCadReportSha256':sha(physical_file.read_bytes()),
+              'independentCadPhysicalPass':True,
+              'journey':browser['journey'],
+              'scope':'real Chromium pointer-drawn bounded plate, genuine pinned Linux OCCT8 C++ STEP, non-OCCT AnvilCAD',
+              'limitations':['No general polygon B-rep claim','No Windows-native OCCT8','No private Windows Firefox human replay'],
+          }
+          (root/'source-custody.json').write_text(json.dumps(custody,sort_keys=True,indent=2)+'\n')
+          print('EXACT_CHECKOUT_PINNED_BROWSER_INDEPENDENT_STEP_CUSTODY_PASS',
+                json.dumps({'checkout':tested,'candidate':custody['candidateHeadCommit'],
+                            'currentStepSha256':original['current']['sha256'],
+                            'independentCadReportSha256':custody['independentCadReportSha256']}))
+          PY
       - name: Preserve original clicked ZIPs, screenshots, physical receipts and refusal logs
         if: always()
         uses: actions/upload-artifact@v4
