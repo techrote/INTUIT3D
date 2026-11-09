@@ -518,6 +518,25 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
         result.history.document.revision+'. Native STEP stale/pending; analytic preview only.');
     }catch(error){setMessage('Tab vertex edit refused; journal unchanged: '+String(error));}
   };
+  const dragUnselectedContourVertex=(handleId:string,x:number,y:number)=>{
+    // Only source-inspected handles in the current canonical journal are eligible.
+    // The existing SKETCH/RUNTIME edit paths remain the sole geometry authority.
+    if(!pointerSelection||!pointerSourceArchive||pendingImport||loadingFile||
+        liveHistory.current!==history||
+        pointerSourceArchive!==serializeModelSession(liveHistory.current)){
+      setMessage('Vertex drag expired; reselect the current source-owned contour.');
+      return;
+    }
+    if(closedInventory?.handles.some(handle=>handle.handleId===handleId)){
+      setPointerHandleId(handleId);
+      setSelectedContourEdgeId('');
+      dragDrawnVertex(handleId,x,y);
+    }else if(tabbedInventory?.handles.some(handle=>handle.handleId===handleId)){
+      setPointerHandleId(handleId);
+      setSelectedContourEdgeId('');
+      editTabVertex(handleId,x,y);
+    }else setMessage('Vertex drag refused: handle is not owned by the current SKETCH inventory.');
+  };
   const createExtrusion=():boolean=>{
     try{
       if(!extrudeDraft.trim())throw Error('Enter a positive extrusion distance.');
@@ -1314,6 +1333,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               contourVertexHandles={!profilePickMode&&circleDrawing.phase==='idle'&&!tabDraft&&
                 !pendingImport&&!loadingFile?contourVertexHandles:undefined}
               onContourVertexPick={selectContourVertex}
+              onContourVertexDrag={dragUnselectedContourVertex}
               onProfileHandleDrag={(handleId,x,y)=>closedHandle?dragDrawnVertex(handleId,x,y):
                  tabbedHandle?editTabVertex(handleId,x,y):dragProfile(handleId,x,y)}
                tabPoints={tabDraft?.points}
