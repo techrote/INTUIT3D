@@ -17,7 +17,7 @@ import { panBlankCanvas, zoomBlankCanvas, type BlankCanvasView } from './blankCa
 type HoleId = string;
 export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHoleMove, onDimensionEdit, onHoleDiameterEdit, onHoleSelect, selectedHoleId, selectedHoleIds, circleDrawing, onCirclePick, onThicknessEdit, onProfilePick, profileEditHandle, onProfileHandleDrag,
   contourEdges, selectedContourEdgeId, onContourEdgePick, onContourEdgeDrag, onContourEdgeOffset,
-  tabPoints,tabEdge,onTabPoint,sketchProjectKey }: {
+  tabPoints,tabEdge,onTabPoint,sketchProjectKey,contourVertexHandles,onContourVertexPick }: {
   profile: PlateProfile; thickness: number; sketchMode: boolean;
   /** Clear ephemeral navigation on project replacement; never on a CAD edit. */
   sketchProjectKey?: string;
@@ -37,6 +37,10 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   /** One explicitly chosen semantic handle; colocated handles require user choice. */
   profileEditHandle?: {handleId:string;position:{x:number;y:number}}|null;
   onProfileHandleDrag?: (handleId:string,x:number,y:number)=>void;
+  /** SKETCH-inspected handles only. Clicking selects an exact semantic ID,
+   * never a nearest inferred vertex; coincident points retain the inspector fallback. */
+  contourVertexHandles?:readonly {handleId:string;position:{x:number;y:number}}[];
+  onContourVertexPick?:(handleId:string)=>void;
   /** Only current SKETCH-inspected source-owned edges may render manipulators. */
   contourEdges?:readonly ContourOffsetEdge[];
   selectedContourEdgeId?:string;
@@ -67,7 +71,8 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
   const [circleHover,setCircleHover]=useState<{x:number;y:number}|null>(null);
   const dimensionMove=useRef<{id:SketchDimensionHandle;pointerId:number;source:PlateProfile;original:number}|null>(null);
   const [dimensionPreview,setDimensionPreview]=useState<{id:SketchDimensionHandle;value:number}|null>(null);
-  const profileMove=useRef<{handleId:string;pointerId:number;source:PlateProfile}|null>(null);
+  const profileMove=useRef<{handleId:string;pointerId:number;source:PlateProfile;
+    startScreen:{x:number;y:number}}|null>(null);
   const [profilePreview,setProfilePreview]=useState<{x:number;y:number}|null>(null);
   const contourMove=useRef<{edgeId:string;pointerId:number;source:PlateProfile;
     start:{x:number;y:number}}|null>(null);
@@ -735,6 +740,29 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
             }}/>
         </g>;
       })}
+      {onContourVertexPick&&contourVertexHandles?.filter(handle=>
+        handle.handleId!==profileEditHandle?.handleId &&
+        Number.isFinite(handle.position.x)&&Number.isFinite(handle.position.y) &&
+        // An exact SVG target is selectable only when it identifies one source
+        // vertex. Coincident semantic IDs are still available in the inspector.
+        contourVertexHandles.filter(other=>
+          other.position.x===handle.position.x&&other.position.y===handle.position.y).length===1
+      ).map(handle=><circle key={handle.handleId}
+        data-testid="runtime-contour-vertex-marker" data-handle-id={handle.handleId}
+        role="button" tabIndex={0}
+        aria-label={'Select source contour vertex '+handle.handleId}
+        cx={handle.position.x} cy={handle.position.y}
+        r={Math.max(3,Math.min(width,height)/28)*sketchMarkerScale}
+        fill="#73c5d6" stroke="#162c39" strokeWidth="1"
+        style={{cursor:'pointer',touchAction:'none'}}
+        onClick={event=>{event.preventDefault();event.stopPropagation();
+          onContourVertexPick(handle.handleId);}}
+        onKeyDown={event=>{
+          if(event.key==='Enter'||event.key===' '){
+            event.preventDefault();event.stopPropagation();
+            onContourVertexPick(handle.handleId);
+          }
+        }}/>)}
       {profileEditHandle&&onProfileHandleDrag&&<circle
         data-testid="runtime-profile-drag-handle"
         aria-label={'Drag selected semantic profile handle '+profileEditHandle.handleId}
@@ -748,7 +776,8 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
           if(event.button!==0)return;
           event.preventDefault();event.stopPropagation();
           event.currentTarget.setPointerCapture(event.pointerId);
-          profileMove.current={handleId:profileEditHandle.handleId,pointerId:event.pointerId,source:profile};
+          profileMove.current={handleId:profileEditHandle.handleId,pointerId:event.pointerId,
+            source:profile,startScreen:{x:event.clientX,y:event.clientY}};
           setProfilePreview(profileEditHandle.position);
         }}
         onPointerMove={event=>{
@@ -764,6 +793,10 @@ export function RuntimeGeometryViewport({ profile, thickness, sketchMode, onHole
           event.stopPropagation();
           profileMove.current=null;setProfilePreview(null);
           if(active.source!==profile)return;
+          // A click selecting/focusing the marker is not a CAD movement.
+          // Screen-pixel threshold only; SKETCH still admits actual geometry.
+          if(Math.hypot(event.clientX-active.startScreen.x,
+            event.clientY-active.startScreen.y)<=3)return;
           const at=pointerPosition(event);
           if(at)onProfileHandleDrag(active.handleId,at.x,at.y);
         }}
