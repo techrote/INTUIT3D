@@ -1149,6 +1149,7 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
               onCancel={()=>{setBlankDraft(null);setMessage('Uncommitted outline cancelled. No revision created.');}}
               onClose={closeBlankDrawing}/>:
            geom?<RuntimeGeometryViewport profile={geom.profile} thickness={geom.thickness} sketchMode={renderSketch}
+              sketchProjectKey={history.document.projectId}
               onHoleMove={circleDrawing.phase==='idle'&&!profilePickMode?dragHole:undefined}
               onHoleDiameterEdit={circleDrawing.phase==='idle'&&!profilePickMode?dragHoleDiameter:undefined}
               onHoleSelect={(id,additive=false)=>{
