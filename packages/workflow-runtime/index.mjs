@@ -171,6 +171,23 @@ export function createWorkflowRuntime(services) {
         continue;
       }
       if (feature.kind === 'cut') {
+        // MODEL orders writes to a semantic body; RUNTIME must not describe a
+        // cut as merely awaiting native execution if its explicit target no
+        // longer matches that body or it lacks a dependency on its prior writer.
+        // A cut may follow an extrude or another body-writing operation.
+        const targetBodyId = payload.targetBodyId;
+        const priorWriters = feature.dependsOn.filter(dep => {
+          const previous = byFeature.get(dep)?.feature;
+          return previous?.writeTargets?.includes(targetBodyId);
+        });
+        if (typeof targetBodyId !== 'string' || !targetBodyId ||
+            feature.writeTargets.length !== 1 ||
+            feature.writeTargets[0] !== targetBodyId || priorWriters.length !== 1) {
+          evaluated.set(id, failure('invalid_feature',
+            'cut requires an explicit matching target body and one dependent prior body writer',
+            {scalarStatus}));
+          continue;
+        }
         evaluated.set(id, failure('pending_exact_provider', 'cut requires qualified native B-rep provider',
           {scalarStatus}));
         continue;
