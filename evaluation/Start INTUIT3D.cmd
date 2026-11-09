@@ -29,6 +29,13 @@ if not exist "node_modules\vite\bin\vite.js" (
   pause
   exit /b 1
 )
+node "evaluation\link-workspaces.mjs"
+if errorlevel 1 (
+  echo Could not prepare bundled local npm workspaces.
+  echo Extract to a writable NTFS directory and retry. See START-HERE.md.
+  pause
+  exit /b 1
+)
 node "tooling\dev-local.mjs"
 set "status=%ERRORLEVEL%"
 if not "%status%"=="0" (
