@@ -104,6 +104,12 @@ test('overshooting the opposite edge must not silently reverse a solved contour 
   const proposal=offset(a,'panel:edge:1',-160);
   assert.equal(proposal.kind,'refused',JSON.stringify(proposal));
   assert.equal(proposal.reason,'contour_winding_changed');
+  const pointer=dragClosedContourEdge(a.sketch,a.selection,{
+    version:1,sourceSignature:stamp,contourId:'panel',
+    edgeId:'panel:edge:1',start:{x:120,y:40},target:{x:-40,y:40}
+  });
+  assert.equal(pointer.kind,'refused',JSON.stringify(pointer));
+  assert.equal(pointer.reason,'contour_winding_changed');
   assert.equal(serializeSketch(a.sketch),stamp,'invalid gesture does not mutate source');
 });
 
