@@ -293,7 +293,11 @@ export function RuntimeWorkbench({ onClose }: { onClose:()=>void }) {
   const plateAuthored=featureRows.some(row=>row.featureId==='plate');
   const cutAuthored=featureRows.some(row=>row.featureId==='cut');
   const generalBodies=useMemo(()=>generalProfileBodies(history),[history]);
-  const generalSelectedBody=generalBodies.find(b=>b.extrudeId===selected) ??
+  // The explicit target-body choice also determines the displayed analytic
+  // solid. Otherwise a multi-body project can label a cut on body A while
+  // still rendering body B from the feature-browser selection.
+  const generalSelectedBody=generalBodies.find(b=>b.extrudeId===generalTargetId) ??
+    generalBodies.find(b=>b.extrudeId===selected) ??
     (!plateActive?generalBodies[0]??null:null);
   const generalSolidReport=generalSelectedBody
     ?report.features.find(f=>f.featureId===generalSelectedBody.extrudeId):null;
