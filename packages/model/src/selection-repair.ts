@@ -14,7 +14,7 @@ import { planIncrementalEvaluation } from './incremental.ts';
 import type { IncrementalEvaluationPlan } from './incremental.ts';
 import { previewSemanticSelectionEdit, SEMANTIC_SELECTION_EDIT_FORMAT } from './semantic-selection.ts';
 import { inspectSelectionInventory, SELECTION_EVIDENCE_FORMAT } from './selection-inventory.ts';
-import type { SelectionEvidenceReceipt } from './selection-inventory.ts';
+import type { SelectionEvidenceReceipt, SelectionInventory } from './selection-inventory.ts';
 import {
   TOPOLOGY_REFERENCE_FORMAT, resolveSemanticTopologyReference,
 } from './topology.ts';
@@ -251,6 +251,98 @@ export interface FencedSelectionRepairPreview
   readonly requiresNativeRebuild: true;
 }
 
+function legacyFencedEvidence(
+  evidence: readonly FencedSelectionEvidenceReceipt[], canonical: string,
+): SelectionEvidenceReceipt[] {
+  if (!Array.isArray(evidence) || evidence.length > 4096) {
+    fail('source-fenced evidence must be a bounded array');
+  }
+  return evidence.map((receipt) => {
+    if (!plain(receipt) || !exact(receipt, [
+      'format', 'version', 'documentFence', 'projectId', 'revision',
+      'featureId', 'field', 'reference', 'provider', 'snapshot', 'steps',
+    ]) || receipt.format !== SELECTION_EVIDENCE_FENCED_FORMAT ||
+        receipt.version !== SELECTION_REPAIR_FENCED_VERSION) {
+      fail('unsupported source-fenced provider receipt');
+    }
+    if (receipt.documentFence !== canonical) {
+      throw new ProjectRevisionError(
+        'selection repair: provider receipt belongs to another document');
+    }
+    // The runtime structural guard above narrows keys to unknown values.
+    // Recover the declared v2 type only after exact-key/format/fence checks;
+    // the v1 inventory still validates every value and entire topology trace.
+    const verified = receipt as unknown as FencedSelectionEvidenceReceipt;
+    return {
+      format: SELECTION_EVIDENCE_FORMAT, version: 1 as const,
+      projectId: verified.projectId, revision: verified.revision,
+      featureId: verified.featureId, field: verified.field,
+      reference: verified.reference, provider: verified.provider,
+      snapshot: verified.snapshot, steps: verified.steps,
+    };
+  });
+}
+
+/**
+ * @intuit3d/model/selection-inventory-fenced/v2
+ *
+ * The current UI inventory and its provider receipts must be bound to the
+ * same canonical source that a later v2 repair will commit against.
+ * Missing evidence remains visibly pending, never inferred or persisted.
+ */
+export const SELECTION_INVENTORY_FENCED_FORMAT =
+  'intuit3d.selection-inventory-fenced' as const;
+export interface FencedSelectionInventoryRequest {
+  readonly format: typeof SELECTION_INVENTORY_FENCED_FORMAT;
+  readonly version: 2;
+  readonly expectedProjectId: string;
+  readonly expectedRevision: number;
+  readonly expectedDocumentFence: string;
+}
+export interface FencedSelectionInventory
+  extends Omit<SelectionInventory, 'format' | 'version'> {
+  readonly format: typeof SELECTION_INVENTORY_FENCED_FORMAT;
+  readonly version: 2;
+  /** Exact canonical project used for every displayed choice. */
+  readonly documentFence: string;
+}
+
+/**
+ * WORKBENCH can display these choices and later use the same document fence
+ * with previewFencedSelectionRepairBatch. An intervening edit, undo/replay or
+ * equal-revision divergent branch requires fresh provider observations.
+ * This adapter never establishes native exactness or reuses stale consent.
+ */
+export function inspectFencedSelectionInventory(
+  source: ProjectDocument, request: FencedSelectionInventoryRequest,
+  evidence: readonly FencedSelectionEvidenceReceipt[] = [],
+): FencedSelectionInventory {
+  const doc = parseProject(source);
+  if (!plain(request) || !exact(request, [
+    'format', 'version', 'expectedProjectId', 'expectedRevision',
+    'expectedDocumentFence',
+  ]) || request.format !== SELECTION_INVENTORY_FENCED_FORMAT ||
+      request.version !== 2) {
+    fail('unsupported source-fenced inventory request');
+  }
+  const canonical = serializeProject(doc);
+  if (request.expectedProjectId !== doc.projectId ||
+      request.expectedRevision !== doc.revision ||
+      request.expectedDocumentFence !== canonical) {
+    throw new ProjectRevisionError(
+      'selection inventory: project, revision or canonical document fence differs');
+  }
+  const inventory = inspectSelectionInventory(
+    doc, legacyFencedEvidence(evidence, canonical));
+  return {
+    ...inventory,
+    format: SELECTION_INVENTORY_FENCED_FORMAT,
+    version: 2,
+    documentFence: canonical,
+    exactGeometryAuthority: false,
+  };
+}
+
 /** Fail closed before applying ANY candidate, including a deleted-role observation. */
 export function previewFencedSelectionRepairBatch(
   source: ProjectDocument, request: FencedSelectionRepairRequest,
@@ -276,30 +368,7 @@ export function previewFencedSelectionRepairBatch(
   if (!Array.isArray(evidence) || evidence.length > 4096) {
     fail('source-fenced evidence must be a bounded array');
   }
-  const legacyEvidence: SelectionEvidenceReceipt[] = evidence.map((receipt) => {
-    if (!plain(receipt) || !exact(receipt, [
-      'format', 'version', 'documentFence', 'projectId', 'revision',
-      'featureId', 'field', 'reference', 'provider', 'snapshot', 'steps',
-    ]) || receipt.format !== SELECTION_EVIDENCE_FENCED_FORMAT ||
-        receipt.version !== SELECTION_REPAIR_FENCED_VERSION) {
-      fail('unsupported source-fenced provider receipt');
-    }
-    if (receipt.documentFence !== canonical) {
-      throw new ProjectRevisionError(
-        'selection repair: provider receipt belongs to another document');
-    }
-    // The runtime structural guard above narrows keys to unknown values.
-    // Recover the declared v2 type only after exact-key/format/fence checks;
-    // the v1 inventory still validates every value and entire topology trace.
-    const verified = receipt as unknown as FencedSelectionEvidenceReceipt;
-    return {
-      format: SELECTION_EVIDENCE_FORMAT, version: 1 as const,
-      projectId: verified.projectId, revision: verified.revision,
-      featureId: verified.featureId, field: verified.field,
-      reference: verified.reference, provider: verified.provider,
-      snapshot: verified.snapshot, steps: verified.steps,
-    };
-  });
+  const legacyEvidence = legacyFencedEvidence(evidence, canonical);
   const legacyRepairs: SelectionRepairAction[] = request.repairs.map((action) => {
     validateAction(action);
     let replacementObservation: ReplacementObservation | undefined;
